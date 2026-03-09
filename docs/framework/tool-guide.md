@@ -87,25 +87,14 @@ env PATH="/Users/diego/.foundry/bin:$PATH" ~/.local/bin/halmos \
 - Anything involving mappings with symbolic keys
 - Functions that call external contracts
 
-## Worktree Setup (MANDATORY for agents in worktrees)
+## Build Setup
 
-If your working directory contains `.claude/worktrees/`, the default `../lbamm-core` relative paths won't resolve. **Run this before any forge command:**
+All target repos are siblings in the parent directory. No symlinks needed. Build tools run inside each target repo:
 
 ```bash
-# 1. Create symlinks with ABSOLUTE paths
-ln -sfn /Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-core lbamm-core
-ln -sfn /Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/secure-proxy secure-proxy
-
-# 2. Fix remappings.txt
-sed -i '' 's|../lbamm-core/|lbamm-core/|g' remappings.txt
-sed -i '' 's|../secure-proxy|secure-proxy|g' remappings.txt
-
-# 3. Fix foundry.toml allow_paths
-sed -i '' 's|../lbamm-core|lbamm-core|g' foundry.toml
-sed -i '' 's|../secure-proxy|secure-proxy|g' foundry.toml
-
-# 4. Verify
-~/.foundry/bin/forge build 2>&1 | tail -3
+# From parent directory:
+cd lbamm-hooks-and-handlers && forge build --skip test script 2>&1 | tail -3
+cd ../lbamm-core && forge build --skip test script 2>&1 | tail -3
 # Must see "Compiler run successful"
 ```
 
@@ -252,7 +241,7 @@ If you get "file not found" errors during "Analysing contracts...", verify the s
 
 **DO NOT spend time debugging coverage source map errors.** If the symlinks are missing, recreate them (see Worktree Setup above).
 
-See `docs/artifacts/coverage-gaps.md` for pre-computed coverage data with detailed gap analysis.
+See `docs/targets/hooks-and-handlers/artifacts/coverage-gaps.md` for pre-computed coverage data with detailed gap analysis.
 
 ### Running Tests
 
@@ -284,7 +273,7 @@ When you make multiple tool calls in parallel (e.g., batching a Bash command alo
 
 ## Git Diff (Remediation Changes)
 
-**WARNING**: `docs/artifacts/remediation-diff.md` is 5,319 lines (~75k tokens) — too large for a single Read call. Use targeted git diff per module instead:
+**WARNING**: `docs/targets/hooks-and-handlers/artifacts/remediation-diff.md` is 5,319 lines (~75k tokens) — too large for a single Read call. Use targeted git diff per module instead:
 
 ```bash
 # Per-module (recommended):
@@ -317,7 +306,7 @@ The diff shows ALL remediation fixes Guardian recommended. Each change addresses
 
 ```bash
 # Source-only diff (what agents should read)
-git diff 0483a11 0199bdf -- src/ > docs/artifacts/remediation-diff.md
+git diff 0483a11 0199bdf -- src/ > docs/targets/hooks-and-handlers/artifacts/remediation-diff.md
 
 # To see which files changed
 git diff --stat 0483a11 0199bdf -- src/

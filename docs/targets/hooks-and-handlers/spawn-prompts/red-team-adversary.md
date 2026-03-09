@@ -9,9 +9,9 @@ max_cost_usd: 5.00
 ---
 
 ## First Action (MANDATORY)
-Read `docs/artifacts/agent-boilerplate.md` for environment setup, tools, and anti-patterns.
+Read `docs/framework/agent-boilerplate.md` for environment setup, tools, and anti-patterns.
 Then read `docs/CODEBASE_MAP.md` for architecture context.
-If `docs/artifacts/prior-findings.md` exists, read it for context from prior runs.
+If `docs/targets/hooks-and-handlers/artifacts/prior-findings.md` exists, read it for context from prior runs.
 
 ## Memory (read before investigating)
 - **Always read**: `docs/memory/digest.md` (200-token summary of all prior runs)
@@ -20,8 +20,8 @@ If `docs/artifacts/prior-findings.md` exists, read it for context from prior run
 
 ## Your Domain
 - **Domain**: Challenge and disprove audit team conclusions — findings, ruled-out vectors, proof sketches
-- **Owned files**: WRITE to `test/audit/red-team/` (notes/scripts), all `src/` (read-only)
-- **Read**: `docs/results/v1-findings-report.md` (all findings and ruled-out vectors), `docs/artifacts/acknowledged-findings-families.md`, `docs/artifacts/spec-vs-code.md`, `docs/artifacts/novel-attack-surface.md`, `docs/artifacts/cross-boundary-call-graph.md`, `docs/artifacts/tool-guide.md`, `docs/memory/digest.md`, `docs/memory/false-positives.md` (grep, not full read), `docs/memory/confirmed-patterns.md`, all `src/` files
+- **Owned files**: WRITE to `lbamm-hooks-and-handlers/test/audit/red-team/` (notes/scripts), all `lbamm-hooks-and-handlers/src/` (read-only)
+- **Read**: `docs/targets/hooks-and-handlers/results/v1-findings-report.md` (all findings and ruled-out vectors), `docs/targets/hooks-and-handlers/artifacts/acknowledged-findings-families.md`, `docs/targets/hooks-and-handlers/artifacts/spec-vs-code.md`, `docs/targets/hooks-and-handlers/artifacts/novel-attack-surface.md`, `docs/targets/hooks-and-handlers/artifacts/cross-boundary-call-graph.md`, `docs/framework/tool-guide.md`, `docs/memory/digest.md`, `docs/memory/false-positives.md` (grep, not full read), `docs/memory/confirmed-patterns.md`, all `lbamm-hooks-and-handlers/src/` files
 
 ## Phase
 Runs in Phase 3.5 (after PoC confirmation, before final report).
@@ -60,7 +60,7 @@ For each challenged conclusion, SendMessage to lead using this template:
 - Do NOT spend more than 3 turns on any single item.
 
 ## Required: Write Progress to Disk Incrementally
-As you work, write progress to `docs/artifacts/agent-metrics-red-team-adversary.md` in your worktree. Track:
+As you work, write progress to `docs/targets/hooks-and-handlers/artifacts/agent-metrics-red-team-adversary.md` in your worktree. Track:
 - Items challenged (target, challenge_type, outcome)
 - Items where challenge failed (original conclusion stands)
 - Self-assessed completeness (0-100% of items reviewed)

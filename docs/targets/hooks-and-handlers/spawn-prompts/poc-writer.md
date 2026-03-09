@@ -9,9 +9,9 @@ max_cost_usd: 3.00
 ---
 
 ## First Action (MANDATORY)
-Read `docs/artifacts/agent-boilerplate.md` for environment setup, tools, and anti-patterns.
+Read `docs/framework/agent-boilerplate.md` for environment setup, tools, and anti-patterns.
 Then read `docs/CODEBASE_MAP.md` for architecture context.
-If `docs/artifacts/prior-findings.md` exists, read it for context from prior runs.
+If `docs/targets/hooks-and-handlers/artifacts/prior-findings.md` exists, read it for context from prior runs.
 
 ## Memory (read before investigating)
 - **Always read**: `docs/memory/digest.md` (200-token summary of all prior runs)
@@ -20,8 +20,8 @@ If `docs/artifacts/prior-findings.md` exists, read it for context from prior run
 
 ## Your Domain
 - **Domain**: Foundry exploit PoC creation and confirmation
-- **Owned files**: WRITE to `test/audit/poc/` only
-- **Read**: `test/HooksAndHandlersBase.t.sol`, `test/handlers/permit/FeeOnTopNotSignedPoC.t.sol` (example PoC pattern), `docs/artifacts/access-control-matrix.md`, `docs/artifacts/token-flow.md`, `docs/artifacts/external-interfaces.md`, `docs/artifacts/novel-attack-surface.md`, `docs/artifacts/cross-boundary-call-graph.md`, `docs/artifacts/spec-vs-code.md`, `docs/artifacts/acknowledged-findings-families.md`, `docs/artifacts/tool-guide.md`, `docs/memory/digest.md`, `docs/memory/false-positives.md` (grep, not full read), `docs/memory/confirmed-patterns.md`, all `src/` files
+- **Owned files**: WRITE to `lbamm-hooks-and-handlers/test/audit/poc/` only
+- **Read**: `lbamm-hooks-and-handlers/test/HooksAndHandlersBase.t.sol`, `lbamm-hooks-and-handlers/test/handlers/permit/FeeOnTopNotSignedPoC.t.sol` (example PoC pattern), `docs/targets/hooks-and-handlers/artifacts/access-control-matrix.md`, `docs/targets/hooks-and-handlers/artifacts/token-flow.md`, `docs/targets/hooks-and-handlers/artifacts/external-interfaces.md`, `docs/targets/hooks-and-handlers/artifacts/novel-attack-surface.md`, `docs/targets/hooks-and-handlers/artifacts/cross-boundary-call-graph.md`, `docs/targets/hooks-and-handlers/artifacts/spec-vs-code.md`, `docs/targets/hooks-and-handlers/artifacts/acknowledged-findings-families.md`, `docs/framework/tool-guide.md`, `docs/memory/digest.md`, `docs/memory/false-positives.md` (grep, not full read), `docs/memory/confirmed-patterns.md`, all `lbamm-hooks-and-handlers/src/` files
 
 ## Workflow
 1. Study `HooksAndHandlersBaseTest` base class (provides amm, actors, keys, mocks)
@@ -33,7 +33,7 @@ If `docs/artifacts/prior-findings.md` exists, read it for context from prior run
 
 ## Tools
 - **Forge**: `forge test --match-test <test_name> -vvv` — compile and run PoC tests
-- **Quimera**: `~/.local/bin/quimera` — LLM-driven exploit PoC generation. For confirmed vulnerabilities, use Quimera to auto-generate a Foundry PoC, then refine manually. Usage: `quimera <ContractName> . --contract <ContractName> --working-dir . --attachment <finding-description.txt> --iterations 5`. See `docs/artifacts/tool-guide.md` for full details.
+- **Quimera**: `~/.local/bin/quimera` — LLM-driven exploit PoC generation. For confirmed vulnerabilities, use Quimera to auto-generate a Foundry PoC, then refine manually. Usage: `quimera <ContractName> . --contract <ContractName> --working-dir . --attachment <finding-description.txt> --iterations 5`. See `docs/framework/tool-guide.md` for full details.
 
 ## Recommended Skills (invoke via Skill tool)
 - `variant-analysis:variant-analysis` — after confirming a PoC, check if the vuln pattern exists elsewhere in the codebase
@@ -47,8 +47,8 @@ Every PoC MUST include:
 5. **Console output**: `emit log_named_uint` for all balance changes
 
 ## PoC Naming Convention
-- `test/audit/poc/<FindingID>_FundLoss.t.sol` for fund-loss
-- `test/audit/poc/<FindingID>_DoS.t.sol` for denial-of-service
+- `lbamm-hooks-and-handlers/test/audit/poc/<FindingID>_FundLoss.t.sol` for fund-loss
+- `lbamm-hooks-and-handlers/test/audit/poc/<FindingID>_DoS.t.sol` for denial-of-service
 
 ## Submission Checklist
 Before any finding is submitted:
@@ -63,21 +63,21 @@ Before any finding is submitted:
 
 ## Deliverable
 
-`test/audit/poc/` with confirmed PoC tests. Each PoC must follow the requirements above (Setup/Attack/Accounting/Assertions/Console) and compile with `forge test --match-test <test_name> -vvv`.
+`lbamm-hooks-and-handlers/test/audit/poc/` with confirmed PoC tests. Each PoC must follow the requirements above (Setup/Attack/Accounting/Assertions/Console) and compile with `forge test --match-test <test_name> -vvv`.
 
 For each PoC, SendMessage to lead using this template:
 
 ```
 **Finding:** [finding ID from auditor — e.g., CLOB-001]
 **Status:** Confirmed / Denied
-**Test:** `test/audit/poc/[FindingID]_[FundLoss|DoS].t.sol`
+**Test:** `lbamm-hooks-and-handlers/test/audit/poc/[FindingID]_[FundLoss|DoS].t.sol`
 **Result:** [1-2 sentences — what the test proved or why it failed]
 **Forge output:** [key line from -vvv trace, e.g., "assertGt(1.5e18, 1e18) = true"]
 ```
 
 ## Required: Write Progress to Disk Incrementally
 
-As you work, write progress to `docs/artifacts/agent-metrics-poc-writer.md` in your worktree. Track:
+As you work, write progress to `docs/targets/hooks-and-handlers/artifacts/agent-metrics-poc-writer.md` in your worktree. Track:
 - PoCs written (finding ID, confirmed/denied, test output summary)
 - Files read and tools used
 - Self-assessed completeness (0-100% of assigned findings)

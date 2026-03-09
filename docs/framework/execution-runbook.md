@@ -1,16 +1,16 @@
 # Security Audit — Execution Runbook
 
 > **This runbook is self-contained.** The lead reads ONLY this file + spawn prompts during execution.
-> Architecture & rationale (not needed at runtime): `docs/team-design.md`
-> Post-execution verification: `docs/operational-checklist.md`
+> Architecture & rationale (not needed at runtime): `docs/framework/team-design.md`
+> Post-execution verification: `docs/framework/operational-checklist.md`
 
 ---
 
 ## Phase 0: Pre-Compute Artifacts
 
-Complete (21 artifacts in `docs/artifacts/`, verified 2026-03-02). See `docs/team-design.md` for details if re-running.
+Complete (21 artifacts in `docs/targets/hooks-and-handlers/artifacts/`, verified 2026-03-02). See `docs/framework/team-design.md` for details if re-running.
 
-**Registry:** `docs/artifacts/README.md` — maps P0-ID → filename → consumers.
+**Registry:** `docs/targets/hooks-and-handlers/artifacts/README.md` — maps P0-ID → filename → consumers.
 
 **Verification (run before Phase 1):**
 ```bash
@@ -38,32 +38,32 @@ done
 
 ### Steps
 
-1. Create `docs/artifacts/prior-findings.md` by extracting from prior run results:
+1. Create `docs/targets/hooks-and-handlers/artifacts/prior-findings.md` by extracting from prior run results:
    ```bash
    # Adapt paths per target. Example for lbamm-core using hooks-and-handlers v2 data:
-   echo "# Prior Findings (Cross-Pollination Input)" > docs/artifacts/prior-findings.md
-   echo "" >> docs/artifacts/prior-findings.md
-   echo "## Confirmed Findings from Prior Runs" >> docs/artifacts/prior-findings.md
-   cat docs/results/v2-findings-report.md >> docs/artifacts/prior-findings.md 2>/dev/null || true
-   echo -e "\n---\n" >> docs/artifacts/prior-findings.md
-   echo "## Known False Positives" >> docs/artifacts/prior-findings.md
-   cat docs/memory/false-positives.md >> docs/artifacts/prior-findings.md 2>/dev/null || true
-   echo -e "\n---\n" >> docs/artifacts/prior-findings.md
-   echo "## Confirmed Vulnerability Patterns" >> docs/artifacts/prior-findings.md
-   cat docs/memory/confirmed-patterns.md >> docs/artifacts/prior-findings.md 2>/dev/null || true
-   echo -e "\n---\n" >> docs/artifacts/prior-findings.md
-   echo "## Lessons Learned" >> docs/artifacts/prior-findings.md
-   cat docs/memory/lessons-learned.md >> docs/artifacts/prior-findings.md 2>/dev/null || true
+   echo "# Prior Findings (Cross-Pollination Input)" > docs/targets/hooks-and-handlers/artifacts/prior-findings.md
+   echo "" >> docs/targets/hooks-and-handlers/artifacts/prior-findings.md
+   echo "## Confirmed Findings from Prior Runs" >> docs/targets/hooks-and-handlers/artifacts/prior-findings.md
+   cat docs/targets/hooks-and-handlers/results/v2-findings-report.md >> docs/targets/hooks-and-handlers/artifacts/prior-findings.md 2>/dev/null || true
+   echo -e "\n---\n" >> docs/targets/hooks-and-handlers/artifacts/prior-findings.md
+   echo "## Known False Positives" >> docs/targets/hooks-and-handlers/artifacts/prior-findings.md
+   cat docs/memory/false-positives.md >> docs/targets/hooks-and-handlers/artifacts/prior-findings.md 2>/dev/null || true
+   echo -e "\n---\n" >> docs/targets/hooks-and-handlers/artifacts/prior-findings.md
+   echo "## Confirmed Vulnerability Patterns" >> docs/targets/hooks-and-handlers/artifacts/prior-findings.md
+   cat docs/memory/confirmed-patterns.md >> docs/targets/hooks-and-handlers/artifacts/prior-findings.md 2>/dev/null || true
+   echo -e "\n---\n" >> docs/targets/hooks-and-handlers/artifacts/prior-findings.md
+   echo "## Lessons Learned" >> docs/targets/hooks-and-handlers/artifacts/prior-findings.md
+   cat docs/memory/lessons-learned.md >> docs/targets/hooks-and-handlers/artifacts/prior-findings.md 2>/dev/null || true
    ```
 2. The file should contain:
    - Confirmed findings from prior runs (with severity, location, what was new)
    - Ruled-out vectors summary (what was investigated and dismissed, with 1-line reasons)
    - Known false-positive patterns (so agents don't re-investigate)
-3. Verify the file exists: `test -f docs/artifacts/prior-findings.md && echo "OK" || echo "MISSING"`
+3. Verify the file exists: `test -f docs/targets/hooks-and-handlers/artifacts/prior-findings.md && echo "OK" || echo "MISSING"`
 
 **Purpose:** Agents read prior findings before starting, avoiding duplicate dead ends and building on prior work. This is the autoresearch "cross-pollination" pattern — agents are inspired by prior sessions.
 
-**Gate out:** `docs/artifacts/prior-findings.md` exists and contains prior run data.
+**Gate out:** `docs/targets/hooks-and-handlers/artifacts/prior-findings.md` exists and contains prior run data.
 
 ---
 
@@ -110,7 +110,7 @@ mkdir -p /tmp/audit-bundles
 for agent in clob-auditor permit-auditor hook-auditor registry-auditor; do
   echo "# Artifact Bundle for $agent" > /tmp/audit-bundles/$agent-bundle.md
   echo "Generated: $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> /tmp/audit-bundles/$agent-bundle.md
-  for artifact in docs/artifacts/*.md docs/CODEBASE_MAP.md; do
+  for artifact in docs/targets/hooks-and-handlers/artifacts/*.md docs/CODEBASE_MAP.md; do
     echo -e "\n---\n## $(basename $artifact)\n" >> /tmp/audit-bundles/$agent-bundle.md
     cat "$artifact" >> /tmp/audit-bundles/$agent-bundle.md
   done
@@ -124,7 +124,7 @@ If bundles are created, update each agent's spawn message: "Your artifact bundle
 
 ### Step 4: Spawn 8 agents concurrently
 
-Read each `docs/spawn-prompts/{name}.md` — YAML frontmatter has Task tool params, body is the agent prompt. Add `team_name: "bug-bounty-hooks-handlers"` to all.
+Read each `docs/targets/hooks-and-handlers/spawn-prompts/{name}.md` — YAML frontmatter has Task tool params, body is the agent prompt. Add `team_name: "bug-bounty-hooks-handlers"` to all.
 
 | Agent | model | mode | isolation |
 |-------|-------|------|-----------|
@@ -200,10 +200,10 @@ Lead enters delegate mode (Shift+Tab). Wait for auditors' `plan_approval_request
    ```bash
    for branch in $(git branch --list 'worktree-*' --format='%(refname:short)'); do
      echo "=== $branch ===" && \
-     git show "$branch:docs/artifacts/agent-metrics-$(echo $branch | sed 's/worktree-//').md" 2>/dev/null || echo "(no metrics file)"
+     git show "$branch:docs/targets/hooks-and-handlers/artifacts/agent-metrics-$(echo $branch | sed 's/worktree-//').md" 2>/dev/null || echo "(no metrics file)"
    done
    ```
-2. Spawn red-team-adversary (read `docs/spawn-prompts/red-team-adversary.md` frontmatter). Model: opus, isolation: worktree.
+2. Spawn red-team-adversary (read `docs/targets/hooks-and-handlers/spawn-prompts/red-team-adversary.md` frontmatter). Model: opus, isolation: worktree.
 3. Send ALL to red-team via SendMessage: confirmed findings (from PoC), ruled-out vectors with proof sketches (from worktrees), informational findings
 4. Incorporate feedback: downgrades, upgrades, re-investigations
 5. Mark red-team task completed
@@ -246,9 +246,9 @@ Lead enters delegate mode (Shift+Tab). Wait for auditors' `plan_approval_request
 ### Steps
 
 1. Verify `turn-counts.md` is complete — ALL columns filled (N/R only with justification)
-2. Generate/update `docs/artifacts/metrics.json` — populate all agent entries, poc_outcomes, redteam_outcomes, and evaluation block. Compute derived metrics (precision, cost_per_finding, cost_per_vector)
-3. Aggregate findings into `docs/results/{date}-findings-report.md`
-4. Generate session report `docs/results/{date}-session-report.md`:
+2. Generate/update `docs/framework/metrics.json` — populate all agent entries, poc_outcomes, redteam_outcomes, and evaluation block. Compute derived metrics (precision, cost_per_finding, cost_per_vector)
+3. Aggregate findings into `docs/targets/hooks-and-handlers/results/{date}-findings-report.md`
+4. Generate session report `docs/targets/hooks-and-handlers/results/{date}-session-report.md`:
    - **Highlights**: top findings by confidence score, novel discoveries
    - **Agent performance**: per-agent table (findings, vectors, cost, duration, status)
    - **Dead ends**: agents with no findings — what they investigated and why it was empty
@@ -260,11 +260,11 @@ Lead enters delegate mode (Shift+Tab). Wait for auditors' `plan_approval_request
    # List all worktree branches
    git branch --list 'worktree-*'
 
-   # For each agent, extract metrics file to docs/results/
+   # For each agent, extract metrics file to docs/targets/hooks-and-handlers/results/
    for branch in $(git branch --list 'worktree-*' --format='%(refname:short)'); do
      name=$(echo "$branch" | sed 's/worktree-//')
-     git show "$branch:docs/artifacts/agent-metrics-${name}.md" \
-       > "docs/results/agent-metrics-${name}.md" 2>/dev/null && \
+     git show "$branch:docs/targets/hooks-and-handlers/artifacts/agent-metrics-${name}.md" \
+       > "docs/targets/hooks-and-handlers/results/agent-metrics-${name}.md" 2>/dev/null && \
        echo "Collected: $name" || echo "No metrics: $name"
    done
 
@@ -281,7 +281,7 @@ Lead enters delegate mode (Shift+Tab). Wait for auditors' `plan_approval_request
    ```
 7. `shutdown_request` to ALL remaining teammates (read `config.json` for full list — includes original 8 + up to 4 second-pass agents)
 8. Wait for ALL `shutdown_response: approve=true`
-9. Commit collected metrics, findings, and `metrics.json`: `git add docs/results/ docs/artifacts/metrics.json docs/artifacts/turn-counts.md && git commit`
+9. Commit collected metrics, findings, and `metrics.json`: `git add docs/targets/hooks-and-handlers/results/ docs/framework/metrics.json docs/framework/turn-counts.md && git commit`
 10. `TeamDelete` (safe now — all work products collected)
 11. Update `memory/MEMORY.md`
 
@@ -313,7 +313,7 @@ When an auditor discovers something that affects another module, route via targe
 
 ### Metric Logging
 
-> **Note:** Structured run logging (autoresearch pattern) is implemented via `docs/artifacts/metrics.json` — the machine-readable parallel to `turn-counts.md`. See Gap 2 implementation for schema details.
+> **Note:** Structured run logging (autoresearch pattern) is implemented via `docs/framework/metrics.json` — the machine-readable parallel to `turn-counts.md`. See Gap 2 implementation for schema details.
 
 **On each agent completion**, IMMEDIATELY perform these steps BEFORE reading findings:
 
@@ -325,7 +325,7 @@ Task completion metadata includes `total_tokens`, `tool_uses`, `duration_ms`. Ex
 | Agent | Model | Tokens (est) | Tool Uses | Duration (s) | Cost USD (est) | Findings | Vectors Out | Status |
 ```
 
-Append one row to `docs/artifacts/turn-counts.md`. This is non-negotiable — data is only available in the completion message.
+Append one row to `docs/framework/turn-counts.md`. This is non-negotiable — data is only available in the completion message.
 
 #### Step 2: Calculate cost
 
@@ -338,7 +338,7 @@ If no in/out split available, estimate 80% input / 20% output.
 
 #### Step 3: Update metrics.json
 
-After all agents complete, update `docs/artifacts/metrics.json` with:
+After all agents complete, update `docs/framework/metrics.json` with:
 - All agent entries (platform + self-report metrics)
 - PoC outcomes array (finding_id, tests_total, tests_passed, confirmed)
 - Red-team outcomes object (challenged, confirmed, elevation attempts)

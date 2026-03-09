@@ -12,11 +12,11 @@
 
 | Document | Owns | Does NOT Contain |
 |----------|------|-----------------|
-| `docs/team-design.md` | Architecture, rationale, tool reference, Phase 0, phase gates, decision trees, cross-module routing, metrics protocol | Agent specs, execution steps, shared rubrics |
-| `docs/spawn-prompts/{name}.md` | Per-agent specs: domain, files, known findings, attack vectors | Shared boilerplate (in agent-boilerplate.md) |
-| `docs/artifacts/agent-boilerplate.md` | Shared auditor standards: deliverable format, severity rubric, exploitability tiers, proof sketch, incremental write requirement | Per-agent domains or architecture |
-| `docs/execution-runbook.md` | Step-by-step execution with phase gates and tool calls | Architecture rationale or tool reference |
-| `docs/operational-checklist.md` | Post-execution verification (35 items) | Execution steps |
+| `docs/framework/team-design.md` | Architecture, rationale, tool reference, Phase 0, phase gates, decision trees, cross-module routing, metrics protocol | Agent specs, execution steps, shared rubrics |
+| `docs/targets/hooks-and-handlers/spawn-prompts/{name}.md` | Per-agent specs: domain, files, known findings, attack vectors | Shared boilerplate (in agent-boilerplate.md) |
+| `docs/framework/agent-boilerplate.md` | Shared auditor standards: deliverable format, severity rubric, exploitability tiers, proof sketch, incremental write requirement | Per-agent domains or architecture |
+| `docs/framework/execution-runbook.md` | Step-by-step execution with phase gates and tool calls | Architecture rationale or tool reference |
+| `docs/framework/operational-checklist.md` | Post-execution verification (35 items) | Execution steps |
 
 **Rule:** Each concept has exactly ONE canonical location. Other documents reference it, never restate it. When updating a concept, update ONLY its canonical location.
 
@@ -198,7 +198,7 @@ Dependencies set via `TaskUpdate` with `addBlockedBy` AFTER creation (not at cre
 | Quimera | `~/.local/bin/quimera` (v0.1) | LLM-driven exploit PoC generation using Foundry (by Echidna creator). | poc-writer |
 | Trail of Bits Skills | via `Skill()` tool | 9 Claude Code skills for security analysis (audit-context-building, entry-point-analyzer, variant-analysis, etc.) | All agents |
 
-> **Detailed usage for Aderyn, Quimera, and Trail of Bits Skills:** See `docs/artifacts/tool-guide.md` (P0-12). The tool-guide is the canonical reference for usage commands, gotchas, and per-role skill recommendations.
+> **Detailed usage for Aderyn, Quimera, and Trail of Bits Skills:** See `docs/framework/tool-guide.md` (P0-12). The tool-guide is the canonical reference for usage commands, gotchas, and per-role skill recommendations.
 
 ### Forge Usage
 
@@ -264,7 +264,7 @@ Quick math experiments without writing test files. **Agents must use pipe syntax
 printf 'uint160 sqrtPrice = 1; uint256 inverse = (uint256(1) << 192) / uint256(sqrtPrice); inverse\n' | ~/.foundry/bin/chisel
 ```
 
-Best for: testing edge values in math functions, checking overflow boundaries, verifying operator precedence. See `docs/artifacts/tool-guide.md` for full details.
+Best for: testing edge values in math functions, checking overflow boundaries, verifying operator precedence. See `docs/framework/tool-guide.md` for full details.
 
 ### Slither MCP Usage
 
@@ -276,9 +276,9 @@ ToolSearch with query: "+slither"
 ```
 This loads all `mcp__slither__*` tools. Do this once per session — tools stay loaded.
 
-**All tools take `path` parameter** = project root:
+**All tools take `path` parameter** = target repo root (run from parent):
 ```
-path: "/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-hooks-and-handlers"
+path: "lbamm-hooks-and-handlers"  # or "lbamm-core" for N=2
 ```
 
 **Tool selection by goal:**
@@ -384,27 +384,27 @@ Generate once, every agent reads from disk. Saves context and prevents duplicate
 
 | Artifact | Generation Method | Output Path | Who Reads It |
 |----------|------------------|-------------|--------------|
-| Access control matrix | Mapped from source | `docs/artifacts/access-control-matrix.md` | All auditors |
-| Order lifecycle state machine | Mapped from CLOB source → **expanded to formal state machine** | `docs/artifacts/order-lifecycle.md` | clob-auditor, fuzz-writer |
-| Token/value flow analysis | Mapped from all handlers | `docs/artifacts/token-flow.md` | All auditors |
-| External interfaces | Read from sibling repos — **expanded with AMM hook call sequence, BeforeSwapParams/AfterSwapParams structs, AMM balance verification** | `docs/artifacts/external-interfaces.md` | All auditors |
-| Slither detector results | `mcp__slither__run_detectors` (High+Med, exclude lib/test/) | `docs/artifacts/slither-findings.md` | All auditors |
-| Dead code analysis | `mcp__slither__find_dead_code` (exclude lib/test/) | `docs/artifacts/dead-code.md` | All auditors |
-| Storage layouts | `mcp__slither__get_storage_layout` per contract | `docs/artifacts/storage-layouts.md` | registry-auditor, hook-auditor, all auditors |
-| Coverage gaps | `forge coverage --report summary` | `docs/artifacts/coverage-gaps.md` | fuzz-writer, all auditors |
-| Call graphs | `mcp__slither__export_call_graph` per contract | `docs/artifacts/call-graphs.md` | All auditors |
-| Known vuln patterns | Exa multi-step research | `docs/artifacts/known-vuln-patterns.md` | All auditors |
-| Git diff (remediation changes) | `git diff 0483a11 0199bdf` | `docs/artifacts/remediation-diff.md` | All auditors |
-| Tool usage guide | Chisel/Halmos/Medusa/git-diff gotchas | `docs/artifacts/tool-guide.md` | fuzz-writer, all auditors |
+| Access control matrix | Mapped from source | `docs/targets/hooks-and-handlers/artifacts/access-control-matrix.md` | All auditors |
+| Order lifecycle state machine | Mapped from CLOB source → **expanded to formal state machine** | `docs/targets/hooks-and-handlers/artifacts/order-lifecycle.md` | clob-auditor, fuzz-writer |
+| Token/value flow analysis | Mapped from all handlers | `docs/targets/hooks-and-handlers/artifacts/token-flow.md` | All auditors |
+| External interfaces | Read from sibling repos — **expanded with AMM hook call sequence, BeforeSwapParams/AfterSwapParams structs, AMM balance verification** | `docs/targets/hooks-and-handlers/artifacts/external-interfaces.md` | All auditors |
+| Slither detector results | `mcp__slither__run_detectors` (High+Med, exclude lib/test/) | `docs/targets/hooks-and-handlers/artifacts/slither-findings.md` | All auditors |
+| Dead code analysis | `mcp__slither__find_dead_code` (exclude lib/test/) | `docs/targets/hooks-and-handlers/artifacts/dead-code.md` | All auditors |
+| Storage layouts | `mcp__slither__get_storage_layout` per contract | `docs/targets/hooks-and-handlers/artifacts/storage-layouts.md` | registry-auditor, hook-auditor, all auditors |
+| Coverage gaps | `forge coverage --report summary` | `docs/targets/hooks-and-handlers/artifacts/coverage-gaps.md` | fuzz-writer, all auditors |
+| Call graphs | `mcp__slither__export_call_graph` per contract | `docs/targets/hooks-and-handlers/artifacts/call-graphs.md` | All auditors |
+| Known vuln patterns | Exa multi-step research | `docs/framework/known-vuln-patterns.md` | All auditors |
+| Git diff (remediation changes) | `git diff 0483a11 0199bdf` | `docs/targets/hooks-and-handlers/artifacts/remediation-diff.md` | All auditors |
+| Tool usage guide | Chisel/Halmos/Medusa/git-diff gotchas | `docs/framework/tool-guide.md` | fuzz-writer, all auditors |
 | Medusa config | `medusa init` + customize for project | `medusa.json` (project root) | fuzz-writer |
 | Audit findings | Already exists | `memory/audit-findings.md` (via MEMORY.md) | All agents |
 | Codebase map | Already exists | `docs/CODEBASE_MAP.md` | All agents |
-| **Novel attack surface catalog** | Lead manually curates protocol-specific primitives with no known vuln pattern | `docs/artifacts/novel-attack-surface.md` | All auditors |
-| **Economic model — CLOB** | Lead writes initial fee structure, incentive alignment analysis | `docs/artifacts/economic-model-clob.md` | economic-analyst |
-| **MEV surface analysis** | Lead identifies MEV-susceptible functions | `docs/artifacts/mev-surface.md` | economic-analyst |
-| **Cross-boundary call graph** | `mcp__slither__get_function_callers` on key cross-boundary functions with sibling repo paths | `docs/artifacts/cross-boundary-call-graph.md` | All auditors |
-| **Acknowledged findings families** | Lead groups Guardian's 53 findings into dedup families | `docs/artifacts/acknowledged-findings-families.md` | All auditors, poc-writer |
-| **Spec vs code checklist** | Lead extracts NatSpec assertions from interfaces, README, audit report | `docs/artifacts/spec-vs-code.md` | All auditors |
+| **Novel attack surface catalog** | Lead manually curates protocol-specific primitives with no known vuln pattern | `docs/targets/hooks-and-handlers/artifacts/novel-attack-surface.md` | All auditors |
+| **Economic model — CLOB** | Lead writes initial fee structure, incentive alignment analysis | `docs/targets/hooks-and-handlers/artifacts/economic-model-clob.md` | economic-analyst |
+| **MEV surface analysis** | Lead identifies MEV-susceptible functions | `docs/targets/hooks-and-handlers/artifacts/mev-surface.md` | economic-analyst |
+| **Cross-boundary call graph** | `mcp__slither__get_function_callers` on key cross-boundary functions with sibling repo paths | `docs/targets/hooks-and-handlers/artifacts/cross-boundary-call-graph.md` | All auditors |
+| **Acknowledged findings families** | Lead groups Guardian's 53 findings into dedup families | `docs/targets/hooks-and-handlers/artifacts/acknowledged-findings-families.md` | All auditors, poc-writer |
+| **Spec vs code checklist** | Lead extracts NatSpec assertions from interfaces, README, audit report | `docs/targets/hooks-and-handlers/artifacts/spec-vs-code.md` | All auditors |
 
 ### Exa Research Strategy (with temporal awareness)
 
@@ -445,24 +445,24 @@ Current date: 2026-02-24. Use Exa's neural search with natural language queries 
 - Use `crawling_exa` on any specific audit report URLs found in seed results
 - Use `deep_researcher_start` ONLY if seed searches reveal a complex cross-cutting pattern worth synthesizing
 
-**Output:** Save all results to `docs/artifacts/known-vuln-patterns.md`, organized by attack category (hook bypass, signature manipulation, CLOB exploitation, precision attacks, transient storage, access control).
+**Output:** Save all results to `docs/framework/known-vuln-patterns.md`, organized by attack category (hook bypass, signature manipulation, CLOB exploitation, precision attacks, transient storage, access control).
 
 ## Phase 1: Spawn Team
 
 ### Agent Specifications
 
-> **Canonical source:** Each agent's full spec (domain, owned files, known findings, attack vectors) lives in `docs/spawn-prompts/{name}.md`. The YAML frontmatter contains Task tool parameters.
+> **Canonical source:** Each agent's full spec (domain, owned files, known findings, attack vectors) lives in `docs/targets/hooks-and-handlers/spawn-prompts/{name}.md`. The YAML frontmatter contains Task tool parameters.
 
 | Agent | Spawn Prompt | Domain Summary |
 |-------|-------------|----------------|
-| clob-auditor | `docs/spawn-prompts/clob-auditor.md` | CLOB orderbook lifecycle — deposits, orders, fills, withdrawals |
-| permit-auditor | `docs/spawn-prompts/permit-auditor.md` | EIP-712 permits, cosignatures, executor authorization |
-| hook-auditor | `docs/spawn-prompts/hook-auditor.md` | AMM swap/liquidity enforcement, pricing bounds, transient storage |
-| registry-auditor | `docs/spawn-prompts/registry-auditor.md` | Settings storage, whitelist management, sync to hooks |
-| economic-analyst | `docs/spawn-prompts/economic-analyst.md` | Economic/game-theoretic modeling — MEV, wash trading, fee abuse |
-| fuzz-writer | `docs/spawn-prompts/fuzz-writer.md` | Foundry invariant tests, fuzz tests, formal verification |
-| poc-writer | `docs/spawn-prompts/poc-writer.md` | Exploit PoC creation and confirmation |
-| red-team-adversary | `docs/spawn-prompts/red-team-adversary.md` | Challenge audit team conclusions |
+| clob-auditor | `docs/targets/hooks-and-handlers/spawn-prompts/clob-auditor.md` | CLOB orderbook lifecycle — deposits, orders, fills, withdrawals |
+| permit-auditor | `docs/targets/hooks-and-handlers/spawn-prompts/permit-auditor.md` | EIP-712 permits, cosignatures, executor authorization |
+| hook-auditor | `docs/targets/hooks-and-handlers/spawn-prompts/hook-auditor.md` | AMM swap/liquidity enforcement, pricing bounds, transient storage |
+| registry-auditor | `docs/targets/hooks-and-handlers/spawn-prompts/registry-auditor.md` | Settings storage, whitelist management, sync to hooks |
+| economic-analyst | `docs/targets/hooks-and-handlers/spawn-prompts/economic-analyst.md` | Economic/game-theoretic modeling — MEV, wash trading, fee abuse |
+| fuzz-writer | `docs/targets/hooks-and-handlers/spawn-prompts/fuzz-writer.md` | Foundry invariant tests, fuzz tests, formal verification |
+| poc-writer | `docs/targets/hooks-and-handlers/spawn-prompts/poc-writer.md` | Exploit PoC creation and confirmation |
+| red-team-adversary | `docs/targets/hooks-and-handlers/spawn-prompts/red-team-adversary.md` | Challenge audit team conclusions |
 
 ## Spawn Prompt Architecture (Cache-Aware)
 
@@ -472,7 +472,7 @@ Prompt caching works by prefix matching — the API caches everything from the s
 
 ```
 ┌─────────────────────────────────────────────┐
-│ 1. STATIC: "Read docs/artifacts/agent-      │  ← Identical across all agents.
+│ 1. STATIC: "Read docs/framework/agent-      │  ← Identical across all agents.
 │    boilerplate.md as your first action."     │     Tiny prompt prefix, maximally cacheable.
 │                                              │
 │ 2. STATIC: Deliverable format, severity      │  ← Same for all agents.
@@ -483,7 +483,7 @@ Prompt caching works by prefix matching — the API caches everything from the s
 └─────────────────────────────────────────────┘
 ```
 
-### What goes in `docs/artifacts/agent-boilerplate.md` (Phase 0, Step 15)
+### What goes in `docs/framework/agent-boilerplate.md` (Phase 0, Step 15)
 
 All static content that was previously inlined in every spawn prompt (~200 lines → 0 prompt tokens):
 
@@ -503,7 +503,7 @@ Each spawn prompt contains ONLY:
 4. `## Attack Vectors to Investigate` — per-agent hunt list
 5. `## Shared Standards` — single-line reference to agent-boilerplate.md
 
-See any file in `docs/spawn-prompts/` for the actual format.
+See any file in `docs/targets/hooks-and-handlers/spawn-prompts/` for the actual format.
 
 ### Cache-aware design principles
 
@@ -539,27 +539,27 @@ See any file in `docs/spawn-prompts/` for the actual format.
 
 ### Phase 0: Pre-Compute (Lead, before spawning anyone)
 
-1. Map access control matrix → `docs/artifacts/access-control-matrix.md`
-2. Map order lifecycle state machine → `docs/artifacts/order-lifecycle.md` — formal state machine: states S0-S6, transitions with preconditions/postconditions, invalid transitions that must revert
-3. Map token/value flows → `docs/artifacts/token-flow.md`
-4. Read external interfaces from sibling repos → `docs/artifacts/external-interfaces.md` — include full AMM hook call sequence, BeforeSwapParams/AfterSwapParams structs, `hookForInputToken` resolution, AMM balance verification logic
-5. Run slither detectors → `docs/artifacts/slither-findings.md`
-6. Run slither dead code analysis → `docs/artifacts/dead-code.md`
-7. Run slither storage layouts per contract → `docs/artifacts/storage-layouts.md`
-8. Run forge coverage → `docs/artifacts/coverage-gaps.md`
-9. Export call graphs → `docs/artifacts/call-graphs.md`
-10. Exa multi-step research → `docs/artifacts/known-vuln-patterns.md`
-11. Generate git diff of remediation changes → `docs/artifacts/remediation-diff.md` — use `git diff -- src/<module>/` per-module to avoid overflowing agent context
-12. Write tool usage guide → `docs/artifacts/tool-guide.md`
+1. Map access control matrix → `docs/targets/hooks-and-handlers/artifacts/access-control-matrix.md`
+2. Map order lifecycle state machine → `docs/targets/hooks-and-handlers/artifacts/order-lifecycle.md` — formal state machine: states S0-S6, transitions with preconditions/postconditions, invalid transitions that must revert
+3. Map token/value flows → `docs/targets/hooks-and-handlers/artifacts/token-flow.md`
+4. Read external interfaces from sibling repos → `docs/targets/hooks-and-handlers/artifacts/external-interfaces.md` — include full AMM hook call sequence, BeforeSwapParams/AfterSwapParams structs, `hookForInputToken` resolution, AMM balance verification logic
+5. Run slither detectors → `docs/targets/hooks-and-handlers/artifacts/slither-findings.md`
+6. Run slither dead code analysis → `docs/targets/hooks-and-handlers/artifacts/dead-code.md`
+7. Run slither storage layouts per contract → `docs/targets/hooks-and-handlers/artifacts/storage-layouts.md`
+8. Run forge coverage → `docs/targets/hooks-and-handlers/artifacts/coverage-gaps.md`
+9. Export call graphs → `docs/targets/hooks-and-handlers/artifacts/call-graphs.md`
+10. Exa multi-step research → `docs/framework/known-vuln-patterns.md`
+11. Generate git diff of remediation changes → `docs/targets/hooks-and-handlers/artifacts/remediation-diff.md` — use `git diff -- src/<module>/` per-module to avoid overflowing agent context
+12. Write tool usage guide → `docs/framework/tool-guide.md`
 13. Verify this plan doc is current
-14. Create empty `docs/artifacts/turn-counts.md` with template tables
-15. Extract shared boilerplate to `docs/artifacts/agent-boilerplate.md`
-16. Curate novel attack surface catalog → `docs/artifacts/novel-attack-surface.md` — protocol-specific primitives: CLOB linked-list FIFO under concurrent partial fills, transient storage bridging across two tokens sharing a hook, GroupKey encoding as implicit access control, registry-to-hook sync as eventual consistency
-17. Write initial CLOB economic model → `docs/artifacts/economic-model-clob.md` — fee structures, maker/executor incentive alignment, self-trade profitability framework
-18. Identify MEV-susceptible functions → `docs/artifacts/mev-surface.md` — which functions are frontrunnable (CLOB fills, permit execution, directSwap)
-19. Run `mcp__slither__get_function_callers` on cross-boundary functions → `docs/artifacts/cross-boundary-call-graph.md` — validateHandlerOrder, registryUpdateTokenSettings, ammHandleTransfer
-20. Group Guardian's 53 findings into dedup families → `docs/artifacts/acknowledged-findings-families.md` — families: Missing Hook Callbacks, Flag-Dependent Enforcement Gaps, Settings Sync Inconsistency, Unsigned EIP-712 Fields
-21. Extract spec statements from NatSpec, README, audit report → `docs/artifacts/spec-vs-code.md` — testable assertions with source location + code location + verification checkboxes
+14. Create empty `docs/framework/turn-counts.md` with template tables
+15. Extract shared boilerplate to `docs/framework/agent-boilerplate.md`
+16. Curate novel attack surface catalog → `docs/targets/hooks-and-handlers/artifacts/novel-attack-surface.md` — protocol-specific primitives: CLOB linked-list FIFO under concurrent partial fills, transient storage bridging across two tokens sharing a hook, GroupKey encoding as implicit access control, registry-to-hook sync as eventual consistency
+17. Write initial CLOB economic model → `docs/targets/hooks-and-handlers/artifacts/economic-model-clob.md` — fee structures, maker/executor incentive alignment, self-trade profitability framework
+18. Identify MEV-susceptible functions → `docs/targets/hooks-and-handlers/artifacts/mev-surface.md` — which functions are frontrunnable (CLOB fills, permit execution, directSwap)
+19. Run `mcp__slither__get_function_callers` on cross-boundary functions → `docs/targets/hooks-and-handlers/artifacts/cross-boundary-call-graph.md` — validateHandlerOrder, registryUpdateTokenSettings, ammHandleTransfer
+20. Group Guardian's 53 findings into dedup families → `docs/targets/hooks-and-handlers/artifacts/acknowledged-findings-families.md` — families: Missing Hook Callbacks, Flag-Dependent Enforcement Gaps, Settings Sync Inconsistency, Unsigned EIP-712 Fields
+21. Extract spec statements from NatSpec, README, audit report → `docs/targets/hooks-and-handlers/artifacts/spec-vs-code.md` — testable assertions with source location + code location + verification checkboxes
 22. Initialize Medusa config → `medusa.json` — run `medusa init` in project root, customize `testLimit`, `timeout`, `targetContracts` to point at `test/audit/fuzz/` contracts
 23. Create `test/audit/economic/` directory and verify Python venv works — `source .venv/bin/activate && python3 -c "import matplotlib, pandas, decimal; print('OK')"`
 
@@ -567,7 +567,7 @@ See any file in `docs/spawn-prompts/` for the actual format.
 
 ### Phases 1-5: Execution
 
-> **Canonical source:** `docs/execution-runbook.md` — step-by-step with checkboxes and copy-pasteable tool calls.
+> **Canonical source:** `docs/framework/execution-runbook.md` — step-by-step with checkboxes and copy-pasteable tool calls.
 
 Summary: Phase 1 (team setup + recon in plan mode) → Phase 2 (deep analysis after plan approval) → Phase 3 (PoC confirmation) → Phase 3.5 (red-team review) → Phase 4 (second pass with diverse models) → Phase 5 (report + teardown).
 
@@ -579,7 +579,7 @@ Each phase transition requires explicit criteria. The lead verifies these before
 
 | Transition | Gate Condition | Fallback |
 |-----------|---------------|----------|
-| Phase 0 → 1 | All 20 P0-ID artifacts exist (verify via `docs/artifacts/README.md`) | Generate missing artifacts before spawning |
+| Phase 0 → 1 | All 20 P0-ID artifacts exist (verify via `docs/targets/hooks-and-handlers/artifacts/README.md`) | Generate missing artifacts before spawning |
 | Phase 1 → 2 | All 4 auditors' plans approved via `plan_approval_response` | Redirect auditor with feedback, re-review |
 | Phase 2 → 3 | All 4 auditors completed OR lead determines diminishing returns (<2 new vectors in last 20 turns across all agents) | Send targeted message asking agent for status; if stuck, mark completed with partial coverage note |
 | Phase 3 → 3.5 | All forwarded findings have confirmed/denied PoC status | poc-writer continues; delay red-team spawn |
@@ -638,7 +638,7 @@ Metrics are captured **at the moment of availability**, not deferred to teardown
 
 #### Layer 1: Agent Self-Reporting (each agent, incremental)
 
-Every agent writes `docs/artifacts/agent-metrics-{name}.md` in its worktree as it works (see spawn prompt "Required: Write Findings to Disk Incrementally"). This captures:
+Every agent writes `docs/targets/hooks-and-handlers/artifacts/agent-metrics-{name}.md` in its worktree as it works (see spawn prompt "Required: Write Findings to Disk Incrementally"). This captures:
 - Findings confirmed/ruled out (with reasoning)
 - Files read, tools used
 - Self-assessed completeness (0-100%)
@@ -647,7 +647,7 @@ This file survives even if the agent hits context compaction or the lead forgets
 
 #### Layer 2: Lead Logs Platform Metrics (lead, on each agent completion)
 
-**When each agent completes (Task result returned), the lead IMMEDIATELY appends one row to `docs/artifacts/turn-counts.md`.** Do this BEFORE reading the agent's findings.
+**When each agent completes (Task result returned), the lead IMMEDIATELY appends one row to `docs/framework/turn-counts.md`.** Do this BEFORE reading the agent's findings.
 
 Task completion metadata includes `total_tokens`, `tool_uses`, `duration_ms`. Log them:
 
@@ -660,12 +660,12 @@ This is non-negotiable. The data is only available in the completion message —
 #### Layer 3: Teardown Gate (lead, Phase 4)
 
 Phase 4 teardown CANNOT proceed until:
-1. `docs/artifacts/turn-counts.md` has entries for ALL agents
+1. `docs/framework/turn-counts.md` has entries for ALL agents
 2. All `agent-metrics-{name}.md` files are collected from worktree branches
 
 If entries are missing, reconstruct from Task completion messages still in conversation.
 
-#### Template for `docs/artifacts/turn-counts.md`
+#### Template for `docs/framework/turn-counts.md`
 
 Created in Phase 0, Step 14. Pre-filled with agent names and empty columns:
 
@@ -705,8 +705,8 @@ Based on measurements: (fill after run)
 
 | What | Where | Lead Context Cost |
 |------|-------|-------------------|
-| All pre-computed artifacts (15+) | `docs/artifacts/` (on disk) | 0 — agents read them |
-| Agent boilerplate (tools, setup, anti-patterns) | `docs/artifacts/agent-boilerplate.md` (on disk) | 0 — agents read it |
+| All pre-computed artifacts (15+) | `docs/targets/{target}/artifacts/` (on disk) | 0 — agents read them |
+| Agent boilerplate (tools, setup, anti-patterns) | `docs/framework/agent-boilerplate.md` (on disk) | 0 — agents read it |
 | Audit findings | `memory/audit-findings.md` (on disk) | 0 — agents read it |
 | Attack vectors | This plan doc (on disk) | 0 — agents read it |
 | Codebase map | `docs/CODEBASE_MAP.md` (on disk) | 0 — agents read it |
@@ -719,5 +719,5 @@ Based on measurements: (fill after run)
 
 **Cache optimization**: Spawn prompts are ~50 lines each (domain + vectors only). The ~200 lines of shared boilerplate is on disk, not in prompt. The lead session benefits most from caching (longest-running) — all dynamic info arrives via messages, never via system prompt changes. See [Spawn Prompt Architecture](#spawn-prompt-architecture-cache-aware) for details.
 
-> **Post-execution verification checklist**: `docs/operational-checklist.md` — 35 items with cross-references to where each prevention is built into this design.
+> **Post-execution verification checklist**: `docs/framework/operational-checklist.md` — 35 items with cross-references to where each prevention is built into this design.
 

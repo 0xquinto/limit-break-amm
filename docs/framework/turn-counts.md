@@ -2,7 +2,7 @@
 
 > **ID:** P0-14 | **Updated:** 2026-03-09 | **Method:** retroactive extraction + schema upgrade
 > **Readers:** lead
-> **Machine-readable parallel:** `docs/artifacts/metrics.json`
+> **Machine-readable parallel:** `docs/framework/metrics.json`
 
 ## Platform Metrics
 
@@ -80,7 +80,7 @@ Based on v2 run measurements:
 
 ### 3-Layer Metric Collection
 
-1. **Layer 1 — Agent self-report**: Each agent writes `docs/artifacts/agent-metrics-{name}.md` with findings, ruled-out vectors, completeness %, and the **structured metrics block** (see agent-boilerplate.md).
+1. **Layer 1 — Agent self-report**: Each agent writes `docs/targets/{target}/artifacts/agent-metrics-{name}.md` with findings, ruled-out vectors, completeness %, and the **structured metrics block** (see agent-boilerplate.md).
 2. **Layer 2 — Lead logs on completion**: When an agent's Task returns, the completion message includes `total_tokens`, `tool_uses`, `duration_ms`. **Log these IMMEDIATELY, BEFORE reading findings.** Copy into Platform Metrics table AND `metrics.json`.
 3. **Layer 3 — Teardown gate**: Phase 5 cannot proceed until every row has ALL columns filled. N/R is only acceptable if the platform genuinely did not provide the data.
 

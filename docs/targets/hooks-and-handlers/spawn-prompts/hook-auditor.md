@@ -10,7 +10,7 @@ max_cost_usd: 8.00
 ---
 
 ## First Action (MANDATORY)
-Read `docs/artifacts/agent-boilerplate.md` for environment setup, tools, and anti-patterns.
+Read `docs/framework/agent-boilerplate.md` for environment setup, tools, and anti-patterns.
 Then read `docs/CODEBASE_MAP.md` for architecture context.
 
 ## Memory (read before investigating)
@@ -20,10 +20,10 @@ Then read `docs/CODEBASE_MAP.md` for architecture context.
 
 ## Your Domain
 - **Domain**: AMM swap/liquidity/pool enforcement, pricing bounds, fee calculation, transient storage
-- **Owned files**: `src/hooks/AMMStandardHook.sol`, `src/hooks/libraries/`, `src/hooks/DataTypes.sol`, `src/hooks/Errors.sol`, `src/hooks/interfaces/IAMMStandardHook.sol`
-- **Do NOT modify**: `src/hooks/CreatorHookSettingsRegistry.sol`, `src/handlers/`, `test/`, `lib/`
-- **Read-only access**: `../lbamm-core/` (sibling repo)
-- **Read also**: `docs/artifacts/access-control-matrix.md`, `docs/artifacts/token-flow.md`, `docs/artifacts/external-interfaces.md`, `docs/artifacts/slither-findings.md`, `docs/artifacts/aderyn-findings.md`, `docs/artifacts/dead-code.md`, `docs/artifacts/storage-layouts.md`, `docs/artifacts/coverage-gaps.md`, `docs/artifacts/call-graphs.md`, `docs/artifacts/known-vuln-patterns.md`, `docs/artifacts/remediation-diff.md`, `docs/artifacts/tool-guide.md`, `docs/artifacts/novel-attack-surface.md`, `docs/artifacts/acknowledged-findings-families.md`, `docs/artifacts/spec-vs-code.md`, `docs/artifacts/cross-boundary-call-graph.md`, `docs/CODEBASE_MAP.md`, `docs/artifacts/prior-findings.md` (if exists — prior run cross-pollination), `docs/memory/digest.md`, `docs/memory/false-positives.md` (grep, not full read), `docs/memory/confirmed-patterns.md`
+- **Owned files**: `lbamm-hooks-and-handlers/src/hooks/AMMStandardHook.sol`, `lbamm-hooks-and-handlers/src/hooks/libraries/`, `lbamm-hooks-and-handlers/src/hooks/DataTypes.sol`, `lbamm-hooks-and-handlers/src/hooks/Errors.sol`, `lbamm-hooks-and-handlers/src/hooks/interfaces/IAMMStandardHook.sol`
+- **Do NOT modify**: `lbamm-hooks-and-handlers/src/hooks/CreatorHookSettingsRegistry.sol`, `lbamm-hooks-and-handlers/src/handlers/`, `lbamm-hooks-and-handlers/test/`, `lib/`
+- **Read-only access**: `lbamm-core/` (sibling repo)
+- **Read also**: `docs/targets/hooks-and-handlers/artifacts/access-control-matrix.md`, `docs/targets/hooks-and-handlers/artifacts/token-flow.md`, `docs/targets/hooks-and-handlers/artifacts/external-interfaces.md`, `docs/targets/hooks-and-handlers/artifacts/slither-findings.md`, `docs/targets/hooks-and-handlers/artifacts/aderyn-findings.md`, `docs/targets/hooks-and-handlers/artifacts/dead-code.md`, `docs/targets/hooks-and-handlers/artifacts/storage-layouts.md`, `docs/targets/hooks-and-handlers/artifacts/coverage-gaps.md`, `docs/targets/hooks-and-handlers/artifacts/call-graphs.md`, `docs/framework/known-vuln-patterns.md`, `docs/targets/hooks-and-handlers/artifacts/remediation-diff.md`, `docs/framework/tool-guide.md`, `docs/targets/hooks-and-handlers/artifacts/novel-attack-surface.md`, `docs/targets/hooks-and-handlers/artifacts/acknowledged-findings-families.md`, `docs/targets/hooks-and-handlers/artifacts/spec-vs-code.md`, `docs/targets/hooks-and-handlers/artifacts/cross-boundary-call-graph.md`, `docs/CODEBASE_MAP.md`, `docs/targets/hooks-and-handlers/artifacts/prior-findings.md` (if exists — prior run cross-pollination), `docs/memory/digest.md`, `docs/memory/false-positives.md` (grep, not full read), `docs/memory/confirmed-patterns.md`
 - **Cross-boundary trace points**: `AMMModule.beforeSwap`/`afterSwap` call sites, `hookForInputToken` resolution
 
 ## Known Findings (do NOT re-report)
@@ -63,7 +63,7 @@ If you confirm 2+ findings, check if any two compound (e.g., bounds bypass + fee
 - Hook function selector conflicts or unexpected fallback behavior
 - Fee-on-swap accounting: can fees be double-counted or skipped?
 
-**Spec vs code:** Read `docs/artifacts/spec-vs-code.md`. Verify spec statements in your domain.
+**Spec vs code:** Read `docs/targets/hooks-and-handlers/artifacts/spec-vs-code.md`. Verify spec statements in your domain.
 
 ## Recommended Skills (invoke via Skill tool)
 - `audit-context-building:audit-context-building` — run FIRST to build deep architectural context
@@ -73,4 +73,4 @@ If you confirm 2+ findings, check if any two compound (e.g., bounds bypass + fee
 
 ## Shared Standards
 
-Deliverable format, severity rubric, exploitability tiers, proof sketch template, and incremental writing requirements are defined in `docs/artifacts/agent-boilerplate.md` (read as your first action).
+Deliverable format, severity rubric, exploitability tiers, proof sketch template, and incremental writing requirements are defined in `docs/framework/agent-boilerplate.md` (read as your first action).

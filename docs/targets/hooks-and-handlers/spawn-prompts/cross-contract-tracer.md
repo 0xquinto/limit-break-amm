@@ -9,9 +9,9 @@ max_cost_usd: 4.00
 ---
 
 ## First Action (MANDATORY)
-Read `docs/artifacts/agent-boilerplate.md` for environment setup, tools, and anti-patterns.
+Read `docs/framework/agent-boilerplate.md` for environment setup, tools, and anti-patterns.
 Then read `docs/CODEBASE_MAP.md` for architecture context.
-If `docs/artifacts/prior-findings.md` exists, read it for context from prior runs.
+If `docs/targets/hooks-and-handlers/artifacts/prior-findings.md` exists, read it for context from prior runs.
 
 ## Memory (read before investigating)
 - **Always read**: `docs/memory/digest.md` (200-token summary of all prior runs)
@@ -21,8 +21,8 @@ If `docs/artifacts/prior-findings.md` exists, read it for context from prior run
 ## Your Domain
 - **Domain**: End-to-end cross-boundary call chain tracing — trust assumptions, state flow, callback patterns, composability chains
 - **Owned files**: None (read-only across all repos)
-- **Read-only access**: All `src/` files, `../lbamm-core/` (sibling repo), `../secure-proxy/` (sibling repo)
-- **Read also**: `docs/artifacts/cross-boundary-call-graph.md` (PRIMARY — your work starts here), `docs/artifacts/access-control-matrix.md`, `docs/artifacts/token-flow.md`, `docs/artifacts/external-interfaces.md`, `docs/artifacts/call-graphs.md`, `docs/artifacts/known-vuln-patterns.md`, `docs/artifacts/novel-attack-surface.md`, `docs/artifacts/acknowledged-findings-families.md`, `docs/artifacts/spec-vs-code.md`, `docs/CODEBASE_MAP.md`, `docs/artifacts/prior-findings.md` (if exists — prior run cross-pollination), `docs/memory/digest.md`, `docs/memory/false-positives.md` (grep, not full read), `docs/memory/confirmed-patterns.md`
+- **Read-only access**: All `lbamm-hooks-and-handlers/src/` files, `lbamm-core/` (sibling repo), `secure-proxy/` (sibling repo)
+- **Read also**: `docs/targets/hooks-and-handlers/artifacts/cross-boundary-call-graph.md` (PRIMARY — your work starts here), `docs/targets/hooks-and-handlers/artifacts/access-control-matrix.md`, `docs/targets/hooks-and-handlers/artifacts/token-flow.md`, `docs/targets/hooks-and-handlers/artifacts/external-interfaces.md`, `docs/targets/hooks-and-handlers/artifacts/call-graphs.md`, `docs/framework/known-vuln-patterns.md`, `docs/targets/hooks-and-handlers/artifacts/novel-attack-surface.md`, `docs/targets/hooks-and-handlers/artifacts/acknowledged-findings-families.md`, `docs/targets/hooks-and-handlers/artifacts/spec-vs-code.md`, `docs/CODEBASE_MAP.md`, `docs/targets/hooks-and-handlers/artifacts/prior-findings.md` (if exists — prior run cross-pollination), `docs/memory/digest.md`, `docs/memory/false-positives.md` (grep, not full read), `docs/memory/confirmed-patterns.md`
 
 ## Methodology
 
@@ -90,10 +90,10 @@ You do NOT need domain auditor confirmation before reporting — report what you
 
 ## Shared Standards
 
-Deliverable format, severity rubric, exploitability tiers, proof sketch template, and incremental writing requirements are defined in `docs/artifacts/agent-boilerplate.md` (read as your first action).
+Deliverable format, severity rubric, exploitability tiers, proof sketch template, and incremental writing requirements are defined in `docs/framework/agent-boilerplate.md` (read as your first action).
 
 ## Required: Write Progress to Disk Incrementally
-As you work, write progress to `docs/artifacts/agent-metrics-cross-contract-tracer.md` in your worktree. Track:
+As you work, write progress to `docs/targets/hooks-and-handlers/artifacts/agent-metrics-cross-contract-tracer.md` in your worktree. Track:
 - Call chains traced (chain description, boundary count, verdict: safe/suspicious/finding)
 - Trust assumptions documented per boundary
 - Confirmed findings (with severity, location, description)

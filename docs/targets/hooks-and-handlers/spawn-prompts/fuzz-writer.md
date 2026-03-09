@@ -9,9 +9,9 @@ max_cost_usd: 10.00
 ---
 
 ## First Action (MANDATORY)
-Read `docs/artifacts/agent-boilerplate.md` for environment setup, tools, and anti-patterns.
+Read `docs/framework/agent-boilerplate.md` for environment setup, tools, and anti-patterns.
 Then read `docs/CODEBASE_MAP.md` for architecture context.
-If `docs/artifacts/prior-findings.md` exists, read it for context from prior runs.
+If `docs/targets/hooks-and-handlers/artifacts/prior-findings.md` exists, read it for context from prior runs.
 
 ## Memory (read before investigating)
 - **Always read**: `docs/memory/digest.md` (200-token summary of all prior runs)
@@ -20,8 +20,8 @@ If `docs/artifacts/prior-findings.md` exists, read it for context from prior run
 
 ## Your Domain
 - **Domain**: Foundry invariant tests, fuzz tests, and formal verification
-- **Owned files**: WRITE to `test/audit/fuzz/` only
-- **Read**: `test/HooksAndHandlersBase.t.sol` (test patterns), `docs/artifacts/order-lifecycle.md`, `docs/artifacts/token-flow.md`, `docs/artifacts/access-control-matrix.md`, `docs/artifacts/coverage-gaps.md`, `docs/artifacts/novel-attack-surface.md`, `docs/artifacts/cross-boundary-call-graph.md`, `docs/artifacts/acknowledged-findings-families.md`, `docs/artifacts/spec-vs-code.md`, `docs/artifacts/tool-guide.md`, `docs/CODEBASE_MAP.md`, `docs/memory/digest.md`, `docs/memory/false-positives.md` (grep, not full read), `docs/memory/confirmed-patterns.md`, all `src/` files
+- **Owned files**: WRITE to `lbamm-hooks-and-handlers/test/audit/fuzz/` only
+- **Read**: `lbamm-hooks-and-handlers/test/HooksAndHandlersBase.t.sol` (test patterns), `docs/targets/hooks-and-handlers/artifacts/order-lifecycle.md`, `docs/targets/hooks-and-handlers/artifacts/token-flow.md`, `docs/targets/hooks-and-handlers/artifacts/access-control-matrix.md`, `docs/targets/hooks-and-handlers/artifacts/coverage-gaps.md`, `docs/targets/hooks-and-handlers/artifacts/novel-attack-surface.md`, `docs/targets/hooks-and-handlers/artifacts/cross-boundary-call-graph.md`, `docs/targets/hooks-and-handlers/artifacts/acknowledged-findings-families.md`, `docs/targets/hooks-and-handlers/artifacts/spec-vs-code.md`, `docs/framework/tool-guide.md`, `docs/CODEBASE_MAP.md`, `docs/memory/digest.md`, `docs/memory/false-positives.md` (grep, not full read), `docs/memory/confirmed-patterns.md`, all `lbamm-hooks-and-handlers/src/` files
 
 ## Tools
 - **Forge** (fuzz): `forge test --match-contract <Contract> -vvv`
@@ -45,18 +45,18 @@ If `docs/artifacts/prior-findings.md` exists, read it for context from prior run
 | Permit handler | 0 | 5 | nonce handling, partial fill amounts, fee-on-top bounds |
 
 ## New Test Files
-- `test/audit/fuzz/CLOBHelperExtendedFuzzTest.t.sol` (14 new tests)
-- `test/audit/fuzz/SqrtPriceCalculatorFuzzTest.t.sol` (6 new tests)
-- `test/audit/fuzz/CLOBStateMachineFuzzTest.t.sol` (10 new tests — invariant/stateful)
-- `test/audit/fuzz/HookEnforcementFuzzTest.t.sol` (5 new tests)
-- `test/audit/fuzz/SettingsSyncFuzzTest.t.sol` (4 new tests)
-- `test/audit/fuzz/PermitHandlerFuzzTest.t.sol` (5 new tests)
+- `lbamm-hooks-and-handlers/test/audit/fuzz/CLOBHelperExtendedFuzzTest.t.sol` (14 new tests)
+- `lbamm-hooks-and-handlers/test/audit/fuzz/SqrtPriceCalculatorFuzzTest.t.sol` (6 new tests)
+- `lbamm-hooks-and-handlers/test/audit/fuzz/CLOBStateMachineFuzzTest.t.sol` (10 new tests — invariant/stateful)
+- `lbamm-hooks-and-handlers/test/audit/fuzz/HookEnforcementFuzzTest.t.sol` (5 new tests)
+- `lbamm-hooks-and-handlers/test/audit/fuzz/SettingsSyncFuzzTest.t.sol` (4 new tests)
+- `lbamm-hooks-and-handlers/test/audit/fuzz/PermitHandlerFuzzTest.t.sol` (5 new tests)
 
 ## Settings Sync Invariant Harness
 Stateful invariant test with handlers for `setTokenSettings`, `setPricingBounds`, `syncToHook`, `skipSync`, `executeSwap`. Invariant: hook enforcement always matches registry intent.
 
 ## Adversarial Timing Tests
-`test/audit/fuzz/AdversarialTimingTest.t.sol` — race conditions (settings update during swap), partial sync (settings synced but bounds not), hook eviction (re-fetch from registry), concurrent multi-token updates.
+`lbamm-hooks-and-handlers/test/audit/fuzz/AdversarialTimingTest.t.sol` — race conditions (settings update during swap), partial sync (settings synced but bounds not), hook eviction (re-fetch from registry), concurrent multi-token updates.
 
 ## Invariant Targets
 - **CLOB balance invariant**: `sum(makerBalances[token]) <= token.balanceOf(handler)` for every token
@@ -90,7 +90,7 @@ Optional: Only use if a specific property needs ALL-input proof.
 
 ## Deliverable
 
-`test/audit/fuzz/` with runnable invariant, fuzz, and symbolic tests. All tests must compile and pass with `forge test --match-path test/audit/fuzz/ -vvv`.
+`lbamm-hooks-and-handlers/test/audit/fuzz/` with runnable invariant, fuzz, and symbolic tests. All tests must compile and pass with `forge test --match-path test/audit/fuzz/ -vvv`.
 
 ### If an invariant violation is found
 
@@ -98,7 +98,7 @@ IMMEDIATELY SendMessage to lead using this template:
 
 ```
 **VIOLATION:** [invariant name — e.g., "CLOB balance invariant"]
-**Test:** `test/audit/fuzz/[File].t.sol::[test_name]`
+**Test:** `lbamm-hooks-and-handlers/test/audit/fuzz/[File].t.sol::[test_name]`
 **Input:** [the failing input or call sequence]
 **Expected:** [what the invariant asserts]
 **Actual:** [what happened]
@@ -110,7 +110,7 @@ Do NOT wait until you finish all tests — violations are highest priority.
 
 ## Required: Write Progress to Disk Incrementally
 
-As you work, write progress to `docs/artifacts/agent-metrics-fuzz-writer.md` in your worktree. Track:
+As you work, write progress to `docs/targets/hooks-and-handlers/artifacts/agent-metrics-fuzz-writer.md` in your worktree. Track:
 - Tests written (file, count, pass/fail)
 - Invariants violated (use template above, also log here)
 - Coverage improvements

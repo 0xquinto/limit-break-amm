@@ -9,9 +9,9 @@ max_cost_usd: 5.00
 ---
 
 ## First Action (MANDATORY)
-Read `docs/artifacts/agent-boilerplate.md` for environment setup, tools, and anti-patterns.
+Read `docs/framework/agent-boilerplate.md` for environment setup, tools, and anti-patterns.
 Then read `docs/CODEBASE_MAP.md` for architecture context.
-If `docs/artifacts/prior-findings.md` exists, read it for context from prior runs.
+If `docs/targets/hooks-and-handlers/artifacts/prior-findings.md` exists, read it for context from prior runs.
 
 ## Memory (read before investigating)
 - **Always read**: `docs/memory/digest.md` (200-token summary of all prior runs)
@@ -20,8 +20,8 @@ If `docs/artifacts/prior-findings.md` exists, read it for context from prior run
 
 ## Your Domain
 - **Domain**: Economic/game-theoretic modeling of protocol incentives — MEV, wash trading, fee abuse
-- **Owned files**: WRITE to `test/audit/economic/` only
-- **Read**: `docs/artifacts/economic-model-clob.md`, `docs/artifacts/mev-surface.md`, `docs/artifacts/novel-attack-surface.md`, `docs/artifacts/cross-boundary-call-graph.md`, `docs/artifacts/acknowledged-findings-families.md`, `docs/artifacts/spec-vs-code.md`, `src/handlers/clob/CLOBHelper.sol` (fee math), `src/handlers/clob/CLOBTransferHandler.sol` (fill logic), `src/hooks/AMMStandardHook.sol` (fee enforcement), `docs/artifacts/tool-guide.md`, `docs/CODEBASE_MAP.md`, `docs/memory/digest.md`, `docs/memory/false-positives.md` (grep, not full read), `docs/memory/confirmed-patterns.md`, all `src/` files
+- **Owned files**: WRITE to `lbamm-hooks-and-handlers/test/audit/economic/` only
+- **Read**: `docs/targets/hooks-and-handlers/artifacts/economic-model-clob.md`, `docs/targets/hooks-and-handlers/artifacts/mev-surface.md`, `docs/targets/hooks-and-handlers/artifacts/novel-attack-surface.md`, `docs/targets/hooks-and-handlers/artifacts/cross-boundary-call-graph.md`, `docs/targets/hooks-and-handlers/artifacts/acknowledged-findings-families.md`, `docs/targets/hooks-and-handlers/artifacts/spec-vs-code.md`, `lbamm-hooks-and-handlers/src/handlers/clob/CLOBHelper.sol` (fee math), `lbamm-hooks-and-handlers/src/handlers/clob/CLOBTransferHandler.sol` (fill logic), `lbamm-hooks-and-handlers/src/hooks/AMMStandardHook.sol` (fee enforcement), `docs/framework/tool-guide.md`, `docs/CODEBASE_MAP.md`, `docs/memory/digest.md`, `docs/memory/false-positives.md` (grep, not full read), `docs/memory/confirmed-patterns.md`, all `lbamm-hooks-and-handlers/src/` files
 
 ## Tools
 - **Python**: Run `source .venv/bin/activate` first — provides `matplotlib`, `pandas`, `decimal`
@@ -49,7 +49,7 @@ For each economic analysis, SendMessage to lead using this template:
 **Attacker profit:** [amount] [token symbol] per [unit — e.g., "per trade", "per block"]
 **Victim loss:** [amount] [token symbol] — [who loses: LPs / makers / token creators]
 **Prerequisites:** [fee config, pool state, or other conditions]
-**Script:** `test/audit/economic/[filename].py`
+**Script:** `lbamm-hooks-and-handlers/test/audit/economic/[filename].py`
 **Severity recommendation:** Critical / High / Medium / Low
 
 **Closest known finding:** [finding ID or "none"]
@@ -62,7 +62,7 @@ For each economic analysis, SendMessage to lead using this template:
 - Do NOT assume fee parameters — read them from the code.
 
 ## Required: Write Progress to Disk Incrementally
-As you work, write progress to `docs/artifacts/agent-metrics-economic-analyst.md` in your worktree. Track:
+As you work, write progress to `docs/targets/hooks-and-handlers/artifacts/agent-metrics-economic-analyst.md` in your worktree. Track:
 - Models analyzed (name, profitable yes/no, summary)
 - Python scripts written (path, purpose)
 - Self-assessed completeness (0-100% of analysis tasks)

@@ -10,7 +10,7 @@ max_cost_usd: 8.00
 ---
 
 ## First Action (MANDATORY)
-Read `docs/artifacts/agent-boilerplate.md` for environment setup, tools, and anti-patterns.
+Read `docs/framework/agent-boilerplate.md` for environment setup, tools, and anti-patterns.
 Then read `docs/CODEBASE_MAP.md` for architecture context.
 
 ## Memory (read before investigating)
@@ -20,10 +20,10 @@ Then read `docs/CODEBASE_MAP.md` for architecture context.
 
 ## Your Domain
 - **Domain**: CLOB orderbook lifecycle — deposits, orders, fills, withdrawals, virtual balances
-- **Owned files**: `src/handlers/clob/` (all files)
-- **Do NOT modify**: `src/handlers/permit/`, `src/hooks/`, `test/`, `lib/`
-- **Read-only access**: `../lbamm-core/` (sibling repo, for cross-boundary analysis)
-- **Read also**: `docs/artifacts/access-control-matrix.md`, `docs/artifacts/order-lifecycle.md`, `docs/artifacts/token-flow.md`, `docs/artifacts/external-interfaces.md`, `docs/artifacts/slither-findings.md`, `docs/artifacts/aderyn-findings.md`, `docs/artifacts/dead-code.md`, `docs/artifacts/storage-layouts.md`, `docs/artifacts/coverage-gaps.md`, `docs/artifacts/call-graphs.md`, `docs/artifacts/known-vuln-patterns.md`, `docs/artifacts/remediation-diff.md`, `docs/artifacts/tool-guide.md`, `docs/artifacts/novel-attack-surface.md`, `docs/artifacts/economic-model-clob.md`, `docs/artifacts/mev-surface.md`, `docs/artifacts/acknowledged-findings-families.md`, `docs/artifacts/spec-vs-code.md`, `docs/artifacts/cross-boundary-call-graph.md`, `docs/CODEBASE_MAP.md`, `docs/artifacts/prior-findings.md` (if exists — prior run cross-pollination), `docs/memory/digest.md`, `docs/memory/false-positives.md` (grep, not full read), `docs/memory/confirmed-patterns.md`
+- **Owned files**: `lbamm-hooks-and-handlers/src/handlers/clob/` (all files)
+- **Do NOT modify**: `lbamm-hooks-and-handlers/src/handlers/permit/`, `lbamm-hooks-and-handlers/src/hooks/`, `lbamm-hooks-and-handlers/test/`, `lib/`
+- **Read-only access**: `lbamm-core/` (sibling repo, for cross-boundary analysis)
+- **Read also**: `docs/targets/hooks-and-handlers/artifacts/access-control-matrix.md`, `docs/targets/hooks-and-handlers/artifacts/order-lifecycle.md`, `docs/targets/hooks-and-handlers/artifacts/token-flow.md`, `docs/targets/hooks-and-handlers/artifacts/external-interfaces.md`, `docs/targets/hooks-and-handlers/artifacts/slither-findings.md`, `docs/targets/hooks-and-handlers/artifacts/aderyn-findings.md`, `docs/targets/hooks-and-handlers/artifacts/dead-code.md`, `docs/targets/hooks-and-handlers/artifacts/storage-layouts.md`, `docs/targets/hooks-and-handlers/artifacts/coverage-gaps.md`, `docs/targets/hooks-and-handlers/artifacts/call-graphs.md`, `docs/framework/known-vuln-patterns.md`, `docs/targets/hooks-and-handlers/artifacts/remediation-diff.md`, `docs/framework/tool-guide.md`, `docs/targets/hooks-and-handlers/artifacts/novel-attack-surface.md`, `docs/targets/hooks-and-handlers/artifacts/economic-model-clob.md`, `docs/targets/hooks-and-handlers/artifacts/mev-surface.md`, `docs/targets/hooks-and-handlers/artifacts/acknowledged-findings-families.md`, `docs/targets/hooks-and-handlers/artifacts/spec-vs-code.md`, `docs/targets/hooks-and-handlers/artifacts/cross-boundary-call-graph.md`, `docs/CODEBASE_MAP.md`, `docs/targets/hooks-and-handlers/artifacts/prior-findings.md` (if exists — prior run cross-pollination), `docs/memory/digest.md`, `docs/memory/false-positives.md` (grep, not full read), `docs/memory/confirmed-patterns.md`
 - **Cross-boundary trace points**: `AMMModule.ammHandleTransfer` call site, `AMMModule._settleTransfer`
 
 ## Known Findings (do NOT re-report)
@@ -67,16 +67,16 @@ If you confirm 2+ findings, check if any two compound (e.g., bounds bypass + fee
 - Order cancellation race conditions with concurrent fills
 - calculateInversePrice edge cases (zero, overflow, max values)
 
-**State machine verification:** Use the formal state machine in `docs/artifacts/order-lifecycle.md` to systematically verify every transition. For each transition, confirm: (a) preconditions are checked, (b) postconditions hold, (c) no invalid transitions are possible.
+**State machine verification:** Use the formal state machine in `docs/targets/hooks-and-handlers/artifacts/order-lifecycle.md` to systematically verify every transition. For each transition, confirm: (a) preconditions are checked, (b) postconditions hold, (c) no invalid transitions are possible.
 
-**Spec vs code:** Read `docs/artifacts/spec-vs-code.md`. For each spec statement in your domain, verify whether the code actually implements what the spec says. Report any contradiction as a finding.
+**Spec vs code:** Read `docs/targets/hooks-and-handlers/artifacts/spec-vs-code.md`. For each spec statement in your domain, verify whether the code actually implements what the spec says. Report any contradiction as a finding.
 
 ## Recommended Skills (invoke via Skill tool)
 - `audit-context-building:audit-context-building` — run FIRST to build deep architectural context
 - `entry-point-analyzer:entry-point-analyzer` — map all state-changing entry points in your module
-- `spec-to-code-compliance:spec-to-code-compliance` — verify code matches spec (use with `docs/artifacts/spec-vs-code.md`)
+- `spec-to-code-compliance:spec-to-code-compliance` — verify code matches spec (use with `docs/targets/hooks-and-handlers/artifacts/spec-vs-code.md`)
 - `variant-analysis:variant-analysis` — after finding a vulnerability, search for similar patterns
 
 ## Shared Standards
 
-Deliverable format, severity rubric, exploitability tiers, proof sketch template, and incremental writing requirements are defined in `docs/artifacts/agent-boilerplate.md` (read as your first action).
+Deliverable format, severity rubric, exploitability tiers, proof sketch template, and incremental writing requirements are defined in `docs/framework/agent-boilerplate.md` (read as your first action).

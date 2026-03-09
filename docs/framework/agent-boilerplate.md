@@ -6,27 +6,20 @@
 ## Environment
 
 - **Stack**: Solidity 0.8.24, Foundry, cancun EVM (transient storage), PermitC (EIP-712), Creator Token Standards
-- **Project path**: `/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-hooks-and-handlers`
-- **Sibling repos**: `../lbamm-core/`, `../secure-proxy/` (required for compilation, not editable)
+- **Project root**: `/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm` (parent — all repos are siblings)
+- **Target repos**: `lbamm-hooks-and-handlers/`, `lbamm-core/`, `secure-proxy/` (siblings at root level)
 - **Compiler**: solc 0.8.24 via Foundry
 - **EVM target**: cancun (transient storage opcodes available)
 
 ## Worktree Setup
 
-When spawned with `isolation: worktree`, your worktree will be at `.claude/worktrees/<name>/`. Git submodules and sibling repos are NOT automatically available. You MUST run these steps in order:
+When spawned with `isolation: worktree`, your worktree will be at `.claude/worktrees/<name>/`. The parent framework repo worktree won't have the target repos. You MUST:
 
-1. Initialize git submodules (worktrees share `.git` but not working tree content):
-   ```bash
-   git submodule update --init --recursive
-   ```
-2. Create symlinks to sibling repos:
-   ```bash
-   ln -s /Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-core ./lbamm-core
-   ln -s /Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/secure-proxy ./secure-proxy
-   ```
-3. Verify compilation: `forge build --skip test script 2>&1 | tail -5`
+1. Verify target repos are accessible from parent: `ls lbamm-hooks-and-handlers/src/ lbamm-core/src/`
+2. Build tools run inside target repos: `cd lbamm-hooks-and-handlers && forge build --skip test script 2>&1 | tail -5`
 
-If `forge build` fails with missing imports, check submodules (`ls lib/forge-std/src/`) and symlinks (`ls -la lbamm-core`) first.
+> **Note:** All target repos are siblings in the parent directory. No symlinks needed.
+> Solidity imports resolve via `remappings.txt` in each target repo.
 
 ## Tools Available
 
@@ -89,7 +82,7 @@ Your spawn prompt header specifies `max_turns` and `max_cost_usd`. Self-monitor:
 
 ### Structured Log Events
 
-Write a JSONL log file at `docs/artifacts/agent-log-{your-name}.jsonl` (create `docs/artifacts/` if needed). Append one JSON line per event:
+Write a JSONL log file at `docs/targets/{target}/artifacts/agent-log-{your-name}.jsonl` (create dir if needed). Append one JSON line per event:
 
 **SESSION_START** (first turn):
 ```json
@@ -126,7 +119,7 @@ Do NOT:
 - Spend more than 2 turns on standard reentrancy/overflow/access-control checks that Slither already covers
 - Hold all findings in conversation memory — write to disk incrementally (context compaction loses intermediate work)
 - Use `git` commands that modify the main repo from a worktree
-- Skip reading `docs/artifacts/agent-boilerplate.md` and `docs/CODEBASE_MAP.md` as your first action
+- Skip reading `docs/framework/agent-boilerplate.md` and `docs/CODEBASE_MAP.md` as your first action
 - Serial-read artifacts one at a time — issue ALL Read calls for your assigned artifacts in parallel on your first turn (compute offsets, batch reads). 15+ sequential reads wastes turns.
 - Submit a finding without checking the "Closest known finding" field — duplicates waste lead time
 - Classify a Tier B finding (requires custom handler) as High/Critical — cap at Medium
@@ -220,7 +213,7 @@ Class B and C vectors will be re-examined by the red-team agent.
 
 ## Required: Write Findings to Disk Incrementally
 
-As you work, write findings and ruled-out vectors to `docs/artifacts/agent-metrics-{your-name}.md` in your worktree. The `docs/artifacts/` directory may not exist in your worktree — create it first: `mkdir -p docs/artifacts`. Do NOT hold everything in conversation — context compaction can lose intermediate work.
+As you work, write findings and ruled-out vectors to `docs/targets/{target}/artifacts/agent-metrics-{your-name}.md` in your worktree. The directory may not exist — create it first: `mkdir -p docs/targets/{target}/artifacts`. Do NOT hold everything in conversation — context compaction can lose intermediate work.
 
 Include:
 - Confirmed findings (with severity, location, description)
