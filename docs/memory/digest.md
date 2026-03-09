@@ -1,0 +1,23 @@
+# Audit Memory Digest
+
+> Injected into all agent prompts. ~200 tokens. Updated after each run.
+> Full entries: `docs/memory/false-positives.md` | `docs/memory/confirmed-patterns.md`
+
+## Key Numbers (cumulative through v2)
+- **5 confirmed findings** (all Low): 3 from v1, 2 from v2
+- **85+ vectors ruled out** with documented reasoning
+- **86 fuzz tests**, 0 invariant violations
+- **5 economic models**, 0 profitable exploits
+- **7 remediations verified** from prior audit
+
+## Top False-Positive Patterns (don't re-investigate)
+1. **Transient storage slot overwrite** — by-design (AMM calls beforeSwap per-token, second overwrites first intentionally)
+2. **Hook flag checks handled upstream** — AMM validates flag compatibility at pool creation
+3. **PermitC handles replay/nonce** — bitmap nonces, cosigner validation chain, cumulative tracking
+4. **Self-inflicted config errors** — fee BPS, pricing bounds, whitelist settings = caller-controlled
+5. **Reentrancy with nonReentrant** — all CLOB entry points guarded
+
+## Top Lessons
+- `mode: plan` causes 5x resubmission loops — spawn without it for <500 LOC modules
+- Agent self-report metrics more reliable than platform metrics
+- Phase 4 (second pass) adds diminishing returns when Phase 1-2 coverage >85%
