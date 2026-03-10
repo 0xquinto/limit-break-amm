@@ -155,10 +155,122 @@ WAVE_1 = WaveConfig(
 WAVE_2_TEMPLATE = WaveConfig(
     number=2,
     name="deep-top-hotspots",
-    dynamic=True,
+    dynamic=False,  # Now fully defined
     agents=[
-        # Placeholder — populated by synthesizer after wave 1
-        # Expected: 4 agents targeting top hot spots (role="auditor")
+        AgentConfig(
+            name="deep-core-reentrancy",
+            role="auditor",
+            template="deep-agent",
+            scope=["lbamm-core"],
+            model="sonnet",
+            max_turns=30,
+            max_cost_usd=5.0,
+            extra_context={
+                "focus_findings": ["CORE-002", "CORE-001", "CORE-005"],
+                "focus_hotspots": [
+                    "_executeQueuedHookFeesByHookTransfers",
+                    "_finalizeSwapCollectFundsAndDisburse",
+                    "_depositWrappedNativeAndRefundExcess",
+                ],
+                "investigation_notes": (
+                    "CORE-002 is highest priority: verify _setReentrancyFlags(NO_FLAGS) "
+                    "at line 3190 allows re-entry during hook fee distribution loop. "
+                    "CORE-001: verify nonReentrantWithFlags actually blocks re-entry "
+                    "at the ETH refund point (our review says yes, but confirm). "
+                    "CORE-005: trace transfer handler callback ordering end-to-end."
+                ),
+            },
+        ),
+        AgentConfig(
+            name="deep-precision-overflow",
+            role="auditor",
+            template="deep-agent",
+            scope=["lbamm-pool-type-fixed", "lbamm-hooks-and-handlers"],
+            model="sonnet",
+            max_turns=30,
+            max_cost_usd=5.0,
+            extra_context={
+                "focus_findings": ["HOOK-007", "FIX-009", "FIX-013"],
+                "focus_hotspots": [
+                    "computeRatioX96",
+                    "validateHandlerOrder",
+                    "withdrawLiquidity",
+                    "_splitAmountsAndFeesByHeight",
+                ],
+                "investigation_notes": (
+                    "HOOK-007 CONFIRMED: validateHandlerOrder at line 215 does NOT check "
+                    "for computeRatioX96 returning 0 on overflow. _validatePricingBounds "
+                    "at line 847 DOES check. Verify exploitability and write PoC sketch. "
+                    "FIX-009 CONFIRMED: bitwise OR precedence bug — verify unchecked "
+                    "subtraction at line 74 actually underflows with concrete inputs. "
+                    "FIX-013: fuzz _splitAmountsAndFeesByHeight with extreme heights."
+                ),
+                "contradiction_note": (
+                    "recon-pools ruled out computeRatioX96 zero-return (RO-P5) but "
+                    "recon-hooks found it exploitable (HOOK-007). RO-P5 is WRONG — "
+                    "only one of two callers has the zero-check."
+                ),
+            },
+        ),
+        AgentConfig(
+            name="deep-cross-boundary",
+            role="auditor",
+            template="deep-agent",
+            scope=["lbamm-pool-type-single-provider", "lbamm-core",
+                   "lbamm-hooks-and-handlers"],
+            model="sonnet",
+            max_turns=30,
+            max_cost_usd=5.0,
+            extra_context={
+                "focus_findings": ["SP-004", "CORE-006", "HOOK-012"],
+                "focus_hotspots": [
+                    "SingleProviderPoolType.swapByInput",
+                    "CLOBTransferHandler.afterSwapRefund",
+                ],
+                "investigation_notes": (
+                    "SP-004/CORE-006: 3-hop call chain core -> pool type -> hook -> price. "
+                    "Hook is set by pool creator (not arbitrary). Verify if pool creator "
+                    "can set a malicious hook to manipulate prices for OTHER users' swaps. "
+                    "HOOK-012: afterSwapRefund lacks nonReentrant. Verify AMM guard state "
+                    "at the point afterSwapRefund is called. If AMM guard is cleared "
+                    "(per CORE-002), this compounds."
+                ),
+                "key_correction": (
+                    "Pool types are called via EXTERNAL call from AMMModule, NOT delegatecall. "
+                    "msg.sender in pool type = LimitBreakAMM diamond proxy address."
+                ),
+            },
+        ),
+        AgentConfig(
+            name="deep-regression-coverage",
+            role="auditor",
+            template="deep-agent",
+            scope=["lbamm-hooks-and-handlers", "lbamm-core"],
+            model="sonnet",
+            max_turns=30,
+            max_cost_usd=5.0,
+            extra_context={
+                "focus_findings": [],
+                "regression_cases": [
+                    "REG-001: sqrtPriceX96==0 bypass in CLOBTransferHandler._enforceTokenHooks",
+                    "REG-002: Pricing bypass via direct handler call in CLOBTransferHandler.executeSwap",
+                    "REG-003: setTokenSettings sync gap in CLOBTransferHandler.setTokenSettings",
+                    "REG-004: Transient storage not cleared for direct swap input in AMMHooksTransferHandler.beforeSwap",
+                ],
+                "coverage_gaps": [
+                    "PermitC integration — EIP-712 signature validation, nonce handling",
+                    "Batch swap ordering — multiSwap vs singleSwap path differences",
+                    "Pool creation / initialization — createPool, initializePool flows",
+                    "CLOB fill path — partial fill desync, self-trade prevention",
+                ],
+                "investigation_notes": (
+                    "PRIMARY GOAL: Re-confirm all 4 regression cases from v1/v2 audits. "
+                    "These are known bugs that MUST be found by the system. "
+                    "SECONDARY: Investigate coverage gaps that wave 1 recon missed entirely. "
+                    "PermitC and batch swap paths were not touched by any wave 1 agent."
+                ),
+            },
+        ),
     ],
 )
 
