@@ -144,7 +144,7 @@ def build_memory_block(agent_role: str) -> str:
 ### Known False Positives for {agent_role} ({len(scoped_fps)} entries)
 {fp_text}
 
-> Full entries: `docs/memory/false-positives.md` — grep for details if partial match.
+> Full entries: `docs/audit_memory/false-positives.md` — grep for details if partial match.
 
 ### Confirmed Patterns (look for variants)
 {patterns}
@@ -188,7 +188,9 @@ def render_prompt(agent: AgentConfig, wave: WaveConfig, prior_synthesis: str | N
     prompt = prompt.replace("{{WAVE_NUMBER}}", str(wave.number))
     prompt = prompt.replace("{{SCOPE_REPOS}}", scope_text)
     prompt = prompt.replace("{{PHASE0_ARTIFACTS}}", "\n".join(f"- `{r}`" for r in phase0_refs))
-    prompt = prompt.replace("{{OUTPUT_FILE}}", f"docs/targets/full-system/artifacts/wave{wave.number}-{agent.name}.md")
+    output_dir = f"docs/targets/full-system/artifacts/wave{wave.number}-{agent.name}"
+    prompt = prompt.replace("{{OUTPUT_FILE}}", f"{output_dir}/report.md")
+    prompt = prompt.replace("{{FINDINGS_JSON}}", f"{output_dir}/findings.json")
 
     # Inject prior synthesis if available
     if prior_synthesis:

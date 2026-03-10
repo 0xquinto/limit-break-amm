@@ -59,6 +59,7 @@ async def run_agent(agent: AgentConfig, prompt: str) -> AgentResult:
     output_text = ""
     safety_events: list[dict] = []
     history_hashes: list[int] = []
+    transcript: list[dict] = []  # full conversation log for reproducibility
     stop_reason = "completed"
 
     async with ClaudeSDKClient(options=options) as client:
@@ -71,6 +72,13 @@ async def run_agent(agent: AgentConfig, prompt: str) -> AgentResult:
                     if isinstance(block, TextBlock):
                         chunk += block.text
                 output_text += chunk
+
+                # Log to transcript
+                transcript.append({
+                    "role": "assistant",
+                    "ts": datetime.now(timezone.utc).isoformat(),
+                    "text": chunk[:5000],  # cap per-message size
+                })
 
                 # Loop detection — hash last N output chunks (scaffold §1)
                 output_hash = hash(chunk[:LOOP_HASH_LENGTH])
@@ -91,6 +99,14 @@ async def run_agent(agent: AgentConfig, prompt: str) -> AgentResult:
 
     if result_msg is None and stop_reason == "completed":
         raise RuntimeError(f"Agent {agent.name} did not return a ResultMessage")
+
+    # Save full transcript for reproducibility debugging
+    transcript_dir = ARTIFACTS_DIR / f"wave{agent.extra_context.get('_wave_number', 0)}-{agent.name}"
+    transcript_dir.mkdir(parents=True, exist_ok=True)
+    transcript_path = transcript_dir / "transcript.jsonl"
+    with open(transcript_path, "w") as f:
+        for entry in transcript:
+            f.write(json.dumps(entry) + "\n")
 
     return AgentResult(
         name=agent.name,

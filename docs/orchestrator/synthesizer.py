@@ -1,11 +1,16 @@
-"""Reads agent artifacts after a wave, aggregates JSONL logs, generates synthesis
-with structured evaluation metrics (gap research §2 + scaffold §6)."""
+"""Reads agent JSON sidecars after a wave, scores hotspots deterministically,
+deduplicates findings, and generates synthesis documents.
+
+Replaces markdown parsing with structured JSON reads (scaffold §6 + gap 2).
+"""
 
 import json
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .config import WaveConfig, ARTIFACTS_DIR, RESULTS_DIR
+from .config import WaveConfig, ARTIFACTS_DIR, RESULTS_DIR, PHASE0_DIR
+from .schema import load_and_validate
 from .wave_runner import AgentResult
 
 # Model pricing (March 2026) — used for cost calculation
@@ -15,6 +20,159 @@ MODEL_PRICING = {
     "haiku":  {"input":  0.8 / 1_000_000, "output":  4.0 / 1_000_000},
 }
 
+# Weights for deterministic hotspot scoring (no LLM involved)
+SCORING_WEIGHTS = {
+    "static_hits": 2.0,       # Slither/Aderyn findings in this area
+    "cross_boundary": 3.0,    # involves multiple repos
+    "agent_score": 1.0,       # agent-assigned score (0-10)
+    "value_flow": 2.5,        # touches token transfers, fees, balances
+    "agent_consensus": 4.0,   # multiple agents flagged same area
+}
+
+VALUE_FLOW_KEYWORDS = {"transfer", "safetransfer", "mint", "burn", "fee",
+                       "balance", "amount", "disburse", "collect", "swap"}
+
+# Repo prefix mapping for canonical finding IDs
+REPO_PREFIXES = {
+    "lbamm-core": "CORE",
+    "amm-pool-type-dynamic": "DYN",
+    "lbamm-pool-type-fixed": "FIX",
+    "lbamm-pool-type-single-provider": "SP",
+    "lbamm-hooks-and-handlers": "HOOK",
+    "secure-proxy": "PROXY",
+}
+
+
+# --- JSON sidecar collection ---
+
+def collect_json_sidecars(wave: WaveConfig) -> list[dict]:
+    """Read all findings.json sidecars for a wave."""
+    sidecars = []
+    for agent in wave.agents:
+        path = ARTIFACTS_DIR / f"wave{wave.number}-{agent.name}" / "findings.json"
+        data, errors = load_and_validate(path)
+        if errors:
+            print(f"  WARNING: {agent.name} sidecar invalid: {errors}")
+            continue
+        if data:
+            # Tag each finding with source agent
+            for f in data.get("findings", []):
+                f["_source_agent"] = agent.name
+            for f in data.get("ruled_out_vectors", []):
+                f["_source_agent"] = agent.name
+            sidecars.append(data)
+    return sidecars
+
+
+# --- Deterministic hotspot scoring ---
+
+def score_hotspot(h: dict, all_hotspots: list[dict], phase0_hits: dict[str, int]) -> float:
+    """Mechanically score a hotspot. No LLM involved."""
+    score = 0.0
+
+    # Static analysis hits for this contract
+    contract = h.get("contract", "")
+    score += phase0_hits.get(contract, 0) * SCORING_WEIGHTS["static_hits"]
+
+    # Cross-boundary bonus
+    if h.get("cross_boundary"):
+        score += SCORING_WEIGHTS["cross_boundary"]
+
+    # Agent-assigned score
+    score += h.get("score", 0) * SCORING_WEIGHTS["agent_score"]
+
+    # Value flow heuristic (keyword match in function/reason)
+    text = f"{h.get('function', '')} {h.get('reason', '')}".lower()
+    if any(kw in text for kw in VALUE_FLOW_KEYWORDS):
+        score += SCORING_WEIGHTS["value_flow"]
+
+    # Consensus: how many agents flagged the same contract+function
+    key = (h.get("contract"), h.get("function"))
+    consensus_count = sum(
+        1 for oh in all_hotspots
+        if (oh.get("contract"), oh.get("function")) == key
+    )
+    if consensus_count > 1:
+        score += (consensus_count - 1) * SCORING_WEIGHTS["agent_consensus"]
+
+    return round(score, 2)
+
+
+def count_phase0_hits(phase0_dir: Path | None = None) -> dict[str, int]:
+    """Count Slither/Aderyn hits per contract from Phase 0 artifacts."""
+    phase0_dir = phase0_dir or PHASE0_DIR
+    hits: dict[str, int] = {}
+    if not phase0_dir.exists():
+        return hits
+    for f in phase0_dir.glob("*.md"):
+        for line in f.read_text().split("\n"):
+            for token in re.findall(r'(\w+\.sol)', line):
+                hits[token] = hits.get(token, 0) + 1
+    return hits
+
+
+# --- Dedup ---
+
+def finding_dedup_key(f: dict) -> tuple:
+    """Deterministic dedup key for a finding."""
+    repo = sorted(f.get("repos", ["unknown"]))[0]
+    contracts = tuple(sorted(f.get("contracts", [])))
+    functions = tuple(sorted(f.get("functions", [])))
+    category = f.get("category", "unknown")
+    return (repo, contracts, functions, category)
+
+
+def dedup_findings(all_findings: list[dict]) -> list[dict]:
+    """Merge duplicate findings. Keep highest severity/confidence. Track consensus count."""
+    SEVERITY_RANK = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4}
+    CONFIDENCE_RANK = {"high": 0, "medium": 1, "low": 2}
+
+    groups: dict[tuple, list[dict]] = {}
+    for f in all_findings:
+        key = finding_dedup_key(f)
+        groups.setdefault(key, []).append(f)
+
+    merged = []
+    for key, dupes in groups.items():
+        best = min(dupes, key=lambda d: (
+            SEVERITY_RANK.get(d.get("severity", "info"), 9),
+            CONFIDENCE_RANK.get(d.get("confidence", "low"), 9),
+        ))
+        best["consensus_count"] = len(dupes)
+        best["contributing_agents"] = list(set(
+            d.get("_source_agent", "unknown") for d in dupes
+        ))
+        merged.append(best)
+
+    return merged
+
+
+# --- Sort ---
+
+def sort_findings(findings: list[dict]) -> list[dict]:
+    """Sort findings in deterministic order: severity desc -> confidence desc -> contract asc."""
+    SEVERITY_RANK = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4}
+    CONFIDENCE_RANK = {"high": 0, "medium": 1, "low": 2}
+
+    return sorted(findings, key=lambda f: (
+        SEVERITY_RANK.get(f.get("severity", "info"), 9),
+        CONFIDENCE_RANK.get(f.get("confidence", "low"), 9),
+        tuple(sorted(f.get("contracts", []))),
+    ))
+
+
+# --- Canonical ID assignment ---
+
+def assign_canonical_ids(findings: list[dict]) -> list[dict]:
+    """Assign canonical finding IDs after dedup and sort."""
+    for i, f in enumerate(findings):
+        repo = sorted(f.get("repos", ["unknown"]))[0]
+        prefix = REPO_PREFIXES.get(repo, "UNK")
+        f["canonical_id"] = f"{prefix}-{i+1:03d}"
+    return findings
+
+
+# --- Safety logs ---
 
 def aggregate_safety_logs(wave_number: int) -> list[dict]:
     """Aggregate JSONL safety logs from a wave (scaffold §6)."""
@@ -30,12 +188,19 @@ def aggregate_safety_logs(wave_number: int) -> list[dict]:
     return logs
 
 
+# --- Synthesis generation ---
+
 def generate_synthesis(
     wave: WaveConfig,
     results: list[AgentResult],
     artifacts: dict[str, str],
 ) -> str:
-    """Generate a wave synthesis document from agent results and disk artifacts."""
+    """Generate a wave synthesis document from agent JSON sidecars + results.
+
+    Primary data source: JSON sidecars (deterministic).
+    Fallback: markdown artifacts (for backward compatibility with agents that
+    don't produce JSON yet).
+    """
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
     # Build agent summary table
@@ -47,43 +212,70 @@ def generate_synthesis(
         )
     agent_table = "\n".join(agent_lines)
 
-    # Extract sections from artifacts (look for markdown headers)
-    hot_spots = []
-    findings = []
-    ruled_out = []
-    cross_boundary = []
+    # Collect JSON sidecars (primary data source)
+    sidecars = collect_json_sidecars(wave)
 
-    for agent_name, content in artifacts.items():
-        if not content:
-            continue
-        lines = content.split("\n")
-        current_section = None
-        for line in lines:
-            if "hot spot" in line.lower() or "top-5" in line.lower() or "top 5" in line.lower():
-                current_section = "hotspots"
-            elif "confirmed finding" in line.lower() or "finding id" in line.lower():
-                current_section = "findings"
-            elif "ruled-out" in line.lower() or "ruled out" in line.lower() or "proof sketch" in line.lower():
-                current_section = "ruled_out"
-            elif "cross-boundary" in line.lower() or "cross boundary" in line.lower():
-                current_section = "cross_boundary"
-            elif line.startswith("## "):
-                current_section = None
+    # Extract and process data from sidecars
+    all_findings = []
+    all_hotspots = []
+    all_ruled_out = []
 
-            if current_section == "hotspots" and line.strip().startswith(("-", "1", "2", "3", "4", "5")):
-                hot_spots.append(f"{line.strip()} — agent: {agent_name}")
-            elif current_section == "findings" and line.strip():
-                findings.append(line.strip())
-            elif current_section == "ruled_out" and line.strip().startswith("-"):
-                ruled_out.append(f"{line.strip()} — agent: {agent_name}")
-            elif current_section == "cross_boundary" and line.strip().startswith("-"):
-                cross_boundary.append(line.strip())
+    for sc in sidecars:
+        for f in sc.get("findings", []):
+            all_findings.append(f)
+        for h in sc.get("hot_spots", []):
+            all_hotspots.append(h)
+        for r in sc.get("ruled_out_vectors", []):
+            all_ruled_out.append(r)
+
+    # Deterministic scoring of hotspots
+    phase0_hits = count_phase0_hits()
+    for h in all_hotspots:
+        h["_score"] = score_hotspot(h, all_hotspots, phase0_hits)
+    all_hotspots.sort(key=lambda h: h.get("_score", 0), reverse=True)
+
+    # Dedup, sort, and assign canonical IDs to findings
+    merged_findings = dedup_findings(all_findings)
+    merged_findings = sort_findings(merged_findings)
+    merged_findings = assign_canonical_ids(merged_findings)
+
+    # Format hotspots for markdown
+    hotspot_lines = []
+    for i, h in enumerate(all_hotspots[:20], 1):
+        score = h.get("_score", 0)
+        cb = " [CROSS-BOUNDARY]" if h.get("cross_boundary") else ""
+        hotspot_lines.append(
+            f"{i}. **{h.get('contract', '?')}::{h.get('function', '?')}** "
+            f"(score: {score}, repo: {h.get('repo', '?')}{cb}) — {h.get('reason', '')}"
+        )
+
+    # Format findings for markdown
+    finding_lines = []
+    for f in merged_findings:
+        cid = f.get("canonical_id", f.get("id", "?"))
+        consensus = f.get("consensus_count", 1)
+        agents = ", ".join(f.get("contributing_agents", []))
+        finding_lines.append(
+            f"- **{cid}** [{f.get('severity', '?')}/{f.get('confidence', '?')}] "
+            f"{f.get('title', '')} — contracts: {', '.join(f.get('contracts', []))} "
+            f"(consensus: {consensus}, agents: {agents})"
+        )
+
+    # Format ruled-out for markdown
+    ruled_out_lines = []
+    for r in all_ruled_out[:30]:
+        ruled_out_lines.append(
+            f"- {r.get('title', r.get('id', '?'))}: {r.get('description', '')[:100]} "
+            f"— agent: {r.get('_source_agent', '?')}"
+        )
+
+    # Fallback: if no JSON sidecars, note it
+    data_source = "JSON sidecars" if sidecars else "no sidecars found — review markdown artifacts manually"
 
     # Safety log summary (scaffold §6)
     safety_logs = aggregate_safety_logs(wave.number)
-    safety_summary = ""
     if safety_logs:
-        event_counts = {}
+        event_counts: dict[str, int] = {}
         for log in safety_logs:
             event_counts[log["event"]] = event_counts.get(log["event"], 0) + 1
         safety_lines = [f"- {event}: {count}" for event, count in event_counts.items()]
@@ -93,6 +285,7 @@ def generate_synthesis(
 
     synthesis = f"""# Wave {wave.number} Synthesis ({wave.name})
 Generated: {now}
+Data source: {data_source}
 
 ## Agents
 
@@ -106,26 +299,22 @@ Generated: {now}
 
 {safety_summary}
 
-## Hot Spots (from agent artifacts)
+## Hot Spots (scored deterministically)
 
-{chr(10).join(hot_spots) if hot_spots else "(No hot spots extracted — review artifacts manually)"}
+{chr(10).join(hotspot_lines) if hotspot_lines else "(No hot spots — review artifacts manually)"}
 
-## Confirmed Findings
+## Confirmed Findings ({len(merged_findings)} after dedup)
 
-{chr(10).join(findings) if findings else "(No confirmed findings in this wave)"}
+{chr(10).join(finding_lines) if finding_lines else "(No confirmed findings in this wave)"}
 
-## Ruled-Out Vectors
+## Ruled-Out Vectors ({len(all_ruled_out)} total)
 
-{chr(10).join(ruled_out[:30]) if ruled_out else "(No ruled-out vectors extracted)"}
-{"..." if len(ruled_out) > 30 else ""}
-
-## Cross-Boundary Concerns
-
-{chr(10).join(cross_boundary) if cross_boundary else "(No cross-boundary concerns flagged)"}
+{chr(10).join(ruled_out_lines) if ruled_out_lines else "(No ruled-out vectors)"}
+{"..." if len(all_ruled_out) > 30 else ""}
 
 ## Recommended Wave {wave.number + 1} Focus
 
-> **ACTION REQUIRED**: Review the hot spots and artifacts above, then manually
+> **ACTION REQUIRED**: Review the scored hot spots above, then manually
 > populate this section with the wave {wave.number + 1} agent roster before running the next wave.
 >
 > Template:
@@ -137,14 +326,27 @@ Generated: {now}
 > Review each agent artifact for unresolved items.
 """
 
-    # Write synthesis to disk
+    # Write synthesis markdown to disk
     output_path = ARTIFACTS_DIR / f"wave{wave.number}-synthesis.md"
     output_path.write_text(synthesis)
     print(f"  Synthesis written to {output_path}")
 
+    # Write structured synthesis JSON (machine-readable for next wave)
+    synthesis_json = {
+        "wave": wave.number,
+        "name": wave.name,
+        "timestamp": now,
+        "hot_spots": all_hotspots[:20],
+        "findings": merged_findings,
+        "ruled_out_count": len(all_ruled_out),
+    }
+    synthesis_json_path = ARTIFACTS_DIR / f"wave{wave.number}-synthesis.json"
+    synthesis_json_path.write_text(json.dumps(synthesis_json, indent=2, default=str))
+    print(f"  Synthesis JSON written to {synthesis_json_path}")
+
     # Write structured metrics JSON (gap research §2 — production track)
-    total_findings = len(findings)
-    total_ruled_out = len(ruled_out)
+    total_findings = len(merged_findings)
+    total_ruled_out = len(all_ruled_out)
     total_cost = sum(r.total_cost_usd for r in results)
     metrics = {
         "wave": wave.number,
@@ -173,7 +375,6 @@ Generated: {now}
             "total_cost_usd": total_cost,
             "cost_per_finding": (total_cost / total_findings) if total_findings > 0 else None,
             "cost_per_vector_eliminated": (total_cost / total_ruled_out) if total_ruled_out > 0 else None,
-            # Filled after PoC/red-team waves:
             "precision": None,
             "poc_pass_rate": None,
             "adversarial_survival_rate": None,

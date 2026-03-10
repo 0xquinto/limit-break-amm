@@ -1,0 +1,42 @@
+[
+  {
+    "id": "REG-001",
+    "source": "v1-audit",
+    "title": "sqrtPriceX96==0 bypass",
+    "contracts": ["CLOBTransferHandler.sol"],
+    "functions": ["_enforceTokenHooks"],
+    "category": "input-validation",
+    "keywords": ["sqrtPriceX96", "zero", "bypass", "price"],
+    "repo": "lbamm-hooks-and-handlers"
+  },
+  {
+    "id": "REG-002",
+    "source": "v1-audit",
+    "title": "Pricing bypass via direct handler call",
+    "contracts": ["CLOBTransferHandler.sol"],
+    "functions": ["executeSwap"],
+    "category": "access-control",
+    "keywords": ["pricing", "bypass", "direct", "handler"],
+    "repo": "lbamm-hooks-and-handlers"
+  },
+  {
+    "id": "REG-003",
+    "source": "v1-audit",
+    "title": "setTokenSettings sync gap",
+    "contracts": ["CLOBTransferHandler.sol"],
+    "functions": ["setTokenSettings"],
+    "category": "state-sync",
+    "keywords": ["setTokenSettings", "sync", "stale"],
+    "repo": "lbamm-hooks-and-handlers"
+  },
+  {
+    "id": "REG-004",
+    "source": "v2-audit",
+    "title": "Transient storage not cleared for direct swap input",
+    "contracts": ["AMMHooksTransferHandler.sol"],
+    "functions": ["beforeSwap"],
+    "category": "transient-storage",
+    "keywords": ["transient", "tstore", "clear", "direct", "swap"],
+    "repo": "lbamm-hooks-and-handlers"
+  }
+]

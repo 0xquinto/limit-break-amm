@@ -5,9 +5,9 @@ Read `docs/framework/agent-boilerplate.md` for environment setup, tools, and ant
 Then read `docs/CODEBASE_MAP.md` for architecture context.
 
 ## Memory (read before investigating)
-- **Always read**: `docs/memory/digest.md` (200-token summary of all prior runs)
-- **Grep on demand**: `docs/memory/false-positives.md` (before reporting any finding, check for known FPs)
-- **Patterns to find**: `docs/memory/confirmed-patterns.md` (look for variants of these)
+- **Always read**: `docs/audit_memory/digest.md` (200-token summary of all prior runs)
+- **Grep on demand**: `docs/audit_memory/false-positives.md` (before reporting any finding, check for known FPs)
+- **Patterns to find**: `docs/audit_memory/confirmed-patterns.md` (look for variants of these)
 
 ## Your Domain
 - **Role**: {{AGENT_ROLE}} — fast triage of attack surface, NOT deep analysis
@@ -81,7 +81,52 @@ For obvious non-issues found during triage, write brief proof sketches:
 - **Do NOT**: Write PoCs, write fuzz tests, or confirm findings. That's for later waves.
 
 ## Required: Write Progress to Disk Incrementally
-Write your output to `{{OUTPUT_FILE}}` as you work. Do NOT hold everything in conversation — context compaction can lose intermediate work. Update the file after each major section is complete.
+Write your markdown report to `{{OUTPUT_FILE}}` as you work. Do NOT hold everything in conversation — context compaction can lose intermediate work. Update the file after each major section is complete.
+
+## Required: Write JSON Sidecar (CRITICAL for pipeline)
+
+After completing your markdown report, you MUST write a `{{FINDINGS_JSON}}` file with structured output. **The pipeline reads ONLY this JSON — your markdown is for human review only.**
+
+The JSON must follow this schema:
+```json
+{
+  "agent_name": "{{AGENT_NAME}}",
+  "agent_role": "{{AGENT_ROLE}}",
+  "wave": {{WAVE_NUMBER}},
+  "findings": [
+    {
+      "id": "SCOPE-NNN",
+      "title": "short description",
+      "severity": "critical|high|medium|low|info",
+      "confidence": "high|medium|low",
+      "status": "confirmed|ruled_out|needs_poc|needs_review",
+      "contracts": ["Contract.sol"],
+      "functions": ["functionName"],
+      "lines": {"Contract.sol": [123, 456]},
+      "category": "hook-bypass|eip712|clob|precision|transient-storage|reentrancy|access-control|cache-desync",
+      "description": "what the issue is",
+      "impact": "what an attacker gains",
+      "proof_sketch": "reasoning chain",
+      "repos": ["repo-name"],
+      "cross_boundary": false,
+      "keywords": ["keyword1", "keyword2"]
+    }
+  ],
+  "hot_spots": [
+    {
+      "contract": "Contract.sol",
+      "function": "functionName",
+      "repo": "repo-name",
+      "score": 7.5,
+      "reason": "why this is hot",
+      "static_hits": 3,
+      "cross_boundary": false
+    }
+  ],
+  "ruled_out_vectors": [],
+  "metadata": {"files_read": 0, "tool_uses": 0}
+}
+```
 
 ## Shared Standards
 

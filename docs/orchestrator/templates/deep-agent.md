@@ -5,9 +5,9 @@ Read `docs/framework/agent-boilerplate.md` for environment setup, tools, and ant
 Then read `docs/CODEBASE_MAP.md` for architecture context.
 
 ## Memory (read before investigating)
-- **Always read**: `docs/memory/digest.md` (200-token summary of all prior runs)
-- **Grep on demand**: `docs/memory/false-positives.md` (before reporting any finding, check for known FPs)
-- **Patterns to find**: `docs/memory/confirmed-patterns.md` (look for variants of these)
+- **Always read**: `docs/audit_memory/digest.md` (200-token summary of all prior runs)
+- **Grep on demand**: `docs/audit_memory/false-positives.md` (before reporting any finding, check for known FPs)
+- **Patterns to find**: `docs/audit_memory/confirmed-patterns.md` (look for variants of these)
 
 ## Your Domain
 - **Role**: {{AGENT_ROLE}} — deep security analysis of assigned hot spots
@@ -64,7 +64,7 @@ If you confirm 2+ findings, check if any two compound. Note the interaction in t
 
 Every finding MUST pass this ordered gate pipeline. If ANY gate fails, drop the finding.
 
-0. **Not a known false positive**: `grep` the function name and vector keyword in `docs/memory/false-positives.md`. Match with confidence >= 80 → NOOP.
+0. **Not a known false positive**: `grep` the function name and vector keyword in `docs/audit_memory/false-positives.md`. Match with confidence >= 80 → NOOP.
 1. **Location exists**: Verify the referenced function/variable/line actually exists.
 2. **Entry point is reachable**: Attacker can reach the vulnerable function.
 3. **No existing guard prevents it**: No require/if-revert/lock already blocks the path.
@@ -133,7 +133,61 @@ At the end of your output file:
 - **Diminishing returns**: If 0 new findings AND 0 new ruled-out vectors in last 10 turns, wrap up.
 
 ## Required: Write Progress to Disk Incrementally
-Write your output to `{{OUTPUT_FILE}}` as you work. Do NOT hold everything in conversation — context compaction can lose intermediate work. Update the file after each finding or ruled-out vector.
+Write your markdown report to `{{OUTPUT_FILE}}` as you work. Do NOT hold everything in conversation — context compaction can lose intermediate work. Update the file after each finding or ruled-out vector.
+
+## Required: Write JSON Sidecar (CRITICAL for pipeline)
+
+After completing your markdown report, you MUST write a `{{FINDINGS_JSON}}` file with structured output. **The pipeline reads ONLY this JSON — your markdown is for human review only.**
+
+Findings with `status: "confirmed"` or `"needs_poc"` get routed to PoC/red-team waves. Findings with `status: "ruled_out"` get logged for FP enrichment.
+
+The JSON must follow this schema:
+```json
+{
+  "agent_name": "{{AGENT_NAME}}",
+  "agent_role": "{{AGENT_ROLE}}",
+  "wave": {{WAVE_NUMBER}},
+  "findings": [
+    {
+      "id": "SCOPE-NNN",
+      "title": "short description",
+      "severity": "critical|high|medium|low|info",
+      "confidence": "high|medium|low",
+      "status": "confirmed|ruled_out|needs_poc|needs_review",
+      "contracts": ["Contract.sol"],
+      "functions": ["functionName"],
+      "lines": {"Contract.sol": [123, 456]},
+      "category": "hook-bypass|eip712|clob|precision|transient-storage|reentrancy|access-control|cache-desync|delegatecall|rounding",
+      "description": "what the issue is",
+      "impact": "what an attacker gains",
+      "proof_sketch": "reasoning chain or PoC reference",
+      "repos": ["repo-name"],
+      "cross_boundary": false,
+      "keywords": ["keyword1", "keyword2"]
+    }
+  ],
+  "hot_spots": [],
+  "ruled_out_vectors": [
+    {
+      "id": "RO-NNN",
+      "title": "vector name",
+      "severity": "info",
+      "confidence": "high",
+      "status": "ruled_out",
+      "contracts": ["Contract.sol"],
+      "functions": ["functionName"],
+      "lines": {},
+      "category": "category",
+      "description": "why this was ruled out",
+      "impact": "N/A",
+      "proof_sketch": "proof sketch argument",
+      "repos": ["repo-name"],
+      "keywords": ["keyword1"]
+    }
+  ],
+  "metadata": {"findings_claimed": 0, "vectors_ruled_out": 0, "completeness_pct": 0}
+}
+```
 
 ## Shared Standards
 

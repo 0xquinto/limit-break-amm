@@ -2,15 +2,37 @@
 
 Catches hallucinated "new" findings that match known FPs with different wording.
 Applied between waves: after artifact collection, before routing to PoC/red-team.
+
+Reads JSON sidecars when available, falls back to markdown parsing.
 """
 
+import json
 import re
+from pathlib import Path
+from .config import ARTIFACTS_DIR, WaveConfig
 from .prompt_renderer import parse_false_positives, FalsePositive
 from .wave_runner import log_safety_event
 
 
+def extract_findings_from_json(wave: WaveConfig) -> list[dict]:
+    """Extract findings from JSON sidecars (primary source)."""
+    findings = []
+    for agent in wave.agents:
+        path = ARTIFACTS_DIR / f"wave{wave.number}-{agent.name}" / "findings.json"
+        if not path.exists():
+            continue
+        try:
+            data = json.loads(path.read_text())
+        except json.JSONDecodeError:
+            continue
+        for f in data.get("findings", []):
+            f.setdefault("agent", agent.name)
+            findings.append(f)
+    return findings
+
+
 def extract_findings_from_artifacts(artifacts: dict[str, str]) -> list[dict]:
-    """Extract structured findings from agent artifact markdown.
+    """Extract structured findings from agent artifact markdown (fallback).
 
     Looks for finding blocks with ID, title, contracts, and vector fields.
     """
@@ -45,6 +67,9 @@ def match_finding_to_fp(finding: dict, fps: list[FalsePositive]) -> FalsePositiv
     """
     finding_keywords = set(finding.get("title", "").lower().split())
     finding_keywords |= set(finding.get("vector", "").lower().split())
+    finding_keywords |= set(finding.get("description", "").lower().split())
+    # Add explicit keywords if present
+    finding_keywords |= set(k.lower() for k in finding.get("keywords", []))
     # Remove common stop words
     finding_keywords -= {"the", "a", "an", "in", "to", "for", "of", "is", "and", "or", "with"}
 
@@ -79,7 +104,7 @@ def prefilter_findings(findings: list[dict]) -> tuple[list[dict], list[dict]]:
             finding["noop_reason"] = f"Known FP: {match.id} (confidence {match.confidence}%)"
             nooped.append(finding)
             log_safety_event("orchestrator", "finding_nooped", {
-                "finding": finding["title"],
+                "finding": finding.get("title", "?"),
                 "matched_fp": match.id,
                 "confidence": match.confidence,
             })

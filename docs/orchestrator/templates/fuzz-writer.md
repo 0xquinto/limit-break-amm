@@ -5,9 +5,9 @@ Read `docs/framework/agent-boilerplate.md` for environment setup, tools, and ant
 Then read `docs/CODEBASE_MAP.md` for architecture context.
 
 ## Memory (read before investigating)
-- **Always read**: `docs/memory/digest.md` (200-token summary of all prior runs)
-- **Grep on demand**: `docs/memory/false-positives.md` (before reporting any finding, check for known FPs)
-- **Patterns to find**: `docs/memory/confirmed-patterns.md` (look for variants of these)
+- **Always read**: `docs/audit_memory/digest.md` (200-token summary of all prior runs)
+- **Grep on demand**: `docs/audit_memory/false-positives.md` (before reporting any finding, check for known FPs)
+- **Patterns to find**: `docs/audit_memory/confirmed-patterns.md` (look for variants of these)
 
 ## Your Domain
 - **Role**: {{AGENT_ROLE}} — Foundry invariant tests, fuzz tests, and formal verification across scope repos
@@ -99,7 +99,41 @@ At the end of your output file:
 ```
 
 ## Required: Write Progress to Disk Incrementally
-Write your output to `{{OUTPUT_FILE}}` as you work. Do NOT hold everything in conversation — context compaction can lose intermediate work. Update the file after each test file is complete.
+Write your markdown report to `{{OUTPUT_FILE}}` as you work. Do NOT hold everything in conversation — context compaction can lose intermediate work. Update the file after each test file is complete.
+
+## Required: Write JSON Sidecar (CRITICAL for pipeline)
+
+After completing your markdown report, you MUST write a `{{FINDINGS_JSON}}` file with structured output. **The pipeline reads ONLY this JSON — your markdown is for human review only.**
+
+```json
+{
+  "agent_name": "{{AGENT_NAME}}",
+  "agent_role": "{{AGENT_ROLE}}",
+  "wave": {{WAVE_NUMBER}},
+  "findings": [
+    {
+      "id": "FUZZ-NNN",
+      "title": "invariant violation description",
+      "severity": "critical|high|medium|low|info",
+      "confidence": "high|medium|low",
+      "status": "confirmed|needs_review",
+      "contracts": ["Contract.sol"],
+      "functions": ["functionName"],
+      "lines": {},
+      "category": "invariant-violation",
+      "description": "what invariant was broken and how",
+      "impact": "what the violation means",
+      "proof_sketch": "test path and failing input",
+      "repos": ["repo-name"],
+      "cross_boundary": false,
+      "keywords": ["invariant", "fuzz"]
+    }
+  ],
+  "hot_spots": [],
+  "ruled_out_vectors": [],
+  "metadata": {"tests_written": 0, "tests_passing": 0, "invariant_violations": 0, "repos_covered": 0}
+}
+```
 
 ## Shared Standards
 Deliverable format, severity rubric, exploitability tiers, proof sketch template, and incremental writing requirements are defined in `docs/framework/agent-boilerplate.md` (read as your first action).
