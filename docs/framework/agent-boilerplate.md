@@ -7,7 +7,7 @@
 
 - **Stack**: Solidity 0.8.24, Foundry, cancun EVM (transient storage), PermitC (EIP-712), Creator Token Standards
 - **Project root**: `/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm` (parent — all repos are siblings)
-- **Target repos**: `lbamm-hooks-and-handlers/`, `lbamm-core/`, `secure-proxy/` (siblings at root level)
+- **Target repos**: `lbamm-core/`, `amm-pool-type-dynamic/`, `lbamm-pool-type-fixed/`, `lbamm-pool-type-single-provider/`, `lbamm-hooks-and-handlers/`, `secure-proxy/` (all siblings at root level)
 - **Compiler**: solc 0.8.24 via Foundry
 - **EVM target**: cancun (transient storage opcodes available)
 
@@ -15,7 +15,7 @@
 
 When spawned with `isolation: worktree`, your worktree will be at `.claude/worktrees/<name>/`. The parent framework repo worktree won't have the target repos. You MUST:
 
-1. Verify target repos are accessible from parent: `ls lbamm-hooks-and-handlers/src/ lbamm-core/src/`
+1. Verify target repos are accessible from parent: `ls lbamm-core/src/ amm-pool-type-dynamic/src/ lbamm-pool-type-fixed/src/ lbamm-pool-type-single-provider/src/ lbamm-hooks-and-handlers/src/ secure-proxy/src/`
 2. Build tools run inside target repos: `cd lbamm-hooks-and-handlers && forge build --skip test script 2>&1 | tail -5`
 
 > **Note:** All target repos are siblings in the parent directory. No symlinks needed.
