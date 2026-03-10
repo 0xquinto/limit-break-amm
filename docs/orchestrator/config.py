@@ -31,6 +31,19 @@ TOOL_PROFILES: dict[str, list[str]] = {
     "economic": ["Read", "Grep", "Glob", "Bash:python3"],
 }
 
+# Static analysis tool compatibility per repo.
+# Root cause: Forge --build-info emits duplicate entries for files imported via both
+# absolute and relative (../) paths. The relative-path entries have missing ASTs.
+# - Slither CLI: works on ALL repos after fix_build_info() + --ignore-compile
+# - Slither MCP: only works on repos where crytic-compile resolves ../ paths correctly
+# - Aderyn 0.6.8: crashes on repos with ../ cross-repo imports (unfixable bug in compile.rs:78)
+TOOL_COMPAT = {
+    "slither_mcp": {"lbamm-core", "lbamm-hooks-and-handlers", "secure-proxy"},
+    "slither_cli": {"lbamm-core", "amm-pool-type-dynamic", "lbamm-pool-type-fixed",
+                    "lbamm-pool-type-single-provider", "lbamm-hooks-and-handlers", "secure-proxy"},
+    "aderyn": {"lbamm-core", "secure-proxy"},
+}
+
 # Repos
 REPOS = {
     "lbamm-core": {
