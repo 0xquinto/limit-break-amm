@@ -321,30 +321,41 @@ git commit -m "feat: add orchestrator config with wave definitions and repo map"
 **Files:**
 - Create: `docs/orchestrator/wave_runner.py`
 
-**Step 1: Write wave runner with loop detection, budget enforcement, and backpressure**
+**Step 1: Write wave runner using Agent Teams via SDK query()**
 
-Incorporates scaffold §1 (loop detection + budget enforcement), §2 (concurrent orchestration with semaphore), and full transcript logging for reproducibility debugging. Each agent's conversation is saved to `transcript.jsonl` — when two runs produce different findings, the transcripts show where the agent diverged.
+Uses the Agent Teams feature (`TeamCreate`, `TaskCreate`, `SendMessage`, `TeamDelete`)
+orchestrated by a team lead session spawned via `claude_agent_sdk.query()`.
+Each agent runs as a full Claude Code instance (all tools, MCPs, skills inherited).
+
+Architecture:
+1. Python orchestrator writes rendered prompts to disk
+2. Spawns a team lead session (sonnet) via `query()`
+3. Team lead creates team, creates tasks, spawns all agents as teammates
+4. Agents read their full prompts from disk files (bootstrap prompt pattern)
+5. Team lead monitors completion via `TaskNotificationMessage`
+6. Team lead tears down team (shutdown requests + `TeamDelete`)
+7. Python orchestrator collects disk artifacts
 
 ```python
-"""Spawns agents for a wave in parallel with safety controls: loop detection,
-budget enforcement, and backpressure via semaphore."""
+"""Spawns agents for a wave as an Agent Team via SDK query()."""
 
 import json
-import anyio
+import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from pathlib import Path
 from claude_agent_sdk import (
-    ClaudeSDKClient,
     ClaudeAgentOptions,
     AssistantMessage,
     ResultMessage,
+    TaskNotificationMessage,
+    TaskStartedMessage,
+    TaskProgressMessage,
     TextBlock,
+    query,
 )
 
 from .config import (
-    AgentConfig, WaveConfig, PROJECT_ROOT, ARTIFACTS_DIR, RESULTS_DIR,
-    MAX_CONCURRENT_AGENTS, LOOP_DETECTION_WINDOW, LOOP_HASH_LENGTH,
+    WaveConfig, PROJECT_ROOT, ARTIFACTS_DIR, RESULTS_DIR,
 )
 
 
@@ -357,65 +368,40 @@ class AgentResult:
     num_turns: int
     duration_ms: int
     total_cost_usd: float
-    stop_reason: str  # "completed" | "budget_exhausted" | "loop_detected" | "error"
+    stop_reason: str  # "completed" | "failed" | "stopped" | "missing"
     output_text: str  # last 2K chars as summary
     safety_events: list[dict] = field(default_factory=list)
 
 
-def log_safety_event(agent_name: str, event_type: str, detail: object) -> dict:
-    """Create a structured safety event for JSONL logging."""
-    event = {
-        "ts": datetime.now(timezone.utc).isoformat(),
-        "agent": agent_name,
-        "event": event_type,
-        "detail": str(detail)[:500],
-    }
-    print(f"  SAFETY [{agent_name}]: {event_type} — {str(detail)[:100]}")
-    return event
+async def run_wave(wave: WaveConfig, prompts: dict[str, str]) -> list[AgentResult]:
+    """Run all agents in a wave as an Agent Team via SDK query().
 
+    Team lead (sonnet) creates team, spawns agents as teammates,
+    monitors via TaskNotification messages, tears down when done.
+    Each agent is a full Claude Code instance with all tools/MCPs/skills.
+    """
+    # 1. Write prompts to disk (agents read via bootstrap prompt)
+    prompt_paths = _write_prompts_to_disk(wave, prompts)
 
-async def run_agent(agent: AgentConfig, prompt: str) -> AgentResult:
-    """Run a single agent with loop detection and budget enforcement (scaffold §1)."""
+    # 2. Build team lead prompt (TeamCreate, TaskCreate, Agent spawns, teardown)
+    team_lead_prompt = _build_team_lead_prompt(wave, prompt_paths)
+
+    # 3. Spawn team lead via SDK
     options = ClaudeAgentOptions(
         cwd=str(PROJECT_ROOT),
-        model=agent.model,
-        max_turns=agent.max_turns,
-        max_budget_usd=agent.max_cost_usd,
-        permission_mode=agent.permission_mode,
+        model="sonnet",
+        max_turns=30,
+        permission_mode="bypassPermissions",
     )
 
-    output_text = ""
-    safety_events: list[dict] = []
-    history_hashes: list[int] = []
-    transcript: list[dict] = []  # full conversation log for reproducibility
-    stop_reason = "completed"
-
-    async with ClaudeSDKClient(options=options) as client:
-        await client.query(prompt)
-        result_msg = None
-        async for message in client.receive_response():
-            if isinstance(message, AssistantMessage):
-                chunk = ""
-                for block in message.content:
-                    if isinstance(block, TextBlock):
-                        chunk += block.text
-                output_text += chunk
-
-                # Log to transcript
-                transcript.append({
-                    "role": "assistant",
-                    "ts": datetime.now(timezone.utc).isoformat(),
-                    "text": chunk[:5000],  # cap per-message size
-                })
-
-                # Loop detection — hash last N output chunks (scaffold §1)
-                output_hash = hash(chunk[:LOOP_HASH_LENGTH])
-                if output_hash in history_hashes[-LOOP_DETECTION_WINDOW:]:
-                    event = log_safety_event(agent.name, "loop_detected", output_hash)
-                    safety_events.append(event)
-                    stop_reason = "loop_detected"
-                    break
-                history_hashes.append(output_hash)
+    results = []
+    async for message in query(prompt=team_lead_prompt, options=options):
+        if isinstance(message, TaskNotificationMessage):
+            # Per-agent completion with metrics (tool_uses, duration_ms)
+            ...
+        elif isinstance(message, ResultMessage):
+            # Team lead session ended
+            ...
 
             elif isinstance(message, ResultMessage):
                 result_msg = message

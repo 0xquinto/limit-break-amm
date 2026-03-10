@@ -334,7 +334,7 @@ docs/orchestrator/
 ├── __init__.py
 ├── run_audit.py              # Main entry point (CLI: --wave N, --dry-run)
 ├── config.py                 # Wave definitions, agent configs, budgets (Python dataclasses)
-├── wave_runner.py            # Spawns agents for a wave, waits, collects
+├── wave_runner.py            # Agent Teams: team lead creates team, spawns teammates via SDK query()
 ├── prompt_renderer.py        # Combines templates with scope/synthesis context
 ├── synthesizer.py            # Reads agent artifacts → writes synthesis doc
 ├── artifact_generator.py     # Phase 0: runs Slither/Aderyn per repo (automated)
@@ -353,6 +353,11 @@ docs/orchestrator/
 
 ### Core Loop (`run_audit.py`)
 
+Each wave uses **Agent Teams** via the SDK: a team lead session (sonnet) creates
+a team (`TeamCreate`), creates tasks (`TaskCreate`), spawns all agents as teammates
+(`Agent` tool with `team_name`), monitors completion, and tears down (`TeamDelete`).
+Agents run as full Claude Code instances with access to all tools, MCPs, and skills.
+
 ```python
 async def run_audit():
     # Phase 0: Generate artifacts
@@ -365,22 +370,20 @@ async def run_audit():
         # 2. Load previous synthesis (if wave > 1)
         prior_synthesis = read_synthesis(wave_num - 1) if wave_num > 1 else None
 
-        # 3. Render spawn prompts
+        # 3. Render spawn prompts → write to disk
         prompts = render_prompts(wave_config, prior_synthesis)
 
-        # 4. Spawn all agents (parallel, worktree isolation)
-        results = await wave_runner.spawn_wave(prompts)
+        # 4. Spawn team lead via SDK query() — creates Agent Team,
+        #    spawns all agents as teammates, monitors, tears down
+        results = await wave_runner.run_wave(wave_config, prompts)
 
-        # 5. Collect metrics
-        metrics = wave_runner.collect_metrics(results)
+        # 5. Read agent disk artifacts (reports + JSON sidecars)
+        artifacts = wave_runner.collect_artifacts(wave_config)
 
-        # 6. Read agent disk artifacts
-        artifacts = wave_runner.read_artifacts(wave_config)
+        # 6. Generate synthesis
+        synthesis = synthesizer.generate_synthesis(wave_num, results, artifacts)
 
-        # 7. Generate synthesis
-        synthesis = await synthesizer.generate(wave_num, artifacts, metrics)
-
-        # 8. Adjust next wave config if needed
+        # 7. Adjust next wave config if needed
         if wave_num < 5:
             adjust_wave_config(wave_num + 1, synthesis)
 
