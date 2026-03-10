@@ -111,40 +111,155 @@ def count_phase0_hits(phase0_dir: Path | None = None) -> dict[str, int]:
     return hits
 
 
-# --- Dedup ---
-
-def finding_dedup_key(f: dict) -> tuple:
-    """Deterministic dedup key for a finding."""
-    repo = sorted(f.get("repos", ["unknown"]))[0]
-    contracts = tuple(sorted(f.get("contracts", [])))
-    functions = tuple(sorted(f.get("functions", [])))
-    category = f.get("category", "unknown")
-    return (repo, contracts, functions, category)
-
-
-def dedup_findings(all_findings: list[dict]) -> list[dict]:
-    """Merge duplicate findings. Keep highest severity/confidence. Track consensus count."""
-    SEVERITY_RANK = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4}
-    CONFIDENCE_RANK = {"high": 0, "medium": 1, "low": 2}
-
-    groups: dict[tuple, list[dict]] = {}
-    for f in all_findings:
-        key = finding_dedup_key(f)
-        groups.setdefault(key, []).append(f)
+def dedup_hotspots(hotspots: list[dict]) -> list[dict]:
+    """Merge hotspots with same contract+function. Keep highest score."""
+    groups: dict[tuple[str, str], list[dict]] = {}
+    for h in hotspots:
+        key = (h.get("contract", ""), h.get("function", ""))
+        groups.setdefault(key, []).append(h)
 
     merged = []
     for key, dupes in groups.items():
-        best = min(dupes, key=lambda d: (
+        best = max(dupes, key=lambda h: h.get("_score", 0))
+        # Merge cross_boundary (True if ANY entry is cross-boundary)
+        best["cross_boundary"] = any(d.get("cross_boundary") for d in dupes)
+        # Keep highest static_hits (same hit would be double-counted with sum)
+        best["static_hits"] = max(d.get("static_hits", 0) for d in dupes)
+        merged.append(best)
+
+    merged.sort(key=lambda h: h.get("_score", 0), reverse=True)
+    return merged
+
+
+def detect_contradictions(
+    findings: list[dict], ruled_out: list[dict]
+) -> list[dict]:
+    """Detect when a finding contradicts a ruled-out vector.
+
+    A contradiction is flagged when a finding and a ruled-out vector share
+    at least one contract AND either:
+    - at least one function in common, OR
+    - at least one keyword in common (substring match on function names counts)
+    Returns list of contradiction records.
+    """
+    contradictions = []
+    for f in findings:
+        f_contracts = set(f.get("contracts", []))
+        f_functions = set(f.get("functions", []))
+        f_keywords = set(f.get("keywords", []))
+        # Also extract substrings from function names as implicit keywords
+        # e.g., "computeRatioX96" -> adds "computeRatioX96" to searchable terms
+        f_terms = f_keywords | f_functions
+        for ro in ruled_out:
+            ro_contracts = set(ro.get("contracts", []))
+            ro_functions = set(ro.get("functions", []))
+            ro_keywords = set(ro.get("keywords", []))
+            ro_terms = ro_keywords | ro_functions
+
+            shared_contracts = f_contracts & ro_contracts
+            if not shared_contracts:
+                continue
+
+            shared_functions = f_functions & ro_functions
+            shared_keywords = f_keywords & ro_keywords
+
+            # Also check if any keyword appears as substring in the other's terms
+            # (handles "ratio" matching "computeRatioX96")
+            substring_matches = set()
+            for kw in f_keywords:
+                for term in ro_terms:
+                    if kw.lower() in term.lower() or term.lower() in kw.lower():
+                        substring_matches.add(f"{kw}~{term}")
+            for kw in ro_keywords:
+                for term in f_terms:
+                    if kw.lower() in term.lower() or term.lower() in kw.lower():
+                        substring_matches.add(f"{kw}~{term}")
+
+            match_reason = []
+            if shared_functions:
+                match_reason.append(f"functions: {sorted(shared_functions)}")
+            if shared_keywords:
+                match_reason.append(f"keywords: {sorted(shared_keywords)}")
+            if substring_matches:
+                match_reason.append(f"substring: {sorted(substring_matches)[:3]}")
+
+            if match_reason:
+                contradictions.append({
+                    "finding_id": f.get("id", "?"),
+                    "finding_agent": f.get("_source_agent", "?"),
+                    "ruled_out_id": ro.get("id", "?"),
+                    "ruled_out_agent": ro.get("_source_agent", "?"),
+                    "shared_contracts": sorted(shared_contracts),
+                    "match_reason": "; ".join(match_reason),
+                    "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out",
+                })
+    return contradictions
+
+
+# --- Dedup ---
+
+def _findings_overlap(a: dict, b: dict) -> bool:
+    """Two findings overlap if they share at least one contract AND one function."""
+    a_contracts = set(a.get("contracts", []))
+    b_contracts = set(b.get("contracts", []))
+    a_functions = set(a.get("functions", []))
+    b_functions = set(b.get("functions", []))
+    return bool(a_contracts & b_contracts) and bool(a_functions & b_functions)
+
+
+def dedup_findings(all_findings: list[dict]) -> list[dict]:
+    """Merge duplicate findings using overlap-based grouping with transitive closure.
+
+    Two findings are grouped if they share >= 1 contract AND >= 1 function.
+    Transitive: if A overlaps B and B overlaps C, all three merge into one group
+    (even if A doesn't directly overlap C).
+    Within each group, keep the highest severity/confidence version.
+    Track consensus count and contributing agents.
+    """
+    SEVERITY_RANK = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4}
+    CONFIDENCE_RANK = {"high": 0, "medium": 1, "low": 2}
+
+    # Build groups with transitive merging: for each finding, find ALL matching
+    # groups, merge them together, then add the new finding.
+    groups: list[list[dict]] = []
+    for f in all_findings:
+        matching_indices = [
+            i for i, group in enumerate(groups)
+            if any(_findings_overlap(f, existing) for existing in group)
+        ]
+        if not matching_indices:
+            groups.append([f])
+        else:
+            # Merge all matching groups + the new finding into one group
+            combined = [f]
+            for i in sorted(matching_indices, reverse=True):
+                combined.extend(groups.pop(i))
+            groups.append(combined)
+
+    deduped = []
+    for group in groups:
+        best = min(group, key=lambda d: (
             SEVERITY_RANK.get(d.get("severity", "info"), 9),
             CONFIDENCE_RANK.get(d.get("confidence", "low"), 9),
         ))
-        best["consensus_count"] = len(dupes)
-        best["contributing_agents"] = list(set(
-            d.get("_source_agent", "unknown") for d in dupes
+        best["consensus_count"] = len(group)
+        best["contributing_agents"] = sorted(set(
+            d.get("_source_agent", "unknown") for d in group
         ))
-        merged.append(best)
+        # Merge all contracts/functions from the group into the best finding
+        all_contracts = set()
+        all_functions = set()
+        all_repos = set()
+        for d in group:
+            all_contracts.update(d.get("contracts", []))
+            all_functions.update(d.get("functions", []))
+            all_repos.update(d.get("repos", []))
+        best["contracts"] = sorted(all_contracts)
+        best["functions"] = sorted(all_functions)
+        best["repos"] = sorted(all_repos)
+        deduped.append(best)
 
-    return merged
+    return deduped
 
 
 # --- Sort ---
@@ -233,11 +348,15 @@ def generate_synthesis(
     for h in all_hotspots:
         h["_score"] = score_hotspot(h, all_hotspots, phase0_hits)
     all_hotspots.sort(key=lambda h: h.get("_score", 0), reverse=True)
+    all_hotspots = dedup_hotspots(all_hotspots)
 
     # Dedup, sort, and assign canonical IDs to findings
     merged_findings = dedup_findings(all_findings)
     merged_findings = sort_findings(merged_findings)
     merged_findings = assign_canonical_ids(merged_findings)
+
+    # Detect contradictions between findings and ruled-out vectors
+    contradictions = detect_contradictions(merged_findings, all_ruled_out)
 
     # Format hotspots for markdown
     hotspot_lines = []
@@ -268,6 +387,19 @@ def generate_synthesis(
             f"- {r.get('title', r.get('id', '?'))}: {r.get('description', '')[:100]} "
             f"— agent: {r.get('_source_agent', '?')}"
         )
+
+    # Format contradictions for markdown
+    contradiction_lines = []
+    for c in contradictions:
+        contradiction_lines.append(
+            f"- **{c['finding_id']}** (agent: {c['finding_agent']}) vs "
+            f"**{c['ruled_out_id']}** (agent: {c['ruled_out_agent']}) — "
+            f"match: {c['match_reason']}"
+        )
+    contradiction_section = (
+        "\n".join(contradiction_lines) if contradiction_lines
+        else "(No contradictions detected)"
+    )
 
     # Fallback: if no JSON sidecars, note it
     data_source = "JSON sidecars" if sidecars else "no sidecars found — review markdown artifacts manually"
@@ -312,6 +444,10 @@ Data source: {data_source}
 {chr(10).join(ruled_out_lines) if ruled_out_lines else "(No ruled-out vectors)"}
 {"..." if len(all_ruled_out) > 30 else ""}
 
+## Agent Contradictions
+
+{contradiction_section}
+
 ## Recommended Wave {wave.number + 1} Focus
 
 > **ACTION REQUIRED**: Review the scored hot spots above, then manually
@@ -338,6 +474,7 @@ Data source: {data_source}
         "timestamp": now,
         "hot_spots": all_hotspots[:20],
         "findings": merged_findings,
+        "contradictions": contradictions,
         "ruled_out_count": len(all_ruled_out),
     }
     synthesis_json_path = ARTIFACTS_DIR / f"wave{wave.number}-synthesis.json"

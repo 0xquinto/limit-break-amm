@@ -199,8 +199,30 @@ def render_prompt(agent: AgentConfig, wave: WaveConfig, prior_synthesis: str | N
         prompt = prompt.replace("{{PRIOR_SYNTHESIS}}", "(No prior wave synthesis — this is wave 1)")
 
     # Inject extra context from config
+    # First, try placeholder substitution for any matching {{key}} in template
+    remaining_context = {}
     for key, value in agent.extra_context.items():
-        prompt = prompt.replace(f"{{{{{key}}}}}", str(value))
+        placeholder = f"{{{{{key}}}}}"
+        if placeholder in prompt:
+            prompt = prompt.replace(placeholder, str(value))
+        else:
+            remaining_context[key] = value
+
+    # Append any unmatched extra_context as a structured section
+    if remaining_context:
+        context_lines = ["\n## Wave Targeting Context\n"]
+        for key, value in remaining_context.items():
+            label = key.replace("_", " ").title()
+            if isinstance(value, list):
+                context_lines.append(f"### {label}")
+                for item in value:
+                    context_lines.append(f"- {item}")
+                context_lines.append("")
+            else:
+                context_lines.append(f"### {label}")
+                context_lines.append(str(value))
+                context_lines.append("")
+        prompt = prompt + "\n".join(context_lines)
 
     # Append scoped memory block (scaffold §7a)
     memory_block = build_memory_block(agent.role)
