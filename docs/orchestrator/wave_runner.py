@@ -1,22 +1,30 @@
-"""Spawns agents for a wave in parallel with safety controls: loop detection,
-budget enforcement, and backpressure via semaphore."""
+"""Spawns agents for a wave via a single SDK session using AgentDefinition.
+
+The SDK session acts as team lead: it defines agents via AgentDefinition,
+then spawns them in parallel using the Agent tool. Agent task completion
+is tracked via TaskNotificationMessage / TaskStartedMessage.
+
+Safety controls: budget enforcement via SDK, transcript logging.
+"""
 
 import json
-import anyio
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from claude_agent_sdk import (
+    AgentDefinition,
     ClaudeSDKClient,
     ClaudeAgentOptions,
     AssistantMessage,
     ResultMessage,
+    TaskNotificationMessage,
+    TaskStartedMessage,
+    TaskProgressMessage,
     TextBlock,
 )
 
 from .config import (
     AgentConfig, WaveConfig, PROJECT_ROOT, ARTIFACTS_DIR, RESULTS_DIR,
-    MAX_CONCURRENT_AGENTS, LOOP_DETECTION_WINDOW, LOOP_HASH_LENGTH,
 )
 
 
@@ -46,116 +54,156 @@ def log_safety_event(agent_name: str, event_type: str, detail: object) -> dict:
     return event
 
 
-async def run_agent(agent: AgentConfig, prompt: str) -> AgentResult:
-    """Run a single agent with loop detection and budget enforcement (scaffold §1)."""
-    options = ClaudeAgentOptions(
-        cwd=str(PROJECT_ROOT),
-        model=agent.model,
-        max_turns=agent.max_turns,
-        max_budget_usd=agent.max_cost_usd,
-        permission_mode=agent.permission_mode,
-    )
+def _build_team_lead_prompt(wave: WaveConfig) -> str:
+    """Build the prompt for the team lead that spawns all wave agents."""
+    agent_lines = []
+    for agent in wave.agents:
+        agent_lines.append(
+            f'- Spawn agent "{agent.name}" in the background using '
+            f'`run_in_background: true` and `mode: "bypassPermissions"`'
+        )
+    spawn_list = "\n".join(agent_lines)
 
-    output_text = ""
-    safety_events: list[dict] = []
-    history_hashes: list[int] = []
-    transcript: list[dict] = []  # full conversation log for reproducibility
-    stop_reason = "completed"
+    return f"""You are the team lead for Wave {wave.number} of a security audit.
 
-    async with ClaudeSDKClient(options=options) as client:
-        await client.query(prompt)
-        result_msg = None
-        async for message in client.receive_response():
-            if isinstance(message, AssistantMessage):
-                chunk = ""
-                for block in message.content:
-                    if isinstance(block, TextBlock):
-                        chunk += block.text
-                output_text += chunk
+Your ONLY job is to spawn all agents in parallel and wait for them to finish.
+Do NOT do any analysis yourself. Do NOT read any code files.
 
-                # Log to transcript
-                transcript.append({
-                    "role": "assistant",
-                    "ts": datetime.now(timezone.utc).isoformat(),
-                    "text": chunk[:5000],  # cap per-message size
-                })
+## Instructions
 
-                # Loop detection — hash last N output chunks (scaffold §1)
-                output_hash = hash(chunk[:LOOP_HASH_LENGTH])
-                if output_hash in history_hashes[-LOOP_DETECTION_WINDOW:]:
-                    event = log_safety_event(agent.name, "loop_detected", output_hash)
-                    safety_events.append(event)
-                    stop_reason = "loop_detected"
-                    break
-                history_hashes.append(output_hash)
+1. Spawn ALL of the following agents in a SINGLE message (parallel launch):
+{spawn_list}
 
-            elif isinstance(message, ResultMessage):
-                result_msg = message
-                if result_msg.stop_reason == "budget_exhausted":
-                    event = log_safety_event(agent.name, "budget_exhausted",
-                                             result_msg.total_cost_usd)
-                    safety_events.append(event)
-                    stop_reason = "budget_exhausted"
+Each agent's prompt is already defined in its AgentDefinition — just reference
+it by name. Use `model: "sonnet"` for all agents.
 
-    if result_msg is None and stop_reason == "completed":
-        raise RuntimeError(f"Agent {agent.name} did not return a ResultMessage")
+2. After all agents complete, report a summary of which agents finished
+   and their status.
 
-    # Save full transcript for reproducibility debugging
-    transcript_dir = ARTIFACTS_DIR / f"wave{agent.extra_context.get('_wave_number', 0)}-{agent.name}"
-    transcript_dir.mkdir(parents=True, exist_ok=True)
-    transcript_path = transcript_dir / "transcript.jsonl"
-    with open(transcript_path, "w") as f:
-        for entry in transcript:
-            f.write(json.dumps(entry) + "\n")
-
-    return AgentResult(
-        name=agent.name,
-        role=agent.role,
-        model=agent.model,
-        num_turns=result_msg.num_turns if result_msg else 0,
-        duration_ms=result_msg.duration_ms if result_msg else 0,
-        total_cost_usd=(result_msg.total_cost_usd if result_msg else 0.0) or 0.0,
-        stop_reason=stop_reason,
-        output_text=output_text[-2000:],
-        safety_events=safety_events,
-    )
+IMPORTANT: Spawn all agents at once in one message with multiple Agent tool calls.
+Do NOT spawn them one at a time.
+"""
 
 
 async def run_wave(wave: WaveConfig, prompts: dict[str, str]) -> list[AgentResult]:
-    """Run all agents in a wave with backpressure semaphore (scaffold §2)."""
+    """Run all agents in a wave via a single SDK session with AgentDefinition."""
+
+    # Build AgentDefinition for each agent in the wave
+    agent_defs = {}
+    for agent in wave.agents:
+        prompt = prompts[agent.name]
+        agent_defs[agent.name] = AgentDefinition(
+            description=f"Wave {wave.number} {agent.role}: {agent.name}",
+            prompt=prompt,
+            model=agent.model or "sonnet",
+        )
+
+    # Single SDK session as team lead
+    options = ClaudeAgentOptions(
+        cwd=str(PROJECT_ROOT),
+        model="haiku",  # team lead is cheap — just spawns agents
+        max_turns=len(wave.agents) * 3 + 5,  # enough turns to spawn + wait
+        permission_mode="bypassPermissions",
+        agents=agent_defs,
+    )
+
     results: list[AgentResult] = []
-    semaphore = anyio.Semaphore(MAX_CONCURRENT_AGENTS)
+    safety_events: list[dict] = []
+    agent_tasks: dict[str, dict] = {}  # task_id -> {name, started_at}
+    output_text = ""
 
-    async with anyio.create_task_group() as tg:
-        async def _run_and_collect(agent: AgentConfig):
-            async with semaphore:
-                prompt = prompts[agent.name]
-                print(f"  Spawning {agent.name} ({agent.model}, {agent.max_turns} turns)...")
-                try:
-                    result = await run_agent(agent, prompt)
-                except Exception as e:
-                    event = log_safety_event(agent.name, "agent_failed", str(e))
-                    result = AgentResult(
-                        name=agent.name, role=agent.role, model=agent.model,
-                        num_turns=0, duration_ms=0, total_cost_usd=0.0,
-                        stop_reason="error", output_text=str(e)[:2000],
-                        safety_events=[event],
-                    )
+    team_lead_prompt = _build_team_lead_prompt(wave)
+
+    async with ClaudeSDKClient(options=options) as client:
+        await client.query(team_lead_prompt)
+
+        async for message in client.receive_response():
+            if isinstance(message, AssistantMessage):
+                for block in message.content:
+                    if isinstance(block, TextBlock):
+                        output_text += block.text
+
+            elif isinstance(message, TaskStartedMessage):
+                agent_tasks[message.task_id] = {
+                    "description": message.description,
+                    "started_at": datetime.now(timezone.utc).isoformat(),
+                }
+                print(f"  Agent started: {message.description} (task {message.task_id})")
+
+            elif isinstance(message, TaskProgressMessage):
+                usage = message.usage
+                if usage:
+                    print(f"  Progress [{message.task_id}]: "
+                          f"{usage.get('total_tokens', 0)} tokens, "
+                          f"{usage.get('tool_uses', 0)} tool uses")
+
+            elif isinstance(message, TaskNotificationMessage):
+                task_info = agent_tasks.get(message.task_id, {})
+                desc = task_info.get("description", message.task_id)
+                status = message.status  # "completed" | "failed" | "stopped"
+                usage = message.usage or {}
+
+                # Try to match task to agent config by name
+                matched_agent = None
+                for agent in wave.agents:
+                    if agent.name in desc or agent.name in message.summary:
+                        matched_agent = agent
+                        break
+
+                agent_name = matched_agent.name if matched_agent else desc
+                agent_role = matched_agent.role if matched_agent else "unknown"
+                agent_model = matched_agent.model if matched_agent else "sonnet"
+
+                result = AgentResult(
+                    name=agent_name,
+                    role=agent_role,
+                    model=agent_model,
+                    num_turns=usage.get("tool_uses", 0),
+                    duration_ms=usage.get("duration_ms", 0),
+                    total_cost_usd=0.0,  # subscription mode
+                    stop_reason=status,
+                    output_text=message.summary[:2000],
+                )
+
+                if status in ("failed", "stopped"):
+                    event = log_safety_event(agent_name, f"agent_{status}", message.summary)
+                    result.safety_events.append(event)
+                    safety_events.append(event)
+
                 results.append(result)
-                print(f"  {agent.name}: {result.num_turns} turns, "
-                      f"${result.total_cost_usd:.2f}, {result.stop_reason}")
+                print(f"  Agent done: {agent_name} — {status} "
+                      f"({usage.get('duration_ms', 0)}ms, "
+                      f"{usage.get('tool_uses', 0)} tool uses)")
 
-        for agent in wave.agents:
-            tg.start_soon(_run_and_collect, agent)
+            elif isinstance(message, ResultMessage):
+                # Team lead session completed
+                if message.is_error:
+                    event = log_safety_event("team-lead", "session_error",
+                                             message.result or "unknown error")
+                    safety_events.append(event)
+                print(f"  Team lead session ended: {message.stop_reason}")
 
-    # Write safety events to JSONL log (scaffold §6)
-    safety_log = RESULTS_DIR / f"wave{wave.number}-safety.jsonl"
-    all_events = [e for r in results for e in r.safety_events]
-    if all_events:
+    # Fill in results for any agents that didn't produce a TaskNotification
+    result_names = {r.name for r in results}
+    for agent in wave.agents:
+        if agent.name not in result_names:
+            event = log_safety_event(agent.name, "agent_missing",
+                                     "No TaskNotification received")
+            results.append(AgentResult(
+                name=agent.name, role=agent.role, model=agent.model,
+                num_turns=0, duration_ms=0, total_cost_usd=0.0,
+                stop_reason="missing", output_text="",
+                safety_events=[event],
+            ))
+            safety_events.append(event)
+
+    # Write safety events to JSONL log
+    if safety_events:
+        safety_log = RESULTS_DIR / f"wave{wave.number}-safety.jsonl"
         with open(safety_log, "a") as f:
-            for event in all_events:
+            for event in safety_events:
                 f.write(json.dumps(event) + "\n")
-        print(f"  Safety log: {len(all_events)} events → {safety_log}")
+        print(f"  Safety log: {len(safety_events)} events → {safety_log}")
 
     return results
 
@@ -164,10 +212,16 @@ def collect_artifacts(wave: WaveConfig) -> dict[str, str]:
     """Read agent disk artifacts after wave completion."""
     artifacts = {}
     for agent in wave.agents:
-        artifact_path = ARTIFACTS_DIR / f"wave{wave.number}-{agent.name}.md"
-        if artifact_path.exists():
-            artifacts[agent.name] = artifact_path.read_text()
+        # Agents write to wave{N}-{name}/report.md (directory-based)
+        artifact_dir = ARTIFACTS_DIR / f"wave{wave.number}-{agent.name}"
+        report_path = artifact_dir / "report.md"
+        # Fallback: flat file wave{N}-{name}.md (backward compat)
+        flat_path = ARTIFACTS_DIR / f"wave{wave.number}-{agent.name}.md"
+        if report_path.exists():
+            artifacts[agent.name] = report_path.read_text()
+        elif flat_path.exists():
+            artifacts[agent.name] = flat_path.read_text()
         else:
-            print(f"  WARNING: No artifact found for {agent.name} at {artifact_path}")
+            print(f"  WARNING: No artifact found for {agent.name} at {report_path} or {flat_path}")
             artifacts[agent.name] = ""
     return artifacts

@@ -1,0 +1,123 @@
+{
+  "agent_name": "cross-contract-tracer",
+  "agent_role": "cross-contract-tracer",
+  "wave": 1,
+  "findings": [
+    {
+      "id": "XB-001",
+      "title": "SingleProviderPoolType hook controls price oracle with state write after external call",
+      "severity": "medium",
+      "confidence": "medium",
+      "status": "needs_review",
+      "contracts": ["SingleProviderPoolType.sol", "AMMModule.sol"],
+      "functions": ["swapByInput", "swapByOutput", "getPoolPriceForSwap"],
+      "lines": {"SingleProviderPoolType.sol": [312, 323, 331]},
+      "category": "reentrancy",
+      "description": "SingleProviderPoolType calls ILimitBreakAMM(AMM).getPoolState(poolId) mid-execution (re-entrant call back to AMM core) AND then calls ISingleProviderPoolHook(poolHook).getPoolPriceForSwap() where the hook is an arbitrary external contract. The context parameter forwarded to the hook contains msg.sender. lastSqrtPriceX96 is written AFTER the hook call, creating a CEI violation where an attacker-controlled hook could re-enter and observe stale state.",
+      "impact": "Oracle price manipulation via hook; attacker-controlled hook determines swap pricing",
+      "proof_sketch": "1. Deploy malicious pool hook. 2. During swap, getPoolPriceForSwap callback fires. 3. Hook re-enters AMM via another swap. 4. lastSqrtPriceX96 not yet written = stale price.",
+      "repos": ["lbamm-pool-type-single-provider", "lbamm-core"],
+      "cross_boundary": true,
+      "keywords": ["reentrancy", "hook", "price-oracle", "CEI", "cross-boundary", "delegatecall"]
+    },
+    {
+      "id": "XB-002",
+      "title": "Transfer handler callback fires after all state mutations and token transfers in _finalizeSwap",
+      "severity": "medium",
+      "confidence": "medium",
+      "status": "needs_review",
+      "contracts": ["AMMModule.sol"],
+      "functions": ["_finalizeSwapCollectFundsAndDisburse", "_executeTransferHandlerCallback"],
+      "lines": {"AMMModule.sol": [2237, 2243, 2247]},
+      "category": "reentrancy",
+      "description": "In _finalizeSwapCollectFundsAndDisburse, the transfer handler callback is called AFTER output tokens have been sent to the recipient and AFTER executeQueuedHookFeesByHookTransfers. The callback fires into an arbitrary contract with all fees already processed. While the balance check guards against theft of inputTokens, the callback has no guard on what it can do to AMM state.",
+      "impact": "Arbitrary contract callback after all token transfers; potential AMM state manipulation during re-entry",
+      "proof_sketch": "1. Set up transfer handler with malicious callback. 2. Execute swap. 3. Output tokens sent, fees processed. 4. Callback fires into attacker contract. 5. Check reentrancy guard state at this point.",
+      "repos": ["lbamm-core", "lbamm-hooks-and-handlers"],
+      "cross_boundary": true,
+      "keywords": ["callback", "transfer-handler", "reentrancy", "settlement-ordering"]
+    },
+    {
+      "id": "XB-003",
+      "title": "setTokenSettings CEI violation with external hookFlags() call before state write",
+      "severity": "low",
+      "confidence": "medium",
+      "status": "needs_review",
+      "contracts": ["ModuleAdmin.sol"],
+      "functions": ["setTokenSettings"],
+      "lines": {"ModuleAdmin.sol": [283, 293, 294]},
+      "category": "reentrancy",
+      "description": "setTokenSettings calls ILimitBreakAMMTokenHook(tokenHook).hookFlags() before writing tokenSettings. However, this function has nonReentrant protection, so direct reentrancy is blocked. Concern is limited to cross-function reentrancy paths.",
+      "impact": "Limited — nonReentrant blocks direct re-entry; cross-function paths need investigation",
+      "proof_sketch": "1. hookFlags() fires into external contract. 2. nonReentrant blocks direct re-entry. 3. Check if there are unguarded cross-function paths.",
+      "repos": ["lbamm-core"],
+      "cross_boundary": true,
+      "keywords": ["CEI", "hookFlags", "nonReentrant", "token-settings"]
+    },
+    {
+      "id": "XB-004",
+      "title": "balanceInBefore stale after ETH refund via _depositWrappedNativeAndRefundExcess",
+      "severity": "medium",
+      "confidence": "medium",
+      "status": "needs_review",
+      "contracts": ["AMMModule.sol"],
+      "functions": ["_finalizeSwapCollectFundsAndDisburse", "_depositWrappedNativeAndRefundExcess"],
+      "lines": {"AMMModule.sol": [2180, 3253, 2208]},
+      "category": "reentrancy",
+      "description": "After _depositWrappedNativeAndRefundExcess sends ETH back to executor via .call (which triggers executor's fallback), the AMM checks balanceInBefore + amountIn == balanceInAfter. If executor's fallback re-enters with a different swap, balanceInBefore was read before the re-entrant call mutated the balance. Reentrancy guard should block this but warrants verification.",
+      "impact": "Stale balance check could allow double-counting of deposited funds",
+      "proof_sketch": "1. Call swap with msg.value. 2. ETH refund triggers executor fallback. 3. Fallback re-enters AMM. 4. balanceInBefore is stale from before refund call.",
+      "repos": ["lbamm-core"],
+      "cross_boundary": false,
+      "keywords": ["reentrancy", "balance-check", "ETH", "stale", "refund"]
+    }
+  ],
+  "hot_spots": [
+    {
+      "contract": "SingleProviderPoolType.sol",
+      "function": "swapByInput",
+      "repo": "lbamm-pool-type-single-provider",
+      "score": 8.0,
+      "reason": "3-hop cross-boundary call: core -> pool type -> hook -> price. Hook controls pricing, state write after call. CEI violation.",
+      "static_hits": 1,
+      "cross_boundary": true
+    },
+    {
+      "contract": "AMMModule.sol",
+      "function": "_finalizeSwapCollectFundsAndDisburse",
+      "repo": "lbamm-core",
+      "score": 8.5,
+      "reason": "Transfer handler callback fires after all token transfers and fee processing. Critical settlement ordering boundary.",
+      "static_hits": 2,
+      "cross_boundary": true
+    },
+    {
+      "contract": "AMMModule.sol",
+      "function": "_executeQueuedHookFeesByHookTransfers",
+      "repo": "lbamm-core",
+      "score": 7.5,
+      "reason": "Reentrancy flags cleared before external hook fee distribution; CP-001 variant at cross-boundary",
+      "static_hits": 1,
+      "cross_boundary": true
+    },
+    {
+      "contract": "AMMModule.sol",
+      "function": "_depositWrappedNativeAndRefundExcess",
+      "repo": "lbamm-core",
+      "score": 7.0,
+      "reason": "ETH refund triggers executor fallback between balance snapshot and check",
+      "static_hits": 2,
+      "cross_boundary": false
+    }
+  ],
+  "ruled_out_vectors": [
+    {"id": "RO-XB1", "title": "Pool type delegatecall storage collision", "severity": "info", "confidence": "high", "status": "ruled_out", "contracts": ["AMMModule.sol"], "functions": [], "lines": {}, "category": "delegatecall", "description": "Pool types are called via external call (ILimitBreakAMMPoolType(...).swapByInput(...)), NOT delegatecall. Storage isolation is maintained. Codebase map incorrectly says delegatecall.", "impact": "None", "proof_sketch": "Code uses external interface calls, not delegatecall", "repos": ["lbamm-core"], "cross_boundary": true, "keywords": ["delegatecall", "storage", "collision"]}
+  ],
+  "metadata": {
+    "chains_traced": 8,
+    "boundaries_crossed": 15,
+    "duration_ms": 107880,
+    "total_tokens": 161153,
+    "key_correction": "Pool types are called via external call, NOT delegatecall from core. Codebase map is incorrect on this point."
+  }
+}
