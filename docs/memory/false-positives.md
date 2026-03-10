@@ -14,13 +14,13 @@ If partial match (similar but different code path), proceed but reference the re
 
 ---
 
-## CLOB Domain
+## CLOB Domain (target: hooks-and-handlers)
 
 ### FP-C01: Virtual balance invariant violation
 - **Scope**: [clob-auditor, economic-analyst, red-team-adversary]
 - **Contracts**: CLOBTransferHandler.sol, CLOBHelper.sol
 - **Vector**: Deposit/withdraw/open/close/fill paths might break virtual balance conservation
-- **Why false**: All 5 modification paths maintain conservation. Fuzz-verified (CLOBStateMachineFuzzTest, 17 tests, 3 invariants). No path creates or destroys virtual tokens.
+- **Why false**: All 5 modification paths maintain conservation. Fuzz-verified (CLOBStateMachineFuzzTest, 6 test functions, 3 invariants). No path creates or destroys virtual tokens.
 - **Confidence**: 95
 - **Source**: v2 (clob-auditor)
 - **Category**: ACCOUNTING
@@ -128,7 +128,7 @@ If partial match (similar but different code path), proceed but reference the re
 
 ---
 
-## Permit Domain
+## Permit Domain (target: hooks-and-handlers)
 
 ### FP-P01: tokenIn not in additionalDataHash
 - **Scope**: [permit-auditor]
@@ -232,7 +232,7 @@ If partial match (similar but different code path), proceed but reference the re
 
 ---
 
-## Hook Domain
+## Hook Domain (target: hooks-and-handlers)
 
 ### FP-H01: Tstorish sstore fallback cross-tx
 - **Scope**: [hook-auditor, cross-contract-tracer]
@@ -356,7 +356,7 @@ If partial match (similar but different code path), proceed but reference the re
 
 ---
 
-## Registry Domain
+## Registry Domain (target: hooks-and-handlers)
 
 ### FP-R01: Pricing bounds min>0, max=0 locks trading
 - **Scope**: [registry-auditor, hook-auditor]
@@ -450,11 +450,11 @@ If partial match (similar but different code path), proceed but reference the re
 
 ---
 
-## Cross-Domain
+## Cross-Domain (target: hooks-and-handlers × lbamm-core)
 
 ### FP-X01: Transient storage shared slot overwrite (by-design)
 - **Scope**: [hook-auditor, cross-contract-tracer, clob-auditor]
-- **Contracts**: AMMStandardHook.sol, AMMModule.sol (../lbamm-core/)
+- **Contracts**: AMMStandardHook.sol, AMMModule.sol (lbamm-core/)
 - **Vector**: AMM calls beforeSwap per-token (tokenIn then tokenOut), both receive same params.amount. Shared transient slot 0xFFFFFFFFFFFFFFFF overwritten by second call.
 - **Why false**: Fragile-by-design, NOT exploitable. afterSwap only reads the second value, which is the correct one for its token. The "overwrite" is intentional sequencing.
 - **Confidence**: 95

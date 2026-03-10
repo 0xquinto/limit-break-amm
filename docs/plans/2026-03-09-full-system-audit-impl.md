@@ -17,7 +17,7 @@
 - 7 fuzz tests in `lbamm-hooks-and-handlers/test/audit/fuzz/` (live in target repo for compilation)
 - 4 PoC tests in `lbamm-hooks-and-handlers/test/audit/poc/`
 - 3 economic models in `lbamm-hooks-and-handlers/test/audit/economic/`
-- Memory system: `docs/memory/` (digest, 45 FPs, 5 confirmed patterns, 8 lessons, 2 episodes)
+- Memory system: `docs/memory/` (digest, 44 FPs, 5 confirmed patterns, 8 lessons, 2 episodes)
 
 ---
 
