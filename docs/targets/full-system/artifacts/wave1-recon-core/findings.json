@@ -1,0 +1,169 @@
+{
+  "agent_name": "recon-core",
+  "agent_role": "recon",
+  "wave": 1,
+  "findings": [
+    {
+      "id": "CORE-001",
+      "title": "Balance-check reentrancy: stale balanceInBefore after ETH refund",
+      "severity": "medium",
+      "confidence": "medium",
+      "status": "needs_review",
+      "contracts": ["AMMModule.sol"],
+      "functions": ["_finalizeSwapCollectFundsAndDisburse", "_depositWrappedNativeAndRefundExcess"],
+      "lines": {"AMMModule.sol": [2180, 2187, 2208]},
+      "category": "reentrancy",
+      "description": "balanceInBefore is snapshotted before ETH is sent to executor via call{value}. Executor fallback fires between snapshot and balance comparison. Reentrancy guard is set at outer function but guard state needs verification. NOTE: nonReentrantWithFlags on outer swap blocks re-entry at refund point; severity reduced from high.",
+      "impact": "Attacker could re-enter and manipulate balance check, potentially collecting more tokenIn than deposited",
+      "proof_sketch": "1. Call singleSwap with tokenIn=WETH and msg.value. 2. _depositWrappedNativeAndRefundExcess sends excess ETH via call{value} to executor. 3. Executor fallback re-enters AMM during ETH send. 4. Check if balanceInBefore is stale.",
+      "repos": ["lbamm-core"],
+      "cross_boundary": false,
+      "keywords": ["reentrancy", "balance-check", "ETH", "wrapped-native"]
+    },
+    {
+      "id": "CORE-002",
+      "title": "Reentrancy guard cleared before hook fee external calls in queue executor",
+      "severity": "high",
+      "confidence": "medium",
+      "status": "needs_review",
+      "contracts": ["AMMModule.sol"],
+      "functions": ["_executeQueuedHookFeesByHookTransfers", "_transferHookFeesByHook"],
+      "lines": {"AMMModule.sol": [3183, 3190, 3192, 3195]},
+      "category": "transient-storage",
+      "description": "_setReentrancyFlags(NO_FLAGS) is called at line 3190 before the loop of external hook fee transfer calls. During those external calls, any smart contract recipient can re-enter the AMM with no guard set.",
+      "impact": "Hook fee recipient could drain additional fees or manipulate AMM state during unguarded re-entry",
+      "proof_sketch": "1. Execute swap with hook that queues fee to a malicious recipient. 2. executeQueuedHookFeesByHookTransfers clears flags at line 3190. 3. Malicious recipient's receive() re-enters AMM. 4. No reentrancy guard is set at this point.",
+      "repos": ["lbamm-core"],
+      "cross_boundary": false,
+      "keywords": ["reentrancy", "transient-storage", "hook-fees", "flag-clearing"]
+    },
+    {
+      "id": "CORE-003",
+      "title": "setTokenSettings makes external call before state write (CEI violation)",
+      "severity": "medium",
+      "confidence": "medium",
+      "status": "needs_review",
+      "contracts": ["ModuleAdmin.sol"],
+      "functions": ["setTokenSettings"],
+      "lines": {"ModuleAdmin.sol": [283, 293, 294]},
+      "category": "access-control",
+      "description": "hookFlags() external call on untrusted hook contract occurs before tokenSettings storage write. A malicious hook could re-enter other AMM functions that read partially-written token settings.",
+      "impact": "Partial token settings state could be read by re-entered functions, enabling misconfigured hook enforcement",
+      "proof_sketch": "1. Deploy malicious hook whose hookFlags() re-enters createPool or addLiquidity. 2. Call setTokenSettings(token, maliciousHook, flags). 3. hookFlags() triggers re-entry. 4. Re-entered function reads stale tokenSettings.",
+      "repos": ["lbamm-core"],
+      "cross_boundary": true,
+      "keywords": ["CEI", "reentrancy", "external-call", "token-settings"]
+    },
+    {
+      "id": "CORE-004",
+      "title": "Flash loan fee token from hook enables balance check manipulation",
+      "severity": "low",
+      "confidence": "low",
+      "status": "needs_review",
+      "contracts": ["AMMModule.sol"],
+      "functions": ["_flashLoan", "_executeTokenFlashloanHooks"],
+      "lines": {"AMMModule.sol": [3296, 3302, 3311, 3342, 3366]},
+      "category": "precision",
+      "description": "The hook can return an arbitrary feeToken. Fee-on-transfer or rebasing tokens as feeToken would cause requiredFeeTokenBalanceAfter to be computed incorrectly. NOTE: feeToken is admin-configured via hook, not attacker-controlled; severity reduced.",
+      "impact": "Flash loan fee bypass: attacker borrows tokens paying insufficient fees",
+      "proof_sketch": "1. Set up token hook that returns a fee-on-transfer token as feeToken. 2. Execute flashLoan. 3. Balance check uses static snapshot but fee-on-transfer token loses value during transfer.",
+      "repos": ["lbamm-core"],
+      "cross_boundary": true,
+      "keywords": ["flashloan", "fee-token", "fee-on-transfer", "balance-check"]
+    },
+    {
+      "id": "CORE-005",
+      "title": "SecureProxy pause code replay after admin pause clear",
+      "severity": "low",
+      "confidence": "medium",
+      "status": "needs_review",
+      "contracts": ["SecureProxy.sol"],
+      "functions": ["securePause", "secureAdminPause"],
+      "lines": {"SecureProxy.sol": [110, 280, 285, 291]},
+      "category": "access-control",
+      "description": "After secureAdminPause(true) clears a pause, already-used Tier 1 codes are consumed but any unused Tier 1 codes in a valid code set can trigger another pause.",
+      "impact": "Griefing: protocol repeatedly paused using revealed codes, disrupting operations for up to 30 min intervals",
+      "proof_sketch": "1. Attacker observes Tier 1 code used on-chain. 2. Admin clears pause. 3. Another unused Tier 1 code from same set replayed. 4. Protocol paused again.",
+      "repos": ["secure-proxy"],
+      "cross_boundary": false,
+      "keywords": ["pause", "replay", "escalation", "griefing"]
+    },
+    {
+      "id": "CORE-006",
+      "title": "_safeDecrementUint128 does not check uint128 truncation",
+      "severity": "info",
+      "confidence": "medium",
+      "status": "needs_review",
+      "contracts": ["AMMModule.sol"],
+      "functions": ["_safeDecrementUint128"],
+      "lines": {"AMMModule.sol": [3520, 3522, 3523]},
+      "category": "precision",
+      "description": "The assembly only checks gt(difference, a) to catch underflow, but does not verify difference <= type(uint128).max.",
+      "impact": "Silent truncation of fee or reserve values",
+      "proof_sketch": "Find path where _safeDecrementUint128 is called with a > type(uint128).max.",
+      "repos": ["lbamm-core"],
+      "cross_boundary": false,
+      "keywords": ["truncation", "uint128", "assembly", "overflow"]
+    }
+  ],
+  "hot_spots": [
+    {
+      "contract": "AMMModule.sol",
+      "function": "_finalizeSwapCollectFundsAndDisburse",
+      "repo": "lbamm-core",
+      "score": 8.5,
+      "reason": "balanceInBefore captured before ETH refund send; executor can re-enter between capture and check",
+      "static_hits": 2,
+      "cross_boundary": false
+    },
+    {
+      "contract": "AMMModule.sol",
+      "function": "_executeQueuedHookFeesByHookTransfers",
+      "repo": "lbamm-core",
+      "score": 8.0,
+      "reason": "Reentrancy flags cleared (NO_FLAGS) before external hook fee distribution loop; CP-001 variant",
+      "static_hits": 1,
+      "cross_boundary": false
+    },
+    {
+      "contract": "ModuleAdmin.sol",
+      "function": "setTokenSettings",
+      "repo": "lbamm-core",
+      "score": 6.5,
+      "reason": "External call to untrusted hook before storage write; Aderyn H-1; re-entry to other paths possible",
+      "static_hits": 1,
+      "cross_boundary": true
+    },
+    {
+      "contract": "AMMModule.sol",
+      "function": "_flashLoan",
+      "repo": "lbamm-core",
+      "score": 6.0,
+      "reason": "Hook-controlled fee token enables balance check manipulation with fee-on-transfer tokens",
+      "static_hits": 1,
+      "cross_boundary": true
+    },
+    {
+      "contract": "SecureProxy.sol",
+      "function": "securePause",
+      "repo": "secure-proxy",
+      "score": 4.5,
+      "reason": "Revealed codes can be replayed for Tier 1 pause after admin clear; griefing vector",
+      "static_hits": 0,
+      "cross_boundary": false
+    }
+  ],
+  "ruled_out_vectors": [
+    {"id": "RO-1", "title": "arbitrary-send-erc20 (Slither ID-0)", "severity": "info", "confidence": "high", "status": "ruled_out", "contracts": ["AMMModule.sol"], "functions": [], "lines": {}, "category": "access-control", "description": "Intentional design; executor-authorized pull; balance-checked", "impact": "None", "proof_sketch": "Executor-authorized, balance-checked", "repos": ["lbamm-core"], "cross_boundary": false, "keywords": ["erc20", "transfer"]},
+    {"id": "RO-2", "title": "incorrect-return (DelegateCall assembly)", "severity": "info", "confidence": "high", "status": "ruled_out", "contracts": ["SecureProxy.sol"], "functions": ["fallback"], "lines": {}, "category": "access-control", "description": "Standard proxy pattern; Slither false positive", "impact": "None", "proof_sketch": "Standard proxy assembly return pattern", "repos": ["secure-proxy"], "cross_boundary": false, "keywords": ["delegatecall", "proxy"]},
+    {"id": "RO-3", "title": "timestamp manipulation", "severity": "info", "confidence": "high", "status": "ruled_out", "contracts": ["SecureProxy.sol"], "functions": [], "lines": {}, "category": "access-control", "description": "15-second miner window; tier durations 30min+", "impact": "None", "proof_sketch": "Margins too large to exploit", "repos": ["secure-proxy"], "cross_boundary": false, "keywords": ["timestamp"]},
+    {"id": "RO-4", "title": "uninitialized-local variables", "severity": "info", "confidence": "high", "status": "ruled_out", "contracts": ["AMMModule.sol"], "functions": [], "lines": {}, "category": "precision", "description": "Solidity zero-initializes; conditional population is correct", "impact": "None", "proof_sketch": "Zero-initialized by Solidity", "repos": ["lbamm-core"], "cross_boundary": false, "keywords": ["uninitialized"]}
+  ],
+  "metadata": {
+    "files_read": 12,
+    "tool_uses": 31,
+    "scope_coverage_pct": 75,
+    "duration_ms": 325517,
+    "total_tokens": 130923
+  }
+}

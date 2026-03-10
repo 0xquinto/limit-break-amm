@@ -1,0 +1,154 @@
+{
+  "agent_name": "recon-pools",
+  "agent_role": "recon",
+  "wave": 1,
+  "findings": [
+    {
+      "id": "POOL-001",
+      "title": "DynamicPoolType has no onlyAMM access control guard",
+      "severity": "low",
+      "confidence": "medium",
+      "status": "needs_review",
+      "contracts": ["DynamicPoolType.sol"],
+      "functions": ["swapByInput", "swapByOutput", "addLiquidity", "removeLiquidity"],
+      "lines": {"DynamicPoolType.sol": [55, 690]},
+      "category": "access-control",
+      "description": "Unlike FixedPoolType and SingleProviderPoolType which enforce onlyAMM, DynamicPoolType has zero access control on all external state-mutating functions. Storage is namespaced by msg.sender (globalState[msg.sender]), so direct callers write to their own namespace. Critical question: does AMMModule dispatch via delegatecall (preserving msg.sender=AMM, making this correct) or external call? NOTE: Cross-contract-tracer confirmed external call pattern (not delegatecall). Namespace-by-sender isolates pools; direct callers only write to their own namespace. Severity reduced.",
+      "impact": "If external call: any caller can interact with pool type state using any address as the AMM key",
+      "proof_sketch": "1. Check AMMModule dispatch mechanism to pool types. 2. If external call, msg.sender = AMM address. 3. If delegatecall, msg.sender preserved. 4. Verify namespace isolation under both models.",
+      "repos": ["amm-pool-type-dynamic"],
+      "cross_boundary": true,
+      "keywords": ["access-control", "onlyAMM", "msg.sender", "namespace", "delegatecall"]
+    },
+    {
+      "id": "POOL-002",
+      "title": "SingleProviderPoolType state write after external hook call",
+      "severity": "high",
+      "confidence": "medium",
+      "status": "needs_review",
+      "contracts": ["SingleProviderPoolType.sol"],
+      "functions": ["swapByInput", "swapByOutput"],
+      "lines": {"SingleProviderPoolType.sol": [312, 323, 331, 397, 408, 416]},
+      "category": "reentrancy",
+      "description": "Both swap functions call ILimitBreakAMM(AMM).getPoolState(), then ISingleProviderPoolHook(poolHook).getPoolPriceForSwap() (user-controlled contract), then write pools[poolId].lastSqrtPriceX96. Aderyn flagged as H-1. A malicious hook could re-enter the AMM during price retrieval and manipulate the price cache.",
+      "impact": "Price manipulation via malicious hook re-entering AMM during getPoolPriceForSwap callback",
+      "proof_sketch": "1. Deploy malicious hook. 2. Hook re-enters AMM during getPoolPriceForSwap. 3. AMM state changes before lastSqrtPriceX96 is written. 4. Stale price cached.",
+      "repos": ["lbamm-pool-type-single-provider"],
+      "cross_boundary": true,
+      "keywords": ["reentrancy", "hook", "price-oracle", "state-write", "CEI"]
+    },
+    {
+      "id": "POOL-003",
+      "title": "DynamicPool snapPrice via addLiquidity allows arbitrary price movement",
+      "severity": "info",
+      "confidence": "medium",
+      "status": "needs_review",
+      "contracts": ["DynamicPoolType.sol", "DynamicHelper.sol"],
+      "functions": ["addLiquidity", "snapPrice"],
+      "lines": {"DynamicPoolType.sol": [232, 234], "DynamicHelper.sol": [237, 291]},
+      "category": "precision",
+      "description": "addLiquidity accepts snapSqrtPriceX96 which moves pool price to an arbitrary value. Combined with no AMM guard (POOL-001), this is a price manipulation vector. NOTE: snapPrice is intentional design — this is how dynamic pool price initialization works. Demoted to info.",
+      "impact": "Pool price can be moved to arbitrary value during liquidity addition",
+      "proof_sketch": "1. Call addLiquidity with snapSqrtPriceX96 = manipulated value. 2. Pool price moved. 3. Swap at manipulated price. 4. Profit.",
+      "repos": ["amm-pool-type-dynamic"],
+      "cross_boundary": true,
+      "keywords": ["price-manipulation", "snapPrice", "addLiquidity", "sqrtPriceX96"]
+    },
+    {
+      "id": "POOL-004",
+      "title": "FixedHelper _splitAmountsAndFeesByHeight highest complexity rounding",
+      "severity": "medium",
+      "confidence": "low",
+      "status": "needs_review",
+      "contracts": ["FixedHelper.sol"],
+      "functions": ["_splitAmountsAndFeesByHeight"],
+      "lines": {"FixedHelper.sol": [1559, 1680, 1736]},
+      "category": "precision",
+      "description": "Highest cyclomatic complexity function (20). Multi-pass rounding corrections, +1 allowance at line 1680, unchecked arithmetic in excess-fee path. Divide-before-multiply in height traversal loops (Slither IDs 5/6).",
+      "impact": "Rounding errors accumulating across multiple height levels could lead to value extraction",
+      "proof_sketch": "Fuzz with extreme height counts and small amounts to find rounding discrepancies.",
+      "repos": ["lbamm-pool-type-fixed"],
+      "cross_boundary": false,
+      "keywords": ["rounding", "precision", "divide-before-multiply", "complexity"]
+    },
+    {
+      "id": "POOL-005",
+      "title": "FixedHelper withdrawLiquidity bitwise OR operator precedence bug",
+      "severity": "medium",
+      "confidence": "medium",
+      "status": "needs_review",
+      "contracts": ["FixedHelper.sol"],
+      "functions": ["withdrawLiquidity"],
+      "lines": {"FixedHelper.sol": [69, 74]},
+      "category": "precision",
+      "description": "if (redeposited0 | redeposited1 == 0) uses bitwise OR, not logical OR — only reverts if BOTH are zero. Operator precedence: | has lower precedence than ==, so this parses as redeposited0 | (redeposited1 == 0). If exactly one side is zero and the other is non-zero, the unchecked subtraction on line 74 proceeds.",
+      "impact": "Potential underflow in unchecked subtraction when one redeposited value is zero",
+      "proof_sketch": "1. Call withdrawLiquidity where redeposited0=0, redeposited1>0. 2. Check parses as 0 | (redeposited1 == 0) = 0 | false = 0. 3. Revert triggers. But if redeposited0>0, redeposited1=0: redeposited0 | (0 == 0) = redeposited0 | 1 = nonzero. 4. No revert, unchecked subtraction proceeds.",
+      "repos": ["lbamm-pool-type-fixed"],
+      "cross_boundary": false,
+      "keywords": ["operator-precedence", "bitwise-OR", "underflow", "unchecked"]
+    }
+  ],
+  "hot_spots": [
+    {
+      "contract": "DynamicPoolType.sol",
+      "function": "swapByInput",
+      "repo": "amm-pool-type-dynamic",
+      "score": 8.0,
+      "reason": "No onlyAMM guard; namespace-by-sender pattern needs verification against call mechanism",
+      "static_hits": 0,
+      "cross_boundary": true
+    },
+    {
+      "contract": "SingleProviderPoolType.sol",
+      "function": "swapByInput",
+      "repo": "lbamm-pool-type-single-provider",
+      "score": 7.5,
+      "reason": "State write after external hook call; Aderyn H-1; malicious hook can re-enter",
+      "static_hits": 1,
+      "cross_boundary": true
+    },
+    {
+      "contract": "DynamicHelper.sol",
+      "function": "snapPrice",
+      "repo": "amm-pool-type-dynamic",
+      "score": 7.0,
+      "reason": "Arbitrary price movement via addLiquidity snapSqrtPriceX96 parameter",
+      "static_hits": 0,
+      "cross_boundary": true
+    },
+    {
+      "contract": "FixedHelper.sol",
+      "function": "_splitAmountsAndFeesByHeight",
+      "repo": "lbamm-pool-type-fixed",
+      "score": 6.5,
+      "reason": "Highest complexity, multi-pass rounding, divide-before-multiply, unchecked arithmetic",
+      "static_hits": 2,
+      "cross_boundary": false
+    },
+    {
+      "contract": "FixedHelper.sol",
+      "function": "withdrawLiquidity",
+      "repo": "lbamm-pool-type-fixed",
+      "score": 6.0,
+      "reason": "Bitwise OR operator precedence bug; potential underflow in unchecked subtraction",
+      "static_hits": 0,
+      "cross_boundary": false
+    }
+  ],
+  "ruled_out_vectors": [
+    {"id": "RO-P1", "title": "TickMath divide-before-multiply", "severity": "info", "confidence": "high", "status": "ruled_out", "contracts": ["TickMath.sol"], "functions": [], "lines": {}, "category": "precision", "description": "Uniswap v3 reference implementation; known acceptable precision loss", "impact": "None", "proof_sketch": "Standard Uniswap v3 math", "repos": ["amm-pool-type-dynamic"], "cross_boundary": false, "keywords": ["tickmath", "uniswap"]},
+    {"id": "RO-P2", "title": "DynamicHelper maxLiquidityPerTick floor rounding", "severity": "info", "confidence": "high", "status": "ruled_out", "contracts": ["DynamicHelper.sol"], "functions": [], "lines": {}, "category": "precision", "description": "Intentional floor rounding", "impact": "None", "proof_sketch": "Design choice", "repos": ["amm-pool-type-dynamic"], "cross_boundary": false, "keywords": ["rounding"]},
+    {"id": "RO-P3", "title": "BitMath Solady assembly", "severity": "info", "confidence": "high", "status": "ruled_out", "contracts": ["BitMath.sol"], "functions": [], "lines": {}, "category": "precision", "description": "Solady battle-tested assembly", "impact": "None", "proof_sketch": "Audited library", "repos": ["amm-pool-type-dynamic"], "cross_boundary": false, "keywords": ["solady"]},
+    {"id": "RO-P4", "title": "FixedPoolType uninitialized state", "severity": "info", "confidence": "high", "status": "ruled_out", "contracts": ["FixedPoolType.sol"], "functions": [], "lines": {}, "category": "access-control", "description": "Mapping default values; conditional population correct", "impact": "None", "proof_sketch": "Solidity zero-initialized mappings", "repos": ["lbamm-pool-type-fixed"], "cross_boundary": false, "keywords": ["uninitialized"]},
+    {"id": "RO-P5", "title": "computeRatioX96 zero-return guarded", "severity": "info", "confidence": "high", "status": "ruled_out", "contracts": ["SqrtPriceCalculator.sol"], "functions": ["computeRatioX96"], "lines": {}, "category": "precision", "description": "Zero-check guards on ratio computation", "impact": "None", "proof_sketch": "Return value checked by callers", "repos": ["lbamm-pool-type-fixed"], "cross_boundary": false, "keywords": ["ratio", "zero"]},
+    {"id": "RO-P6", "title": "Hook replay via PermitC", "severity": "info", "confidence": "high", "status": "ruled_out", "contracts": [], "functions": [], "lines": {}, "category": "access-control", "description": "Handled upstream by PermitC nonce system", "impact": "None", "proof_sketch": "PermitC bitmap nonces", "repos": ["lbamm-pool-type-fixed"], "cross_boundary": false, "keywords": ["replay", "nonce"]},
+    {"id": "RO-P7", "title": "Transient storage overwrite by-design", "severity": "info", "confidence": "high", "status": "ruled_out", "contracts": [], "functions": [], "lines": {}, "category": "transient-storage", "description": "Known FP — by-design pattern", "impact": "None", "proof_sketch": "FP-X01", "repos": ["amm-pool-type-dynamic"], "cross_boundary": false, "keywords": ["transient", "overwrite"]}
+  ],
+  "metadata": {
+    "files_read": 18,
+    "tool_uses": 31,
+    "duration_ms": 257735,
+    "total_tokens": 140573
+  }
+}
