@@ -14,8 +14,7 @@ If partial match (similar but different code path), proceed but reference the re
 
 ---
 
-## CLOB Domain (target: hooks-and-handlers)
-
+## CLOB Domain 
 ### FP-C01: Virtual balance invariant violation
 - **Scope**: [clob-auditor, economic-analyst, red-team-adversary]
 - **Contracts**: CLOBTransferHandler.sol, CLOBHelper.sol
@@ -128,8 +127,7 @@ If partial match (similar but different code path), proceed but reference the re
 
 ---
 
-## Permit Domain (target: hooks-and-handlers)
-
+## Permit Domain 
 ### FP-P01: tokenIn not in additionalDataHash
 - **Scope**: [permit-auditor]
 - **Contracts**: PermitTransferHandler.sol
@@ -232,8 +230,7 @@ If partial match (similar but different code path), proceed but reference the re
 
 ---
 
-## Hook Domain (target: hooks-and-handlers)
-
+## Hook Domain 
 ### FP-H01: Tstorish sstore fallback cross-tx
 - **Scope**: [hook-auditor, cross-contract-tracer]
 - **Contracts**: AMMStandardHook.sol
@@ -356,8 +353,7 @@ If partial match (similar but different code path), proceed but reference the re
 
 ---
 
-## Registry Domain (target: hooks-and-handlers)
-
+## Registry Domain 
 ### FP-R01: Pricing bounds min>0, max=0 locks trading
 - **Scope**: [registry-auditor, hook-auditor]
 - **Contracts**: CreatorHookSettingsRegistry.sol
@@ -450,8 +446,7 @@ If partial match (similar but different code path), proceed but reference the re
 
 ---
 
-## Cross-Domain (target: hooks-and-handlers × lbamm-core)
-
+## Cross-Domain 
 ### FP-X01: Transient storage shared slot overwrite (by-design)
 - **Scope**: [hook-auditor, cross-contract-tracer, clob-auditor]
 - **Contracts**: AMMStandardHook.sol, AMMModule.sol (lbamm-core/)
