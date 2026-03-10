@@ -165,7 +165,7 @@ After the Phase 0 closing `---` (line 33) and before "## Phase 1:" (line 35), in
    cat docs/results/v2-findings-report.md >> docs/artifacts/prior-findings.md 2>/dev/null || true
    echo -e "\n---\n" >> docs/artifacts/prior-findings.md
    echo "## Known False Positives" >> docs/artifacts/prior-findings.md
-   cat docs/memory/false-positives.md >> docs/artifacts/prior-findings.md 2>/dev/null || true
+   cat docs/audit_memory/false-positives.md >> docs/artifacts/prior-findings.md 2>/dev/null || true
    ```
 2. The file should contain:
    - Confirmed findings from prior runs (with severity, location, what was new)

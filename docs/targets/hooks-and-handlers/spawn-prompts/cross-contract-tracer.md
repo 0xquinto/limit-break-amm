@@ -14,15 +14,15 @@ Then read `docs/CODEBASE_MAP.md` for architecture context.
 If `docs/targets/hooks-and-handlers/artifacts/prior-findings.md` exists, read it for context from prior runs.
 
 ## Memory (read before investigating)
-- **Always read**: `docs/memory/digest.md` (200-token summary of all prior runs)
-- **Grep on demand**: `docs/memory/false-positives.md` (before reporting any finding, check for known FPs)
-- **Patterns to find**: `docs/memory/confirmed-patterns.md` (look for variants of these)
+- **Always read**: `docs/audit_memory/digest.md` (200-token summary of all prior runs)
+- **Grep on demand**: `docs/audit_memory/false-positives.md` (before reporting any finding, check for known FPs)
+- **Patterns to find**: `docs/audit_memory/confirmed-patterns.md` (look for variants of these)
 
 ## Your Domain
 - **Domain**: End-to-end cross-boundary call chain tracing — trust assumptions, state flow, callback patterns, composability chains
 - **Owned files**: None (read-only across all repos)
 - **Read-only access**: All `lbamm-hooks-and-handlers/src/` files, `lbamm-core/` (sibling repo), `secure-proxy/` (sibling repo)
-- **Read also**: `docs/targets/hooks-and-handlers/artifacts/cross-boundary-call-graph.md` (PRIMARY — your work starts here), `docs/targets/hooks-and-handlers/artifacts/access-control-matrix.md`, `docs/targets/hooks-and-handlers/artifacts/token-flow.md`, `docs/targets/hooks-and-handlers/artifacts/external-interfaces.md`, `docs/targets/hooks-and-handlers/artifacts/call-graphs.md`, `docs/framework/known-vuln-patterns.md`, `docs/targets/hooks-and-handlers/artifacts/novel-attack-surface.md`, `docs/targets/hooks-and-handlers/artifacts/acknowledged-findings-families.md`, `docs/targets/hooks-and-handlers/artifacts/spec-vs-code.md`, `docs/CODEBASE_MAP.md`, `docs/targets/hooks-and-handlers/artifacts/prior-findings.md` (if exists — prior run cross-pollination), `docs/memory/digest.md`, `docs/memory/false-positives.md` (grep, not full read), `docs/memory/confirmed-patterns.md`
+- **Read also**: `docs/targets/hooks-and-handlers/artifacts/cross-boundary-call-graph.md` (PRIMARY — your work starts here), `docs/targets/hooks-and-handlers/artifacts/access-control-matrix.md`, `docs/targets/hooks-and-handlers/artifacts/token-flow.md`, `docs/targets/hooks-and-handlers/artifacts/external-interfaces.md`, `docs/targets/hooks-and-handlers/artifacts/call-graphs.md`, `docs/framework/known-vuln-patterns.md`, `docs/targets/hooks-and-handlers/artifacts/novel-attack-surface.md`, `docs/targets/hooks-and-handlers/artifacts/acknowledged-findings-families.md`, `docs/targets/hooks-and-handlers/artifacts/spec-vs-code.md`, `docs/CODEBASE_MAP.md`, `docs/targets/hooks-and-handlers/artifacts/prior-findings.md` (if exists — prior run cross-pollination), `docs/audit_memory/digest.md`, `docs/audit_memory/false-positives.md` (grep, not full read), `docs/audit_memory/confirmed-patterns.md`
 
 ## Methodology
 

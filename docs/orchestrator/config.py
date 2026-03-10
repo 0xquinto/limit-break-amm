@@ -12,7 +12,7 @@ PHASE0_DIR = ARTIFACTS_DIR / "phase0"
 SPAWN_PROMPTS_DIR = TARGETS_DIR / "spawn-prompts"
 RESULTS_DIR = TARGETS_DIR / "results"
 FRAMEWORK_DIR = PROJECT_ROOT / "docs" / "framework"
-MEMORY_DIR = PROJECT_ROOT / "docs" / "memory"
+MEMORY_DIR = PROJECT_ROOT / "docs" / "audit_memory"
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 
 # Safety constants
@@ -32,16 +32,17 @@ TOOL_PROFILES: dict[str, list[str]] = {
 }
 
 # Static analysis tool compatibility per repo.
-# Root cause: Forge --build-info emits duplicate entries for files imported via both
-# absolute and relative (../) paths. The relative-path entries have missing ASTs.
-# - Slither CLI: works on ALL repos after fix_build_info() + --ignore-compile
-# - Slither MCP: only works on repos where crytic-compile resolves ../ paths correctly
-# - Aderyn 0.6.8: crashes on repos with ../ cross-repo imports (unfixable bug in compile.rs:78)
+# All tools now work on all 6 repos after patching:
+# - Slither CLI: fix_build_info() + --ignore-compile
+# - Slither MCP: patched slither_wrapper.py to build, fix build-info, then ignore_compile=True
+# - Aderyn: patched compile.rs to read cross-repo deps from disk instead of panicking
 TOOL_COMPAT = {
-    "slither_mcp": {"lbamm-core", "lbamm-hooks-and-handlers", "secure-proxy"},
+    "slither_mcp": {"lbamm-core", "amm-pool-type-dynamic", "lbamm-pool-type-fixed",
+                    "lbamm-pool-type-single-provider", "lbamm-hooks-and-handlers", "secure-proxy"},
     "slither_cli": {"lbamm-core", "amm-pool-type-dynamic", "lbamm-pool-type-fixed",
                     "lbamm-pool-type-single-provider", "lbamm-hooks-and-handlers", "secure-proxy"},
-    "aderyn": {"lbamm-core", "secure-proxy"},
+    "aderyn": {"lbamm-core", "amm-pool-type-dynamic", "lbamm-pool-type-fixed",
+               "lbamm-pool-type-single-provider", "lbamm-hooks-and-handlers", "secure-proxy"},
 }
 
 # Repos

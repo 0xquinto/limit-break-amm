@@ -14,16 +14,16 @@ Read `docs/framework/agent-boilerplate.md` for environment setup, tools, and ant
 Then read `docs/CODEBASE_MAP.md` for architecture context.
 
 ## Memory (read before investigating)
-- **Always read**: `docs/memory/digest.md` (200-token summary of all prior runs)
-- **Grep on demand**: `docs/memory/false-positives.md` (before reporting any finding, check for known FPs)
-- **Patterns to find**: `docs/memory/confirmed-patterns.md` (look for variants of these)
+- **Always read**: `docs/audit_memory/digest.md` (200-token summary of all prior runs)
+- **Grep on demand**: `docs/audit_memory/false-positives.md` (before reporting any finding, check for known FPs)
+- **Patterns to find**: `docs/audit_memory/confirmed-patterns.md` (look for variants of these)
 
 ## Your Domain
 - **Domain**: Settings storage, whitelist management, settings sync to hooks, access control
 - **Owned files**: `lbamm-hooks-and-handlers/src/hooks/CreatorHookSettingsRegistry.sol`, `lbamm-hooks-and-handlers/src/hooks/interfaces/ICreatorHookSettingsRegistry.sol`, `lbamm-hooks-and-handlers/src/hooks/DataTypes.sol`, `lbamm-hooks-and-handlers/src/hooks/Errors.sol`
 - **Do NOT modify**: `lbamm-hooks-and-handlers/src/hooks/AMMStandardHook.sol`, `lbamm-hooks-and-handlers/src/handlers/`, `lbamm-hooks-and-handlers/test/`, `lib/`
 - **Read-only access**: `lbamm-core/` (sibling repo)
-- **Read also**: `docs/targets/hooks-and-handlers/artifacts/access-control-matrix.md`, `docs/targets/hooks-and-handlers/artifacts/token-flow.md`, `docs/targets/hooks-and-handlers/artifacts/external-interfaces.md`, `docs/targets/hooks-and-handlers/artifacts/slither-findings.md`, `docs/targets/hooks-and-handlers/artifacts/aderyn-findings.md`, `docs/targets/hooks-and-handlers/artifacts/dead-code.md`, `docs/targets/hooks-and-handlers/artifacts/storage-layouts.md`, `docs/targets/hooks-and-handlers/artifacts/coverage-gaps.md`, `docs/targets/hooks-and-handlers/artifacts/call-graphs.md`, `docs/framework/known-vuln-patterns.md`, `docs/targets/hooks-and-handlers/artifacts/remediation-diff.md`, `docs/framework/tool-guide.md`, `docs/targets/hooks-and-handlers/artifacts/novel-attack-surface.md`, `docs/targets/hooks-and-handlers/artifacts/acknowledged-findings-families.md`, `docs/targets/hooks-and-handlers/artifacts/spec-vs-code.md`, `docs/targets/hooks-and-handlers/artifacts/cross-boundary-call-graph.md`, `docs/CODEBASE_MAP.md`, `docs/targets/hooks-and-handlers/artifacts/prior-findings.md` (if exists — prior run cross-pollination), `docs/memory/digest.md`, `docs/memory/false-positives.md` (grep, not full read), `docs/memory/confirmed-patterns.md`
+- **Read also**: `docs/targets/hooks-and-handlers/artifacts/access-control-matrix.md`, `docs/targets/hooks-and-handlers/artifacts/token-flow.md`, `docs/targets/hooks-and-handlers/artifacts/external-interfaces.md`, `docs/targets/hooks-and-handlers/artifacts/slither-findings.md`, `docs/targets/hooks-and-handlers/artifacts/aderyn-findings.md`, `docs/targets/hooks-and-handlers/artifacts/dead-code.md`, `docs/targets/hooks-and-handlers/artifacts/storage-layouts.md`, `docs/targets/hooks-and-handlers/artifacts/coverage-gaps.md`, `docs/targets/hooks-and-handlers/artifacts/call-graphs.md`, `docs/framework/known-vuln-patterns.md`, `docs/targets/hooks-and-handlers/artifacts/remediation-diff.md`, `docs/framework/tool-guide.md`, `docs/targets/hooks-and-handlers/artifacts/novel-attack-surface.md`, `docs/targets/hooks-and-handlers/artifacts/acknowledged-findings-families.md`, `docs/targets/hooks-and-handlers/artifacts/spec-vs-code.md`, `docs/targets/hooks-and-handlers/artifacts/cross-boundary-call-graph.md`, `docs/CODEBASE_MAP.md`, `docs/targets/hooks-and-handlers/artifacts/prior-findings.md` (if exists — prior run cross-pollination), `docs/audit_memory/digest.md`, `docs/audit_memory/false-positives.md` (grep, not full read), `docs/audit_memory/confirmed-patterns.md`
 - **Cross-boundary trace points**: `AMMModule._getHookSettings` if it exists, hook initialization flow
 
 ## Known Findings (do NOT re-report)

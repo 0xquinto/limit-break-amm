@@ -231,9 +231,9 @@ max_cost_usd: 3.00
 Read `docs/framework/agent-boilerplate.md` then `docs/CODEBASE_MAP.md`.
 
 ## Memory (read before investigating)
-- **Always read**: `docs/memory/digest.md`
-- **Grep on demand**: `docs/memory/false-positives.md`
-- **Patterns to find**: `docs/memory/confirmed-patterns.md`
+- **Always read**: `docs/audit_memory/digest.md`
+- **Grep on demand**: `docs/audit_memory/false-positives.md`
+- **Patterns to find**: `docs/audit_memory/confirmed-patterns.md`
 
 ## Your Scope
 - **Repos**: {list of repos this agent covers}
@@ -321,7 +321,7 @@ Run Slither + Aderyn on each of the 5 new repos. ~40 min total.
 | Artifact | Source |
 |----------|--------|
 | All hooks-and-handlers artifacts | `docs/targets/hooks-and-handlers/artifacts/` |
-| Memory system | `docs/memory/` (digest, FPs, confirmed patterns, lessons) |
+| Memory system | `docs/audit_memory/` (digest, FPs, confirmed patterns, lessons) |
 | Known vuln patterns | `docs/framework/known-vuln-patterns.md` |
 | Codebase map | `docs/CODEBASE_MAP.md` |
 

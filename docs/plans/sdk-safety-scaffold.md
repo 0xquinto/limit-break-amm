@@ -146,7 +146,7 @@ def aggregate_agent_logs(run_id: str) -> list[dict]:
 ## 7. Memory Injection & Lifecycle
 
 > **Source:** Gap 1 memory system (`docs/plans/2026-03-09-gap1-memory-system.md`)
-> **Tier 1 files:** `docs/memory/` (digest, false-positives, confirmed-patterns, lessons-learned, run-episodes/)
+> **Tier 1 files:** `docs/audit_memory/` (digest, false-positives, confirmed-patterns, lessons-learned, run-episodes/)
 
 ### 7a. Pre-spawn: Scoped Memory Injection
 
@@ -159,7 +159,7 @@ import re
 from pathlib import Path
 from dataclasses import dataclass
 
-MEMORY_DIR = Path("docs/memory")
+MEMORY_DIR = Path("docs/audit_memory")
 
 @dataclass
 class FalsePositive:
@@ -287,7 +287,7 @@ def build_agent_prompt(spawn_prompt_path: str, agent_role: str) -> str:
 ### Known False Positives for {agent_role} ({len(scoped_fps)} entries)
 {format_scoped_fps(scoped_fps)}
 
-> Full entries: `docs/memory/false-positives.md` — grep for details if partial match.
+> Full entries: `docs/audit_memory/false-positives.md` — grep for details if partial match.
 
 ### Confirmed Patterns (look for variants)
 {patterns}
@@ -585,7 +585,7 @@ def init_memory_for_new_target(
     fresh_digest = f"""# Audit Memory Digest
 
 > Injected into all agent prompts. ~200 tokens. Updated after each run.
-> Full entries: `docs/memory/false-positives.md` | `docs/memory/confirmed-patterns.md`
+> Full entries: `docs/audit_memory/false-positives.md` | `docs/audit_memory/confirmed-patterns.md`
 
 ## Key Numbers (target: {new_target})
 - **0 confirmed findings** (first run)

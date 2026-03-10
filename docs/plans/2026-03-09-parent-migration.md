@@ -68,7 +68,7 @@ Limit Break AMM security audit framework. This parent directory orchestrates aud
 **Structure**:
 - `docs/framework/` — Shared rubrics, runbook, tool guide, patterns
 - `docs/spawn-prompts/` — Base agent templates (framework sections)
-- `docs/memory/` — Hierarchical memory system (digest, FPs, patterns, lessons, episodes)
+- `docs/audit_memory/` — Hierarchical memory system (digest, FPs, patterns, lessons, episodes)
 - `docs/targets/{name}/` — Per-target artifacts, results, spawn-prompt overrides
 - `docs/plans/` — Implementation plans
 - `docs/references/` — Research materials
@@ -81,7 +81,7 @@ For architecture details, see [docs/CODEBASE_MAP.md](docs/CODEBASE_MAP.md).
 ```bash
 mkdir -p docs/framework
 mkdir -p docs/spawn-prompts
-mkdir -p docs/memory/run-episodes
+mkdir -p docs/audit_memory/run-episodes
 mkdir -p docs/targets/hooks-and-handlers/artifacts
 mkdir -p docs/targets/hooks-and-handlers/results
 mkdir -p docs/targets/hooks-and-handlers/spawn-prompts
@@ -132,12 +132,12 @@ cp lbamm-hooks-and-handlers/docs/team-design.md docs/framework/team-design.md
 cp lbamm-hooks-and-handlers/docs/operational-checklist.md docs/framework/operational-checklist.md
 
 # Memory system
-cp lbamm-hooks-and-handlers/docs/memory/digest.md docs/memory/digest.md
-cp lbamm-hooks-and-handlers/docs/memory/false-positives.md docs/memory/false-positives.md
-cp lbamm-hooks-and-handlers/docs/memory/confirmed-patterns.md docs/memory/confirmed-patterns.md
-cp lbamm-hooks-and-handlers/docs/memory/lessons-learned.md docs/memory/lessons-learned.md
-cp lbamm-hooks-and-handlers/docs/memory/run-episodes/v1-2026-02-27.md docs/memory/run-episodes/v1-2026-02-27.md
-cp lbamm-hooks-and-handlers/docs/memory/run-episodes/v2-2026-03-02.md docs/memory/run-episodes/v2-2026-03-02.md
+cp lbamm-hooks-and-handlers/docs/audit_memory/digest.md docs/audit_memory/digest.md
+cp lbamm-hooks-and-handlers/docs/audit_memory/false-positives.md docs/audit_memory/false-positives.md
+cp lbamm-hooks-and-handlers/docs/audit_memory/confirmed-patterns.md docs/audit_memory/confirmed-patterns.md
+cp lbamm-hooks-and-handlers/docs/audit_memory/lessons-learned.md docs/audit_memory/lessons-learned.md
+cp lbamm-hooks-and-handlers/docs/audit_memory/run-episodes/v1-2026-02-27.md docs/audit_memory/run-episodes/v1-2026-02-27.md
+cp lbamm-hooks-and-handlers/docs/audit_memory/run-episodes/v2-2026-03-02.md docs/audit_memory/run-episodes/v2-2026-03-02.md
 
 # Plans
 cp lbamm-hooks-and-handlers/docs/plans/*.md docs/plans/
@@ -284,7 +284,7 @@ git commit -m "feat: split spawn prompts — base templates + hooks-and-handlers
 ### Task 5: Fix all internal path references in framework docs
 
 **Files:**
-- Modify: all files under `docs/framework/`, `docs/spawn-prompts/`, `docs/memory/`
+- Modify: all files under `docs/framework/`, `docs/spawn-prompts/`, `docs/audit_memory/`
 
 **Step 1: Update artifact references**
 
@@ -298,22 +298,22 @@ Run these replacements in all framework files:
 cd /Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm
 
 # Framework-level artifact refs (files that moved to docs/framework/)
-# In all docs under docs/framework/, docs/memory/, docs/plans/:
-find docs/framework docs/memory docs/plans -name "*.md" -exec sed -i '' \
+# In all docs under docs/framework/, docs/audit_memory/, docs/plans/:
+find docs/framework docs/audit_memory docs/plans -name "*.md" -exec sed -i '' \
   's|docs/artifacts/agent-boilerplate\.md|docs/framework/agent-boilerplate.md|g' {} +
-find docs/framework docs/memory docs/plans -name "*.md" -exec sed -i '' \
+find docs/framework docs/audit_memory docs/plans -name "*.md" -exec sed -i '' \
   's|docs/artifacts/tool-guide\.md|docs/framework/tool-guide.md|g' {} +
-find docs/framework docs/memory docs/plans -name "*.md" -exec sed -i '' \
+find docs/framework docs/audit_memory docs/plans -name "*.md" -exec sed -i '' \
   's|docs/artifacts/known-vuln-patterns\.md|docs/framework/known-vuln-patterns.md|g' {} +
-find docs/framework docs/memory docs/plans -name "*.md" -exec sed -i '' \
+find docs/framework docs/audit_memory docs/plans -name "*.md" -exec sed -i '' \
   's|docs/artifacts/metrics\.json|docs/framework/metrics.json|g' {} +
-find docs/framework docs/memory docs/plans -name "*.md" -exec sed -i '' \
+find docs/framework docs/audit_memory docs/plans -name "*.md" -exec sed -i '' \
   's|docs/artifacts/turn-counts\.md|docs/framework/turn-counts.md|g' {} +
 
 # Runbook / execution refs
-find docs/framework docs/memory docs/plans -name "*.md" -exec sed -i '' \
+find docs/framework docs/audit_memory docs/plans -name "*.md" -exec sed -i '' \
   's|docs/execution-runbook\.md|docs/framework/execution-runbook.md|g' {} +
-find docs/framework docs/memory docs/plans -name "*.md" -exec sed -i '' \
+find docs/framework docs/audit_memory docs/plans -name "*.md" -exec sed -i '' \
   's|docs/team-design\.md|docs/framework/team-design.md|g' {} +
 
 # Spawn-prompt refs
@@ -321,7 +321,7 @@ find docs/framework docs/plans -name "*.md" -exec sed -i '' \
   's|docs/spawn-prompts/|docs/spawn-prompts/|g' {} +
 # (spawn-prompts path stays the same at parent level — no change needed)
 
-# Memory refs stay the same (docs/memory/ → docs/memory/)
+# Memory refs stay the same (docs/audit_memory/ → docs/audit_memory/)
 # Plans refs stay the same (docs/plans/ → docs/plans/)
 # References refs stay the same (docs/references/ → docs/references/)
 ```
@@ -347,14 +347,14 @@ find docs/targets/hooks-and-handlers/spawn-prompts -name "*.md" -exec sed -i '' 
 **Step 3: Update results refs**
 
 ```bash
-find docs/framework docs/plans docs/memory -name "*.md" -exec sed -i '' \
+find docs/framework docs/plans docs/audit_memory -name "*.md" -exec sed -i '' \
   's|docs/results/|docs/targets/hooks-and-handlers/results/|g' {} +
 ```
 
 **Step 4: Verify no stale `docs/artifacts/` refs remain in framework**
 
 ```bash
-grep -rn "docs/artifacts/" docs/framework/ docs/memory/ docs/spawn-prompts/ docs/plans/ 2>/dev/null | grep -v "docs/targets/" | head -20
+grep -rn "docs/artifacts/" docs/framework/ docs/audit_memory/ docs/spawn-prompts/ docs/plans/ 2>/dev/null | grep -v "docs/targets/" | head -20
 ```
 Expected: 0 matches (all should be either `docs/framework/` or `docs/targets/`)
 
@@ -549,10 +549,10 @@ test -f docs/framework/tool-guide.md && echo "OK" || echo "MISSING: tool-guide"
 test -f docs/framework/known-vuln-patterns.md && echo "OK" || echo "MISSING: patterns"
 test -f docs/framework/metrics.json && echo "OK" || echo "MISSING: metrics"
 test -f docs/framework/turn-counts.md && echo "OK" || echo "MISSING: turn-counts"
-test -f docs/memory/digest.md && echo "OK" || echo "MISSING: digest"
-test -f docs/memory/false-positives.md && echo "OK" || echo "MISSING: fps"
-test -f docs/memory/confirmed-patterns.md && echo "OK" || echo "MISSING: patterns"
-test -f docs/memory/lessons-learned.md && echo "OK" || echo "MISSING: lessons"
+test -f docs/audit_memory/digest.md && echo "OK" || echo "MISSING: digest"
+test -f docs/audit_memory/false-positives.md && echo "OK" || echo "MISSING: fps"
+test -f docs/audit_memory/confirmed-patterns.md && echo "OK" || echo "MISSING: patterns"
+test -f docs/audit_memory/lessons-learned.md && echo "OK" || echo "MISSING: lessons"
 ```
 
 **Step 2: Verify target artifacts exist**
@@ -568,7 +568,7 @@ Expected: ~27 artifacts, 3 results, 9 spawn prompts
 
 ```bash
 # Framework files should NOT reference docs/artifacts/ (old path)
-grep -rn "docs/artifacts/" docs/framework/ docs/memory/ | grep -v "docs/targets/" | wc -l
+grep -rn "docs/artifacts/" docs/framework/ docs/audit_memory/ | grep -v "docs/targets/" | wc -l
 ```
 Expected: 0
 

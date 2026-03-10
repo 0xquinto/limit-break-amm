@@ -15,7 +15,7 @@ Limit Break AMM security audit framework. This parent directory orchestrates aud
 **Structure**:
 - `docs/framework/` — Shared rubrics, runbook, tool guide, patterns
 - `docs/spawn-prompts/` — Base agent templates (framework sections)
-- `docs/memory/` — Hierarchical memory system (digest, FPs, patterns, lessons, episodes)
+- `docs/audit_memory/` — Hierarchical memory system (digest, FPs, patterns, lessons, episodes)
 - `docs/targets/{name}/` — Per-target artifacts, results, spawn-prompt overrides
 - `docs/plans/` — Implementation plans
 - `docs/references/` — Research materials

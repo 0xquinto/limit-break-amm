@@ -1,7 +1,7 @@
 # Audit Memory Digest
 
 > Injected into all agent prompts. ~200 tokens. Updated after each run.
-> Full entries: `docs/memory/false-positives.md` | `docs/memory/confirmed-patterns.md`
+> Full entries: `docs/audit_memory/false-positives.md` | `docs/audit_memory/confirmed-patterns.md`
 
 ## Cumulative Numbers
 

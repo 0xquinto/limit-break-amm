@@ -4,7 +4,7 @@
 
 **Goal:** Implement a 3-level hierarchical memory system (digest/scoped/archive) seeded from v1+v2 audit data, with NOOP check wired into the agent pipeline.
 
-**Architecture:** File-based Tier 1 memory. `docs/memory/` contains a 200-token digest (always injected), scoped false-positive entries (tagged per agent), procedural lessons, and episodic run summaries. Boilerplate gets a new FP gate step 0 ("check memory before investigating"). Spawn prompts reference the memory files. Runbook Phase 0.5 wires memory into the pipeline.
+**Architecture:** File-based Tier 1 memory. `docs/audit_memory/` contains a 200-token digest (always injected), scoped false-positive entries (tagged per agent), procedural lessons, and episodic run summaries. Boilerplate gets a new FP gate step 0 ("check memory before investigating"). Spawn prompts reference the memory files. Runbook Phase 0.5 wires memory into the pipeline.
 
 **Tech Stack:** Markdown files, no new dependencies. Data seeded from `docs/results/v2-findings-report.md`, `docs/results/v1-run-results.md`, `docs/artifacts/metrics.json`, and `MEMORY.md`.
 
@@ -15,12 +15,12 @@
 ### Task 1: Create memory directory and digest
 
 **Files:**
-- Create: `docs/memory/digest.md`
+- Create: `docs/audit_memory/digest.md`
 
 **Step 1: Create directory**
 
 ```bash
-mkdir -p docs/memory/run-episodes
+mkdir -p docs/audit_memory/run-episodes
 ```
 
 **Step 2: Write digest.md**
@@ -31,7 +31,7 @@ This is the Level 1 summary (~200 tokens) that gets injected into EVERY agent's 
 # Audit Memory Digest
 
 > Injected into all agent prompts. ~200 tokens. Updated after each run.
-> Full entries: `docs/memory/false-positives.md` | `docs/memory/confirmed-patterns.md`
+> Full entries: `docs/audit_memory/false-positives.md` | `docs/audit_memory/confirmed-patterns.md`
 
 ## Key Numbers (cumulative through v2)
 - **5 confirmed findings** (all Low): 3 from v1, 2 from v2
@@ -55,13 +55,13 @@ This is the Level 1 summary (~200 tokens) that gets injected into EVERY agent's 
 
 **Step 3: Verify file exists and is under 200 tokens**
 
-Run: `wc -w docs/memory/digest.md`
+Run: `wc -w docs/audit_memory/digest.md`
 Expected: ~150-180 words (roughly maps to ~200 tokens)
 
 **Step 4: Commit**
 
 ```bash
-git add docs/memory/digest.md
+git add docs/audit_memory/digest.md
 git commit -m "feat(memory): add Level 1 digest — always-injected memory summary (Gap 1)"
 ```
 
@@ -70,7 +70,7 @@ git commit -m "feat(memory): add Level 1 digest — always-injected memory summa
 ### Task 2: Create false-positives.md seeded from v1+v2
 
 **Files:**
-- Create: `docs/memory/false-positives.md`
+- Create: `docs/audit_memory/false-positives.md`
 
 **Step 1: Write false-positives.md**
 
@@ -556,13 +556,13 @@ If partial match (similar but different code path), proceed but reference the re
 
 **Step 2: Verify entry count matches claimed vectors**
 
-Run: `grep -c "^### FP-" docs/memory/false-positives.md`
+Run: `grep -c "^### FP-" docs/audit_memory/false-positives.md`
 Expected: 44 entries (11 CLOB + 10 Permit + 12 Hook + 9 Registry + 2 Cross-Domain)
 
 **Step 3: Commit**
 
 ```bash
-git add docs/memory/false-positives.md
+git add docs/audit_memory/false-positives.md
 git commit -m "feat(memory): seed false-positives.md with 44 entries from v1+v2 (Gap 1)"
 ```
 
@@ -571,7 +571,7 @@ git commit -m "feat(memory): seed false-positives.md with 44 entries from v1+v2 
 ### Task 3: Create confirmed-patterns.md
 
 **Files:**
-- Create: `docs/memory/confirmed-patterns.md`
+- Create: `docs/audit_memory/confirmed-patterns.md`
 
 **Step 1: Write confirmed-patterns.md**
 
@@ -634,13 +634,13 @@ Seed from the 5 confirmed findings (3 Low from v1, 2 Low from v2).
 
 **Step 2: Verify entry count**
 
-Run: `grep -c "^### CP-" docs/memory/confirmed-patterns.md`
+Run: `grep -c "^### CP-" docs/audit_memory/confirmed-patterns.md`
 Expected: 5
 
 **Step 3: Commit**
 
 ```bash
-git add docs/memory/confirmed-patterns.md
+git add docs/audit_memory/confirmed-patterns.md
 git commit -m "feat(memory): seed confirmed-patterns.md with 5 patterns from v1+v2 (Gap 1)"
 ```
 
@@ -649,7 +649,7 @@ git commit -m "feat(memory): seed confirmed-patterns.md with 5 patterns from v1+
 ### Task 4: Create lessons-learned.md
 
 **Files:**
-- Create: `docs/memory/lessons-learned.md`
+- Create: `docs/audit_memory/lessons-learned.md`
 
 **Step 1: Write lessons-learned.md**
 
@@ -731,13 +731,13 @@ Extract procedural memory from MEMORY.md and run results.
 
 **Step 2: Verify entry count**
 
-Run: `grep -c "^### L-" docs/memory/lessons-learned.md`
+Run: `grep -c "^### L-" docs/audit_memory/lessons-learned.md`
 Expected: 8
 
 **Step 3: Commit**
 
 ```bash
-git add docs/memory/lessons-learned.md
+git add docs/audit_memory/lessons-learned.md
 git commit -m "feat(memory): seed lessons-learned.md with 8 procedural beliefs (Gap 1)"
 ```
 
@@ -746,8 +746,8 @@ git commit -m "feat(memory): seed lessons-learned.md with 8 procedural beliefs (
 ### Task 5: Create run episode summaries
 
 **Files:**
-- Create: `docs/memory/run-episodes/v1-2026-02-27.md`
-- Create: `docs/memory/run-episodes/v2-2026-03-02.md`
+- Create: `docs/audit_memory/run-episodes/v1-2026-02-27.md`
+- Create: `docs/audit_memory/run-episodes/v2-2026-03-02.md`
 
 **Step 1: Write v1 episode**
 
@@ -819,7 +819,7 @@ git commit -m "feat(memory): seed lessons-learned.md with 8 procedural beliefs (
 **Step 3: Commit**
 
 ```bash
-git add docs/memory/run-episodes/
+git add docs/audit_memory/run-episodes/
 git commit -m "feat(memory): add v1 and v2 run episode summaries (Gap 1)"
 ```
 
@@ -845,7 +845,7 @@ Replace with:
 ```markdown
 Every finding MUST pass this ordered gate pipeline. If ANY gate fails, drop the finding.
 
-0. **Not a known false positive**: `grep` the function name and vector keyword in `docs/memory/false-positives.md`. If a match exists with confidence >= 80, NOOP — skip and note "Known FP: FP-NNN" in your ruled-out list. If partial match (similar but different code path), proceed but note the related FP in your finding.
+0. **Not a known false positive**: `grep` the function name and vector keyword in `docs/audit_memory/false-positives.md`. If a match exists with confidence >= 80, NOOP — skip and note "Known FP: FP-NNN" in your ruled-out list. If partial match (similar but different code path), proceed but note the related FP in your finding.
 1. **Location exists**: `grep` or AST-verify that the referenced function, variable, or line actually exists in the target contract. Catches hallucinated function names.
 ```
 
@@ -874,19 +874,19 @@ For each of the 9 spawn prompts, add these lines after the `## First Action (MAN
 
 ```markdown
 ## Memory (read before investigating)
-- **Always read**: `docs/memory/digest.md` (200-token summary of all prior runs)
-- **Grep on demand**: `docs/memory/false-positives.md` (before reporting any finding, check for known FPs)
-- **Patterns to find**: `docs/memory/confirmed-patterns.md` (look for variants of these)
+- **Always read**: `docs/audit_memory/digest.md` (200-token summary of all prior runs)
+- **Grep on demand**: `docs/audit_memory/false-positives.md` (before reporting any finding, check for known FPs)
+- **Patterns to find**: `docs/audit_memory/confirmed-patterns.md` (look for variants of these)
 ```
 
 Also append to the existing "Read also" list in each spawn prompt:
 ```
-`docs/memory/digest.md`, `docs/memory/false-positives.md` (grep, not full read), `docs/memory/confirmed-patterns.md`
+`docs/audit_memory/digest.md`, `docs/audit_memory/false-positives.md` (grep, not full read), `docs/audit_memory/confirmed-patterns.md`
 ```
 
 **Step 2: Verify all 9 spawn prompts updated**
 
-Run: `grep -l "docs/memory/digest.md" docs/spawn-prompts/*.md | wc -l`
+Run: `grep -l "docs/audit_memory/digest.md" docs/spawn-prompts/*.md | wc -l`
 Expected: 9
 
 **Step 3: Commit**
@@ -905,24 +905,24 @@ git commit -m "feat(spawn-prompts): wire memory files into all 9 agent prompts (
 
 **Step 1: Update Phase 0.5 to use new memory files**
 
-The runbook at line 41-50 already references `docs/memory/false-positives.md` in a bash snippet. Update to also include `digest.md`, `confirmed-patterns.md`, and `lessons-learned.md`:
+The runbook at line 41-50 already references `docs/audit_memory/false-positives.md` in a bash snippet. Update to also include `digest.md`, `confirmed-patterns.md`, and `lessons-learned.md`:
 
 Find:
 ```markdown
    echo "## Known False Positives" >> docs/artifacts/prior-findings.md
-   cat docs/memory/false-positives.md >> docs/artifacts/prior-findings.md 2>/dev/null || true
+   cat docs/audit_memory/false-positives.md >> docs/artifacts/prior-findings.md 2>/dev/null || true
 ```
 
 Replace with:
 ```markdown
    echo "## Known False Positives" >> docs/artifacts/prior-findings.md
-   cat docs/memory/false-positives.md >> docs/artifacts/prior-findings.md 2>/dev/null || true
+   cat docs/audit_memory/false-positives.md >> docs/artifacts/prior-findings.md 2>/dev/null || true
    echo -e "\n---\n" >> docs/artifacts/prior-findings.md
    echo "## Confirmed Vulnerability Patterns" >> docs/artifacts/prior-findings.md
-   cat docs/memory/confirmed-patterns.md >> docs/artifacts/prior-findings.md 2>/dev/null || true
+   cat docs/audit_memory/confirmed-patterns.md >> docs/artifacts/prior-findings.md 2>/dev/null || true
    echo -e "\n---\n" >> docs/artifacts/prior-findings.md
    echo "## Lessons Learned" >> docs/artifacts/prior-findings.md
-   cat docs/memory/lessons-learned.md >> docs/artifacts/prior-findings.md 2>/dev/null || true
+   cat docs/audit_memory/lessons-learned.md >> docs/artifacts/prior-findings.md 2>/dev/null || true
 ```
 
 **Step 2: Add memory update step to Phase 5 (post-run)**
@@ -934,11 +934,11 @@ After the "Teardown gate" section in the runbook, add:
 
 After all metrics collected:
 
-1. **Update digest**: Rewrite `docs/memory/digest.md` with new cumulative numbers
-2. **ADD new FPs**: For each newly ruled-out vector, add an entry to `docs/memory/false-positives.md` with full schema (ID, scope, contracts, vector, why false, confidence, source, category, lesson)
-3. **ADD confirmed patterns**: For each confirmed finding, add to `docs/memory/confirmed-patterns.md`
-4. **ADD lessons**: Extract 2-5 procedural lessons from run outcome into `docs/memory/lessons-learned.md`
-5. **Write episode**: Create `docs/memory/run-episodes/vN-YYYY-MM-DD.md` with structured summary
+1. **Update digest**: Rewrite `docs/audit_memory/digest.md` with new cumulative numbers
+2. **ADD new FPs**: For each newly ruled-out vector, add an entry to `docs/audit_memory/false-positives.md` with full schema (ID, scope, contracts, vector, why false, confidence, source, category, lesson)
+3. **ADD confirmed patterns**: For each confirmed finding, add to `docs/audit_memory/confirmed-patterns.md`
+4. **ADD lessons**: Extract 2-5 procedural lessons from run outcome into `docs/audit_memory/lessons-learned.md`
+5. **Write episode**: Create `docs/audit_memory/run-episodes/vN-YYYY-MM-DD.md` with structured summary
 6. **UPDATE confidence**: For FP entries re-verified this run, bump confidence. For entries not tested, apply -10 decay (min 50).
 ```
 
@@ -960,12 +960,12 @@ git commit -m "feat(runbook): wire memory lifecycle into Phase 0.5 and Phase 5 (
 
 Find:
 ```markdown
-- Gap 1 (memory): Seed `docs/memory/false-positives.md` from Guardian 53 findings
+- Gap 1 (memory): Seed `docs/audit_memory/false-positives.md` from Guardian 53 findings
 ```
 
 Replace with:
 ```markdown
-- ~~Gap 1 (memory): Seed `docs/memory/false-positives.md` from Guardian 53 findings~~ — DONE (2026-03-09)
+- ~~Gap 1 (memory): Seed `docs/audit_memory/false-positives.md` from Guardian 53 findings~~ — DONE (2026-03-09)
   - Hierarchical 3-level memory: digest (L1, always injected), scoped entries (L2), archive (L3 grep)
   - 44 FP entries, 5 confirmed patterns, 8 procedural lessons, 2 run episodes
   - FP gate step 0 (NOOP check), all 9 spawn prompts wired, runbook Phase 0.5 + Phase 5 updated
@@ -989,20 +989,20 @@ git commit -m "docs(memory): mark Gap 1 done in MEMORY.md"
 
 **Step 1: Verify file structure**
 
-Run: `find docs/memory -type f | sort`
+Run: `find docs/audit_memory -type f | sort`
 Expected:
 ```
-docs/memory/confirmed-patterns.md
-docs/memory/digest.md
-docs/memory/false-positives.md
-docs/memory/lessons-learned.md
-docs/memory/run-episodes/v1-2026-02-27.md
-docs/memory/run-episodes/v2-2026-03-02.md
+docs/audit_memory/confirmed-patterns.md
+docs/audit_memory/digest.md
+docs/audit_memory/false-positives.md
+docs/audit_memory/lessons-learned.md
+docs/audit_memory/run-episodes/v1-2026-02-27.md
+docs/audit_memory/run-episodes/v2-2026-03-02.md
 ```
 
 **Step 2: Verify all cross-references**
 
-Run: `grep -r "docs/memory" docs/artifacts/agent-boilerplate.md docs/execution-runbook.md docs/spawn-prompts/*.md | wc -l`
+Run: `grep -r "docs/audit_memory" docs/artifacts/agent-boilerplate.md docs/execution-runbook.md docs/spawn-prompts/*.md | wc -l`
 Expected: >= 20 references (9 spawn prompts × 2-3 refs + boilerplate + runbook)
 
 **Step 3: Verify FP gate step 0 exists**

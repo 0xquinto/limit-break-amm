@@ -2,9 +2,16 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Build the SDK orchestrator, spawn prompt templates, and Phase 0 artifacts to run a 5-wave security audit across all 6 Limit Break AMM repos.
+**Goal:** Build the SDK orchestrator, spawn prompt templates, and Phase 0 artifacts to run a 5-wave security audit across all 6 Limit Break AMM repos. Maximize determinism through structured outputs, mechanical scoring, and regression testing.
 
-**Architecture:** Python SDK orchestrator (`docs/orchestrator/`) spawns Claude Code instances per wave via `claude-agent-sdk`. Each agent gets a rendered spawn prompt, writes findings to disk, and returns. Between waves, the orchestrator reads artifacts and generates synthesis documents.
+**Architecture:** Python SDK orchestrator (`docs/orchestrator/`) spawns Claude Code instances per wave via `claude-agent-sdk`. Each agent gets a rendered spawn prompt, writes a human-readable markdown report AND a machine-readable JSON sidecar (`findings.json`) to disk. Between waves, the orchestrator reads the JSON sidecars (never parses markdown) to score hotspots, deduplicate findings, and generate synthesis documents.
+
+**Determinism strategy:** LLM agents are non-deterministic. We contain this by:
+1. Maximizing deterministic tool coverage (Slither, Aderyn, Halmos, Medusa with fixed seeds)
+2. Requiring structured JSON output from agents — synthesizer reads JSON, not prose
+3. Scoring wave gates mechanically (weighted formula, no LLM in prioritization)
+4. Running consensus agents on critical scopes and diffing JSON output
+5. Maintaining a regression suite — known findings must be re-found or flagged
 
 **Tech Stack:** Python 3.13, `claude-agent-sdk==0.1.48`, anyio, Python dataclasses for wave configs, `str.replace()` templating for spawn prompts. Slither MCP + Aderyn for Phase 0 artifacts.
 
@@ -17,7 +24,7 @@
 - 7 fuzz tests in `lbamm-hooks-and-handlers/test/audit/fuzz/` (live in target repo for compilation)
 - 4 PoC tests in `lbamm-hooks-and-handlers/test/audit/poc/`
 - 3 economic models in `lbamm-hooks-and-handlers/test/audit/economic/`
-- Memory system: `docs/memory/` (digest, 44 FPs, 5 confirmed patterns, 8 lessons, 2 episodes)
+- Memory system: `docs/audit_memory/` (digest, 44 FPs, 5 confirmed patterns, 8 lessons, 2 episodes)
 
 ---
 
@@ -316,7 +323,7 @@ git commit -m "feat: add orchestrator config with wave definitions and repo map"
 
 **Step 1: Write wave runner with loop detection, budget enforcement, and backpressure**
 
-Incorporates scaffold §1 (loop detection + budget enforcement) and §2 (concurrent orchestration with semaphore).
+Incorporates scaffold §1 (loop detection + budget enforcement), §2 (concurrent orchestration with semaphore), and full transcript logging for reproducibility debugging. Each agent's conversation is saved to `transcript.jsonl` — when two runs produce different findings, the transcripts show where the agent diverged.
 
 ```python
 """Spawns agents for a wave in parallel with safety controls: loop detection,
@@ -380,6 +387,7 @@ async def run_agent(agent: AgentConfig, prompt: str) -> AgentResult:
     output_text = ""
     safety_events: list[dict] = []
     history_hashes: list[int] = []
+    transcript: list[dict] = []  # full conversation log for reproducibility
     stop_reason = "completed"
 
     async with ClaudeSDKClient(options=options) as client:
@@ -392,6 +400,13 @@ async def run_agent(agent: AgentConfig, prompt: str) -> AgentResult:
                     if isinstance(block, TextBlock):
                         chunk += block.text
                 output_text += chunk
+
+                # Log to transcript
+                transcript.append({
+                    "role": "assistant",
+                    "ts": datetime.now(timezone.utc).isoformat(),
+                    "text": chunk[:5000],  # cap per-message size
+                })
 
                 # Loop detection — hash last N output chunks (scaffold §1)
                 output_hash = hash(chunk[:LOOP_HASH_LENGTH])
@@ -412,6 +427,13 @@ async def run_agent(agent: AgentConfig, prompt: str) -> AgentResult:
 
     if result_msg is None and stop_reason == "completed":
         raise RuntimeError(f"Agent {agent.name} did not return a ResultMessage")
+
+    # Save full transcript for reproducibility debugging
+    transcript_path = ARTIFACTS_DIR / f"wave{agent._wave_number}-{agent.name}" / "transcript.jsonl"
+    transcript_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(transcript_path, "w") as f:
+        for entry in transcript:
+            f.write(json.dumps(entry) + "\n")
 
     return AgentResult(
         name=agent.name,
@@ -653,7 +675,7 @@ def build_memory_block(agent_role: str) -> str:
 ### Known False Positives for {agent_role} ({len(scoped_fps)} entries)
 {fp_text}
 
-> Full entries: `docs/memory/false-positives.md` — grep for details if partial match.
+> Full entries: `docs/audit_memory/false-positives.md` — grep for details if partial match.
 
 ### Confirmed Patterns (look for variants)
 {patterns}
@@ -975,6 +997,347 @@ Expected: `synthesizer OK`
 ```bash
 git add docs/orchestrator/synthesizer.py
 git commit -m "feat: add synthesizer for wave artifact collection and synthesis generation"
+```
+
+---
+
+### Task 5a: Define structured finding schema + validator
+
+Agents are non-deterministic. Their markdown output varies across runs. To make the pipeline deterministic from the synthesizer onward, agents produce a JSON sidecar alongside their markdown report. The synthesizer reads only the JSON.
+
+**Files:**
+- Create: `docs/orchestrator/schema.py`
+
+**Step 1: Define the finding schema and validator**
+
+```python
+"""Structured finding schema for agent JSON sidecar output.
+
+Every agent writes two files:
+  - {output_dir}/report.md   — human-readable, free-form (for review)
+  - {output_dir}/findings.json — machine-readable, validated (for pipeline)
+
+The synthesizer reads ONLY findings.json. Markdown is never parsed for
+routing, scoring, or deduplication.
+"""
+
+import json
+from dataclasses import dataclass, field, asdict
+from pathlib import Path
+from enum import Enum
+
+
+class Severity(str, Enum):
+    CRITICAL = "critical"
+    HIGH = "high"
+    MEDIUM = "medium"
+    LOW = "low"
+    INFO = "info"
+
+
+class Confidence(str, Enum):
+    HIGH = "high"
+    MEDIUM = "medium"
+    LOW = "low"
+
+
+class VectorStatus(str, Enum):
+    CONFIRMED = "confirmed"      # believed exploitable
+    RULED_OUT = "ruled_out"      # investigated, not exploitable
+    NEEDS_POC = "needs_poc"      # plausible, needs proof
+    NEEDS_REVIEW = "needs_review"  # uncertain
+
+
+@dataclass
+class Finding:
+    id: str                          # e.g. "CORE-001"
+    title: str                       # short description
+    severity: str                    # Severity enum value
+    confidence: str                  # Confidence enum value
+    status: str                      # VectorStatus enum value
+    contracts: list[str]             # e.g. ["AMMModule.sol", "DynamicPoolType.sol"]
+    functions: list[str]             # e.g. ["_finalizeSwapCollectFundsAndDisburse"]
+    lines: dict[str, list[int]]      # e.g. {"AMMModule.sol": [2144, 2253]}
+    category: str                    # e.g. "arbitrary-from", "reentrancy", "rounding"
+    description: str                 # what the issue is
+    impact: str                      # what an attacker gains
+    proof_sketch: str                # reasoning chain or PoC reference
+    repos: list[str]                 # which repos are involved
+    cross_boundary: bool = False     # involves multiple repos
+    keywords: list[str] = field(default_factory=list)  # for FP matching
+
+
+@dataclass
+class HotSpot:
+    contract: str
+    function: str
+    repo: str
+    score: float                     # agent-assigned 0-10
+    reason: str
+    static_hits: int = 0             # Slither/Aderyn findings in this area
+    cross_boundary: bool = False
+
+
+@dataclass
+class AgentOutput:
+    agent_name: str
+    agent_role: str
+    wave: int
+    findings: list[Finding] = field(default_factory=list)
+    hot_spots: list[HotSpot] = field(default_factory=list)
+    ruled_out_vectors: list[Finding] = field(default_factory=list)  # status=ruled_out
+    metadata: dict = field(default_factory=dict)  # turns, cost, duration, etc.
+
+
+REQUIRED_FINDING_FIELDS = {"id", "title", "severity", "confidence", "status",
+                           "contracts", "functions", "category", "description"}
+
+
+def validate_output(data: dict) -> list[str]:
+    """Validate a findings.json against the schema. Returns list of errors (empty = valid)."""
+    errors = []
+
+    if "agent_name" not in data:
+        errors.append("Missing 'agent_name'")
+    if "findings" not in data and "hot_spots" not in data:
+        errors.append("Must have at least 'findings' or 'hot_spots'")
+
+    for i, f in enumerate(data.get("findings", [])):
+        missing = REQUIRED_FINDING_FIELDS - set(f.keys())
+        if missing:
+            errors.append(f"findings[{i}]: missing fields {missing}")
+        if f.get("severity") and f["severity"] not in [s.value for s in Severity]:
+            errors.append(f"findings[{i}]: invalid severity '{f['severity']}'")
+        if f.get("confidence") and f["confidence"] not in [c.value for c in Confidence]:
+            errors.append(f"findings[{i}]: invalid confidence '{f['confidence']}'")
+        if f.get("status") and f["status"] not in [v.value for v in VectorStatus]:
+            errors.append(f"findings[{i}]: invalid status '{f['status']}'")
+
+    for i, h in enumerate(data.get("hot_spots", [])):
+        if "contract" not in h or "repo" not in h:
+            errors.append(f"hot_spots[{i}]: missing 'contract' or 'repo'")
+
+    return errors
+
+
+def load_and_validate(path: Path) -> tuple[dict | None, list[str]]:
+    """Load a findings.json and validate it. Returns (data, errors)."""
+    if not path.exists():
+        return None, [f"File not found: {path}"]
+    try:
+        data = json.loads(path.read_text())
+    except json.JSONDecodeError as e:
+        return None, [f"Invalid JSON: {e}"]
+    errors = validate_output(data)
+    return data, errors
+
+
+def serialize_output(output: AgentOutput) -> str:
+    """Serialize an AgentOutput to JSON string."""
+    return json.dumps(asdict(output), indent=2)
+```
+
+**Step 2: Verify import**
+
+```bash
+cd /Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm && \
+source /Users/diego/Dev/non-toxic/bug_bounty/.venv/bin/activate && \
+python -c "from docs.orchestrator.schema import validate_output, Finding, Severity; print('schema OK')"
+```
+
+**Step 3: Commit**
+
+```bash
+git add docs/orchestrator/schema.py
+git commit -m "feat: add structured finding schema and JSON sidecar validator"
+```
+
+---
+
+### Task 5b: Deterministic hotspot scoring in synthesizer
+
+Replace the markdown-parsing synthesizer logic (prose scanning for "hot spot", "ruled-out", etc.) with mechanical scoring that reads JSON sidecars only.
+
+**Files:**
+- Modify: `docs/orchestrator/synthesizer.py`
+
+**Step 1: Add deterministic scoring function**
+
+Add to `synthesizer.py`:
+
+```python
+from .schema import load_and_validate, Finding, HotSpot
+
+# Weights for deterministic hotspot scoring (no LLM involved)
+SCORING_WEIGHTS = {
+    "static_hits": 2.0,       # Slither/Aderyn findings in this area
+    "cross_boundary": 3.0,    # involves multiple repos
+    "agent_score": 1.0,       # agent-assigned score (0-10)
+    "value_flow": 2.5,        # touches token transfers, fees, balances
+    "agent_consensus": 4.0,   # multiple agents flagged same area
+}
+
+VALUE_FLOW_KEYWORDS = {"transfer", "safeTransfer", "mint", "burn", "fee",
+                       "balance", "amount", "disburse", "collect", "swap"}
+
+
+def score_hotspot(h: dict, all_hotspots: list[dict], phase0_hits: dict[str, int]) -> float:
+    """Mechanically score a hotspot. No LLM involved."""
+    score = 0.0
+
+    # Static analysis hits for this contract
+    contract = h.get("contract", "")
+    score += phase0_hits.get(contract, 0) * SCORING_WEIGHTS["static_hits"]
+
+    # Cross-boundary bonus
+    if h.get("cross_boundary"):
+        score += SCORING_WEIGHTS["cross_boundary"]
+
+    # Agent-assigned score
+    score += h.get("score", 0) * SCORING_WEIGHTS["agent_score"]
+
+    # Value flow heuristic (keyword match in function/reason)
+    text = f"{h.get('function', '')} {h.get('reason', '')}".lower()
+    if any(kw in text for kw in VALUE_FLOW_KEYWORDS):
+        score += SCORING_WEIGHTS["value_flow"]
+
+    # Consensus: how many agents flagged the same contract+function
+    key = (h.get("contract"), h.get("function"))
+    consensus_count = sum(
+        1 for oh in all_hotspots
+        if (oh.get("contract"), oh.get("function")) == key
+    )
+    if consensus_count > 1:
+        score += (consensus_count - 1) * SCORING_WEIGHTS["agent_consensus"]
+
+    return round(score, 2)
+
+
+def count_phase0_hits(phase0_dir: Path) -> dict[str, int]:
+    """Count Slither/Aderyn hits per contract from Phase 0 artifacts."""
+    hits: dict[str, int] = {}
+    for f in phase0_dir.glob("*.md"):
+        for line in f.read_text().split("\n"):
+            # Match contract references like "ContractName.functionName"
+            for token in re.findall(r'(\w+\.sol)', line):
+                hits[token] = hits.get(token, 0) + 1
+    return hits
+```
+
+**Step 2: Replace markdown parsing in `generate_synthesis()`**
+
+Replace the current hot_spots/findings/ruled_out extraction (which scans markdown for keywords) with:
+
+```python
+def collect_json_sidecars(wave: WaveConfig) -> list[dict]:
+    """Read all findings.json sidecars for a wave."""
+    sidecars = []
+    for agent in wave.agents:
+        path = ARTIFACTS_DIR / f"wave{wave.number}-{agent.name}" / "findings.json"
+        data, errors = load_and_validate(path)
+        if errors:
+            print(f"  WARNING: {agent.name} sidecar invalid: {errors}")
+            continue
+        if data:
+            sidecars.append(data)
+    return sidecars
+```
+
+The synthesis document is then built from aggregated JSON data with deterministic scoring, not from prose parsing. The `generate_synthesis()` function should:
+1. `collect_json_sidecars()` — read all agent JSON
+2. Merge and deduplicate findings (see dedup rules below)
+3. Score hotspots with `score_hotspot()` — pure arithmetic, no LLM
+4. Sort findings and hotspots deterministically (see sort rules below)
+5. Assign canonical finding IDs at merge time
+6. Write synthesis markdown (for human review) AND `wave{N}-synthesis.json` (for next wave's prompt renderer)
+
+**Step 3: Add deterministic dedup and sort**
+
+```python
+# --- Dedup ---
+# Two findings are the same if they share the same dedup key.
+# Agents use provisional IDs (e.g. "CORE-001"); the synthesizer discards those
+# and assigns canonical IDs at merge time.
+
+REPO_PREFIXES = {
+    "lbamm-core": "CORE",
+    "amm-pool-type-dynamic": "DYN",
+    "lbamm-pool-type-fixed": "FIX",
+    "lbamm-pool-type-single-provider": "SP",
+    "lbamm-hooks-and-handlers": "HOOK",
+    "secure-proxy": "PROXY",
+}
+
+
+def finding_dedup_key(f: dict) -> tuple:
+    """Deterministic dedup key for a finding."""
+    repo = sorted(f.get("repos", ["unknown"]))[0]
+    contracts = tuple(sorted(f.get("contracts", [])))
+    functions = tuple(sorted(f.get("functions", [])))
+    category = f.get("category", "unknown")
+    return (repo, contracts, functions, category)
+
+
+def dedup_findings(all_findings: list[dict]) -> list[dict]:
+    """Merge duplicate findings. Keep highest severity/confidence. Track consensus count."""
+    SEVERITY_RANK = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4}
+    CONFIDENCE_RANK = {"high": 0, "medium": 1, "low": 2}
+
+    groups: dict[tuple, list[dict]] = {}
+    for f in all_findings:
+        key = finding_dedup_key(f)
+        groups.setdefault(key, []).append(f)
+
+    merged = []
+    for key, dupes in groups.items():
+        # Pick the best version: lowest severity rank, then lowest confidence rank
+        best = min(dupes, key=lambda d: (
+            SEVERITY_RANK.get(d.get("severity", "info"), 9),
+            CONFIDENCE_RANK.get(d.get("confidence", "low"), 9),
+        ))
+        best["consensus_count"] = len(dupes)
+        best["contributing_agents"] = list(set(
+            d.get("_source_agent", "unknown") for d in dupes
+        ))
+        merged.append(best)
+
+    return merged
+
+
+# --- Sort ---
+# Deterministic ordering: severity desc → confidence desc → contract asc
+# Same findings from different runs produce the same output order.
+
+def sort_findings(findings: list[dict]) -> list[dict]:
+    """Sort findings in deterministic order."""
+    SEVERITY_RANK = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4}
+    CONFIDENCE_RANK = {"high": 0, "medium": 1, "low": 2}
+
+    return sorted(findings, key=lambda f: (
+        SEVERITY_RANK.get(f.get("severity", "info"), 9),
+        CONFIDENCE_RANK.get(f.get("confidence", "low"), 9),
+        tuple(sorted(f.get("contracts", []))),
+    ))
+
+
+# --- Canonical ID assignment ---
+# After dedup and sort, assign stable IDs based on position.
+# Agents' provisional IDs are discarded.
+
+def assign_canonical_ids(findings: list[dict]) -> list[dict]:
+    """Assign canonical finding IDs after dedup and sort."""
+    for i, f in enumerate(findings):
+        repo = sorted(f.get("repos", ["unknown"]))[0]
+        prefix = REPO_PREFIXES.get(repo, "UNK")
+        f["canonical_id"] = f"{prefix}-{i+1:03d}"
+    return findings
+```
+
+**Step 3: Commit**
+
+```bash
+git add docs/orchestrator/synthesizer.py
+git commit -m "feat: deterministic hotspot scoring from JSON sidecars — no markdown parsing"
 ```
 
 ---
@@ -1507,9 +1870,10 @@ The template content should be based on the design doc's Section 4.1, incorporat
 - Memory section: digest, FPs, confirmed patterns
 - Scope section with `{{SCOPE_REPOS}}` placeholder
 - Phase 0 artifact references with `{{PHASE0_ARTIFACTS}}`
-- Output file with `{{OUTPUT_FILE}}`
+- Output: markdown report to `{{OUTPUT_FILE}}` AND JSON sidecar to `{{FINDINGS_JSON}}`
 - Attack vectors to triage (drawn from known-vuln-patterns.md categories)
 - Skills recommendations
+- **JSON sidecar instruction**: Include the full `AgentOutput` schema from `schema.py` in the template. Instruct the agent: "After writing your markdown report, write a `findings.json` file with your structured output. The JSON is what the pipeline reads — your markdown is for human review only."
 
 See `docs/targets/hooks-and-handlers/spawn-prompts/hook-auditor.md` as the structural reference — same sections, but recon-specific content.
 
@@ -1586,7 +1950,8 @@ Mirrors the v2 hooks-and-handlers auditor structure exactly:
 - Deliverable format (finding template from boilerplate)
 - Proof sketch format for ruled-out vectors
 - Skills recommendations
-- Required: Write to `{{OUTPUT_FILE}}` incrementally
+- Required: Write report to `{{OUTPUT_FILE}}` incrementally AND `findings.json` to `{{FINDINGS_JSON}}`
+- **JSON sidecar**: Include the `Finding` and `AgentOutput` schema. Findings with `status: "confirmed"` or `"needs_poc"` get routed to PoC/red-team waves. `status: "ruled_out"` get logged for FP enrichment.
 
 **Step 2: Commit**
 
@@ -1613,7 +1978,9 @@ Each adapts from its hooks-and-handlers counterpart in `docs/targets/hooks-and-h
 - `poc-writer.md` — receives findings from waves 2-3, writes PoCs in the relevant repo
 - `red-team-adversary.md` — challenges findings + proof sketches from all waves
 
-All use `{{OUTPUT_FILE}}` and `{{PRIOR_SYNTHESIS}}` placeholders.
+All use `{{OUTPUT_FILE}}`, `{{FINDINGS_JSON}}`, and `{{PRIOR_SYNTHESIS}}` placeholders.
+
+All templates include the JSON sidecar schema and instruction. For poc-writer and red-team-adversary, the sidecar also includes a `verdict` field per finding (confirmed/rejected/weakened) so the pipeline can compute precision and adversarial survival rate mechanically.
 
 **Step 2: Commit**
 
@@ -1747,6 +2114,173 @@ git commit -m "feat: Phase 0 artifacts — artifact_generator.py + Slither + Ade
 
 ---
 
+### Task 12a: Custom Slither detectors for Limit Break patterns
+
+The generic Slither detectors miss project-specific patterns. Custom detectors are deterministic — they run the same way every time and catch patterns LLM agents might miss or hallucinate.
+
+**Files:**
+- Create: `docs/orchestrator/custom_detectors/` directory
+- Create: `docs/orchestrator/custom_detectors/transient_storage_leak.py`
+- Create: `docs/orchestrator/custom_detectors/diamond_slot_collision.py`
+- Create: `docs/orchestrator/custom_detectors/hook_reentrancy.py`
+- Create: `docs/orchestrator/custom_detectors/unchecked_delegatecall_return.py`
+
+**Detectors to implement:**
+
+1. **Transient storage leak** — HOOK-001 pattern: detect `tstore` without matching `tload`/clear in the same call context. Already found once manually; this makes it permanent.
+
+2. **Diamond slot collision** — Check that storage slot constants (0x9A1D pattern) don't collide across modules. Walks all `sstore`/`sload` in assembly blocks and flags overlapping slots.
+
+3. **Hook reentrancy** — Detect external calls in beforeSwap/afterSwap/beforeLiquidity/afterLiquidity hooks that could re-enter the AMM. Specific to the three-tier hook system.
+
+4. **Unchecked delegatecall return** — The pool type interface uses delegatecall extensively. Flag any delegatecall where the return value is not checked.
+
+**Step 1: Write detectors following Slither's AbstractDetector pattern**
+
+Each detector extends `AbstractDetector` with `ARGUMENT`, `HELP`, `IMPACT`, `CONFIDENCE`, and a `_detect()` method. See Slither docs for the API.
+
+**Step 2: Register detectors and run**
+
+Add a `run_custom_detectors()` function to `artifact_generator.py` that runs Slither with `--detect` pointing to the custom detector directory. Save output to `docs/targets/full-system/artifacts/phase0/{repo}-custom-detectors.md`.
+
+**Step 3: Verify on hooks-and-handlers (should re-find HOOK-001)**
+
+```bash
+cd /Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm && \
+python -c "from docs.orchestrator.artifact_generator import run_custom_detectors; ..."
+```
+
+Expected: transient_storage_leak detector flags the known HOOK-001 pattern.
+
+**Step 4: Commit**
+
+```bash
+git add docs/orchestrator/custom_detectors/ docs/orchestrator/artifact_generator.py
+git commit -m "feat: custom Slither detectors for transient storage, diamond slots, hook reentrancy"
+```
+
+---
+
+### Task 12b: Regression suite from known findings
+
+Every confirmed finding becomes a regression test. If a future run fails to flag a known issue, the pipeline reports it immediately. This is the strongest determinism guarantee: we know what the system MUST find.
+
+**Files:**
+- Create: `docs/orchestrator/regression.py`
+- Create: `docs/orchestrator/regression_cases.json`
+
+**Step 1: Encode known findings as regression cases**
+
+Build `regression_cases.json` from the 4 confirmed hooks-and-handlers findings plus HOOK-001:
+
+```json
+[
+  {
+    "id": "REG-001",
+    "source": "v1-audit",
+    "title": "sqrtPriceX96==0 bypass",
+    "contracts": ["CLOBTransferHandler.sol"],
+    "functions": ["_enforceTokenHooks"],
+    "category": "input-validation",
+    "keywords": ["sqrtPriceX96", "zero", "bypass", "price"],
+    "repo": "lbamm-hooks-and-handlers"
+  },
+  {
+    "id": "REG-002",
+    "source": "v1-audit",
+    "title": "Pricing bypass via direct handler call",
+    "contracts": ["CLOBTransferHandler.sol"],
+    "functions": ["executeSwap"],
+    "category": "access-control",
+    "keywords": ["pricing", "bypass", "direct", "handler"],
+    "repo": "lbamm-hooks-and-handlers"
+  },
+  {
+    "id": "REG-003",
+    "source": "v1-audit",
+    "title": "setTokenSettings sync gap",
+    "contracts": ["CLOBTransferHandler.sol"],
+    "functions": ["setTokenSettings"],
+    "category": "state-sync",
+    "keywords": ["setTokenSettings", "sync", "stale"],
+    "repo": "lbamm-hooks-and-handlers"
+  },
+  {
+    "id": "REG-004",
+    "source": "v2-audit",
+    "title": "Transient storage not cleared for direct swap input",
+    "contracts": ["AMMHooksTransferHandler.sol"],
+    "functions": ["beforeSwap"],
+    "category": "transient-storage",
+    "keywords": ["transient", "tstore", "clear", "direct", "swap"],
+    "repo": "lbamm-hooks-and-handlers"
+  }
+]
+```
+
+**Step 2: Write regression checker**
+
+```python
+"""Regression suite — verify known findings are re-discovered.
+
+After each wave, check if the agent JSON sidecars contain findings that match
+known regression cases. Report any regressions (known bugs not found).
+"""
+
+import json
+from pathlib import Path
+from .schema import load_and_validate
+
+
+def check_regression(sidecars: list[dict], cases_path: Path) -> dict:
+    """Check if known findings were re-discovered in agent output.
+
+    Returns {"found": [...], "missing": [...], "total": N}
+    """
+    cases = json.loads(cases_path.read_text())
+
+    # Flatten all findings from all sidecars
+    all_findings = []
+    for sc in sidecars:
+        all_findings.extend(sc.get("findings", []))
+        all_findings.extend(sc.get("ruled_out_vectors", []))
+
+    found = []
+    missing = []
+
+    for case in cases:
+        # Match by: same repo + same contract + >=2 shared keywords
+        matched = False
+        for f in all_findings:
+            same_repo = case["repo"] in f.get("repos", [])
+            same_contract = any(
+                c in f.get("contracts", []) for c in case["contracts"]
+            )
+            shared_kw = set(case["keywords"]) & set(f.get("keywords", []))
+            if same_contract and len(shared_kw) >= 2:
+                matched = True
+                break
+        if matched:
+            found.append(case["id"])
+        else:
+            missing.append(case)
+
+    return {"found": found, "missing": missing, "total": len(cases)}
+```
+
+**Step 3: Wire into run_audit.py**
+
+After each wave's `collect_json_sidecars()`, call `check_regression()`. Print warnings for any missing regression cases. For the final wave, fail if any known finding is missing.
+
+**Step 4: Commit**
+
+```bash
+git add docs/orchestrator/regression.py docs/orchestrator/regression_cases.json
+git commit -m "feat: regression suite — known findings must be re-found or flagged"
+```
+
+---
+
 ### Task 13: Dry-run wave 1 and validate prompts
 
 **Step 1: Run dry-run**
@@ -1790,30 +2324,64 @@ source /Users/diego/Dev/non-toxic/bug_bounty/.venv/bin/activate && \
 python -m docs.orchestrator.run_audit --wave 1
 ```
 
-**Step 2: Verify agent artifacts were written**
+**Step 2: Validate JSON sidecars**
 
 ```bash
-ls -la docs/targets/full-system/artifacts/wave1-*.md
+python -c "
+from docs.orchestrator.schema import load_and_validate
+from pathlib import Path
+for f in sorted(Path('docs/targets/full-system/artifacts').glob('wave1-*/findings.json')):
+    data, errors = load_and_validate(f)
+    status = 'VALID' if not errors else f'ERRORS: {errors}'
+    print(f'  {f.parent.name}: {status}')
+"
 ```
 
-Expected: 5 files (4 agent artifacts + 1 synthesis).
+Expected: All 4 agent sidecars valid. If any agent produced invalid JSON, review the template instruction and re-run that agent.
 
-**Step 3: Review synthesis quality**
+**Step 3: Verify agent artifacts were written**
 
-Read `docs/targets/full-system/artifacts/wave1-synthesis.md`. Verify:
-- Hot spots are populated and ranked
+```bash
+ls docs/targets/full-system/artifacts/wave1-*/
+```
+
+Expected: 4 directories, each with `report.md` + `findings.json`.
+
+**Step 4: Review synthesis**
+
+Read `docs/targets/full-system/artifacts/wave1-synthesis.md`. The hot spots should be mechanically ranked by score (from `score_hotspot()`), not free-form prose. Verify:
+- Hot spots are ranked by deterministic score
 - Cross-boundary concerns are flagged
-- Metrics are captured
+- Phase 0 static analysis hit counts are factored in
+- `wave1-synthesis.json` exists (machine-readable version for wave 2)
 
-**Step 4: Populate wave 2 agents based on synthesis**
+**Step 5: Check regression suite**
 
-Edit `docs/orchestrator/config.py` to fill in `WAVE_2_TEMPLATE.agents` based on wave 1 hot spots.
+```bash
+python -c "
+from docs.orchestrator.regression import check_regression
+from docs.orchestrator.synthesizer import collect_json_sidecars
+from docs.orchestrator.config import WAVES
+from pathlib import Path
+sidecars = collect_json_sidecars(WAVES[0])
+result = check_regression(sidecars, Path('docs/orchestrator/regression_cases.json'))
+print(f'Regression: {len(result[\"found\"])}/{result[\"total\"]} found, {len(result[\"missing\"])} missing')
+for m in result['missing']:
+    print(f'  MISSING: {m[\"id\"]} — {m[\"title\"]}')
+"
+```
 
-**Step 5: Commit**
+Wave 1 is recon, so not all regression cases need to be found yet. But any that ARE found this early is a good sign.
+
+**Step 6: Populate wave 2 agents based on scored hotspots**
+
+Read `wave1-synthesis.json`. The top-scored hotspots become wave 2 agent scopes. Edit `docs/orchestrator/config.py` to fill in `WAVE_2_TEMPLATE.agents`.
+
+**Step 7: Commit**
 
 ```bash
 git add docs/targets/full-system/artifacts/ docs/targets/full-system/results/ docs/orchestrator/config.py
-git commit -m "feat: wave 1 recon complete — synthesis and wave 2 config populated"
+git commit -m "feat: wave 1 recon complete — scored synthesis and wave 2 config populated"
 ```
 
 ---
@@ -1823,42 +2391,114 @@ git commit -m "feat: wave 1 recon complete — synthesis and wave 2 config popul
 Each follows the same pattern as Task 14:
 1. Populate wave agents in config (if dynamic)
 2. Run `python -m docs.orchestrator.run_audit --wave N`
-3. Verify artifacts written
-4. Review synthesis
-5. Populate next wave
-6. Commit
+3. Validate JSON sidecars (all agents must produce valid `findings.json`)
+4. Review scored synthesis (`waveN-synthesis.json`)
+5. Check regression suite — by wave 3, all 4 known findings should be found
+6. Populate next wave from scored hotspots
+7. Commit
+
+**Consensus mode (waves 2-3):**
+
+For the top 2 hotspots from wave 1, run 2 independent deep agents on the same scope. After both complete:
+
+```bash
+python -m docs.orchestrator.run_audit --wave 2 --consensus
+```
+
+The `--consensus` flag diffs their JSON sidecars:
+- Findings in both → high confidence, route to PoC
+- Findings in only one → needs manual review
+- Add a `consensus_count` field to each finding in the merged sidecar
+
+Implementation: add a `consensus_diff()` function to `synthesizer.py` that compares findings by (contract, function, category). Two findings match if they share the same contract + function + category. The diff produces a merged sidecar with consensus annotations.
+
+**Precision tracking (wave 5):**
+
+PoC-writer and red-team agents produce JSON sidecars with `verdict` fields per finding. The synthesizer computes:
+- `precision = confirmed_by_poc / total_claimed`
+- `adversarial_survival_rate = survived_red_team / total_claimed`
+
+These go into `wave5-metrics.json` for framework calibration.
 
 ---
 
-### Task 19: Final report and memory update
+### Task 19: Final report, regression check, and memory update
 
-**Step 1: Generate consolidated findings report**
+**Step 1: Final regression check**
 
-Read all wave synthesis documents and agent artifacts. Compile into `docs/targets/full-system/results/findings-report.md`.
+```bash
+python -c "
+from docs.orchestrator.regression import check_regression
+from pathlib import Path
+import json
 
-**Step 2: Review staged memory entries**
+# Aggregate all sidecars from all waves
+all_sidecars = []
+for f in sorted(Path('docs/targets/full-system/artifacts').glob('wave*/*/findings.json')):
+    data = json.loads(f.read_text())
+    all_sidecars.append(data)
+
+result = check_regression(all_sidecars, Path('docs/orchestrator/regression_cases.json'))
+print(f'Final regression: {len(result[\"found\"])}/{result[\"total\"]} known findings re-discovered')
+for m in result['missing']:
+    print(f'  REGRESSION: {m[\"id\"]} — {m[\"title\"]}')
+if not result['missing']:
+    print('All regression cases passed.')
+"
+```
+
+All 4 known findings must be accounted for. Any missing = investigate why.
+
+**Step 2: Generate consolidated findings report**
+
+Read all `waveN-synthesis.json` files (not markdown). Compile into `docs/targets/full-system/results/findings-report.md` (human-readable) and `docs/targets/full-system/results/findings-report.json` (machine-readable).
+
+Include:
+- All confirmed findings with PoC pass/fail status
+- Precision and adversarial survival rates from wave 5 metrics
+- Consensus counts for each finding
+- Regression suite results
+
+**Step 3: Compute audit quality metrics**
+
+From the JSON data across all waves, compute:
+- `precision`: findings confirmed by PoC / total claimed findings
+- `adversarial_survival_rate`: findings surviving red-team / total claimed
+- `consensus_rate`: findings flagged by 2+ agents / total findings
+- `regression_pass_rate`: known findings re-found / total known
+- `cost_per_confirmed_finding`: total spend / confirmed findings
+- `deterministic_coverage`: Phase 0 static hits that overlap with agent findings / total Phase 0 hits
+
+Write to `docs/targets/full-system/results/audit-quality-metrics.json`.
+
+**Step 4: Review staged memory entries**
 
 The orchestrator's `memory_lifecycle.py` (Task 6b) auto-stages entries after each wave:
-- `docs/memory/staged-fps.json` — new FP candidates from ruled-out vectors
-- `docs/memory/staged-lessons.json` — procedural lessons from run outcomes
-- `docs/memory/run-episodes/wave*-*.md` — per-wave episode summaries
+- `docs/audit_memory/staged-fps.json` — new FP candidates from ruled-out vectors
+- `docs/audit_memory/staged-lessons.json` — procedural lessons from run outcomes
+- `docs/audit_memory/run-episodes/wave*-*.md` — per-wave episode summaries
 
 Review each staged file. For FPs: approve/reject, assign FP-IDs, set confidence scores, add to `false-positives.md`. For lessons: approve/reject, assign L-IDs, add to `lessons-learned.md`.
 
-**Step 3: Update digest with cumulative numbers**
+**Step 5: Update digest with cumulative numbers**
 
-Rewrite `docs/memory/digest.md` with final numbers from all wave `metrics.json` files:
+Rewrite `docs/audit_memory/digest.md` with final numbers from all wave `metrics.json` files:
 - Total confirmed findings, vectors ruled out, fuzz tests
+- Precision, adversarial survival rate, consensus rate
 - Top FP patterns (from newly added FPs)
 - Updated lessons summary
 
-**Step 4: Add new confirmed patterns to `docs/memory/confirmed-patterns.md`**
+**Step 6: Add new confirmed patterns to `docs/audit_memory/confirmed-patterns.md`**
 
 Extract vulnerability patterns from confirmed findings that generalize beyond this target.
 
-**Step 5: Commit**
+**Step 7: Update regression suite**
+
+Any new confirmed findings from this audit get added to `regression_cases.json` for future runs.
+
+**Step 8: Commit**
 
 ```bash
-git add docs/targets/full-system/results/ docs/memory/
-git commit -m "feat: full-system audit complete — findings report and memory updated"
+git add docs/targets/full-system/results/ docs/audit_memory/ docs/orchestrator/regression_cases.json
+git commit -m "feat: full-system audit complete — findings, quality metrics, and memory updated"
 ```

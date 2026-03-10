@@ -348,7 +348,7 @@ Agents use 21 static Phase 0 artifacts as semantic memory (codebase facts, call 
 
 **Option 1: Structured Markdown Memory Files (start here)**
 
-Add `docs/memory/` with:
+Add `docs/audit_memory/` with:
 - `findings-log.md` — Append-only log of all findings with status (confirmed, false_positive, submitted, ruled_out)
 - `false-positives.md` — Patterns that look like bugs but aren't, with explanations
 - `codebase-facts.md` — Discovered facts not in Phase 0 artifacts
@@ -366,13 +366,13 @@ After each audit run, spawn a "reflection agent" that reads all agent outputs an
 - Updated procedural instructions
 - Proposed spawn prompt updates
 
-This is the Reflexion pattern applied to multi-agent auditing. The reflection agent writes to `docs/memory/`, which future runs consume.
+This is the Reflexion pattern applied to multi-agent auditing. The reflection agent writes to `docs/audit_memory/`, which future runs consume.
 
 **Effort**: Medium. **Value**: High — agents actually learn. **Risk**: Bad reflections propagate errors; needs human review.
 
 **Option 3: Intra-Run Dynamic Memory via Lead**
 
-During a run, agents tag messages: `[CROSS-MODULE-FACT]`, `[FINDING]`, `[FALSE-POSITIVE]`. The lead extracts tagged items, writes to `docs/memory/live/`, and includes relevant items when messaging other agents.
+During a run, agents tag messages: `[CROSS-MODULE-FACT]`, `[FINDING]`, `[FALSE-POSITIVE]`. The lead extracts tagged items, writes to `docs/audit_memory/live/`, and includes relevant items when messaging other agents.
 
 **Effort**: Medium-high. **Value**: High for cross-module bugs. **Risk**: Increases lead complexity, context pollution.
 

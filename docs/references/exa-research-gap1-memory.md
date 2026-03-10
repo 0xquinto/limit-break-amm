@@ -2,7 +2,7 @@
 
 > **Date**: 2026-03-09 | **Model**: exa-research-pro | **Cost**: ~$1.22 (deep researcher + seed searches)
 > **Sources**: 48 citations, 105 pages crawled, 29 deep-researcher searches + 4 parallel seed searches
-> **Purpose**: Inform design of `docs/memory/false-positives.md` and cross-session agent memory
+> **Purpose**: Inform design of `docs/audit_memory/false-positives.md` and cross-session agent memory
 > **Supersedes**: Prior v1 of this file (same date, less comprehensive)
 
 ---
@@ -269,7 +269,7 @@ Each entry: ID | Target | Vector | Why False | Confidence | Source Run
 ### 6.2 Memory Layer Architecture (Tier 1: Files — implement now)
 
 ```
-docs/memory/
+docs/audit_memory/
   false-positives.md       # Semantic: ruled-out vectors with reasoning
   confirmed-patterns.md    # Semantic: patterns that ARE real vulnerabilities
   lessons-learned.md       # Procedural: beliefs extracted from run outcomes

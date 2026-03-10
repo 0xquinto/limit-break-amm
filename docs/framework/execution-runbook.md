@@ -47,13 +47,13 @@ done
    cat docs/targets/hooks-and-handlers/results/v2-findings-report.md >> docs/targets/hooks-and-handlers/artifacts/prior-findings.md 2>/dev/null || true
    echo -e "\n---\n" >> docs/targets/hooks-and-handlers/artifacts/prior-findings.md
    echo "## Known False Positives" >> docs/targets/hooks-and-handlers/artifacts/prior-findings.md
-   cat docs/memory/false-positives.md >> docs/targets/hooks-and-handlers/artifacts/prior-findings.md 2>/dev/null || true
+   cat docs/audit_memory/false-positives.md >> docs/targets/hooks-and-handlers/artifacts/prior-findings.md 2>/dev/null || true
    echo -e "\n---\n" >> docs/targets/hooks-and-handlers/artifacts/prior-findings.md
    echo "## Confirmed Vulnerability Patterns" >> docs/targets/hooks-and-handlers/artifacts/prior-findings.md
-   cat docs/memory/confirmed-patterns.md >> docs/targets/hooks-and-handlers/artifacts/prior-findings.md 2>/dev/null || true
+   cat docs/audit_memory/confirmed-patterns.md >> docs/targets/hooks-and-handlers/artifacts/prior-findings.md 2>/dev/null || true
    echo -e "\n---\n" >> docs/targets/hooks-and-handlers/artifacts/prior-findings.md
    echo "## Lessons Learned" >> docs/targets/hooks-and-handlers/artifacts/prior-findings.md
-   cat docs/memory/lessons-learned.md >> docs/targets/hooks-and-handlers/artifacts/prior-findings.md 2>/dev/null || true
+   cat docs/audit_memory/lessons-learned.md >> docs/targets/hooks-and-handlers/artifacts/prior-findings.md 2>/dev/null || true
    ```
 2. The file should contain:
    - Confirmed findings from prior runs (with severity, location, what was new)
@@ -372,11 +372,11 @@ Also update `redteam_outcomes` object in `metrics.json`.
 
 After all metrics collected:
 
-1. **Update digest**: Rewrite `docs/memory/digest.md` with new cumulative numbers
-2. **ADD new FPs**: For each newly ruled-out vector, add an entry to `docs/memory/false-positives.md` with full schema (ID, scope, contracts, vector, why false, confidence, source, category, lesson)
-3. **ADD confirmed patterns**: For each confirmed finding, add to `docs/memory/confirmed-patterns.md`
-4. **ADD lessons**: Extract 2-5 procedural lessons from run outcome into `docs/memory/lessons-learned.md`
-5. **Write episode**: Create `docs/memory/run-episodes/vN-YYYY-MM-DD.md` with structured summary
+1. **Update digest**: Rewrite `docs/audit_memory/digest.md` with new cumulative numbers
+2. **ADD new FPs**: For each newly ruled-out vector, add an entry to `docs/audit_memory/false-positives.md` with full schema (ID, scope, contracts, vector, why false, confidence, source, category, lesson)
+3. **ADD confirmed patterns**: For each confirmed finding, add to `docs/audit_memory/confirmed-patterns.md`
+4. **ADD lessons**: Extract 2-5 procedural lessons from run outcome into `docs/audit_memory/lessons-learned.md`
+5. **Write episode**: Create `docs/audit_memory/run-episodes/vN-YYYY-MM-DD.md` with structured summary
 6. **UPDATE confidence**: For FP entries re-verified this run, bump confidence. For entries not tested, apply -10 decay (min 50).
 
 ### Safety Gates

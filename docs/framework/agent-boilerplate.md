@@ -155,7 +155,7 @@ For final contest submission formatting, see `docs/references/pashov-skills/repo
 
 Every finding MUST pass this ordered gate pipeline. If ANY gate fails, drop the finding.
 
-0. **Not a known false positive**: `grep` the function name and vector keyword in `docs/memory/false-positives.md`. If a match exists with confidence >= 80, NOOP — skip and note "Known FP: FP-NNN" in your ruled-out list. If partial match (similar but different code path), proceed but note the related FP in your finding.
+0. **Not a known false positive**: `grep` the function name and vector keyword in `docs/audit_memory/false-positives.md`. If a match exists with confidence >= 80, NOOP — skip and note "Known FP: FP-NNN" in your ruled-out list. If partial match (similar but different code path), proceed but note the related FP in your finding.
 1. **Location exists**: `grep` or AST-verify that the referenced function, variable, or line actually exists in the target contract. Catches hallucinated function names.
 2. **Entry point is reachable**: The attacker can actually reach the vulnerable function (check modifiers, `msg.sender` guards, access control, caller restrictions).
 3. **No existing guard prevents it**: No `require`, `if`-revert, reentrancy lock, allowance check, or other guard already blocks the attack path.

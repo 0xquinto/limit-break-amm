@@ -14,14 +14,14 @@ Then read `docs/CODEBASE_MAP.md` for architecture context.
 If `docs/targets/hooks-and-handlers/artifacts/prior-findings.md` exists, read it for context from prior runs.
 
 ## Memory (read before investigating)
-- **Always read**: `docs/memory/digest.md` (200-token summary of all prior runs)
-- **Grep on demand**: `docs/memory/false-positives.md` (before reporting any finding, check for known FPs)
-- **Patterns to find**: `docs/memory/confirmed-patterns.md` (look for variants of these)
+- **Always read**: `docs/audit_memory/digest.md` (200-token summary of all prior runs)
+- **Grep on demand**: `docs/audit_memory/false-positives.md` (before reporting any finding, check for known FPs)
+- **Patterns to find**: `docs/audit_memory/confirmed-patterns.md` (look for variants of these)
 
 ## Your Domain
 - **Domain**: Economic/game-theoretic modeling of protocol incentives — MEV, wash trading, fee abuse
 - **Owned files**: WRITE to `lbamm-hooks-and-handlers/test/audit/economic/` only
-- **Read**: `docs/targets/hooks-and-handlers/artifacts/economic-model-clob.md`, `docs/targets/hooks-and-handlers/artifacts/mev-surface.md`, `docs/targets/hooks-and-handlers/artifacts/novel-attack-surface.md`, `docs/targets/hooks-and-handlers/artifacts/cross-boundary-call-graph.md`, `docs/targets/hooks-and-handlers/artifacts/acknowledged-findings-families.md`, `docs/targets/hooks-and-handlers/artifacts/spec-vs-code.md`, `lbamm-hooks-and-handlers/src/handlers/clob/CLOBHelper.sol` (fee math), `lbamm-hooks-and-handlers/src/handlers/clob/CLOBTransferHandler.sol` (fill logic), `lbamm-hooks-and-handlers/src/hooks/AMMStandardHook.sol` (fee enforcement), `docs/framework/tool-guide.md`, `docs/CODEBASE_MAP.md`, `docs/memory/digest.md`, `docs/memory/false-positives.md` (grep, not full read), `docs/memory/confirmed-patterns.md`, all `lbamm-hooks-and-handlers/src/` files
+- **Read**: `docs/targets/hooks-and-handlers/artifacts/economic-model-clob.md`, `docs/targets/hooks-and-handlers/artifacts/mev-surface.md`, `docs/targets/hooks-and-handlers/artifacts/novel-attack-surface.md`, `docs/targets/hooks-and-handlers/artifacts/cross-boundary-call-graph.md`, `docs/targets/hooks-and-handlers/artifacts/acknowledged-findings-families.md`, `docs/targets/hooks-and-handlers/artifacts/spec-vs-code.md`, `lbamm-hooks-and-handlers/src/handlers/clob/CLOBHelper.sol` (fee math), `lbamm-hooks-and-handlers/src/handlers/clob/CLOBTransferHandler.sol` (fill logic), `lbamm-hooks-and-handlers/src/hooks/AMMStandardHook.sol` (fee enforcement), `docs/framework/tool-guide.md`, `docs/CODEBASE_MAP.md`, `docs/audit_memory/digest.md`, `docs/audit_memory/false-positives.md` (grep, not full read), `docs/audit_memory/confirmed-patterns.md`, all `lbamm-hooks-and-handlers/src/` files
 
 ## Tools
 - **Python**: Run `source .venv/bin/activate` first — provides `matplotlib`, `pandas`, `decimal`
