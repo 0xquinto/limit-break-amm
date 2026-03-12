@@ -446,7 +446,93 @@ If partial match (similar but different code path), proceed but reference the re
 
 ---
 
-## Cross-Domain 
+## Contest-Rejected Submissions (Guardian Defender, 8/8 Invalid)
+
+> These were submitted and rejected. They are technically accurate observations but below the contest vulnerability threshold. Do NOT re-submit variants of these.
+
+### FP-SUB01: setTokenSettings initialized flag desync
+- **Scope**: [registry-auditor, hook-auditor]
+- **Contracts**: CreatorHookSettingsRegistry.sol (L397)
+- **Vector**: `settings` (calldata) synced to hooks instead of `memSettings` (initialized=true)
+- **Why rejected**: Gas waste only. All real settings fields sync correctly. Extra SLOAD per swap is not a security issue.
+- **Confidence**: 99
+- **Source**: Guardian Defender submission (Feb 25, 2026) — Invalid
+- **Category**: CODE_QUALITY | GAS
+- **Lesson**: "Gas optimization hints are not vulnerabilities even when wrong"
+
+### FP-SUB02: validateHandlerOrder missing sqrtPriceX96==0 check
+- **Scope**: [hook-auditor]
+- **Contracts**: AMMStandardHook.sol (L215)
+- **Vector**: computeRatioX96 overflow returns 0, bypasses pricing bounds in view function
+- **Why rejected**: View function, unrealistic overflow inputs (amount1/amount0 >= 2^128), current CLOB handler constrains amounts. Inconsistency with _validatePricingBounds is cosmetic.
+- **Confidence**: 99
+- **Source**: Guardian Defender submission (Feb 25, 2026) — Invalid
+- **Category**: CODE_QUALITY | OVERFLOW
+- **Lesson**: "View function inconsistencies with unrealistic inputs are not vulnerabilities"
+
+### FP-SUB03: Fixed Pool double-rounding 1 wei overpayment
+- **Scope**: [pool-auditor]
+- **Contracts**: FixedHelper.sol (L908, L1655)
+- **Vector**: Height-splitting rounds each leg up independently, sum exceeds single-shot ceiling by 1 wei
+- **Why rejected**: Dust-level (1 wei). Not economically exploitable.
+- **Confidence**: 99
+- **Source**: Guardian Defender submission (Feb 24, 2026) — Invalid
+- **Category**: MATH_PRECISION | DUST
+- **Lesson**: "1 wei precision errors are below every contest's threshold"
+
+### FP-SUB04: getCurrentPriceX96 returns stale cached price
+- **Scope**: [pool-auditor]
+- **Contracts**: SingleProviderPoolType.sol (L437-442)
+- **Vector**: Returns lastSqrtPriceX96 (cached from last swap) instead of querying hook for live price
+- **Why rejected**: Standard AMM design pattern. Same as Uniswap V3 slot0.sqrtPriceX96. Not a bug.
+- **Confidence**: 99
+- **Source**: Guardian Defender submission (Feb 24, 2026) — Invalid
+- **Category**: DESIGN | NOT_A_BUG
+- **Lesson**: "Cached view functions are a design pattern, not a vulnerability"
+
+### FP-SUB05: Zero-amount swaps waste gas
+- **Scope**: [pool-auditor]
+- **Contracts**: DynamicPoolType.sol (L398-488, L517-607)
+- **Vector**: amountIn=0 or amountOut=0 accepted, wastes ~15.6K gas per no-op swap
+- **Why rejected**: Caller wastes their own gas. No economic harm to protocol or other users.
+- **Confidence**: 99
+- **Source**: Guardian Defender submission (Feb 24, 2026) — Invalid
+- **Category**: GAS | SELF_INFLICTED
+- **Lesson**: "If the caller can only harm themselves, it's not a vulnerability"
+
+### FP-SUB06: swapExtraData silent fallback on malformed input
+- **Scope**: [pool-auditor]
+- **Contracts**: DynamicPoolType.sol (L433-441, L552-560)
+- **Vector**: Non-32-byte swapExtraData silently uses default price limits instead of reverting
+- **Why rejected**: Fail-open on malformed input is a design choice. Integrator error, not protocol vulnerability. Caller's limitAmount still protects them.
+- **Confidence**: 99
+- **Source**: Guardian Defender submission (Feb 24, 2026) — Invalid
+- **Category**: DESIGN | SELF_INFLICTED
+- **Lesson**: "Fail-open on caller-controlled malformed input is not a vulnerability when other protections exist"
+
+### FP-SUB07: Zero-liquidity tick traversal gas griefing
+- **Scope**: [pool-auditor]
+- **Contracts**: DynamicHelper.sol (L350-433)
+- **Vector**: Unbounded while loop traverses empty tick words, ~77% gas premium with tickSpacing=1
+- **Why rejected**: Identical to Uniswap V3 design. Known AMM property, not a novel finding. "Invalid per guardian triage."
+- **Confidence**: 99
+- **Source**: Guardian Defender submission (Feb 24, 2026) — "Invalid per guardian triage"
+- **Category**: DESIGN | KNOWN_PATTERN
+- **Lesson**: "If it's the same as Uniswap V3, it's not a finding — it's the design"
+
+### FP-SUB08: feeOnTop not signed in permit SWAP_TYPEHASH
+- **Scope**: [permit-auditor]
+- **Contracts**: PermitTransferHandler.sol (L226-239), Constants.sol (L35)
+- **Vector**: Executor can set arbitrary feeOnTop since it's not in the EIP-712 signed data
+- **Why rejected**: Intentional design. Signer's protection is limitAmount (caps total expenditure). Test helper comments `/*feeOnTop*/` confirming deliberate exclusion. Executor (trusted relayer) controls feeOnTop by design. "Invalid per guardian triage."
+- **Confidence**: 99
+- **Source**: Guardian Defender submission (Feb 23, 2026) — "Invalid per guardian triage"
+- **Category**: DESIGN | INTENTIONAL
+- **Lesson**: "When the codebase comments show intentional exclusion, it's by design. limitAmount is the signer's protection, not per-field signing."
+
+---
+
+## Cross-Domain
 ### FP-X01: Transient storage shared slot overwrite (by-design)
 - **Scope**: [hook-auditor, cross-contract-tracer, clob-auditor]
 - **Contracts**: AMMStandardHook.sol, AMMModule.sol (lbamm-core/)
