@@ -44,6 +44,8 @@ Classify every vector in your "Hunt for" list into three tiers:
 
 Log your triage: `Skip: N, Borderline: N, Survive: N`. Only deep-dive Survive vectors. Budget: 70% on Survive, 30% on promoted Borderline.
 
+**Lens application log**: After applying lenses, log: `L1-traces: N values traced, N mismatches found. L2-diffs: N pairs diffed, N asymmetries found. L3-amplifications: N checked, N > 100x.`
+
 **Hunt for (adapt to your scope):**
 - Hook bypass / missing access control on callbacks
 - EIP-712 signature manipulation (missing fields, wrong encoding, replay)
@@ -56,6 +58,29 @@ Log your triage: `Skip: N, Borderline: N, Survive: N`. Only deep-dive Survive ve
 - Delegatecall storage collision
 - Pool type address validation
 - Fee calculation errors (double-counting, skipping, asymmetry)
+- **Denomination mismatch (NEW)**: Value computed in token A, consumed as token B (MUX pattern)
+- **Paired-op validation asymmetry (NEW)**: Check exists in one direction but not the inverse
+- **Accounting domain divergence (NEW)**: Internal balance != real balanceOf after operation
+
+**Value Lifecycle Lenses (MANDATORY — read `docs/framework/value-lifecycle-lenses.md` first):**
+
+After completing your standard vector triage, apply these three lenses. They catch bugs that per-function analysis misses.
+
+**Lens 1 — Value Birth-to-Death Tracing (allocate 20% of analysis time):**
+1. List every computed value in your scope that crosses a function boundary (fees, amounts, prices, shares)
+2. For each, trace from computation to consumption. At every handoff, check: same token? same decimals? same units? same accounting domain?
+3. Use `mcp__slither__get_function_callees` to map the actual call chain — do NOT guess
+4. Flag any context change without explicit conversion
+
+**Lens 2 — Paired Operation Diffing (allocate 10% of analysis time):**
+1. List every operation in your scope that has a logical inverse (add/remove, deposit/withdraw, swap A→B / B→A)
+2. For each pair, extract all validation checks (`require`, modifiers, bounds) from both directions
+3. Diff them. Any check present in one direction but absent in the other is a candidate finding
+
+**Lens 3 — Amplification Factor (apply when Lens 1 or 2 flags something):**
+1. If you find a denomination or validation mismatch, compute the amplification: `expensive_token_price / cheap_token_price`
+2. Calculate economic impact: `amplification * controllable_amount`
+3. If impact > $1000, escalate to confirmed finding with PoC sketch
 
 **Composability check (after 2+ confirmed findings):**
 If you confirm 2+ findings, check if any two compound. Note the interaction in the higher-confidence finding and flag as potential severity elevation.
@@ -120,12 +145,34 @@ At the end of your output file:
 - files_read: <N>
 ```
 
-## Recommended Skills (invoke via Skill tool)
-- `audit-context-building:audit-context-building` — run FIRST to build deep architectural context
-- `entry-point-analyzer:entry-point-analyzer` — map all state-changing entry points in your module
-- `sharp-edges:sharp-edges` — identify footgun APIs in configuration interfaces
-- `variant-analysis:variant-analysis` — after finding a vulnerability, search for similar patterns
-- `spec-to-code-compliance:spec-to-code-compliance` — verify implementation matches spec
+## Mandatory Tool Workflow
+
+Follow the checkpoints defined in `agent-boilerplate.md` "Mandatory Tool Checkpoints". Concretely for your role:
+
+### Phase 0 — Context + Static Baseline (turns 1-3, before ANY manual analysis)
+1. `Skill("audit-context-building:audit-context-building")` — builds architectural context BEFORE you read code
+2. `Skill("entry-point-analyzer:entry-point-analyzer")` — maps all state-changing entry points
+3. Load Slither: `ToolSearch "+slither"`
+4. Run `mcp__slither__run_detectors` on each scoped repo with `impact=["High","Medium"]`, `exclude_paths=["lib/","test/"]`
+5. Run `mcp__slither__list_functions` on your primary target contracts to get the real function list
+6. Run `/opt/homebrew/bin/aderyn .` in each scoped repo
+7. Log TOOL_CHECKPOINT events for all (checkpoint 0 + checkpoint 1)
+8. Use static analysis hits to seed your "Survive" vector triage — a Slither High on a function = automatic Survive
+
+### Phase 1 — Conditional Skills (turn 3-4)
+- **If scope includes handlers/permits**: `Skill("building-secure-contracts:token-integration-analyzer")`
+- **If scope includes config/settings/admin**: `Skill("sharp-edges:sharp-edges")`
+- Cross-reference entry points with Slither call graph: `mcp__slither__get_function_callers` for any function with a detector hit
+
+### Phase 2 — Deep Analysis (turns 4-26)
+- For math/rounding vectors: write a Halmos `check_*` test OR Forge fuzz test — one of the two is mandatory
+- For stateful sequence vectors: run Medusa with `--test-limit 50000` OR Forge invariant test
+- For call graph questions: use `mcp__slither__export_call_graph` or `get_function_callees` — do NOT guess call chains
+- For confirmed exploitable findings: run Quimera for alternative PoC approaches: `~/.local/bin/quimera <contract> --model sonnet --iterations 5`
+
+### Phase 3 — Variant Search (after any confirmed finding)
+1. `mcp__slither__search_functions` for similar patterns
+2. `Skill("variant-analysis:variant-analysis")` — systematic cross-repo variant search
 
 ## Budget Guidance
 - **Turns**: You have ~30 turns for auditor role. Spend 4 on setup, 22 on analysis, 4 on writing.
@@ -157,7 +204,7 @@ The JSON must follow this schema:
       "contracts": ["Contract.sol"],
       "functions": ["functionName"],
       "lines": {"Contract.sol": [123, 456]},
-      "category": "hook-bypass|eip712|clob|precision|transient-storage|reentrancy|access-control|cache-desync|delegatecall|rounding",
+      "category": "hook-bypass|eip712|clob|precision|transient-storage|reentrancy|access-control|cache-desync|delegatecall|rounding|denomination-mismatch|paired-op-asymmetry|accounting-divergence",
       "description": "what the issue is",
       "impact": "what an attacker gains",
       "proof_sketch": "reasoning chain or PoC reference",
@@ -166,7 +213,17 @@ The JSON must follow this schema:
       "keywords": ["keyword1", "keyword2"]
     }
   ],
-  "hot_spots": [],
+  "hot_spots": [
+    {
+      "contract": "Contract.sol",
+      "function": "functionName",
+      "repo": "repo-name",
+      "score": 8,
+      "reason": "why this is suspicious",
+      "static_hits": 2,
+      "cross_boundary": false
+    }
+  ],
   "ruled_out_vectors": [
     {
       "id": "RO-NNN",
@@ -185,7 +242,9 @@ The JSON must follow this schema:
       "keywords": ["keyword1"]
     }
   ],
-  "metadata": {"findings_claimed": 0, "vectors_ruled_out": 0, "completeness_pct": 0}
+  "metadata": {"findings_claimed": 0, "vectors_ruled_out": 0, "completeness_pct": 0, "tool_uses": 0, "files_read": 0,
+    "lens_coverage": {"l1_values_traced": 0, "l1_mismatches_found": 0, "l2_pairs_diffed": 0, "l2_asymmetries_found": 0, "l3_amplifications_checked": 0, "l3_amplifications_over_100x": 0}
+  }
 }
 ```
 

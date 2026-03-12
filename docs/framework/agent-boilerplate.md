@@ -34,6 +34,8 @@ When spawned with `isolation: worktree`, your worktree will be at `.claude/workt
 | Aderyn | `/opt/homebrew/bin/aderyn` (v0.6.8) | Rust-based Solidity static analyzer (Cyfrin). Complements Slither — different detector set. Run: `aderyn .` |
 | Quimera | `~/.local/bin/quimera` (v0.1) | LLM-driven exploit PoC generation using Foundry. For confirmed vulns: `quimera <contract> --model <model> --iterations 5` |
 | Slither MCP | via `ToolSearch "+slither"` | Static analysis, call graphs, storage layout, detectors |
+| Certora | `.venv/bin/certoraRun` | Formal verification — proves invariants for ALL states. Key loaded from `.env` at project root (`source .env` or use `dotenv`). Use `--solc /opt/homebrew/bin/solc --disable_local_typechecking`. Spec file must be inside the project dir. |
+| Gambit | `~/.local/bin/gambit` | Mutation testing — finds gaps in test coverage. Use `--solc ~/.foundry/bin/forge` or set `solc` in config to pick 0.8.24. |
 | Python + Jupyter | `.venv/bin/python3` / `.venv/bin/jupyter` | Economic modeling (requires `source .venv/bin/activate`) |
 
 ### Trail of Bits Claude Code Skills
@@ -51,9 +53,124 @@ These are AI skills invoked via the **Skill tool** (not CLI). Use them at the ri
 | `sharp-edges` | `Skill("sharp-edges:sharp-edges")` | When reviewing API designs, configs, or footgun-prone interfaces. |
 | `differential-review` | `Skill("differential-review:differential-review")` | When reviewing remediation diffs or code changes for security regressions. |
 
-**Recommended workflow:** Start with `audit-context-building` + `entry-point-analyzer`, then use domain-specific skills as you investigate.
-
 **Forge tips**: Do NOT run `forge test` without `--match-test` or `--match-path` — the full suite is slow. Target specific tests. `allow_internal_expect_revert = true` is enabled in `foundry.toml`.
+
+### Mandatory vs Conditional Skills
+
+| Skill | When Mandatory | Invoke With |
+|-------|---------------|-------------|
+| `audit-context-building` | **ALL agents, Phase 0** | `Skill("audit-context-building:audit-context-building")` |
+| `entry-point-analyzer` | **ALL agents, Phase 0** | `Skill("entry-point-analyzer:entry-point-analyzer")` |
+| `property-based-testing` | **invariant-generator** | `Skill("property-based-testing:property-based-testing")` |
+| `token-integration-analyzer` | When scope includes handlers or permits | `Skill("building-secure-contracts:token-integration-analyzer")` |
+| `sharp-edges` | When scope includes config/settings interfaces | `Skill("sharp-edges:sharp-edges")` |
+| `variant-analysis` | **After confirming ANY finding** | `Skill("variant-analysis:variant-analysis")` |
+| `differential-review` | **exploit-verifier** | `Skill("differential-review:differential-review")` |
+| `spec-to-code-compliance` | When formal spec/docs exist for target | `Skill("spec-to-code-compliance:spec-to-code-compliance")` |
+
+## Mandatory Tool Checkpoints (ENFORCED)
+
+You MUST run these tools at the specified phases. Skipping a mandatory checkpoint is a **SAFETY_EVENT** — log it with the failure reason. If a tool errors or crashes, log the error and move on; tool failure after one honest attempt is acceptable, but never skipping the attempt.
+
+### Checkpoint 0: Context Building (turn 1, BEFORE any code reading)
+
+Run BOTH of these skills before reading source code:
+
+1. `Skill("audit-context-building:audit-context-building")` — builds deep architectural context, reduces hallucinations
+2. `Skill("entry-point-analyzer:entry-point-analyzer")` — maps all state-changing entry points and access control patterns
+
+These skills guide WHERE to look. Running them after you've already formed opinions defeats the purpose.
+
+Log:
+```json
+{"event":"TOOL_CHECKPOINT","ts":"<ISO>","agent_id":"<name>","checkpoint":0,"tool":"audit-context-building","status":"complete"}
+{"event":"TOOL_CHECKPOINT","ts":"<ISO>","agent_id":"<name>","checkpoint":0,"tool":"entry-point-analyzer","entry_points":<N>}
+```
+
+### Checkpoint 1: Static Analysis Baseline (turns 2-3)
+
+Run BOTH on every repo in your scope before starting manual analysis:
+
+**Slither** — Load via `ToolSearch "+slither"`, then:
+- `mcp__slither__run_detectors` with `path=<repo>`, `impact=["High","Medium"]`, `exclude_paths=["lib/","test/"]`
+- `mcp__slither__list_functions` on your target contracts — read the function list, don't guess
+
+**Aderyn** — Run on each scoped repo:
+```bash
+cd <repo> && /opt/homebrew/bin/aderyn . 2>&1 | tail -40
+```
+
+Log both:
+```json
+{"event":"TOOL_CHECKPOINT","ts":"<ISO>","agent_id":"<name>","checkpoint":1,"tool":"slither","repos":["<list>"],"high":<N>,"medium":<N>}
+{"event":"TOOL_CHECKPOINT","ts":"<ISO>","agent_id":"<name>","checkpoint":1,"tool":"aderyn","repos":["<list>"],"findings":<N>}
+```
+
+Use static analysis results to **prioritize** your manual investigation — they are starting points, not final answers.
+
+### Checkpoint 2: Conditional Skills (during analysis, when scope matches)
+
+These are mandatory WHEN your scope matches the trigger condition:
+
+**Scope includes token handlers or permits →** `Skill("building-secure-contracts:token-integration-analyzer")`
+- Checks ERC20 conformity, weird token patterns, owner privileges
+- Mandatory for agents scoped to `lbamm-hooks-and-handlers/`
+
+**Scope includes config/settings/admin interfaces →** `Skill("sharp-edges:sharp-edges")`
+- Identifies footgun APIs, dangerous defaults, misuse-prone configurations
+- Mandatory for agents scoped to pool creation, fee settings, whitelist management
+
+Log:
+```json
+{"event":"TOOL_CHECKPOINT","ts":"<ISO>","agent_id":"<name>","checkpoint":2,"tool":"token-integration-analyzer|sharp-edges","status":"complete|skipped","reason":"<why skipped if N/A>"}
+```
+
+### Checkpoint 3: Targeted Verification (before reporting any finding)
+
+**Math/overflow/rounding findings → Halmos** (symbolic execution):
+```bash
+env PATH="/Users/diego/.foundry/bin:$PATH" ~/.local/bin/halmos --function check_<name> --solver-timeout-assertion 30000
+```
+
+**Multi-step sequence findings → Medusa** (stateful fuzzing):
+```bash
+cd <repo> && /opt/homebrew/bin/medusa fuzz --target-contracts <Contract> --test-limit 50000
+```
+
+**Confirmed exploitable finding → Quimera** (LLM-driven PoC generation):
+```bash
+~/.local/bin/quimera <contract> --model sonnet --iterations 5
+```
+Use Quimera to generate alternative PoC approaches for any confirmed finding. It may find exploit paths you missed.
+
+Log: `{"event":"TOOL_CHECKPOINT","ts":"<ISO>","agent_id":"<name>","checkpoint":3,"tool":"halmos|medusa|quimera","target":"<finding_id>","result":"confirmed|unconfirmed"}`
+
+### Checkpoint 4: Variant + Call Graph Search (after confirming any finding)
+
+1. `mcp__slither__get_function_callers` and `get_function_callees` — trace blast radius
+2. `mcp__slither__search_functions` — find similar patterns in other contracts
+3. `Skill("variant-analysis:variant-analysis")` — systematic variant search across repos
+
+### Tool Checkpoint Evidence in Sidecar
+
+Your JSON sidecar `metadata` MUST include:
+```json
+"tools_run": {
+  "audit_context_building": {"ran": true},
+  "entry_point_analyzer": {"ran": true, "entry_points": 42},
+  "slither": {"ran": true, "repos": ["lbamm-core"], "high": 2, "medium": 5},
+  "aderyn": {"ran": true, "repos": ["lbamm-core"], "findings": 8},
+  "token_integration_analyzer": {"ran": false, "reason": "no handlers in scope"},
+  "sharp_edges": {"ran": false, "reason": "no config interfaces in scope"},
+  "halmos": {"ran": false, "reason": "no math findings to verify"},
+  "medusa": {"ran": true, "target": "INV-S01", "result": "confirmed"},
+  "quimera": {"ran": false, "reason": "no confirmed findings"},
+  "variant_analysis": {"ran": false, "reason": "no confirmed findings"},
+  "differential_review": {"ran": false, "reason": "not exploit-verifier role"}
+}
+```
+
+**If `tools_run` is missing from your sidecar, the synthesizer will flag your wave as incomplete.**
 
 ## Autonomy Rules
 
@@ -175,6 +292,65 @@ Include `[score]` in the finding deliverable. Findings below `[60]` are informat
 **Three orthogonal dimensions:** Severity (how bad), Exploitability Tier (how exploitable now), and Confidence (how sure it's real) are all independent. A finding can be High severity, Tier B exploitability, [75] confidence.
 
 Reference: `docs/references/pashov-skills/judging.md` for full FP gate rationale.
+
+## Contest Submission Threshold (MUST CHECK)
+
+**Before flagging ANY finding for submission**, it must pass ALL of these gates:
+
+1. **Attacker profit**: Can an attacker profit from this? (steal funds, extract value, MEV)
+2. **Victim harm**: Can an attacker cause material loss to a victim who did nothing wrong? (not self-inflicted, not "misconfigured integrator")
+3. **Protocol impact**: Can an attacker brick or DoS the protocol for other users? (not just waste their own gas)
+4. **Novelty**: Is this a novel issue, not a known design property of the AMM architecture? (e.g., tick traversal gas cost is Uniswap V3 by-design)
+
+If ALL answers are NO → do NOT flag for submission. Log as **informational** in your ruled-out list.
+
+**Known below-threshold categories** (from 8/8 invalid submissions in Guardian Defender):
+- Code inconsistencies / defensive hardening (missing zero-check in view functions)
+- Dust-level precision (1 wei rounding errors)
+- Cached/stale view function returns (design pattern, not bug)
+- Zero-amount input accepted without revert (caller wastes own gas)
+- Fail-open on malformed input (integrator error, not protocol vulnerability)
+- Gas griefing that mirrors known AMM designs (Uni V3 tick traversal)
+- Unsigned optional fields in permits when limitAmount already caps exposure (intentional design)
+
+## Exploit-First Methodology (MANDATORY)
+
+Your goal is to find **exploitable vulnerabilities with economic impact**, not to catalog code quality issues.
+
+### The Invariant-Break-Verify Loop
+
+1. **Read the invariant catalog**: `docs/framework/amm-invariant-catalog.md` — this defines what "correct" means
+2. **Pick an invariant**: Start with CRITICAL, then HIGH
+3. **Try to break it**: Write a Foundry test that violates the invariant. Use creative inputs, edge cases, multi-step sequences.
+4. **If it breaks → exploit it**: Calculate economic impact. Write a PoC that demonstrates fund loss or protocol damage.
+5. **If it holds → move on**: Log as ruled-out with the test as evidence. Don't write prose about why it holds — the passing test IS the proof.
+6. **Repeat**: Next invariant.
+
+### What Counts as a Finding
+
+- **MUST have**: A compiling Foundry PoC that demonstrates the invariant violation
+- **MUST have**: Economic impact calculation (how much can attacker extract?)
+- **MUST have**: Attack path from external caller to exploit (no admin-only paths)
+- **MUST NOT**: Report code quality, gas optimization, or "potential" issues without PoC
+
+### Differential Testing
+
+For math-heavy code, compare against Uniswap V3 reference implementations:
+- Import `@uniswap/v3-core` math libraries as reference
+- Fuzz identical inputs through both implementations
+- Any divergence is a potential bug
+
+### Value Lifecycle Analysis Lenses (MANDATORY)
+
+Read `docs/framework/value-lifecycle-lenses.md` during Phase 0. Apply during Phase 2.
+
+Every agent MUST apply three lenses that catch cross-boundary bugs invisible to per-function analysis:
+
+1. **Lens 1 — Value Tracing**: Trace computed values (fees, amounts, prices) from birth to consumption. Check denomination, decimals, units, and accounting domain at every function boundary.
+2. **Lens 2 — Paired Op Diffing**: For every operation with an inverse (add/remove, deposit/withdraw), diff the validation logic. Asymmetries are candidate findings.
+3. **Lens 3 — Amplification Factor**: When a mismatch is found, compute the economic amplification. `expensive_token / cheap_token * controllable_amount = extractable`.
+
+Log lens results in your sidecar `metadata.lens_coverage`. Missing lens coverage will be flagged by the synthesizer.
 
 ## Severity Rubric
 

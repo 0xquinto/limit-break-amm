@@ -30,7 +30,9 @@ SCORING_WEIGHTS = {
 }
 
 VALUE_FLOW_KEYWORDS = {"transfer", "safetransfer", "mint", "burn", "fee",
-                       "balance", "amount", "disburse", "collect", "swap"}
+                       "balance", "amount", "disburse", "collect", "swap",
+                       "denomination", "conversion", "decimals", "precision",
+                       "amplification", "paired", "asymmetry"}
 
 # Repo prefix mapping for canonical finding IDs
 REPO_PREFIXES = {
@@ -60,6 +62,11 @@ def collect_json_sidecars(wave: WaveConfig) -> list[dict]:
                 f["_source_agent"] = agent.name
             for f in data.get("ruled_out_vectors", []):
                 f["_source_agent"] = agent.name
+            # Handle ruled_out alias (used by invariant-generator)
+            for f in data.get("ruled_out", []):
+                f["_source_agent"] = agent.name
+            if "ruled_out" in data and "ruled_out_vectors" not in data:
+                data["ruled_out_vectors"] = data.get("ruled_out", [])
             sidecars.append(data)
     return sidecars
 
@@ -139,22 +146,21 @@ def detect_contradictions(
     A contradiction is flagged when a finding and a ruled-out vector share
     at least one contract AND either:
     - at least one function in common, OR
-    - at least one keyword in common (substring match on function names counts)
-    Returns list of contradiction records.
+    - at least one keyword in common (exact match only, not substring)
+
+    Substring matching was removed — it produced too many false positives
+    (e.g., "reentrancy" matching every ruled-out vector mentioning reentrancy).
+    Exact keyword overlap is sufficient for meaningful contradictions.
     """
     contradictions = []
     for f in findings:
         f_contracts = set(f.get("contracts", []))
         f_functions = set(f.get("functions", []))
         f_keywords = set(f.get("keywords", []))
-        # Also extract substrings from function names as implicit keywords
-        # e.g., "computeRatioX96" -> adds "computeRatioX96" to searchable terms
-        f_terms = f_keywords | f_functions
         for ro in ruled_out:
             ro_contracts = set(ro.get("contracts", []))
             ro_functions = set(ro.get("functions", []))
             ro_keywords = set(ro.get("keywords", []))
-            ro_terms = ro_keywords | ro_functions
 
             shared_contracts = f_contracts & ro_contracts
             if not shared_contracts:
@@ -163,25 +169,11 @@ def detect_contradictions(
             shared_functions = f_functions & ro_functions
             shared_keywords = f_keywords & ro_keywords
 
-            # Also check if any keyword appears as substring in the other's terms
-            # (handles "ratio" matching "computeRatioX96")
-            substring_matches = set()
-            for kw in f_keywords:
-                for term in ro_terms:
-                    if kw.lower() in term.lower() or term.lower() in kw.lower():
-                        substring_matches.add(f"{kw}~{term}")
-            for kw in ro_keywords:
-                for term in f_terms:
-                    if kw.lower() in term.lower() or term.lower() in kw.lower():
-                        substring_matches.add(f"{kw}~{term}")
-
             match_reason = []
             if shared_functions:
                 match_reason.append(f"functions: {sorted(shared_functions)}")
             if shared_keywords:
                 match_reason.append(f"keywords: {sorted(shared_keywords)}")
-            if substring_matches:
-                match_reason.append(f"substring: {sorted(substring_matches)[:3]}")
 
             if match_reason:
                 contradictions.append({
@@ -287,6 +279,109 @@ def assign_canonical_ids(findings: list[dict]) -> list[dict]:
     return findings
 
 
+# --- Tool coverage validation ---
+
+# Tools every agent MUST run (unconditional)
+MANDATORY_TOOLS_ALL = {"audit_context_building", "entry_point_analyzer", "slither", "aderyn"}
+
+# Tools mandatory for specific roles
+MANDATORY_TOOLS_BY_ROLE = {
+    "invariant-generator": {"property_based_testing"},
+    "invariant-breaker": {"halmos", "medusa", "certora"},
+    "exploit-verifier": {"quimera", "differential_review", "variant_analysis"},
+    "deep-agent": set(),
+}
+
+# Tools that are conditional on scope (checked separately)
+CONDITIONAL_TOOLS = {"token_integration_analyzer", "sharp_edges"}
+
+
+def check_tool_coverage(sidecars: list[dict]) -> list[str]:
+    """Check that agents ran mandatory tools. Returns list of warnings."""
+    warnings = []
+    for sc in sidecars:
+        agent = sc.get("agent_name", "unknown")
+        role = sc.get("agent_role", "unknown")
+        meta = sc.get("metadata", {})
+        tools_run = meta.get("tools_run", {})
+
+        if not tools_run:
+            warnings.append(
+                f"TOOL_COVERAGE: {agent} ({role}) has no tools_run in metadata — "
+                f"likely ran NO external tools"
+            )
+            continue
+
+        # Check unconditional mandatory tools
+        for tool in MANDATORY_TOOLS_ALL:
+            tool_info = tools_run.get(tool, {})
+            if not tool_info.get("ran", False):
+                reason = tool_info.get("reason", "no reason given")
+                warnings.append(
+                    f"TOOL_COVERAGE: {agent} ({role}) did NOT run {tool} — reason: {reason}"
+                )
+
+        # Check role-specific mandatory tools
+        role_tools = MANDATORY_TOOLS_BY_ROLE.get(role, set())
+        for tool in role_tools:
+            tool_info = tools_run.get(tool, {})
+            if not tool_info.get("ran", False):
+                reason = tool_info.get("reason", "no reason given")
+                warnings.append(
+                    f"TOOL_COVERAGE: {agent} ({role}) did NOT run role-mandatory {tool} — reason: {reason}"
+                )
+
+        # Check conditional tools — warn only if not present (skip vs not-attempted)
+        for tool in CONDITIONAL_TOOLS:
+            if tool not in tools_run:
+                warnings.append(
+                    f"TOOL_COVERAGE: {agent} ({role}) did not report on conditional tool {tool} — "
+                    f"add to tools_run with ran=false and reason if not applicable"
+                )
+
+    return warnings
+
+
+def check_lens_coverage(sidecars: list[dict]) -> list[str]:
+    """Check that agents applied value lifecycle lenses. Returns list of warnings."""
+    warnings = []
+    for sc in sidecars:
+        agent = sc.get("agent_name", "unknown")
+        role = sc.get("agent_role", "unknown")
+        meta = sc.get("metadata", {})
+        lens = meta.get("lens_coverage", {})
+
+        if not lens:
+            warnings.append(
+                f"LENS_COVERAGE: {agent} ({role}) has no lens_coverage in metadata — "
+                f"likely did NOT apply value lifecycle lenses"
+            )
+            continue
+
+        # Deep agents and breakers MUST trace values
+        if role in ("deep-agent", "invariant-breaker"):
+            if lens.get("l1_values_traced", 0) == 0:
+                warnings.append(
+                    f"LENS_COVERAGE: {agent} ({role}) traced 0 values (Lens 1) — "
+                    f"denomination mismatches will be missed"
+                )
+            if lens.get("l2_pairs_diffed", 0) == 0:
+                warnings.append(
+                    f"LENS_COVERAGE: {agent} ({role}) diffed 0 paired ops (Lens 2) — "
+                    f"validation asymmetries will be missed"
+                )
+
+        # Exploit verifiers MUST compute amplification
+        if role == "exploit-verifier":
+            if lens.get("l3_amplifications_checked", 0) == 0:
+                warnings.append(
+                    f"LENS_COVERAGE: {agent} ({role}) checked 0 amplification factors (Lens 3) — "
+                    f"economic impact may be underestimated"
+                )
+
+    return warnings
+
+
 # --- Safety logs ---
 
 def aggregate_safety_logs(wave_number: int) -> list[dict]:
@@ -308,13 +403,13 @@ def aggregate_safety_logs(wave_number: int) -> list[dict]:
 def generate_synthesis(
     wave: WaveConfig,
     results: list[AgentResult],
-    artifacts: dict[str, str],
+    _artifacts: dict[str, str],
 ) -> str:
     """Generate a wave synthesis document from agent JSON sidecars + results.
 
     Primary data source: JSON sidecars (deterministic).
-    Fallback: markdown artifacts (for backward compatibility with agents that
-    don't produce JSON yet).
+    _artifacts kept in signature for caller compatibility but unused —
+    synthesizer reads JSON sidecars, never parses markdown.
     """
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -354,6 +449,11 @@ def generate_synthesis(
     merged_findings = dedup_findings(all_findings)
     merged_findings = sort_findings(merged_findings)
     merged_findings = assign_canonical_ids(merged_findings)
+
+    # Collect invariant formalization data (Layer 1 output)
+    all_invariants_formalized = []
+    for sc in sidecars:
+        all_invariants_formalized.extend(sc.get("invariants_formalized", []))
 
     # Detect contradictions between findings and ruled-out vectors
     contradictions = detect_contradictions(merged_findings, all_ruled_out)
@@ -404,6 +504,16 @@ def generate_synthesis(
     # Fallback: if no JSON sidecars, note it
     data_source = "JSON sidecars" if sidecars else "no sidecars found — review markdown artifacts manually"
 
+    # Tool coverage validation
+    tool_warnings = check_tool_coverage(sidecars)
+    # Lens coverage validation
+    lens_warnings = check_lens_coverage(sidecars)
+    tool_warnings.extend(lens_warnings)
+    if tool_warnings:
+        tool_coverage_section = "\n".join(f"- **WARNING**: {w}" for w in tool_warnings)
+    else:
+        tool_coverage_section = "(All agents ran mandatory tools)"
+
     # Safety log summary (scaffold §6)
     safety_logs = aggregate_safety_logs(wave.number)
     if safety_logs:
@@ -426,6 +536,10 @@ Data source: {data_source}
 {agent_table}
 
 **Total cost**: ${sum(r.total_cost_usd for r in results):.2f}
+
+## Tool Coverage
+
+{tool_coverage_section}
 
 ## Safety Events
 
@@ -468,14 +582,19 @@ Data source: {data_source}
     print(f"  Synthesis written to {output_path}")
 
     # Write structured synthesis JSON (machine-readable for next wave)
+    from .run_manager import get_run_info
+    run_info = get_run_info()
     synthesis_json = {
         "wave": wave.number,
         "name": wave.name,
         "timestamp": now,
+        "run_id": run_info["run_id"] if run_info else None,
         "hot_spots": all_hotspots[:20],
         "findings": merged_findings,
         "contradictions": contradictions,
         "ruled_out_count": len(all_ruled_out),
+        "invariants_formalized": all_invariants_formalized,
+        "tool_coverage_warnings": tool_warnings,
     }
     synthesis_json_path = ARTIFACTS_DIR / f"wave{wave.number}-synthesis.json"
     synthesis_json_path.write_text(json.dumps(synthesis_json, indent=2, default=str))
