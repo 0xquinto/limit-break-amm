@@ -242,8 +242,22 @@ The JSON must follow this schema:
       "keywords": ["keyword1"]
     }
   ],
-  "metadata": {"findings_claimed": 0, "vectors_ruled_out": 0, "completeness_pct": 0, "tool_uses": 0, "files_read": 0,
-    "lens_coverage": {"l1_values_traced": 0, "l1_mismatches_found": 0, "l2_pairs_diffed": 0, "l2_asymmetries_found": 0, "l3_amplifications_checked": 0, "l3_amplifications_over_100x": 0}
+  "metadata": {
+    "findings_claimed": 0, "vectors_ruled_out": 0, "completeness_pct": 0,
+    "num_turns": 0, "tool_uses": 0, "files_read": 0,
+    "tools_run": {
+      "audit_context_building": {"ran": true},
+      "entry_point_analyzer": {"ran": true, "entry_points": 0},
+      "slither": {"ran": true, "repos": [], "high": 0, "medium": 0},
+      "aderyn": {"ran": true, "repos": [], "findings": 0},
+      "token_integration_analyzer": {"ran": false, "reason": "no handlers in scope"},
+      "sharp_edges": {"ran": false, "reason": "no config interfaces in scope"}
+    },
+    "lens_coverage": {
+      "l1_values_traced": 0, "l1_mismatches_found": 0,
+      "l2_pairs_diffed": 0, "l2_asymmetries_found": 0,
+      "l3_amplifications_checked": 0, "l3_amplifications_over_100x": 0
+    }
   }
 }
 ```

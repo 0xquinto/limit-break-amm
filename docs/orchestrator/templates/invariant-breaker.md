@@ -259,8 +259,23 @@ Write `{{FINDINGS_JSON}}` with:
       "repos": ["lbamm-core"]
     }
   ],
-  "metadata": {"invariants_tested": 0, "invariants_broken": 0, "invariants_held": 0, "tool_uses": 0, "files_read": 0,
-    "lens_coverage": {"l1_values_traced": 0, "l1_mismatches_found": 0, "l2_pairs_diffed": 0, "l2_asymmetries_found": 0}
+  "metadata": {
+    "invariants_tested": 0, "invariants_broken": 0, "invariants_held": 0,
+    "num_turns": 0, "tool_uses": 0, "files_read": 0,
+    "tools_run": {
+      "audit_context_building": {"ran": true},
+      "entry_point_analyzer": {"ran": true, "entry_points": 0},
+      "slither": {"ran": true, "repos": [], "high": 0, "medium": 0},
+      "aderyn": {"ran": true, "repos": [], "findings": 0},
+      "halmos": {"ran": false, "reason": "no math findings to verify"},
+      "medusa": {"ran": false, "reason": "no stateful sequences to test"},
+      "certora": {"ran": false, "reason": "no solvency invariants in scope"},
+      "quimera": {"ran": false, "reason": "no confirmed findings"}
+    },
+    "lens_coverage": {
+      "l1_values_traced": 0, "l1_mismatches_found": 0,
+      "l2_pairs_diffed": 0, "l2_asymmetries_found": 0
+    }
   }
 }
 ```

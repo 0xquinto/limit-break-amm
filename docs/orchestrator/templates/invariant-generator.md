@@ -110,12 +110,22 @@ After completing, write `{{FINDINGS_JSON}}` with:
   "agent_role": "invariant-generator",
   "wave": {{WAVE_NUMBER}},
   "findings": [],
-  "ruled_out": [],
+  "ruled_out_vectors": [],
   "invariants_formalized": [
     {"id": "INV-S01", "test_file": "path", "test_function": "name", "compiles": true}
   ],
-  "metadata": {"files_read": 0, "tool_uses": 0, "invariants_written": 0, "invariants_compiled": 0}
+  "metadata": {
+    "files_read": 0, "num_turns": 0, "tool_uses": 0,
+    "invariants_written": 0, "invariants_compiled": 0,
+    "tools_run": {
+      "audit_context_building": {"ran": true},
+      "entry_point_analyzer": {"ran": true, "entry_points": 0},
+      "slither": {"ran": true, "repos": [], "high": 0, "medium": 0},
+      "aderyn": {"ran": true, "repos": [], "findings": 0},
+      "property_based_testing": {"ran": true}
+    }
+  }
 }
 ```
 
-> **Note**: `findings` and `ruled_out` are empty arrays — this agent produces test artifacts, not findings. The arrays are present for synthesizer compatibility.
+> **Note**: `findings` and `ruled_out_vectors` are empty arrays — this agent produces test artifacts, not findings. The arrays are present for synthesizer compatibility.
