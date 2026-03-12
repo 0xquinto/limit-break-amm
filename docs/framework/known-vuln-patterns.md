@@ -437,4 +437,28 @@ The following reference files contain ~170 categorized attack vectors from Pasho
 
 ---
 
+## 11. Cross-Boundary Value Denomination Mismatch
+
+### 11.1 Fee Token Mismatch in Liquidity Withdrawal — MUX Protocol ($8M+)
+
+**Source:** Octane Security disclosure (March 2026), Immunefi
+
+**Summary:** `Pool.removeLiquidity` computed `liquidityFeeCollateral` denominated in `args.token` (USDC, ~$1), but `_distributeFee` transferred the fee amount using `_collateralToken` (WBTC, ~$100K). The `placeLiquidityOrder` function validated `token == collateralToken` for deposits (`isAdding`) but NOT for withdrawals (`!isAdding`), creating an asymmetric validation gap. A fee of "5 USDC" was transferred as "5 WBTC" — a 100,000x amplification. Two attack paths: (1) LP price inflation via accounting divergence (`_liquidityBalances` > real `balanceOf`), (2) referral fee extraction (2.5% of amplified amount to attacker address). Total drainable: $1-2.5M+.
+
+**Root cause pattern:**
+1. Value computed in token A's denomination
+2. Value consumed (transferred) assuming token B's denomination
+3. No explicit conversion between A and B
+4. Validation gap: one code path checks token consistency, the paired path doesn't
+
+**Relevance:** Any AMM where fee computation and fee distribution are in separate functions, and the token used for computation can differ from the token used for transfer. In Limit Break AMM:
+- Fee hooks compute fees → `_processHookFees` → actual transfer. Check denomination consistency at each boundary.
+- Settlement handlers resolve in one token, fees may be denominated differently.
+- Flash loan fee computation vs repayment token (AMMModule.sol:3420).
+- `feeOnTop` field is NOT signed in permit SWAP_TYPEHASH — if fee denomination differs from swap token, amplification is possible.
+
+**Detection method:** Lens 1 (Value Birth-to-Death Tracing) from `docs/framework/value-lifecycle-lenses.md`.
+
+---
+
 *End of document.*

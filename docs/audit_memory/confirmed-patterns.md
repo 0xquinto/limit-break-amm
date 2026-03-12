@@ -43,6 +43,13 @@
   disables a security check set up by another flag.
 - **Generalizable**: Yes — flag interdependencies in hook systems.
 
+### CP-EXT-001: Cross-Boundary Denomination Mismatch (MUX Protocol, March 2026)
+**Source**: Octane Security / Immunefi disclosure
+**Pattern**: Fee/amount computed in token A denomination, transferred as token B. Amplification = priceB/priceA.
+**Detection**: Value Birth-to-Death Tracing (Lens 1, `docs/framework/value-lifecycle-lenses.md`)
+**Trigger**: Any code path where `computeFee()` and `transferFee()` reference different token variables
+**LB-AMM relevance**: Fee hooks, settlement handlers, flash loan fee paths, feeOnTop in permits
+
 ### CP-005: setTokenSettings syncs wrong variable
 - **Source finding**: v1-L03
 - **Severity**: Low (gas waste)
