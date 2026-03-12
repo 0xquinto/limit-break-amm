@@ -1,40 +1,66 @@
-"""Spawns agents for a wave as an Agent Team via SDK query().
+"""Spawns agents for a wave as an Agent Team via SDK ClaudeSDKClient.
 
 Architecture:
 1. Python orchestrator writes rendered prompts to disk
-2. Spawns a team lead session via query()
-3. Team lead creates a team (TeamCreate), creates tasks (TaskCreate),
-   spawns all agents as teammates (Agent tool + team_name)
+2. Opens a ClaudeSDKClient session (bidirectional, keeps stdin open)
+3. Sends team lead prompt — team lead creates team (TeamCreate),
+   spawns agents (Agent tool + team_name, run_in_background)
 4. Agents read their full prompts from disk, do their audit work, write artifacts
-5. Team lead monitors completion via background agent notifications
-6. Team lead tears down team (shutdown requests + TeamDelete)
-7. Python orchestrator collects artifacts from disk
+5. As agents complete, the CLI auto-starts new team lead turns with the
+   completion injected into context (Agent Teams route notifications internally,
+   NOT via TaskNotificationMessage on stdout)
+6. Team lead monitors, uses SendMessage for inter-agent coordination if needed
+7. Team lead tears down team (TeamDelete) and emits WAVE_COMPLETE marker
+8. Python detects marker, breaks, collects artifacts from disk
+
+Key findings from SDK debugging (2026-03-11):
+- TaskNotificationMessage works for plain Agent (no team_name)
+- Agent Teams route notifications INTERNALLY to team lead via auto-started turns
+- TaskCreate does NOT exist as a deferred tool — skip it
+- CLAUDECODE env var must be unset for SDK subprocess to start
+- SendMessage, TeamCreate, TeamDelete all work in SDK sessions
 
 Each agent runs as a full Claude Code instance with access to all tools,
-MCPs, skills. Agents can communicate via SendMessage if needed.
+MCPs, skills. Agents can communicate via SendMessage within the team.
 
 Safety controls: max_turns per agent, safety event logging.
 """
 
 import json
+import os
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
 from claude_agent_sdk import (
     ClaudeAgentOptions,
+    ClaudeSDKClient,
     AssistantMessage,
     ResultMessage,
-    TaskNotificationMessage,
+    SystemMessage,
     TaskStartedMessage,
-    TaskProgressMessage,
     TextBlock,
-    query,
+    ToolUseBlock,
 )
 
 from .config import (
     WaveConfig, PROJECT_ROOT, ARTIFACTS_DIR, RESULTS_DIR,
 )
+
+# Must unset before SDK spawns CLI subprocess — nested session check
+os.environ.pop("CLAUDECODE", None)
+os.environ.pop("CLAUDE_CODE_ENTRYPOINT", None)
+
+# Load secrets from .env (CERTORAKEY, etc.) so spawned agents inherit them
+_dotenv_path = PROJECT_ROOT / ".env"
+if _dotenv_path.exists():
+    for _line in _dotenv_path.read_text().splitlines():
+        _line = _line.strip()
+        if _line and not _line.startswith("#") and "=" in _line:
+            _key, _, _val = _line.partition("=")
+            os.environ.setdefault(_key.strip(), _val.strip())
+
+COMPLETION_MARKER = "WAVE_COMPLETE"
 
 
 @dataclass
@@ -77,7 +103,11 @@ def _write_prompts_to_disk(wave: WaveConfig, prompts: dict[str, str]) -> dict[st
 
 def _build_team_lead_prompt(wave: WaveConfig, prompt_paths: dict[str, str]) -> str:
     """Build the team lead prompt that orchestrates team creation, agent spawning,
-    monitoring, and teardown."""
+    monitoring, and teardown.
+
+    Agent Teams route completion notifications internally — the team lead gets
+    auto-started turns when agents finish. No TaskCreate needed (doesn't exist).
+    """
 
     team_name = f"wave-{wave.number}-audit"
 
@@ -86,7 +116,8 @@ def _build_team_lead_prompt(wave: WaveConfig, prompt_paths: dict[str, str]) -> s
     for i, agent in enumerate(wave.agents, 1):
         prompt_path = prompt_paths[agent.name]
         bootstrap = (
-            f"You are {agent.name}, a Wave {wave.number} deep security auditor "
+            f"You are {agent.name}, a Wave {wave.number} "
+            f"{agent.role.replace('-', ' ')} "
             f"for the Limit Break AMM. Your team is \"{team_name}\".\n\n"
             f"FIRST: Read your complete instructions from:\n{prompt_path}\n\n"
             f"Follow every instruction in that file exactly. "
@@ -95,7 +126,7 @@ def _build_team_lead_prompt(wave: WaveConfig, prompt_paths: dict[str, str]) -> s
         agent_instructions.append(
             f"Agent {i}: name=\"{agent.name}\"\n"
             f"  - prompt: {json.dumps(bootstrap)}\n"
-            f"  - description: \"Deep audit {agent.name.replace('deep-', '')}\"\n"
+            f"  - description: \"{agent.name}\"\n"
             f"  - team_name: \"{team_name}\"\n"
             f"  - model: \"{agent.model or 'sonnet'}\"\n"
             f"  - mode: \"bypassPermissions\"\n"
@@ -104,80 +135,73 @@ def _build_team_lead_prompt(wave: WaveConfig, prompt_paths: dict[str, str]) -> s
 
     agent_section = "\n\n".join(agent_instructions)
 
-    # Build task definitions
-    task_defs = []
-    for agent in wave.agents:
-        active = f"Auditing {agent.name.replace('deep-', '')}"
-        desc = f"Deep analysis of {', '.join(agent.scope)} — focus: {agent.role}"
-        task_defs.append(
-            f"  - subject: \"{agent.name}\", "
-            f"description: \"{desc}\", "
-            f"activeForm: \"{active}\""
-        )
-    task_section = "\n".join(task_defs)
-
     return f"""You are the team lead for Wave {wave.number} ({wave.name}) of a Limit Break AMM security audit.
 
 Your ONLY job is orchestration — do NOT read source code or do analysis yourself.
 
 Execute these steps IN ORDER:
 
-## Step 1: Create the Team
+## Step 1: Fetch Tools and Create Team
 
-Use TeamCreate with:
+First, use ToolSearch with query "select:TeamCreate,TeamDelete,SendMessage" to get team tools.
+
+Then use TeamCreate with:
 - team_name: "{team_name}"
-- description: "Wave {wave.number}: {wave.name} — {len(wave.agents)} deep auditors"
-- agent_type: "team-lead"
+- description: "Wave {wave.number}: {wave.name} — {len(wave.agents)} auditors"
 
-## Step 2: Create Tasks
-
-Create ALL tasks in a SINGLE message using TaskCreate for each:
-{task_section}
-
-## Step 3: Spawn All Agents
+## Step 2: Spawn All Agents
 
 Spawn ALL {len(wave.agents)} agents in a SINGLE message using the Agent tool.
-Each agent must be spawned with run_in_background: true.
+Each agent runs in the background (run_in_background: true).
 
 {agent_section}
 
 CRITICAL: All {len(wave.agents)} Agent tool calls MUST be in ONE message.
 
-## Step 4: Monitor
+## Step 3: Monitor
 
-After spawning, you will receive notifications as agents complete.
+After spawning, say "All {len(wave.agents)} agents spawned. Monitoring."
+
+You will automatically receive new turns as agents complete.
+The system injects completion notifications into your context.
 Wait for ALL {len(wave.agents)} agents to finish.
-If any agent fails, log it but continue waiting for others.
+Track how many have completed. If any agent fails, log it but continue waiting.
 
-## Step 5: Teardown
+You can use SendMessage to relay important cross-cutting discoveries between agents.
 
-Once all {len(wave.agents)} agents have completed:
-1. Send shutdown_request via SendMessage to each teammate
-2. Wait for shutdown_response from each
-3. Use TeamDelete to clean up team "{team_name}"
+## Step 4: Teardown and Report
 
-## Step 6: Summary
+Once ALL {len(wave.agents)} agents have completed:
 
-Print a summary:
-- Which agents completed successfully
-- Which agents failed (if any)
-- Total wall time
+1. Call TeamDelete with team_name "{team_name}" IMMEDIATELY — do NOT send shutdown
+   messages to agents first, do NOT wait for agent approval. Just delete the team.
+2. Print a summary listing each agent's completion status
+3. On the VERY LAST LINE of your response, output exactly:
+   {COMPLETION_MARKER}
+
+IMPORTANT: Do NOT negotiate shutdown with agents via SendMessage. TeamDelete handles
+cleanup directly. The extra round-trips waste turns.
 """
 
 
 async def run_wave(wave: WaveConfig, prompts: dict[str, str]) -> list[AgentResult]:
-    """Run all agents in a wave as an Agent Team via SDK query().
+    """Run all agents in a wave as an Agent Team via ClaudeSDKClient.
 
-    The team lead (sonnet) creates the team, spawns agents as teammates,
-    monitors completion, and tears down. Each agent is a full Claude Code
-    instance with all tools, MCPs, and skills available.
+    The team lead manages the full lifecycle internally:
+    - Creates team, spawns agents, monitors completions, tears down
+    - Agent Teams route notifications to the team lead via auto-started turns
+    - Python watches for WAVE_COMPLETE marker to detect completion
+    - Agent results are collected from disk artifacts after completion
     """
 
     # 1. Write prompts to disk
     print(f"  Writing {len(prompts)} prompts to disk...")
     prompt_paths = _write_prompts_to_disk(wave, prompts)
 
-    # 2. Create output directories
+    # 2. Archive existing wave artifacts, then create clean output directories
+    from .run_manager import archive_wave
+    archive_wave(wave.number)
+
     for agent in wave.agents:
         artifact_dir = ARTIFACTS_DIR / f"wave{wave.number}-{agent.name}"
         artifact_dir.mkdir(parents=True, exist_ok=True)
@@ -185,112 +209,98 @@ async def run_wave(wave: WaveConfig, prompts: dict[str, str]) -> list[AgentResul
     # 3. Build team lead prompt
     team_lead_prompt = _build_team_lead_prompt(wave, prompt_paths)
 
-    # 4. Spawn team lead via SDK
-    print(f"  Spawning team lead (sonnet, max_turns=30)...")
+    # 4. Open ClaudeSDKClient session
+    print(f"  Opening ClaudeSDKClient session (sonnet, max_turns=60)...")
     start_time = time.monotonic()
 
     options = ClaudeAgentOptions(
         cwd=str(PROJECT_ROOT),
         model="sonnet",
-        max_turns=30,
+        max_turns=60,
         permission_mode="bypassPermissions",
     )
 
-    results: list[AgentResult] = []
     safety_events: list[dict] = []
-    agent_tasks: dict[str, dict] = {}  # task_id -> {description, started_at}
-    output_text = ""
+    agents_started: set[str] = set()
+    wave_complete = False
+    result_count = 0
+    team_lead_text: list[str] = []  # collect for post-hoc parsing
 
-    async for message in query(prompt=team_lead_prompt, options=options):
-        if isinstance(message, AssistantMessage):
-            for block in message.content:
-                if isinstance(block, TextBlock):
-                    output_text += block.text
+    async with ClaudeSDKClient(options) as client:
+        await client.query(team_lead_prompt)
 
-        elif isinstance(message, TaskStartedMessage):
-            agent_tasks[message.task_id] = {
-                "description": message.description,
-                "started_at": datetime.now(timezone.utc).isoformat(),
-            }
-            print(f"  Agent started: {message.description} "
-                  f"(task {message.task_id[:8]}...)")
+        async for message in client.receive_messages():
+            if isinstance(message, AssistantMessage):
+                for block in message.content:
+                    if isinstance(block, TextBlock):
+                        text = block.text
+                        team_lead_text.append(text)
+                        # Log truncated output
+                        print(f"  [team-lead]: {text[:200]}")
+                        # Check for completion marker
+                        if COMPLETION_MARKER in text:
+                            wave_complete = True
+                    elif isinstance(block, ToolUseBlock):
+                        print(f"  [team-lead]: TOOL:{block.name}")
 
-        elif isinstance(message, TaskProgressMessage):
-            usage = message.usage
-            if usage:
-                desc = message.description or message.task_id[:8]
-                print(f"  Progress [{desc}]: "
-                      f"{usage.get('tool_uses', 0)} tool uses, "
-                      f"{usage.get('total_tokens', 0)} tokens")
+            elif isinstance(message, TaskStartedMessage):
+                agents_started.add(message.task_id)
+                print(f"  Agent started: {message.description} "
+                      f"(task {message.task_id[:8]}...)")
 
-        elif isinstance(message, TaskNotificationMessage):
-            task_info = agent_tasks.get(message.task_id, {})
-            desc = task_info.get("description", message.task_id)
-            status = message.status  # "completed" | "failed" | "stopped"
-            usage = message.usage or {}
+            elif isinstance(message, SystemMessage):
+                # Auto-started turns emit init messages — just log
+                subtype = getattr(message, 'subtype', 'unknown')
+                if subtype != 'init':
+                    print(f"  [system]: {subtype}")
 
-            # Match to agent config by name
-            matched_agent = None
-            for agent in wave.agents:
-                if agent.name in desc or agent.name in (message.summary or ""):
-                    matched_agent = agent
+            elif isinstance(message, ResultMessage):
+                result_count += 1
+                elapsed_ms = int((time.monotonic() - start_time) * 1000)
+
+                if message.is_error:
+                    event = log_safety_event(
+                        "team-lead", "session_error",
+                        message.result or "unknown error"
+                    )
+                    safety_events.append(event)
+
+                if wave_complete:
+                    print(f"  Wave complete: {message.stop_reason} "
+                          f"({elapsed_ms}ms wall time, "
+                          f"{result_count} team-lead turns, "
+                          f"{len(agents_started)} agents started)")
+                    break
+                else:
+                    print(f"  Team lead turn #{result_count}: {message.stop_reason} "
+                          f"({elapsed_ms}ms elapsed, "
+                          f"{len(agents_started)} agents started)")
+
+                # Safety: bail if too many turns without completion
+                if result_count >= 30:
+                    event = log_safety_event(
+                        "team-lead", "max_turns_exceeded",
+                        f"{result_count} ResultMessages without WAVE_COMPLETE"
+                    )
+                    safety_events.append(event)
+                    print(f"  SAFETY: Breaking after {result_count} turns")
                     break
 
-            agent_name = matched_agent.name if matched_agent else desc
-            agent_role = matched_agent.role if matched_agent else "unknown"
-            agent_model = matched_agent.model if matched_agent else "sonnet"
+    # 5. Build results from disk artifacts
+    elapsed_ms = int((time.monotonic() - start_time) * 1000)
+    results = _build_results_from_disk(wave, elapsed_ms, wave_complete)
 
-            result = AgentResult(
-                name=agent_name,
-                role=agent_role,
-                model=agent_model,
-                num_turns=usage.get("tool_uses", 0),
-                duration_ms=usage.get("duration_ms", 0),
-                total_cost_usd=0.0,  # subscription mode
-                stop_reason=status,
-                output_text=(message.summary or "")[:2000],
-            )
-
-            if status in ("failed", "stopped"):
-                event = log_safety_event(
-                    agent_name, f"agent_{status}", message.summary
-                )
-                result.safety_events.append(event)
-                safety_events.append(event)
-
-            results.append(result)
-            print(f"  Agent done: {agent_name} — {status} "
-                  f"({usage.get('duration_ms', 0)}ms, "
-                  f"{usage.get('tool_uses', 0)} tool uses)")
-
-        elif isinstance(message, ResultMessage):
-            if message.is_error:
-                event = log_safety_event(
-                    "team-lead", "session_error",
-                    message.result or "unknown error"
-                )
-                safety_events.append(event)
-            elapsed = int((time.monotonic() - start_time) * 1000)
-            print(f"  Team lead session ended: {message.stop_reason} "
-                  f"({elapsed}ms wall time)")
-
-    # Fill in results for agents that didn't produce a TaskNotification
-    result_names = {r.name for r in results}
-    for agent in wave.agents:
-        if agent.name not in result_names:
+    # 6. Log any agents that didn't produce artifacts
+    for result in results:
+        if result.stop_reason == "missing":
             event = log_safety_event(
-                agent.name, "agent_missing",
-                "No completion notification received"
+                result.name, "agent_missing",
+                "No disk artifacts found after wave completion"
             )
-            results.append(AgentResult(
-                name=agent.name, role=agent.role, model=agent.model,
-                num_turns=0, duration_ms=0, total_cost_usd=0.0,
-                stop_reason="missing", output_text="",
-                safety_events=[event],
-            ))
+            result.safety_events.append(event)
             safety_events.append(event)
 
-    # Write safety events to JSONL log
+    # 7. Write safety events to JSONL log
     if safety_events:
         safety_log = RESULTS_DIR / f"wave{wave.number}-safety.jsonl"
         safety_log.parent.mkdir(parents=True, exist_ok=True)
@@ -298,6 +308,60 @@ async def run_wave(wave: WaveConfig, prompts: dict[str, str]) -> list[AgentResul
             for event in safety_events:
                 f.write(json.dumps(event) + "\n")
         print(f"  Safety log: {len(safety_events)} events → {safety_log}")
+
+    return results
+
+
+def _build_results_from_disk(
+    wave: WaveConfig, total_elapsed_ms: int, wave_complete: bool
+) -> list[AgentResult]:
+    """Build AgentResult list from disk artifacts (reports + JSON sidecars).
+
+    Agents write:
+    - wave{N}-{name}/report.md — full report
+    - wave{N}-{name}/findings.json — structured sidecar with findings + metrics
+    """
+    results = []
+
+    for agent in wave.agents:
+        artifact_dir = ARTIFACTS_DIR / f"wave{wave.number}-{agent.name}"
+        report_path = artifact_dir / "report.md"
+        sidecar_path = artifact_dir / "findings.json"
+        # Backward compat: flat file
+        flat_path = ARTIFACTS_DIR / f"wave{wave.number}-{agent.name}.md"
+
+        has_report = report_path.exists() or flat_path.exists()
+        has_sidecar = sidecar_path.exists()
+
+        if has_report:
+            report_text = (report_path.read_text() if report_path.exists()
+                           else flat_path.read_text())
+        else:
+            report_text = ""
+
+        # Try to extract metrics from JSON sidecar
+        # Agents write metadata (not metrics) with tool_uses, completeness_pct, etc.
+        num_turns = 0
+        if has_sidecar:
+            try:
+                sidecar = json.loads(sidecar_path.read_text())
+                meta = sidecar.get("metadata", {})
+                num_turns = meta.get("tool_uses", 0)
+            except (json.JSONDecodeError, KeyError):
+                pass
+
+        stop_reason = "completed" if has_report else ("missing" if wave_complete else "unknown")
+
+        results.append(AgentResult(
+            name=agent.name,
+            role=agent.role,
+            model=agent.model,
+            num_turns=num_turns,
+            duration_ms=total_elapsed_ms,  # wall time (per-agent not available)
+            total_cost_usd=0.0,  # subscription mode
+            stop_reason=stop_reason,
+            output_text=report_text[-2000:] if report_text else "",
+        ))
 
     return results
 

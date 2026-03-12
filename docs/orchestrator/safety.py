@@ -41,9 +41,9 @@ def extract_findings_from_artifacts(artifacts: dict[str, str]) -> list[dict]:
         if not content:
             continue
         # Look for finding blocks: ### FIND-XXX or ### Finding: ...
-        blocks = re.split(r'(?=^### (?:FIND-|Finding:))', content, flags=re.MULTILINE)
+        blocks = re.split(r'(?=^### (?:FIND-|Finding:|Verified Finding:))', content, flags=re.MULTILINE)
         for block in blocks:
-            if not re.match(r'^### (?:FIND-|Finding:)', block):
+            if not re.match(r'^### (?:FIND-|Finding:|Verified Finding:)', block):
                 continue
             title_match = re.search(r'^### (.+)', block)
             title = title_match.group(1) if title_match else ""

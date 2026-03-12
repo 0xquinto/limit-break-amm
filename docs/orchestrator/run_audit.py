@@ -1,6 +1,7 @@
-"""Main entry point: orchestrates the full-system audit across 5 waves.
+"""Main entry point: orchestrates the full-system audit across waves.
 
 Integrates:
+- Run isolation (archive before re-run, manifest tracking)
 - Orchestrator-level lessons applied before spawning (scaffold §7b)
 - NOOP pre-filter for findings against known FPs (scaffold §7d)
 - JSON sidecar validation after each wave
@@ -20,6 +21,10 @@ from .memory_lifecycle import update_memory_from_results
 from .safety import prefilter_findings, extract_findings_from_artifacts
 from .schema import load_and_validate
 from .regression import check_regression
+from .run_manager import (
+    ensure_run, archive_wave, check_stale_synthesis,
+    mark_wave_complete, mark_run_complete, get_run_info,
+)
 
 
 REGRESSION_CASES_PATH = Path(__file__).parent / "regression_cases.json"
@@ -39,6 +44,9 @@ def apply_orchestrator_lessons(wave) -> None:
                     "auditor": 30, "fuzz-writer": 35, "poc-writer": 15,
                     "economic": 22, "red-team": 22, "recon": 15,
                     "cross-contract-tracer": 20,
+                    # Exploit-first roles
+                    "invariant-generator": 35, "invariant-breaker": 35,
+                    "exploit-verifier": 25,
                 }
                 if agent.role in calibrated:
                     agent.max_turns = calibrated[agent.role]
@@ -56,16 +64,25 @@ def validate_sidecars(wave) -> list[dict]:
     return sidecars
 
 
-def run_regression_check(sidecars: list[dict], wave_number: int) -> None:
-    """Check sidecars against known regression cases."""
+def _collect_cumulative_sidecars(up_to_wave: int) -> list[dict]:
+    """Collect all JSON sidecars from wave 1 through up_to_wave."""
+    cumulative = []
+    for w in WAVES[:up_to_wave]:
+        cumulative.extend(collect_json_sidecars(w))
+    return cumulative
+
+
+def run_regression_check(wave_number: int) -> None:
+    """Check cumulative sidecars (all waves up to current) against known regression cases."""
     if not REGRESSION_CASES_PATH.exists():
         print(f"  No regression cases file found at {REGRESSION_CASES_PATH}")
         return
-    result = check_regression(sidecars, REGRESSION_CASES_PATH)
+    cumulative = _collect_cumulative_sidecars(wave_number)
+    result = check_regression(cumulative, REGRESSION_CASES_PATH)
     found = len(result["found"])
     total = result["total"]
     missing = result["missing"]
-    print(f"\n  Regression: {found}/{total} known findings covered")
+    print(f"\n  Regression (cumulative waves 1-{wave_number}): {found}/{total} known findings covered")
     if missing:
         for m in missing:
             print(f"    MISSING: {m['id']} — {m['title']}")
@@ -73,8 +90,13 @@ def run_regression_check(sidecars: list[dict], wave_number: int) -> None:
             print(f"  WARNING: {len(missing)} regression case(s) still missing by wave {wave_number}")
 
 
-async def run_single_wave(wave_number: int) -> None:
-    """Run a single wave (useful for incremental execution)."""
+async def run_single_wave(wave_number: int, force: bool = False) -> None:
+    """Run a single wave (useful for incremental execution).
+
+    Args:
+        wave_number: Which wave to run (1-8).
+        force: If True, overwrite existing synthesis without archiving.
+    """
     wave = WAVES[wave_number - 1]
 
     if wave.dynamic and not wave.agents:
@@ -86,6 +108,13 @@ async def run_single_wave(wave_number: int) -> None:
     print(f"WAVE {wave.number}: {wave.name.upper()}")
     print(f"{'='*60}")
     print(f"Agents: {len(wave.agents)}")
+
+    # Check for stale synthesis (unless --force)
+    if not force:
+        stale_warning = check_stale_synthesis(wave.number)
+        if stale_warning:
+            print(f"  WARNING: {stale_warning}")
+            print(f"  Proceeding — existing artifacts will be archived automatically.")
 
     # Inject wave number into agent extra_context for transcript logging
     for agent in wave.agents:
@@ -106,6 +135,7 @@ async def run_single_wave(wave_number: int) -> None:
         print(f"  {name}: {len(prompt)} chars")
 
     # Run agents in parallel (with loop detection + budget enforcement — scaffold §1)
+    # wave_runner.run_wave() calls archive_wave() internally before spawning
     print(f"\nSpawning {len(wave.agents)} agents...")
     results = await run_wave(wave, prompts)
 
@@ -114,10 +144,10 @@ async def run_single_wave(wave_number: int) -> None:
     artifacts = collect_artifacts(wave)
 
     # Validate JSON sidecars
-    sidecars = validate_sidecars(wave)
+    validate_sidecars(wave)
 
-    # Run regression check
-    run_regression_check(sidecars, wave.number)
+    # Run regression check (cumulative across all waves)
+    run_regression_check(wave.number)
 
     # NOOP pre-filter: check findings against known FPs before synthesis (scaffold §7d)
     all_findings = extract_findings_from_artifacts(artifacts)
@@ -131,6 +161,9 @@ async def run_single_wave(wave_number: int) -> None:
     print(f"\nGenerating synthesis...")
     synthesis = generate_synthesis(wave, results, artifacts)
 
+    # Mark wave complete in manifest
+    mark_wave_complete(wave.number)
+
     # Post-run memory lifecycle update (scaffold §7b)
     print(f"\nUpdating memory...")
     update_memory_from_results(results, wave)
@@ -140,31 +173,50 @@ async def run_single_wave(wave_number: int) -> None:
     print(f"  Synthesis: {ARTIFACTS_DIR / f'wave{wave.number}-synthesis.md'}")
 
 
-async def run_full_audit() -> None:
-    """Run all 5 waves sequentially."""
+async def run_full_audit(fresh: bool = False) -> None:
+    """Run all waves sequentially, skipping unconfigured dynamic waves."""
     print("Full-System Security Audit")
     print("=" * 60)
 
+    run_id = ensure_run(fresh=fresh)
+    print(f"Run ID: {run_id}")
+
     for wave in WAVES:
         if wave.dynamic and not wave.agents:
-            print(f"\nWave {wave.number} ({wave.name}) needs manual configuration.")
-            print(f"Review wave {wave.number - 1} synthesis and populate agents.")
-            print(f"Then run: python -m docs.orchestrator.run_audit --wave {wave.number}")
-            break
+            print(f"\nWave {wave.number} ({wave.name}) is dynamic with no agents — skipping.")
+            continue  # Skip instead of break — allows reaching Layers 6-8
         await run_single_wave(wave.number)
 
-    print("\nAudit complete (or paused for manual wave configuration).")
+    mark_run_complete()
+    print("\nAudit complete.")
 
 
 def main():
     """CLI entry point."""
     import argparse
     parser = argparse.ArgumentParser(description="Full-system audit orchestrator")
-    parser.add_argument("--wave", type=int, help="Run a specific wave (1-5)")
+    parser.add_argument("--wave", type=int, help="Run a specific wave (1-8)")
     parser.add_argument("--dry-run", action="store_true", help="Render prompts without spawning")
+    parser.add_argument("--fresh", action="store_true",
+                        help="Archive ALL existing artifacts and start a clean run")
+    parser.add_argument("--force", action="store_true",
+                        help="Overwrite existing synthesis without warning")
+    parser.add_argument("--status", action="store_true",
+                        help="Show current run status and exit")
     parser.add_argument("--init-memory", type=str, metavar="TARGET",
                         help="Initialize fresh memory for a new target (scaffold §7e)")
     args = parser.parse_args()
+
+    if args.status:
+        info = get_run_info()
+        if info:
+            print(f"Run: {info['run_id']}")
+            print(f"Started: {info['started_at']}")
+            print(f"Status: {info['status']}")
+            print(f"Waves completed: {info.get('waves_completed', [])}")
+        else:
+            print("No active run. Use --fresh to start one.")
+        return
 
     if args.init_memory:
         from .memory_lifecycle import init_memory_for_new_target
@@ -181,9 +233,11 @@ def main():
                 out.write_text(prompt)
                 print(f"  {name}: {len(prompt)} chars -> {out}")
         else:
-            anyio.run(run_single_wave, args.wave)
+            run_id = ensure_run(fresh=args.fresh)
+            print(f"Run ID: {run_id}")
+            anyio.run(run_single_wave, args.wave, args.force)
     else:
-        anyio.run(run_full_audit)
+        anyio.run(run_full_audit, args.fresh)
 
 
 if __name__ == "__main__":

@@ -11,6 +11,7 @@ ARTIFACTS_DIR = TARGETS_DIR / "artifacts"
 PHASE0_DIR = ARTIFACTS_DIR / "phase0"
 SPAWN_PROMPTS_DIR = TARGETS_DIR / "spawn-prompts"
 RESULTS_DIR = TARGETS_DIR / "results"
+ARCHIVE_DIR = ARTIFACTS_DIR / "archive"
 FRAMEWORK_DIR = PROJECT_ROOT / "docs" / "framework"
 MEMORY_DIR = PROJECT_ROOT / "docs" / "audit_memory"
 TEMPLATES_DIR = Path(__file__).parent / "templates"
@@ -29,6 +30,9 @@ TOOL_PROFILES: dict[str, list[str]] = {
     "poc-writer": ["Read", "Grep", "Glob", "Write:test/audit/poc/", "Bash:forge_test"],
     "red-team": ["Read", "Grep", "Glob", "Bash:forge_test"],
     "economic": ["Read", "Grep", "Glob", "Bash:python3"],
+    "invariant-generator": ["Read", "Grep", "Glob", "Write:test/", "Bash:forge_build", "Bash:forge_test"],
+    "invariant-breaker": ["Read", "Grep", "Glob", "Write:test/", "Bash:forge_build", "Bash:forge_test", "Bash:halmos", "Bash:medusa", "Bash:gambit", "Bash:certoraRun", "Skill:slither"],
+    "exploit-verifier": ["Read", "Grep", "Glob", "Write:test/", "Bash:forge_build", "Bash:forge_test"],
 }
 
 # Static analysis tool compatibility per repo.
@@ -277,10 +281,141 @@ WAVE_2_TEMPLATE = WaveConfig(
 WAVE_3_TEMPLATE = WaveConfig(
     number=3,
     name="deep-remaining-economic",
-    dynamic=True,
+    dynamic=False,
     agents=[
-        # Placeholder — populated by synthesizer after wave 2
-        # Expected: 3-4 agents (role="auditor" + role="economic")
+        AgentConfig(
+            name="deep-dynamic-pool",
+            role="auditor",
+            template="deep-agent",
+            scope=["amm-pool-type-dynamic"],
+            model="sonnet",
+            max_turns=30,
+            max_cost_usd=5.0,
+            extra_context={
+                "focus_findings": ["DYN-009"],
+                "focus_hotspots": [
+                    "DynamicPoolType.swapByInput",
+                    "DynamicPoolType.swapByOutput",
+                    "DynamicHelper.snapPrice",
+                    "DynamicHelper._modifyPosition",
+                ],
+                "investigation_notes": (
+                    "DYN-009 (wave 1): DynamicPoolType has no onlyAMM guard — uses "
+                    "namespace-by-sender pattern where storage keys are scoped by msg.sender. "
+                    "Verify if direct calls (msg.sender != AMM proxy) can corrupt state. "
+                    "Deep-dive Uniswap v3 math: SqrtPriceMath, SwapMath, TickMath for "
+                    "precision bugs. snapPrice in addLiquidity allows arbitrary price "
+                    "movement — verify if this enables sandwich attacks."
+                ),
+                "wave2_context": (
+                    "Wave 2 closed core reentrancy (ENTERED bit persists). "
+                    "FIX-005 operator precedence is NOT a bug in Solidity 0.8.24. "
+                    "Focus on dynamic-pool-specific vectors, not cross-boundary reentrancy."
+                ),
+            },
+        ),
+        AgentConfig(
+            name="deep-core-liquidity",
+            role="auditor",
+            template="deep-agent",
+            scope=["lbamm-core"],
+            model="sonnet",
+            max_turns=30,
+            max_cost_usd=5.0,
+            extra_context={
+                "focus_findings": ["CORE-003", "CORE-011"],
+                "focus_hotspots": [
+                    "ModuleLiquidity.addLiquidity",
+                    "ModuleLiquidity.removeLiquidity",
+                    "ModuleLiquidity.withdrawLiquidity",
+                    "ModuleFeeCollection.collectHookFeesByHook",
+                    "AMMModule._flashLoan",
+                ],
+                "investigation_notes": (
+                    "Wave 2 focused on swap paths and reentrancy. Liquidity paths "
+                    "(add/remove/withdraw) have NOT been deeply analyzed. "
+                    "CORE-003 (balanceInBefore stale after ETH refund) — wave 2 ruled out "
+                    "the reentrancy angle but didn't verify the balance accounting fully. "
+                    "CORE-011 (flash loan fee token from hook) — only lightly investigated. "
+                    "Focus on: liquidity accounting invariants, fee collection correctness, "
+                    "flash loan balance manipulation, position management edge cases."
+                ),
+                "wave2_context": (
+                    "CORE-002 reentrancy CLOSED: ENTERED bit persists through _setReentrancyFlags. "
+                    "CORE-004 confirmed: checkAMMExecutionState returns false during hook fee "
+                    "distribution (Low, no current consumer). Don't re-investigate reentrancy — "
+                    "focus on liquidity math, fee accounting, flash loan vectors."
+                ),
+            },
+        ),
+        AgentConfig(
+            name="deep-remaining-gaps",
+            role="auditor",
+            template="deep-agent",
+            scope=["secure-proxy", "lbamm-pool-type-fixed",
+                   "lbamm-pool-type-single-provider"],
+            model="sonnet",
+            max_turns=30,
+            max_cost_usd=5.0,
+            extra_context={
+                "focus_findings": ["PROXY-010", "FIX-008"],
+                "focus_hotspots": [
+                    "SecureProxy.securePause",
+                    "SecureProxy.secureUnpause",
+                    "FixedHelper._splitAmountsAndFeesByHeight",
+                    "FixedHelper.withdrawLiquidity",
+                    "SingleProviderPoolType.swapByInput",
+                ],
+                "investigation_notes": (
+                    "PROXY-010 (wave 1): SecureProxy pause code replay after admin clear. "
+                    "Verify: can revealed codes be replayed for Tier 1 pause? What's the "
+                    "griefing impact? Is the admin clear operation atomic? "
+                    "FIX-008 (wave 1): _splitAmountsAndFeesByHeight rounding — wave 2 ruled "
+                    "out exploitation but noted multi-pass rounding has 3 invariant guards. "
+                    "Verify guards are sufficient with extreme height values. "
+                    "SingleProviderPoolType: SP-004 CEI violation ruled out in wave 2 "
+                    "(ENTERED blocks re-entry). Look for non-reentrancy vectors."
+                ),
+                "wave2_context": (
+                    "Wave 2 ruled out: FIX-005 operator precedence (Solidity 0.8.24 "
+                    "precedence differs from C), SP-004 CEI (ENTERED blocks), "
+                    "_splitAmountsAndFeesByHeight precision loss (bounded by dust validation). "
+                    "Don't re-investigate these. Look for NEW vectors in these modules."
+                ),
+            },
+        ),
+        AgentConfig(
+            name="economic-analyst",
+            role="economic",
+            template="economic-analyst",
+            scope=list(REPOS.keys()),  # all repos
+            model="sonnet",
+            max_turns=25,
+            max_cost_usd=5.0,
+            extra_context={
+                "focus_areas": [
+                    "Fee extraction: can attacker profit from fee calculation asymmetries?",
+                    "Sandwich attacks on dynamic pool snapPrice",
+                    "MEV in CLOB fill ordering (FIFO by price)",
+                    "Liquidity manipulation: add/remove around swaps for profit",
+                    "Flash loan + swap + liquidity composability",
+                ],
+                "confirmed_findings_context": (
+                    "HOOK-001 (Medium): validateHandlerOrder overflow bypass — can this "
+                    "be composed with economic attacks for profit? "
+                    "CORE-004 (Low): checkAMMExecutionState false during fee distribution — "
+                    "any economic impact if external integrators rely on this? "
+                    "100% fee asymmetry (input allows, output rejects) is intentional."
+                ),
+                "wave2_ruled_out": (
+                    "Fee calculation division-by-zero: unreachable. "
+                    "Rounding direction exploitation: directions are correct. "
+                    "_splitAmountsAndFeesByHeight: bounded by dust validation. "
+                    "Focus on COMPOSITION of correct-but-asymmetric fee logic, not "
+                    "individual calculation errors."
+                ),
+            },
+        ),
     ],
 )
 
@@ -304,4 +439,106 @@ WAVE_5_TEMPLATE = WaveConfig(
     ],
 )
 
-WAVES = [WAVE_1, WAVE_2_TEMPLATE, WAVE_3_TEMPLATE, WAVE_4_TEMPLATE, WAVE_5_TEMPLATE]
+LAYER_1 = WaveConfig(
+    number=6,
+    name="invariant-generation",
+    agents=[
+        AgentConfig(
+            name="invariant-generator",
+            role="invariant-generator",
+            template="invariant-generator",
+            scope=list(REPOS.keys()),  # all repos
+            model="opus",
+            max_turns=35,
+            max_cost_usd=12.0,
+            extra_context={
+                "invariant_catalog": "docs/framework/amm-invariant-catalog.md",
+                "prior_ruled_out": "100+ vectors ruled out in waves 1-3. Read docs/audit_memory/false-positives.md for known dead ends.",
+            },
+        ),
+    ],
+)
+
+LAYER_2 = WaveConfig(
+    number=7,
+    name="invariant-breaking",
+    agents=[
+        AgentConfig(
+            name="breaker-settlement",
+            role="invariant-breaker",
+            template="invariant-breaker",
+            scope=["lbamm-core", "lbamm-hooks-and-handlers"],
+            model="opus",
+            max_turns=35,
+            max_cost_usd=12.0,
+            extra_context={
+                "focus_invariants": ["INV-S01", "INV-S02", "INV-S03", "INV-H02", "INV-H04", "INV-H05", "INV-E02"],
+                "attack_style": (
+                    "HIGHEST PRIORITY: Settlement choke point (AMMModule.sol:2144-2250) combines handler dispatch, "
+                    "balance assertions, fee queue execution, and late handler callback in one function. "
+                    "Flash loan (AMMModule.sol:3288-3420) allows fee token != loan token with cross-denomination "
+                    "resolution. directSwap (AMMModule.sol:1864) collects executor's opposite-side before shared "
+                    "finalization. Test conservation across ALL settlement paths. Small accounting bugs here = "
+                    "protocol-solvency exploits amplifiable with flash loans."
+                ),
+                "invariant_tests_path": "amm-pool-type-dynamic/test/invariants/ — 6 test suites + handler covering INV-S01/S02/S03/SW01-04/H01-05/L01/L03/E01. See docs/targets/full-system/artifacts/wave6-invariant-generator/report.md for coverage map.",
+            },
+        ),
+        AgentConfig(
+            name="breaker-math-fixed",
+            role="invariant-breaker",
+            template="invariant-breaker",
+            scope=["lbamm-pool-type-fixed", "lbamm-core", "amm-pool-type-dynamic"],
+            model="opus",
+            max_turns=35,
+            max_cost_usd=12.0,
+            extra_context={
+                "focus_invariants": ["INV-SW01", "INV-SW02", "INV-SW03", "INV-SW04", "INV-L01", "INV-L02", "INV-L03", "INV-E01"],
+                "attack_style": (
+                    "FixedHelper.sol is 1,403 LOC with asymmetric input/output fee paths (L946/L1057), "
+                    "a fallback from input→output mode (L910), and ratio simplification (L1092). "
+                    "Balancer-style rounding extraction is most plausible here — fuzz thousands of minimal-amount "
+                    "swaps and check pool doesn't lose value. Also test _splitAmountsAndFeesByHeight (highest "
+                    "complexity function). For dynamic pools, test tick/price consistency (INV-L03) and "
+                    "liquidityNet sum-zero (INV-L02). Use Halmos for reduced FixedHelper harnesses."
+                ),
+                "invariant_tests_path": "amm-pool-type-dynamic/test/invariants/ — 6 test suites + handler. See docs/targets/full-system/artifacts/wave6-invariant-generator/report.md for coverage map.",
+            },
+        ),
+        AgentConfig(
+            name="breaker-boundaries",
+            role="invariant-breaker",
+            template="invariant-breaker",
+            scope=["lbamm-hooks-and-handlers", "lbamm-pool-type-single-provider", "lbamm-core"],
+            model="opus",
+            max_turns=35,
+            max_cost_usd=12.0,
+            extra_context={
+                "focus_invariants": ["INV-H01", "INV-H03", "INV-P01", "INV-P02", "INV-E03", "INV-SW02"],
+                "attack_style": (
+                    "Single-provider pools trust an external pricing hook (SingleProviderPoolType.sol:323) — "
+                    "oracle-spoof vector. Was OUT OF SCOPE for Guardian human audit. "
+                    "Cork-style access control: AMMStandardHook.sol has AMM-only hooks (L110, L159) next to "
+                    "externally callable validateHandlerOrder (L198). CLOB has AMM-only refund (L315) next to "
+                    "public order placement (L482). Test: can you call hook/handler functions from unexpected "
+                    "contexts? Also: same-tx multi-call composition across swap + CLOB + permit + liquidity ops. "
+                    "multiSwap 'no new attack surface' is a WEAK assumption — challenge it."
+                ),
+                "invariant_tests_path": "amm-pool-type-dynamic/test/invariants/ — 6 test suites + handler. See docs/targets/full-system/artifacts/wave6-invariant-generator/report.md for coverage map.",
+            },
+        ),
+    ],
+)
+
+LAYER_3 = WaveConfig(
+    number=8,
+    name="exploit-verification",
+    dynamic=True,  # Populated based on Layer 2 results
+    agents=[
+        # Placeholder — populated after Layer 2 with findings to verify
+        # Expected: 1-2 agents (role="exploit-verifier")
+    ],
+)
+
+WAVES = [WAVE_1, WAVE_2_TEMPLATE, WAVE_3_TEMPLATE, WAVE_4_TEMPLATE, WAVE_5_TEMPLATE,
+         LAYER_1, LAYER_2, LAYER_3]

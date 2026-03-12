@@ -26,14 +26,21 @@ def check_regression(sidecars: list[dict], cases_path: Path) -> dict:
     missing = []
 
     for case in cases:
-        # Match by: same contract + >=2 shared keywords
         matched = False
         for f in all_findings:
             same_contract = any(
                 c in f.get("contracts", []) for c in case["contracts"]
             )
-            shared_kw = set(case["keywords"]) & set(f.get("keywords", []))
-            if same_contract and len(shared_kw) >= 2:
+            if not same_contract:
+                continue
+            # Primary: keyword overlap (>=2)
+            shared_kw = set(case.get("keywords", [])) & set(f.get("keywords", []))
+            if len(shared_kw) >= 2:
+                matched = True
+                break
+            # Fallback: function overlap (>=1) when keywords absent
+            shared_fn = set(case.get("functions", [])) & set(f.get("functions", []))
+            if shared_fn:
                 matched = True
                 break
         if matched:

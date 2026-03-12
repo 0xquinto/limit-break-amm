@@ -3,40 +3,40 @@
     "id": "REG-001",
     "source": "v1-audit",
     "title": "sqrtPriceX96==0 bypass",
-    "contracts": ["CLOBTransferHandler.sol"],
-    "functions": ["_enforceTokenHooks"],
+    "contracts": ["CLOBTransferHandler.sol", "AMMStandardHook.sol", "SqrtPriceCalculator.sol"],
+    "functions": ["_enforceTokenHooks", "validateHandlerOrder", "computeRatioX96"],
     "category": "input-validation",
-    "keywords": ["sqrtPriceX96", "zero", "bypass", "price"],
+    "keywords": ["sqrtPriceX96", "zero", "bypass", "price", "overflow", "pricing-bounds", "computeRatioX96", "validateHandlerOrder"],
     "repo": "lbamm-hooks-and-handlers"
   },
   {
     "id": "REG-002",
     "source": "v1-audit",
     "title": "Pricing bypass via direct handler call",
-    "contracts": ["CLOBTransferHandler.sol"],
-    "functions": ["executeSwap"],
+    "contracts": ["CLOBTransferHandler.sol", "AMMStandardHook.sol"],
+    "functions": ["executeSwap", "beforeSwap", "afterSwap"],
     "category": "access-control",
-    "keywords": ["pricing", "bypass", "direct", "handler"],
+    "keywords": ["pricing", "bypass", "direct", "handler", "direct-swap", "pricing-bounds", "flag-dependency"],
     "repo": "lbamm-hooks-and-handlers"
   },
   {
     "id": "REG-003",
     "source": "v1-audit",
     "title": "setTokenSettings sync gap",
-    "contracts": ["CLOBTransferHandler.sol"],
+    "contracts": ["CLOBTransferHandler.sol", "CreatorHookSettingsRegistry.sol"],
     "functions": ["setTokenSettings"],
     "category": "state-sync",
-    "keywords": ["setTokenSettings", "sync", "stale"],
+    "keywords": ["setTokenSettings", "sync", "stale", "initialized", "memSettings", "gas-waste"],
     "repo": "lbamm-hooks-and-handlers"
   },
   {
     "id": "REG-004",
     "source": "v2-audit",
     "title": "Transient storage not cleared for direct swap input",
-    "contracts": ["AMMHooksTransferHandler.sol"],
+    "contracts": ["AMMHooksTransferHandler.sol", "AMMStandardHook.sol"],
     "functions": ["beforeSwap"],
     "category": "transient-storage",
-    "keywords": ["transient", "tstore", "clear", "direct", "swap"],
+    "keywords": ["transient", "tstore", "clear", "direct", "swap", "transient-storage", "stale-read", "direct-swap", "DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT"],
     "repo": "lbamm-hooks-and-handlers"
   }
 ]

@@ -30,7 +30,7 @@ class Lesson:
     confidence: int
 
 ORCHESTRATOR_CATEGORIES = {"Agent Spawning", "Metrics & Observability"}
-AGENT_CATEGORIES = {"Audit Strategy", "Cross-Contract"}
+AGENT_CATEGORIES = {"Audit Strategy", "Cross-Contract", "Contest Submission Threshold"}
 
 
 def parse_false_positives(path: Path | None = None) -> list[FalsePositive]:

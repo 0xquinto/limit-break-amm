@@ -321,87 +321,65 @@ git commit -m "feat: add orchestrator config with wave definitions and repo map"
 **Files:**
 - Create: `docs/orchestrator/wave_runner.py`
 
-**Step 1: Write wave runner using Agent Teams via SDK query()**
+**Step 1: Write wave runner using Agent Teams via SDK ClaudeSDKClient**
 
 Uses the Agent Teams feature (`TeamCreate`, `TaskCreate`, `SendMessage`, `TeamDelete`)
-orchestrated by a team lead session spawned via `claude_agent_sdk.query()`.
+orchestrated by a team lead session spawned via `ClaudeSDKClient` (bidirectional client).
 Each agent runs as a full Claude Code instance (all tools, MCPs, skills inherited).
+
+**Important**: Must use `ClaudeSDKClient` (not `query()`). `query()` is one-shot and
+closes stdin after the first `ResultMessage`, killing background agents. `ClaudeSDKClient`
+keeps the session alive for `TaskNotificationMessage` delivery from background agents.
 
 Architecture:
 1. Python orchestrator writes rendered prompts to disk
-2. Spawns a team lead session (sonnet) via `query()`
-3. Team lead creates team, creates tasks, spawns all agents as teammates
+2. Opens a `ClaudeSDKClient` session (sonnet, bidirectional)
+3. Sends team lead prompt — team lead creates team, tasks, spawns agents
 4. Agents read their full prompts from disk files (bootstrap prompt pattern)
-5. Team lead monitors completion via `TaskNotificationMessage`
-6. Team lead tears down team (shutdown requests + `TeamDelete`)
+5. `ClaudeSDKClient.receive_messages()` yields `TaskNotificationMessage`s as agents complete
+6. Team lead tears down team (`TeamDelete`) after all agents finish
 7. Python orchestrator collects disk artifacts
 
 ```python
-"""Spawns agents for a wave as an Agent Team via SDK query()."""
+"""Spawns agents for a wave as an Agent Team via ClaudeSDKClient."""
 
-import json
-import time
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
 from claude_agent_sdk import (
     ClaudeAgentOptions,
+    ClaudeSDKClient,
     AssistantMessage,
     ResultMessage,
     TaskNotificationMessage,
     TaskStartedMessage,
     TaskProgressMessage,
     TextBlock,
-    query,
 )
-
-from .config import (
-    WaveConfig, PROJECT_ROOT, ARTIFACTS_DIR, RESULTS_DIR,
-)
-
-
-@dataclass
-class AgentResult:
-    """Result from a single agent run."""
-    name: str
-    role: str
-    model: str
-    num_turns: int
-    duration_ms: int
-    total_cost_usd: float
-    stop_reason: str  # "completed" | "failed" | "stopped" | "missing"
-    output_text: str  # last 2K chars as summary
-    safety_events: list[dict] = field(default_factory=list)
-
 
 async def run_wave(wave: WaveConfig, prompts: dict[str, str]) -> list[AgentResult]:
-    """Run all agents in a wave as an Agent Team via SDK query().
+    """Run all agents in a wave as an Agent Team via ClaudeSDKClient.
 
-    Team lead (sonnet) creates team, spawns agents as teammates,
-    monitors via TaskNotification messages, tears down when done.
-    Each agent is a full Claude Code instance with all tools/MCPs/skills.
+    Uses ClaudeSDKClient (not query()) to keep the session alive for
+    background agent notifications.
     """
-    # 1. Write prompts to disk (agents read via bootstrap prompt)
     prompt_paths = _write_prompts_to_disk(wave, prompts)
-
-    # 2. Build team lead prompt (TeamCreate, TaskCreate, Agent spawns, teardown)
     team_lead_prompt = _build_team_lead_prompt(wave, prompt_paths)
 
-    # 3. Spawn team lead via SDK
     options = ClaudeAgentOptions(
         cwd=str(PROJECT_ROOT),
         model="sonnet",
-        max_turns=30,
+        max_turns=60,
         permission_mode="bypassPermissions",
     )
 
     results = []
-    async for message in query(prompt=team_lead_prompt, options=options):
-        if isinstance(message, TaskNotificationMessage):
-            # Per-agent completion with metrics (tool_uses, duration_ms)
-            ...
-        elif isinstance(message, ResultMessage):
-            # Team lead session ended
-            ...
+    async with ClaudeSDKClient(options) as client:
+        await client.query(team_lead_prompt)
+        async for message in client.receive_messages():
+            if isinstance(message, TaskNotificationMessage):
+                # Per-agent completion with metrics
+                ...
+            elif isinstance(message, ResultMessage):
+                # Check if all agents done; if so, break
+                ...
 
             elif isinstance(message, ResultMessage):
                 result_msg = message

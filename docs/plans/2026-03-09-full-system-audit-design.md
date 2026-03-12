@@ -334,7 +334,7 @@ docs/orchestrator/
 ├── __init__.py
 ├── run_audit.py              # Main entry point (CLI: --wave N, --dry-run)
 ├── config.py                 # Wave definitions, agent configs, budgets (Python dataclasses)
-├── wave_runner.py            # Agent Teams: team lead creates team, spawns teammates via SDK query()
+├── wave_runner.py            # Agent Teams: team lead creates team, spawns teammates via ClaudeSDKClient
 ├── prompt_renderer.py        # Combines templates with scope/synthesis context
 ├── synthesizer.py            # Reads agent artifacts → writes synthesis doc
 ├── artifact_generator.py     # Phase 0: runs Slither/Aderyn per repo (automated)
@@ -373,8 +373,8 @@ async def run_audit():
         # 3. Render spawn prompts → write to disk
         prompts = render_prompts(wave_config, prior_synthesis)
 
-        # 4. Spawn team lead via SDK query() — creates Agent Team,
-        #    spawns all agents as teammates, monitors, tears down
+        # 4. Open ClaudeSDKClient session — team lead creates Agent Team,
+        #    spawns all agents as teammates, monitors via notifications, tears down
         results = await wave_runner.run_wave(wave_config, prompts)
 
         # 5. Read agent disk artifacts (reports + JSON sidecars)
