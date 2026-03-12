@@ -6,9 +6,6 @@ known regression cases. Report any regressions (known bugs not found).
 
 import json
 from pathlib import Path
-from .schema import load_and_validate
-
-
 def check_regression(sidecars: list[dict], cases_path: Path) -> dict:
     """Check if known findings were re-discovered in agent output.
 
