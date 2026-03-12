@@ -346,7 +346,7 @@ def _build_results_from_disk(
             try:
                 sidecar = json.loads(sidecar_path.read_text())
                 meta = sidecar.get("metadata", {})
-                num_turns = meta.get("tool_uses", 0)
+                num_turns = meta.get("num_turns", 0)
             except (json.JSONDecodeError, KeyError):
                 pass
 
