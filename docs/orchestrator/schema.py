@@ -52,6 +52,13 @@ class Finding:
     repos: list[str]                 # which repos are involved
     cross_boundary: bool = False     # involves multiple repos
     keywords: list[str] = field(default_factory=list)  # for FP matching
+    # Black hat agent fields (optional — only present in offense-first waves)
+    victim: str = ""                     # who loses what
+    extractable_value: str = ""          # estimated USD or token amount
+    attack_sequence: list[str] = field(default_factory=list)  # step-by-step exploit
+    test_file: str = ""                  # path to Forge test
+    test_passes: bool = False            # whether the test demonstrates the exploit
+    prerequisites: list[str] = field(default_factory=list)  # required conditions
 
 
 @dataclass
@@ -73,6 +80,7 @@ class AgentOutput:
     findings: list[Finding] = field(default_factory=list)
     hot_spots: list[HotSpot] = field(default_factory=list)
     ruled_out_vectors: list[Finding] = field(default_factory=list)  # status=ruled_out
+    theft_theses: list[dict] = field(default_factory=list)  # black hat theft hypotheses
     metadata: dict = field(default_factory=dict)  # turns, cost, duration, etc.
 
 
