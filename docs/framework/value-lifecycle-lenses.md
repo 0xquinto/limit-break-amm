@@ -1,7 +1,7 @@
 # Value Lifecycle Analysis Lenses
 
 > **ID:** VLA-01 | **Generated:** 2026-03-12 | **Method:** manual (Octane MUX case study)
-> **Readers:** all agents — read during Phase 0, apply during Phase 2
+> **Readers:** all agents — read during checkpoint 0, apply during analysis
 
 ## Why These Lenses Exist
 
@@ -118,10 +118,10 @@ Find locations where two values interact multiplicatively and an attacker contro
 
 | Agent Role | Lens 1 (Trace) | Lens 2 (Diff) | Lens 3 (Amplify) |
 |-----------|----------------|---------------|-------------------|
-| deep-agent | **MANDATORY** — trace all fee + swap values | **MANDATORY** — diff all paired ops in scope | Use when Lens 1 finds a mismatch |
-| invariant-breaker | Write denomination-consistency invariant tests | Write paired-op symmetry tests | Compute max extraction per broken invariant |
-| invariant-generator | Generate INV-S04 tests for denomination consistency | Generate paired-op assertion tests | N/A |
-| exploit-verifier | Verify denomination stays consistent in PoC | Verify both directions were tested | **MANDATORY** — compute amplification for every finding |
+| All wave 1 archetypes | **MANDATORY** — trace all fee + swap values | **MANDATORY** — diff all paired ops in scope | Use when Lens 1 finds a mismatch |
+| precision-sniper | Focus on rounding/overflow denomination changes | Focus on input vs output fee path symmetry | **MANDATORY** — compute max extraction |
+| insolvency-engineer | Focus on accounting denomination across settlement | Focus on deposit vs withdrawal validation | **MANDATORY** — compute amplification for every finding |
+| exploit-developer (wave 2) | Verify denomination stays consistent in PoC | Verify both directions were tested | **MANDATORY** — compute amplification for every finding |
 
 ## Checklist for Agents (copy into your working notes)
 

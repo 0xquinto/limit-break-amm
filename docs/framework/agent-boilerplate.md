@@ -23,24 +23,18 @@ When spawned with `isolation: worktree`, your worktree will be at `.claude/workt
 
 ## Tools Available
 
-### CLI Tools
+### CLI Tools (black hat model)
 
 | Tool | Path | Purpose |
 |------|------|---------|
 | Forge | `~/.foundry/bin/forge` | Compile, test, fuzz, coverage |
 | Chisel | `~/.foundry/bin/chisel` | Solidity REPL — quick math experiments |
+| Cast | `~/.foundry/bin/cast` | Trace txs, decode calldata, read storage slots |
 | Halmos | `~/.local/bin/halmos` (v0.3.3) | Symbolic execution. **MUST** run with `env PATH="/Users/diego/.foundry/bin:$PATH" ~/.local/bin/halmos ...` so it can find forge. |
 | Medusa | `/opt/homebrew/bin/medusa` (v1.5.0) | Parallel corpus-guided fuzzer (Trail of Bits) |
-| Aderyn | `/opt/homebrew/bin/aderyn` (v0.6.8) | Rust-based Solidity static analyzer (Cyfrin). Complements Slither — different detector set. Run: `aderyn .` |
-| Quimera | `~/.local/bin/quimera` (v0.1) | LLM-driven exploit PoC generation using Foundry. For confirmed vulns: `quimera <contract> --model <model> --iterations 5` |
+| Aderyn | `/opt/homebrew/bin/aderyn` (v0.6.8) | Rust-based Solidity static analyzer (Cyfrin). Complements Slither. Run: `aderyn .` |
+| Quimera | `~/.local/bin/quimera` (v0.1) | LLM-driven exploit PoC generation (wave 2). For confirmed vulns: `quimera <contract> --model <model> --iterations 5` |
 | Slither MCP | via `ToolSearch "+slither"` | Static analysis, call graphs, storage layout, detectors |
-| Certora | `.venv/bin/certoraRun` | Formal verification — proves invariants for ALL states. Key loaded from `.env` at project root (`source .env` or use `dotenv`). Use `--solc /opt/homebrew/bin/solc --disable_local_typechecking`. Spec file must be inside the project dir. **Low ROI for exploit hunting** — high spec-writing cost. Use only when proving specific invariant absence after a lead is identified. |
-| Gambit | `~/.local/bin/gambit` | Mutation testing — finds gaps in test coverage. Use `--solc ~/.foundry/bin/forge` or set `solc` in config to pick 0.8.24. **Not used in black hat model** — mutation testing is for test quality, not exploit construction. |
-| Echidna | `/opt/homebrew/bin/echidna` | Coverage-guided stateful property fuzzer (Trail of Bits). Complements Medusa. See tool-guide.md for config. |
-| Anvil | `~/.foundry/bin/anvil` | Local fork node — fork mainnet/testnet at specific blocks for exploit reproduction. |
-| Cast | `~/.foundry/bin/cast` | CLI transaction tool — trace txs, decode calldata, read storage slots. |
-| Heimdall-rs | `~/.local/bin/heimdall` | Bytecode decompiler — recover logic from unverified contracts. |
-| Python + Jupyter | `.venv/bin/python3` / `.venv/bin/jupyter` | Economic modeling (requires `source .venv/bin/activate`) |
 
 ### Trail of Bits Claude Code Skills
 
@@ -63,27 +57,27 @@ These are AI skills invoked via the **Skill tool** (not CLI). Use them at the ri
 
 | Skill | When Mandatory | Invoke With |
 |-------|---------------|-------------|
-| `audit-context-building` | **ALL agents, Phase 0** | `Skill("audit-context-building:audit-context-building")` |
-| `entry-point-analyzer` | **ALL agents, Phase 0** | `Skill("entry-point-analyzer:entry-point-analyzer")` |
-| `property-based-testing` | **invariant-generator** | `Skill("property-based-testing:property-based-testing")` |
+| `audit-context-building` | **ALL archetypes, checkpoint 0** | `Skill("audit-context-building:audit-context-building")` |
+| `entry-point-analyzer` | **ALL archetypes, checkpoint 0** | `Skill("entry-point-analyzer:entry-point-analyzer")` |
 | `token-integration-analyzer` | When scope includes handlers or permits | `Skill("building-secure-contracts:token-integration-analyzer")` |
 | `sharp-edges` | When scope includes config/settings interfaces | `Skill("sharp-edges:sharp-edges")` |
 | `variant-analysis` | **After confirming ANY finding** | `Skill("variant-analysis:variant-analysis")` |
-| `differential-review` | **exploit-verifier** | `Skill("differential-review:differential-review")` |
-| `spec-to-code-compliance` | When formal spec/docs exist for target | `Skill("spec-to-code-compliance:spec-to-code-compliance")` |
+| `differential-review` | **state-desync archetype** | `Skill("differential-review:differential-review")` |
+| `spec-to-code-compliance` | **precision-sniper, auth-forger archetypes** | `Skill("spec-to-code-compliance:spec-to-code-compliance")` |
+| `property-based-testing` | **insolvency-engineer, precision-sniper archetypes** | `Skill("property-based-testing:property-based-testing")` |
 
 ## Mandatory Tool Checkpoints (ENFORCED)
 
 You MUST run these tools at the specified phases. Skipping a mandatory checkpoint is a **SAFETY_EVENT** — log it with the failure reason. If a tool errors or crashes, log the error and move on; tool failure after one honest attempt is acceptable, but never skipping the attempt.
 
-### Checkpoint 0: Phase 0 Artifacts (turn 1, BEFORE any code reading)
+### Checkpoint 0: Pre-generated Artifacts (turn 1, BEFORE any code reading)
 
-Phase 0 runs automated tools BEFORE agents spawn. Your artifacts are pre-generated at `docs/targets/full-system/artifacts/phase0/`.
+Automated tools run BEFORE agents spawn. Your artifacts are pre-generated at `docs/targets/full-system/artifacts/phase0/`.
 
-1. **Read your Phase 0 dossier** — referenced in `{{PHASE0_ARTIFACTS}}` in your template
+1. **Read your pre-generated dossier** — referenced in `{{PHASE0_ARTIFACTS}}` in your template
 2. **Read attack surface index** — `docs/targets/full-system/artifacts/phase0/attack_surface_index.json`
 
-These replace the old `audit-context-building` and `entry-point-analyzer` skills, which are now optional for agents who want deeper context on a specific module.
+The `audit-context-building` and `entry-point-analyzer` skills are optional for agents who want deeper context on a specific module.
 
 Log:
 ```json
@@ -140,28 +134,13 @@ env PATH="/Users/diego/.foundry/bin:$PATH" ~/.local/bin/halmos --function check_
 cd <repo> && /opt/homebrew/bin/medusa fuzz --target-contracts <Contract> --test-limit 50000
 ```
 
-**Confirmed exploitable finding → Quimera** (LLM-driven PoC generation):
+**Confirmed exploitable finding → Quimera** (LLM-driven PoC generation, wave 2):
 ```bash
 ~/.local/bin/quimera <contract> --model sonnet --iterations 5
 ```
 Use Quimera to generate alternative PoC approaches for any confirmed finding. It may find exploit paths you missed.
 
-**Stateful sequence findings → Echidna** (coverage-guided fuzzing):
-```bash
-cd <repo> && echidna . --contract <FuzzContract> --config echidna.yaml
-```
-
-**Unverified external dependency → Heimdall-rs** (decompile):
-```bash
-heimdall decompile <address> --rpc-url $ETH_RPC_URL
-```
-
-**Historical tx reproduction → Cast** (trace):
-```bash
-~/.foundry/bin/cast run <tx_hash> --rpc-url $ETH_RPC_URL
-```
-
-Log: `{"event":"TOOL_CHECKPOINT","ts":"<ISO>","agent_id":"<name>","checkpoint":3,"tool":"halmos|medusa|quimera|echidna|heimdall|cast","target":"<finding_id>","result":"confirmed|unconfirmed"}`
+Log: `{"event":"TOOL_CHECKPOINT","ts":"<ISO>","agent_id":"<name>","checkpoint":3,"tool":"halmos|medusa|quimera","target":"<finding_id>","result":"confirmed|unconfirmed"}`
 
 ### Checkpoint 4: Variant + Call Graph Search (after confirming any finding)
 
@@ -211,7 +190,7 @@ After ~30% of your turns: read `claims.jsonl` from other agents. If another agen
 
 ### Turn and Budget Limits
 
-Your spawn prompt header specifies `max_turns` and `max_cost_usd`. Self-monitor:
+Your spawn prompt header specifies `max_turns`. Self-monitor:
 
 - **Turn check**: Every 10 turns, count your turns. If you've exceeded `max_turns`, wrap up: write your metrics file, report completion, stop.
 - **Diminishing returns**: If you've produced 0 new findings AND 0 new ruled-out vectors in your last 10 turns, wrap up.
@@ -223,7 +202,7 @@ Write a JSONL log file at `docs/targets/{target}/artifacts/agent-log-{your-name}
 
 **SESSION_START** (first turn):
 ```json
-{"event":"SESSION_START","ts":"<ISO8601>","session_id":"<run_id>","agent_id":"<your-name>","model":"<model>","scope":"<owned-files-summary>","max_turns":<N>,"max_cost_usd":<N>}
+{"event":"SESSION_START","ts":"<ISO8601>","session_id":"<run_id>","agent_id":"<your-name>","model":"<model>","scope":"<owned-files-summary>","max_turns":<N>}
 ```
 
 **TURN_COMPLETE** (every 5 turns):
@@ -246,7 +225,7 @@ Write a JSONL log file at `docs/targets/{target}/artifacts/agent-log-{your-name}
 {"event":"SESSION_END","ts":"<ISO8601>","agent_id":"<your-name>","total_turns":<N>,"findings_count":<N>,"vectors_ruled_out":<N>,"exit_reason":"<task_complete|turn_limit|diminishing_returns|blocked>"}
 ```
 
-These logs are consumed by the lead during metric collection (Phase 5) and will be consumed programmatically by the SDK orchestrator (Tier 2, future).
+These logs are consumed by the SDK orchestrator during synthesis.
 
 ## Anti-Patterns
 
@@ -361,7 +340,7 @@ Your archetype's Target Map already points you to the highest-value invariants f
 
 ### Value Lifecycle Analysis Lenses (MANDATORY)
 
-Read `docs/framework/value-lifecycle-lenses.md` during Phase 0. Apply during Phase 2.
+Read `docs/framework/value-lifecycle-lenses.md` during checkpoint 0. Apply during your analysis.
 
 Every agent MUST apply three lenses that catch cross-boundary bugs invisible to per-function analysis:
 
@@ -404,7 +383,7 @@ For every attack vector you investigate and dismiss, write a **proof sketch**:
 **Weakness**: [What could invalidate this argument]
 ```
 
-Class B and C vectors will be re-examined by the red-team agent.
+Class B and C vectors will be re-examined in wave 2 by exploit-developer agents.
 
 ## Required: Write Findings to Disk Incrementally
 
@@ -435,9 +414,4 @@ At the END of your `agent-metrics-{your-name}.md`, include this block (the lead 
 - poc_results: [{"finding_id": "X", "tests": N, "passed": N, "confirmed": true/false}]
 ```
 
-Replace `poc_results` with `challenges` for the red-team agent:
-```
-- challenges: [{"target": "FINDING-ID or vector name", "type": "finding|ruled-out|composition|economic", "verdict": "confirmed|overturned|holds", "elevation_attempted": true/false, "elevation_result": "succeeded|failed|N/A"}]
-```
-
-This data feeds the aggregate evaluation in `metrics.json`. The lead will also record platform metrics (tokens, cost, duration) from the Task completion message.
+This data feeds the aggregate evaluation in the wave synthesis. The orchestrator collects token counts and turn counts from agent sidecars for benchmarking.
