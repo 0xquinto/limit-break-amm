@@ -6,8 +6,11 @@ Limit Break AMM security audit framework. This parent directory orchestrates aud
 **Framework**: `docs/` contains shared methodology, agent spawn prompts, memory system, and per-target artifacts.
 
 **Target repos** (each has its own git repo, not tracked here):
-- `lbamm-hooks-and-handlers/` — Transfer handlers (CLOB, permit) + AMM hooks (target 1, audited v1+v2)
-- `lbamm-core/` — Core AMM module, pool management, math libraries (target 2, pending N=2)
+- `lbamm-core/` — Core AMM module, pool management, math libraries
+- `amm-pool-type-dynamic/` — Dynamic pool type implementation
+- `lbamm-pool-type-fixed/` — Fixed pool type implementation
+- `lbamm-pool-type-single-provider/` — Single-provider pool type implementation
+- `lbamm-hooks-and-handlers/` — Transfer handlers (CLOB, permit) + AMM hooks (audited v1+v2, 0 accepted)
 - `secure-proxy/` — Proxy infrastructure (dependency, read-only)
 
 **Build tools run inside each target repo** — `cd lbamm-hooks-and-handlers/ && forge build`. This parent is for framework/orchestration only.

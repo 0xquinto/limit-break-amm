@@ -168,7 +168,7 @@ async def run_single_wave(wave_number: int, force: bool = False) -> None:
     update_memory_from_results(results, wave)
 
     print(f"\nWave {wave.number} complete.")
-    print(f"  Total cost: ${sum(r.total_cost_usd for r in results):.2f}")
+    print(f"  Total tokens: {sum(r.total_tokens for r in results):,}")
     print(f"  Synthesis: {ARTIFACTS_DIR / f'wave{wave.number}-synthesis.md'}")
 
 

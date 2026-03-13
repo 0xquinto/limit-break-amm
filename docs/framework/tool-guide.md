@@ -74,18 +74,21 @@ env PATH="/Users/diego/.foundry/bin:$PATH" ~/.local/bin/halmos \
 
 ### Best Targets in This Codebase
 
-| Function | Why | Constraints |
-|----------|-----|-------------|
-| CLOBHelper.calculateFixedInput | Core pricing math, rounding | input > 0, valid sqrtPrice range |
-| CLOBHelper.calculateOutput | Core output calculation | input > 0, valid sqrtPrice range |
-| CLOBHelper.calculateInversePrice | Inverse price for reverse direction | sqrtPrice > 0, sqrtPrice <= MAX |
-| SqrtPriceCalculator.getInverseSqrtPriceX96 | 2^192 / sqrtPriceX96 | sqrtPrice > 0 |
+| Repo | Function | Why | Constraints |
+|------|----------|-----|-------------|
+| amm-pool-type-dynamic | SqrtPriceMath.* | Uniswap v3 core math | Valid sqrtPrice range |
+| amm-pool-type-dynamic | SwapMath.computeSwapStep | Swap amount/price calculation | liquidity > 0, valid price |
+| amm-pool-type-dynamic | TickMath.getSqrtRatioAtTick | Tick↔price conversion | tick in valid range |
+| lbamm-pool-type-fixed | FixedHelper.computeRatioX96 | Ratio math, overflow risk | inputs > 0 |
+| lbamm-pool-type-fixed | FixedHelper._splitAmountsAndFeesByHeight | Complex fee splitting | height > 0, amounts > 0 |
+| lbamm-hooks-and-handlers | CLOBHelper.calculateFixedInput | CLOB pricing math | input > 0, valid sqrtPrice |
+| lbamm-hooks-and-handlers | SqrtPriceCalculator.getInverseSqrtPriceX96 | 2^192 / sqrtPriceX96 | sqrtPrice > 0 |
 
 ### Bad Targets (avoid)
 
-- Full order lifecycle (too many storage ops, keccak256 lookups)
+- Full order lifecycle or swap flows (too many storage ops, keccak256 lookups)
 - Anything involving mappings with symbolic keys
-- Functions that call external contracts
+- Functions that call external contracts (AMMModule entry points)
 
 ## Build Setup
 
@@ -132,11 +135,14 @@ aderyn . --src src/handlers/clob/
 
 ### Best Targets in This Codebase
 
-| Target | Why |
-|--------|-----|
-| `src/handlers/clob/` | Complex math, linked-list logic, many state transitions |
-| `src/hooks/AMMStandardHook.sol` | Access control patterns, pricing bounds enforcement |
-| `src/handlers/permit/` | EIP-712 signature handling, fee calculations |
+| Repo | Target | Why |
+|------|--------|-----|
+| lbamm-core | `src/` | Core swap/liquidity/flash loan, settlement logic, reentrancy guards |
+| amm-pool-type-dynamic | `src/` | Uniswap v3 math, tick management, position accounting |
+| lbamm-pool-type-fixed | `src/` | Fee splitting, ratio math, height-based liquidity |
+| lbamm-pool-type-single-provider | `src/` | External pricing hook trust, single-provider logic |
+| lbamm-hooks-and-handlers | `src/handlers/clob/` | CLOB math, linked-list logic, state transitions |
+| lbamm-hooks-and-handlers | `src/hooks/` | Access control, pricing bounds enforcement |
 
 ## Quimera (LLM Exploit Generation)
 
@@ -158,7 +164,7 @@ quimera <ContractName> . --contract <ContractName> --working-dir .
 
 - **After confirming a vulnerability** — to auto-generate a Foundry PoC.
 - **NOT for discovery** — Quimera needs a known flaw description to generate exploits.
-- **poc-writer agent** — this is the primary user of Quimera.
+- **exploit-developer agent** (wave 2) is the primary user of Quimera.
 
 ### Gotchas
 
@@ -295,7 +301,7 @@ cast call <address> "function(args)" --rpc-url $ETH_RPC_URL
 
 ## Heimdall-rs (Bytecode Decompiler)
 
-Path: `~/.local/bin/heimdall` or `~/.cargo/bin/heimdall`
+Path: `~/.bifrost/bin/heimdall` (v0.9.2)
 
 Decompiles unverified contract bytecode. Essential when target contracts interact with unverified dependencies, proxies, or external handlers.
 
@@ -354,29 +360,39 @@ fuzz-utils generate --target <Contract> --output test/fuzz/
 
 These are AI-powered analysis skills installed as Claude Code plugins. They run inside the conversation (not as CLI tools). See the boilerplate "Trail of Bits Claude Code Skills" table for the full list.
 
-### Recommended Skill Sequence Per Agent Role
+### Recommended Skill Sequence Per Black Hat Archetype
 
-**Auditors (clob, permit, hook, registry):**
-1. `audit-context-building` — build deep context before analysis
+**All archetypes (wave 1, checkpoint 0):**
+1. `audit-context-building` — build deep context before exploitation
 2. `entry-point-analyzer` — map all state-changing entry points
-3. `sharp-edges` — identify footgun APIs in your module
-4. `spec-to-code-compliance` — check implementation matches spec
-5. `variant-analysis` — after finding a vuln, search for variants
 
-**Fuzz-writer:**
-1. `property-based-testing` — guides invariant and property selection
-2. `entry-point-analyzer` — identify which functions to target
+**price-distorter:**
+3. `token-integration-analyzer` — weird token behaviors exploitable for price manipulation
+4. `variant-analysis` — after finding a price vector, search for variants
 
-**PoC-writer:**
-1. Use Quimera CLI for automated PoC generation
-2. `variant-analysis` — check if the vuln pattern exists elsewhere
+**insolvency-engineer:**
+3. `sharp-edges` — identify footgun APIs in accounting/settlement
+4. `property-based-testing` — fuzz conservation invariants
 
-**Red-team adversary:**
-1. `differential-review` — review remediation diffs for regressions
-2. `sharp-edges` — challenge API designs and configuration safety
+**state-desync:**
+3. `variant-analysis` — find all cross-module state read patterns
+4. `differential-review` — check if fixes introduced new desync paths
 
-**Economic analyst:**
-1. `token-integration-analyzer` — analyze token economics and weird patterns
+**precision-sniper:**
+3. `property-based-testing` — fuzz rounding/overflow boundaries
+4. `spec-to-code-compliance` — verify math matches spec
+
+**auth-forger:**
+3. `spec-to-code-compliance` — check EIP-712/permit implementation matches spec
+4. `sharp-edges` — identify trust boundary footguns
+
+**extension-hijacker:**
+3. `sharp-edges` — identify registration/configuration footguns
+4. `variant-analysis` — find all pluggable extension points
+
+**exploit-developer (wave 2):**
+1. Quimera CLI for automated PoC generation
+2. `variant-analysis` — check if the exploit pattern exists elsewhere
 
 ### Skill Invocation
 
@@ -390,9 +406,9 @@ The skill loads instructions into the conversation — follow them directly.
 
 ## Slither MCP Tips
 
-- **Always use `exclude_paths: ["lib/", "test/", "../"]`** — the `"../"` filters out sibling repo contracts (lbamm-core, secure-proxy) that pollute results
-- **Always use `search_functions` FIRST** to find exact Slither signatures before calling `get_function_callers` or `get_function_callees` — Slither uses internal type names that may differ from source (e.g. `SwapOrder` not the fully-qualified struct type)
-- **Cross-repo callers are invisible** — functions called from lbamm-core won't appear in `get_function_callers` since the AMM is in a sibling repo
+- **Always use `exclude_paths: ["lib/", "test/", "../"]`** — the `"../"` filters out sibling repo contracts that pollute results
+- **Always use `search_functions` FIRST** to find exact Slither signatures before calling `get_function_callers` or `get_function_callees` — Slither uses internal type names that may differ from source
+- **Cross-repo callers are invisible** — Slither analyzes one repo at a time. Functions called across repos (e.g. core calling pool type) won't appear in `get_function_callers`. Use Grep across repos to trace cross-boundary calls.
 
 ## Forge (Build, Test, Coverage)
 
@@ -404,27 +420,14 @@ This codebase uses `viaIR = true` and the optimizer in `foundry.toml` because si
 
 **`forge build` and `forge test` work fine** — they use the optimizer settings from `foundry.toml`.
 
-**`forge coverage` requires `--ir-minimum` and symlinks.** Two issues exist:
+**`forge coverage` requires `--ir-minimum`** — lbamm-core functions exceed 16 stack slots without it.
 
-1. Without `--ir-minimum`: fails with "stack too deep" (lbamm-core functions exceed 16 stack slots)
-2. Without symlinks: source map resolution fails because forge's coverage analyzer can't resolve relative imports via `allow_paths`
-
-**Symlinks setup**: See "Worktree Setup" section above. For the main project root, symlinks are already in place:
-```
-lbamm-core -> ../lbamm-core
-secure-proxy -> ../secure-proxy
-```
+**Repos with cross-repo imports** (hooks-and-handlers, pool types) may need symlinks for coverage source map resolution. If you get "file not found" errors during "Analysing contracts...", create symlinks to sibling repos in the project root.
 
 **Run command:**
 ```bash
-~/.foundry/bin/forge coverage --ir-minimum --report summary
+cd <repo> && ~/.foundry/bin/forge coverage --ir-minimum --report summary
 ```
-
-If you get "file not found" errors during "Analysing contracts...", verify the symlinks exist with `ls -la lbamm-core secure-proxy`.
-
-**DO NOT spend time debugging coverage source map errors.** If the symlinks are missing, recreate them (see Worktree Setup above).
-
-See `docs/targets/hooks-and-handlers/artifacts/coverage-gaps.md` for pre-computed coverage data with detailed gap analysis.
 
 ### Running Tests
 
@@ -454,48 +457,11 @@ When you make multiple tool calls in parallel (e.g., batching a Bash command alo
 3. **Safe to batch together**: multiple Slither MCP calls, multiple Read/Grep calls, multiple known-good operations.
 4. **If you lose a batch to cascade**: re-run only the calls that were killed (they didn't actually fail, they were just cancelled).
 
-## Git Diff (Remediation Changes)
+## Git Diff
 
-**WARNING**: `docs/targets/hooks-and-handlers/artifacts/remediation-diff.md` is 5,319 lines (~75k tokens) — too large for a single Read call. Use targeted git diff per module instead:
-
-```bash
-# Per-module (recommended):
-git diff 0483a11 0199bdf -- src/handlers/clob/
-git diff 0483a11 0199bdf -- src/handlers/permit/
-git diff 0483a11 0199bdf -- src/hooks/
-
-# Full source diff (DO NOT Read the artifact file directly):
-git diff 0483a11 0199bdf -- src/
-```
-
-The `-- src/` filter is critical — without it you get 14k lines including all tests. With it, you get only source code changes.
-
-### What the Diff Shows
-
-This repo has exactly 2 commits:
-- `0483a11` — Initial commit (pre-audit code)
-- `0199bdf` — Audit release (post-remediation)
-
-The diff shows ALL remediation fixes Guardian recommended. Each change addresses a specific finding.
-
-### How to Use for Bug Hunting
-
-1. **Incomplete fixes** — Does the fix fully address the finding, or did it miss an edge case?
-2. **New code introduced by fixes** — Remediation code itself can introduce new bugs.
-3. **Fixes that changed related logic** — Side effects in surrounding code.
-4. **Acknowledged findings** — Code that was NOT changed despite a finding (H-01, M-04, M-05, L-01, L-04).
-
-### Generating the Artifact
+Use targeted `git diff` per module when investigating changes. Always filter with `-- src/` to exclude test noise:
 
 ```bash
-# Source-only diff (what agents should read)
-git diff 0483a11 0199bdf -- src/ > docs/targets/hooks-and-handlers/artifacts/remediation-diff.md
-
-# To see which files changed
-git diff --stat 0483a11 0199bdf -- src/
-
-# To see changes for a specific file
-git diff 0483a11 0199bdf -- src/handlers/clob/CLOBTransferHandler.sol
+cd <repo> && git log --oneline -5           # find relevant commits
+cd <repo> && git diff <old>..<new> -- src/  # source-only diff
 ```
-
-Agents should focus on `src/` diffs for their owned module, not the full repo diff.

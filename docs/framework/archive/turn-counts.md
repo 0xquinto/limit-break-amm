@@ -6,13 +6,13 @@
 
 ## Platform Metrics
 
-| Agent | Model | Tokens (est) | Tool Uses | Duration (s) | Cost USD (est) | Findings | Vectors Out | Status |
-|-------|-------|-------------|-----------|-------------|----------------|----------|-------------|--------|
+| Agent | Model | Tokens (est) | Tool Uses | Duration (s) | Turns | Findings | Vectors Out | Status |
+|-------|-------|-------------|-----------|-------------|-------|----------|-------------|--------|
 | clob-auditor | opus | N/R | N/R | N/R | N/R | 0 | 11 | complete (90%) |
 | permit-auditor | sonnet | N/R | N/R | N/R | N/R | 1 (Low) + 1 (Info) | 10 | complete (90%) |
 | hook-auditor | opus | N/R | 35+ | N/R | N/R | 1 (Low) | 12 | complete (90%) |
 | registry-auditor | sonnet | N/R | ~30 | N/R | N/R | 0 (2 info) | 9 | complete (100%) |
-| economic-analyst | sonnet | ~45k | ~25 | ~180 | ~0.50 | 0 | 7 | complete (100%) |
+| economic-analyst | sonnet | ~45k | ~25 | ~180 | ~22 | 0 | 7 | complete (100%) |
 | fuzz-writer | sonnet | N/R | N/R | N/R | N/R | 0 (73 tests) | 0 violations | complete (128%) |
 | poc-writer | opus | N/R | N/R | N/R | N/R | 1 confirmed | — | complete (100%) |
 | red-team-adversary | opus | N/R | N/R | N/R | N/R | 0 (18 challenged) | 3 compositions | complete (100%) |
@@ -60,9 +60,9 @@
 | Adversarial survival | 2/2 = 100% | Both survived red-team |
 | Cross-agent agreement | 0% | No overlapping findings between agents |
 | Total vectors eliminated | 49 | With documented proof sketches |
-| Total cost USD | N/R | Not captured in v2 |
-| Cost per confirmed finding | N/R | Requires total cost |
-| Cost per vector eliminated | N/R | Requires total cost |
+| Total tokens | N/R | Not captured in v2 |
+| Tokens per confirmed finding | N/R | Requires total tokens |
+| Tokens per vector eliminated | N/R | Requires total tokens |
 
 ## Recommended max_turns for N=2
 
@@ -81,16 +81,15 @@ Based on v2 run measurements:
 ### 3-Layer Metric Collection
 
 1. **Layer 1 — Agent self-report**: Each agent writes `docs/targets/{target}/artifacts/agent-metrics-{name}.md` with findings, ruled-out vectors, completeness %, and the **structured metrics block** (see agent-boilerplate.md).
-2. **Layer 2 — Lead logs on completion**: When an agent's Task returns, the completion message includes `total_tokens`, `tool_uses`, `duration_ms`. **Log these IMMEDIATELY, BEFORE reading findings.** Copy into Platform Metrics table AND `metrics.json`.
+2. **Layer 2 — Lead logs on completion**: When an agent's Task returns, the completion message includes `total_tokens`, `tool_uses`, `duration_ms`, `num_turns`. **Log these IMMEDIATELY, BEFORE reading findings.** Copy into Platform Metrics table AND `metrics.json`.
 3. **Layer 3 — Teardown gate**: Phase 5 cannot proceed until every row has ALL columns filled. N/R is only acceptable if the platform genuinely did not provide the data.
 
-### Cost Calculation
+### Benchmarking Metrics
 
-Use current model pricing:
-- Opus: $15/M input, $75/M output
-- Sonnet: $3/M input, $15/M output
-- Haiku: $0.80/M input, $4/M output
+Running on Anthropic subscription (no per-token billing). Track for benchmarking:
+- **Tokens**: total_tokens (input + output) per agent — measures context consumption
+- **Turns**: num_turns per agent — measures interaction depth
+- **Duration**: wall clock ms — measures real-time cost
+- **Tool uses**: count per tool type — measures tool utilization
 
-Formula: `cost_usd = (input_tokens * rate_in + output_tokens * rate_out) / 1_000_000`
-
-If only total tokens available (no in/out split), estimate 80% input / 20% output split.
+Cost calculation removed — subscription mode has no per-token charges.

@@ -71,7 +71,7 @@ class AgentResult:
     model: str
     num_turns: int
     duration_ms: int
-    total_cost_usd: float
+    total_tokens: int  # input + output tokens (benchmarking only, no billing on subscription)
     stop_reason: str  # "completed" | "failed" | "stopped" | "missing"
     output_text: str  # last 2K chars as summary
     safety_events: list[dict] = field(default_factory=list)
@@ -358,7 +358,7 @@ def _build_results_from_disk(
             model=agent.resolved_model,
             num_turns=num_turns,
             duration_ms=total_elapsed_ms,  # wall time (per-agent not available)
-            total_cost_usd=0.0,  # subscription mode
+            total_tokens=0,  # populated from sidecar metadata if available
             stop_reason=stop_reason,
             output_text=report_text[-2000:] if report_text else "",
         ))
@@ -409,7 +409,6 @@ def populate_wave2_agents(wave: WaveConfig, synthesis_json: dict) -> WaveConfig:
             scope=list(REPOS.keys()),
             profile="max_reasoning",
             max_turns=30,
-            max_cost_usd=12.0,
             extra_context={"leads": leads_text},
         )
         wave.agents.append(agent)

@@ -13,13 +13,6 @@ from .config import WaveConfig, ARTIFACTS_DIR, RESULTS_DIR, PHASE0_DIR
 from .schema import load_and_validate
 from .wave_runner import AgentResult
 
-# Model pricing (March 2026) — used for cost calculation
-MODEL_PRICING = {
-    "opus":   {"input": 15.0 / 1_000_000, "output": 75.0 / 1_000_000},
-    "sonnet": {"input":  3.0 / 1_000_000, "output": 15.0 / 1_000_000},
-    "haiku":  {"input":  0.8 / 1_000_000, "output":  4.0 / 1_000_000},
-}
-
 # Weights for deterministic hotspot scoring (no LLM involved)
 SCORING_WEIGHTS = {
     "static_hits": 2.0,       # Slither/Aderyn findings in this area
@@ -418,7 +411,7 @@ def generate_synthesis(
     for r in results:
         agent_lines.append(
             f"| {r.name} | {r.role} | {r.model} | {r.num_turns} | "
-            f"${r.total_cost_usd:.2f} | {r.stop_reason} |"
+            f"{r.total_tokens:,} | {r.stop_reason} |"
         )
     agent_table = "\n".join(agent_lines)
 
@@ -547,11 +540,11 @@ Data source: {data_source}
 
 ## Agents
 
-| Agent | Role | Model | Turns | Cost | Status |
-|-------|------|-------|-------|------|--------|
+| Agent | Role | Model | Turns | Tokens | Status |
+|-------|------|-------|-------|--------|--------|
 {agent_table}
 
-**Total cost**: ${sum(r.total_cost_usd for r in results):.2f}
+**Total tokens**: {sum(r.total_tokens for r in results):,}
 
 ## Tool Coverage
 
@@ -625,7 +618,8 @@ Data source: {data_source}
     # Write structured metrics JSON (gap research §2 — production track)
     total_findings = len(merged_findings)
     total_ruled_out = len(all_ruled_out)
-    total_cost = sum(r.total_cost_usd for r in results)
+    total_tokens = sum(r.total_tokens for r in results)
+    total_turns = sum(r.num_turns for r in results)
     metrics = {
         "wave": wave.number,
         "name": wave.name,
@@ -641,7 +635,7 @@ Data source: {data_source}
                 "model": r.model,
                 "num_turns": r.num_turns,
                 "duration_ms": r.duration_ms,
-                "total_cost_usd": r.total_cost_usd,
+                "total_tokens": r.total_tokens,
                 "stop_reason": r.stop_reason,
                 "safety_events": len(r.safety_events),
             }
@@ -650,9 +644,10 @@ Data source: {data_source}
         "evaluation": {
             "findings_claimed": total_findings,
             "vectors_ruled_out": total_ruled_out,
-            "total_cost_usd": total_cost,
-            "cost_per_finding": (total_cost / total_findings) if total_findings > 0 else None,
-            "cost_per_vector_eliminated": (total_cost / total_ruled_out) if total_ruled_out > 0 else None,
+            "total_tokens": total_tokens,
+            "total_turns": total_turns,
+            "tokens_per_finding": (total_tokens // total_findings) if total_findings > 0 else None,
+            "tokens_per_vector_eliminated": (total_tokens // total_ruled_out) if total_ruled_out > 0 else None,
             "precision": None,
             "poc_pass_rate": None,
             "adversarial_survival_rate": None,

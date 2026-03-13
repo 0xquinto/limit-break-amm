@@ -97,7 +97,6 @@ class AgentConfig:
     profile: str = ""  # key into model_profiles.PROFILES (empty = use model field)
     model: str = ""  # DEPRECATED — use profile instead. Kept for backwards compat.
     max_turns: int = 15
-    max_cost_usd: float = 3.0
     permission_mode: str = "bypassPermissions"
     extra_context: dict = field(default_factory=dict)
 
@@ -141,7 +140,7 @@ WAVE_1 = WaveConfig(
             scope=["lbamm-core", "secure-proxy"],
             model="sonnet",
             max_turns=15,
-            max_cost_usd=3.0,
+
         ),
         AgentConfig(
             name="recon-pools",
@@ -151,7 +150,7 @@ WAVE_1 = WaveConfig(
                    "lbamm-pool-type-single-provider"],
             model="sonnet",
             max_turns=15,
-            max_cost_usd=3.0,
+
         ),
         AgentConfig(
             name="recon-hooks",
@@ -160,7 +159,7 @@ WAVE_1 = WaveConfig(
             scope=["lbamm-hooks-and-handlers"],
             model="sonnet",
             max_turns=15,
-            max_cost_usd=3.0,
+
         ),
         AgentConfig(
             name="cross-contract-tracer",
@@ -169,7 +168,7 @@ WAVE_1 = WaveConfig(
             scope=list(REPOS.keys()),  # all repos
             model="sonnet",
             max_turns=20,
-            max_cost_usd=4.0,
+
         ),
     ],
 )
@@ -186,7 +185,7 @@ WAVE_2_TEMPLATE = WaveConfig(
             scope=["lbamm-core"],
             model="sonnet",
             max_turns=30,
-            max_cost_usd=5.0,
+
             extra_context={
                 "focus_findings": ["CORE-002", "CORE-001", "CORE-005"],
                 "focus_hotspots": [
@@ -210,7 +209,7 @@ WAVE_2_TEMPLATE = WaveConfig(
             scope=["lbamm-pool-type-fixed", "lbamm-hooks-and-handlers"],
             model="sonnet",
             max_turns=30,
-            max_cost_usd=5.0,
+
             extra_context={
                 "focus_findings": ["HOOK-007", "FIX-009", "FIX-013"],
                 "focus_hotspots": [
@@ -242,7 +241,7 @@ WAVE_2_TEMPLATE = WaveConfig(
                    "lbamm-hooks-and-handlers"],
             model="sonnet",
             max_turns=30,
-            max_cost_usd=5.0,
+
             extra_context={
                 "focus_findings": ["SP-004", "CORE-006", "HOOK-012"],
                 "focus_hotspots": [
@@ -270,7 +269,7 @@ WAVE_2_TEMPLATE = WaveConfig(
             scope=["lbamm-hooks-and-handlers", "lbamm-core"],
             model="sonnet",
             max_turns=30,
-            max_cost_usd=5.0,
+
             extra_context={
                 "focus_findings": [],
                 "regression_cases": [
@@ -308,7 +307,7 @@ WAVE_3_TEMPLATE = WaveConfig(
             scope=["amm-pool-type-dynamic"],
             model="sonnet",
             max_turns=30,
-            max_cost_usd=5.0,
+
             extra_context={
                 "focus_findings": ["DYN-009"],
                 "focus_hotspots": [
@@ -339,7 +338,7 @@ WAVE_3_TEMPLATE = WaveConfig(
             scope=["lbamm-core"],
             model="sonnet",
             max_turns=30,
-            max_cost_usd=5.0,
+
             extra_context={
                 "focus_findings": ["CORE-003", "CORE-011"],
                 "focus_hotspots": [
@@ -374,7 +373,7 @@ WAVE_3_TEMPLATE = WaveConfig(
                    "lbamm-pool-type-single-provider"],
             model="sonnet",
             max_turns=30,
-            max_cost_usd=5.0,
+
             extra_context={
                 "focus_findings": ["PROXY-010", "FIX-008"],
                 "focus_hotspots": [
@@ -409,7 +408,7 @@ WAVE_3_TEMPLATE = WaveConfig(
             scope=list(REPOS.keys()),  # all repos
             model="sonnet",
             max_turns=25,
-            max_cost_usd=5.0,
+
             extra_context={
                 "focus_areas": [
                     "Fee extraction: can attacker profit from fee calculation asymmetries?",
@@ -468,7 +467,7 @@ LAYER_1 = WaveConfig(
             scope=list(REPOS.keys()),  # all repos
             model="opus",
             max_turns=35,
-            max_cost_usd=12.0,
+
             extra_context={
                 "invariant_catalog": "docs/framework/amm-invariant-catalog.md",
                 "prior_ruled_out": "100+ vectors ruled out in waves 1-3. Read docs/audit_memory/false-positives.md for known dead ends.",
@@ -488,7 +487,7 @@ LAYER_2 = WaveConfig(
             scope=["lbamm-core", "lbamm-hooks-and-handlers"],
             model="opus",
             max_turns=35,
-            max_cost_usd=12.0,
+
             extra_context={
                 "focus_invariants": ["INV-S01", "INV-S02", "INV-S03", "INV-H02", "INV-H04", "INV-H05", "INV-E02"],
                 "attack_style": (
@@ -509,7 +508,7 @@ LAYER_2 = WaveConfig(
             scope=["lbamm-pool-type-fixed", "lbamm-core", "amm-pool-type-dynamic"],
             model="opus",
             max_turns=35,
-            max_cost_usd=12.0,
+
             extra_context={
                 "focus_invariants": ["INV-SW01", "INV-SW02", "INV-SW03", "INV-SW04", "INV-L01", "INV-L02", "INV-L03", "INV-E01"],
                 "attack_style": (
@@ -530,7 +529,7 @@ LAYER_2 = WaveConfig(
             scope=["lbamm-hooks-and-handlers", "lbamm-pool-type-single-provider", "lbamm-core"],
             model="opus",
             max_turns=35,
-            max_cost_usd=12.0,
+
             extra_context={
                 "focus_invariants": ["INV-H01", "INV-H03", "INV-P01", "INV-P02", "INV-E03", "INV-SW02"],
                 "attack_style": (
@@ -572,7 +571,7 @@ WAVE_BH1 = WaveConfig(
             scope=list(REPOS.keys()),
             profile="max_reasoning",
             max_turns=30,
-            max_cost_usd=15.0,
+
         ),
         AgentConfig(
             name="insolvency-engineer",
@@ -581,7 +580,7 @@ WAVE_BH1 = WaveConfig(
             scope=list(REPOS.keys()),
             profile="max_reasoning",
             max_turns=30,
-            max_cost_usd=15.0,
+
         ),
         AgentConfig(
             name="state-desync",
@@ -590,7 +589,7 @@ WAVE_BH1 = WaveConfig(
             scope=list(REPOS.keys()),
             profile="max_reasoning",
             max_turns=30,
-            max_cost_usd=15.0,
+
         ),
         AgentConfig(
             name="precision-sniper",
@@ -599,7 +598,7 @@ WAVE_BH1 = WaveConfig(
             scope=list(REPOS.keys()),
             profile="max_reasoning",
             max_turns=30,
-            max_cost_usd=15.0,
+
         ),
         AgentConfig(
             name="auth-forger",
@@ -608,7 +607,7 @@ WAVE_BH1 = WaveConfig(
             scope=list(REPOS.keys()),
             profile="max_reasoning",
             max_turns=30,
-            max_cost_usd=15.0,
+
         ),
         AgentConfig(
             name="extension-hijacker",
@@ -617,7 +616,7 @@ WAVE_BH1 = WaveConfig(
             scope=list(REPOS.keys()),
             profile="max_reasoning",
             max_turns=30,
-            max_cost_usd=15.0,
+
         ),
     ],
 )

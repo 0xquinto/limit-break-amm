@@ -82,19 +82,19 @@ def _extract_ruled_out(wave: WaveConfig, results: list[AgentResult]) -> list[dic
 
 def _generate_episode(wave: WaveConfig, results: list[AgentResult], run_date: str) -> str:
     """Generate a run episode summary."""
-    total_cost = sum(r.total_cost_usd for r in results)
+    total_tokens = sum(r.total_tokens for r in results)
     total_turns = sum(r.num_turns for r in results)
     agent_lines = []
     for r in results:
         agent_lines.append(f"- {r.name} ({r.role}, {r.model}): "
-                           f"{r.num_turns} turns, ${r.total_cost_usd:.2f}, {r.stop_reason}")
+                           f"{r.num_turns} turns, {r.total_tokens:,} tokens, {r.stop_reason}")
     return f"""# Wave {wave.number} Episode — {run_date}
 
 ## Summary
 - **Wave**: {wave.number} ({wave.name})
 - **Agents**: {len(results)}
 - **Total turns**: {total_turns}
-- **Total cost**: ${total_cost:.2f}
+- **Total tokens**: {total_tokens:,}
 
 ## Agents
 {chr(10).join(agent_lines)}
@@ -112,7 +112,7 @@ def _extract_lessons(results: list[AgentResult], wave: WaveConfig) -> list[dict]
             lessons.append({
                 "category": "Agent Spawning",
                 "belief": f"{result.name} exhausted budget before completing",
-                "action": f"Increase max_turns/max_cost_usd for {result.role} by 25%",
+                "action": f"Increase max_turns for {result.role} by 25%",
                 "confidence": 75,
             })
         if result.stop_reason == "loop_detected":

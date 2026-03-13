@@ -81,7 +81,7 @@ class AgentOutput:
     hot_spots: list[HotSpot] = field(default_factory=list)
     ruled_out_vectors: list[Finding] = field(default_factory=list)  # status=ruled_out
     theft_theses: list[dict] = field(default_factory=list)  # black hat theft hypotheses
-    metadata: dict = field(default_factory=dict)  # turns, cost, duration, etc.
+    metadata: dict = field(default_factory=dict)  # turns, tokens, duration, etc.
 
 
 REQUIRED_FINDING_FIELDS = {"id", "title", "severity", "confidence", "status",
