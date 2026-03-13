@@ -20,4 +20,12 @@ Limit Break AMM security audit framework. This parent directory orchestrates aud
 - `docs/plans/` — Implementation plans
 - `docs/references/` — Research materials
 
+**Wave models**: `WAVES_BLACK_HAT` (default, offense-first) or `WAVES_DEFENSIVE` (original 8-wave). Switch in `config.py:WAVES`.
+
+**Active templates** (black hat model):
+- `black-hat-preamble.md` — shared exploit-first reasoning (included via `{{PREAMBLE}}`)
+- 6 archetype templates: `price-distorter`, `insolvency-engineer`, `state-desync`, `precision-sniper`, `auth-forger`, `extension-hijacker`
+- `exploit-developer` — wave 2 PoC construction from wave 1 leads
+- Old defensive templates archived in `docs/orchestrator/templates/archive/`
+
 For architecture details, see [docs/CODEBASE_MAP.md](docs/CODEBASE_MAP.md).
