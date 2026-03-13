@@ -220,7 +220,7 @@ async def run_wave(wave: WaveConfig, prompts: dict[str, str]) -> list[AgentResul
     #    Team lead is sonnet (orchestration only), but settings propagate to workers.
     sdk_kwargs: dict = {
         "cwd": str(PROJECT_ROOT),
-        "model": "sonnet",
+        "model": "opus",
         "max_turns": 60,
         "permission_mode": "bypassPermissions",
         "system_prompt": AUDIT_SYSTEM_PROMPT,
