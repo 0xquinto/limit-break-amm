@@ -38,19 +38,19 @@ Insert after the "### Ranking Your Ideas" section (after line 29) and before "##
 path: CLOBTransferHandler.executeSwap → guard: nonReentrant modifier at L315 → verdict: blocked
 ```
 
-**Composability check**: after confirming ANY finding, immediately ask: "does this compound with my other findings or with known issues (HOOK-001, etc.)?" Test the composition.
+**Composability exploit**: after confirming ANY finding, immediately test if it compounds with other findings or known issues (HOOK-001, etc.) for higher extraction. Two small bugs composed > one big bug.
 
 **Second-pass pivot**: if your first pass through the Target Map produces zero findings after 50% of your turns, attack from a different angle — change the victim assumption, change the capital source, or target a different module.
 
-### Real-World Exploit Checklist (MANDATORY probes)
+### Mandatory Attack Probes (MUST attempt before completion)
 
-Before reporting completion, you MUST have tested at least one probe per category:
+Before reporting completion, you MUST have attempted at least one exploit per category:
 
-1. **Dust-loop rounding**: run 100+ minimal-value swaps, check pool hasn't leaked value
-2. **Hook caller + pool validation**: call hook functions directly (not via AMM) with forged pool identity
-3. **Transient-slot hygiene**: check every `tstore` has a corresponding `tload` consumer AND clearing path
-4. **Permit replay**: test signature reuse across chains, across accounts, with mutated unsigned fields
-5. **Storage collision**: verify diamond proxy facets don't share storage slots unintentionally
+1. **Dust-loop extraction**: run 100+ tiny swaps → measure if pool leaks value to attacker each iteration → compound
+2. **Forged hook caller**: call hook directly with fake pool identity (not via AMM) → check if credited without legitimate swap
+3. **Transient-slot theft**: write to transient slot in path A → trigger path B that reads the stale slot → extract from the price/balance difference
+4. **Permit mutation**: replay signature with mutated unsigned fields (feeOnTop, recipient) → check if funds redirect to attacker
+5. **Storage-slot collision**: deploy facet that writes to another facet's storage slot → corrupt accounting → drain via corrupted state
 ```
 
 - [ ] **Step 2: Verify preamble parses correctly**
@@ -83,24 +83,24 @@ For each template, append new hypotheses to the existing "Specific hypotheses to
 
 Add after hypothesis 4 (line 34):
 ```markdown
-5. Stale/wrong oracle price → pool uses outdated price, attacker arbitrages the difference
-6. Missing price bounds on oracle reads → unbounded price movement in single tx
-7. TWAP window too short → cheap to move average, extract from contracts relying on TWAP
-8. Oracle-update front-running → read stale price, trigger update, extract on new price
-9. Hook returns distorted sqrtPriceX96 → pool type trusts hook-sourced price
-10. Slippage/deadline parameter bypass → swap executes at worse-than-expected price
+5. Oracle returns stale price → buy cheap on pool using outdated valuation → sell at real price elsewhere
+6. Oracle read has no bounds → feed extreme price in single tx → extract via arbitrage against bounded venues
+7. TWAP window is short → accumulate position → move TWAP cheaply → profit from contracts using TWAP
+8. Read stale oracle → front-run the update tx → extract delta between stale and fresh price
+9. Controlled hook returns fake sqrtPriceX96 → pool type trusts it → attacker swaps at rigged price
+10. Bypass slippage/deadline params → execute swap at worse-than-expected price → capture the difference
 ```
 
 - [ ] **Step 2: Enrich insolvency-engineer.md**
 
 Add after hypothesis 4 (line 36):
 ```markdown
-5. Self-liquidation bonus extraction → liquidate own position for protocol-funded bonus
-6. Dust-position bad debt → create positions too small to liquidate profitably, accumulate bad debt
-7. Accrued-interest omission → fees/interest not accrued before state-changing operation
-8. Cached-balance divergence → force discrepancy between cached and actual token.balanceOf
-9. Liquidation incentive economics → profit from liquidating others beyond intended bonus
-10. Balancer-style dust-loop: prime pool to low liquidity → exploit rounding → reset → repeat 100x
+5. Liquidate own position → collect protocol-funded liquidation bonus → net profit
+6. Create many dust-size positions → each too small to liquidate profitably → protocol absorbs bad debt
+7. Trigger state change before interest accrues → withdraw with stale (lower) debt → leave protocol underpaid
+8. Force token.balanceOf to diverge from cached balance → withdraw based on cached (higher) value
+9. Exploit liquidation incentive math → extract more bonus than the position's risk warrants
+10. Prime pool to low liquidity → run 100+ tiny swaps harvesting truncation → compound into material profit
 11. Flash loan → inflate fee accumulators → collect inflated fees → leave pool undercollateralized
 ```
 
@@ -108,46 +108,46 @@ Add after hypothesis 4 (line 36):
 
 Add after hypothesis 4 (line 35):
 ```markdown
-5. Read-only reentrancy → view function reads stale state during callback, external integrator uses it
-6. Cross-function desync → function A writes state, function B reads before A commits
-7. Stale-remote-state → external call to sibling repo returns cached value, not live
-8. Low-gas TSTORE reentrancy → 2300 gas callback from ETH transfer observes stale transient slot
+5. Trigger callback mid-state-update → external integrator reads view function with stale values → arbitrage the difference
+6. Function A writes partial state → call function B before A commits → extract from the inconsistency
+7. External call to sibling repo returns cached value → act on stale data → profit from the gap
+8. ETH transfer triggers 2300 gas callback → observe stale transient slot → extract from outdated state
 ```
 
 - [ ] **Step 4: Enrich precision-sniper.md**
 
 Add after hypothesis 4 (line 35):
 ```markdown
-5. Unsafe casts (uint256→uint128, int256→uint256) → truncation at boundary values
-6. Division before multiplication → truncation compounds across multi-step fee/price math
-7. Dirty high bits in assembly (calldataload without masking) → unexpected large values
-8. Calldata malleability → extra bytes appended to ABI-encoded calls change behavior
-9. Returndata-length assumptions → external call returns fewer bytes than expected, rest is garbage
-10. Assembly memory hazards → free memory pointer corruption, uninitialized memory reads
-11. Rounding composition: force low-liquidity → prime/exploit/reset loop → harvest truncation across 100+ iterations
+5. Feed uint256 that truncates on cast to uint128 → downstream math uses truncated value → get more than paid for
+6. Division before multiplication truncates intermediate → pay less fee or get more tokens than intended
+7. Assembly calldataload without masking → dirty high bits treated as valid → overflow downstream computation
+8. Append extra bytes to ABI-encoded call → parser reads garbage as valid params → control unexpected values
+9. Call contract that returns fewer bytes → caller reads past returndata into garbage → use corrupted value to extract
+10. Corrupt free memory pointer via assembly → subsequent Solidity writes to attacker-controlled location → extract
+11. Force low-liquidity → prime/exploit/reset loop 100+ times → harvest 1 wei truncation per iteration → compound into profit
 ```
 
 - [ ] **Step 5: Enrich auth-forger.md**
 
 Add after hypothesis 4 (line 35):
 ```markdown
-5. ChainId/nonce not bound in signature → cross-chain or cross-nonce replay
-6. ERC-1271 smart contract signer returns true for any hash → bypass signature validation
-7. Flash-loan callback lacks caller validation → anyone calls the callback with forged params
-8. tx.origin used for authentication → phishing via malicious contract
-9. Endpoint/peer validation missing in cross-module calls → forged caller context
-10. Permit2-style cross-account replay → reuse signature with different `from` address
+5. Signature lacks chainId/nonce binding → replay on another chain or with different nonce → double-spend
+6. Deploy ERC-1271 contract that returns true for any hash → bypass all signature checks → forge any permit
+7. Call flash-loan callback directly (not via flash loan) → get credited without providing capital
+8. Phish user via contract that uses tx.origin → relay their identity to drain funds
+9. Forge cross-module caller context → function trusts msg.sender from wrong module → bypass access control
+10. Reuse permit signature with different `from` address → drain another user's approved tokens
 ```
 
 - [ ] **Step 6: Enrich extension-hijacker.md**
 
 Add after hypothesis 4 (line 36):
 ```markdown
-5. UUPS/beacon proxy upgrade → take over implementation contract before initializer runs
-6. Selector collision across diamond facets → function call routes to wrong facet
-7. CREATE2 address squatting → deploy, destroy, redeploy with different code at same address
-8. Diamond storage boundary → malicious facet overwrites core storage slots
-9. Admin-plane hijack → exploit facet management to add malicious facet without governance
+5. Take over UUPS/beacon implementation before initializer runs → become owner → upgrade to drain
+6. Deploy facet with selector that collides with existing → calls route to attacker's code → steal funds
+7. CREATE2 → destroy → redeploy different code at same trusted address → execute attacker logic
+8. Malicious facet writes to storage slot used by another facet → corrupt core accounting → drain
+9. Exploit facet management to add malicious facet without governance → instant code injection
 ```
 
 - [ ] **Step 7: Verify all templates parse**
@@ -203,7 +203,7 @@ In `agent-boilerplate.md`, add immediately after the new exclusion items from St
 In `agent-boilerplate.md`, modify gate 3 in the submission threshold (line 310):
 
 Old: `3. **Protocol impact**: Can an attacker brick or DoS the protocol for other users? (not just waste their own gas)`
-New: `3. **Protocol impact**: Can an attacker brick or DoS the protocol for other users? (not just waste their own gas). Protocol-wide lockups, permanent fund freezing, or griefing that prevents all users from operating are valid even without attacker profit.`
+New: `3. **Protocol impact**: Can an attacker brick or DoS the protocol for other users? (not just waste their own gas). Permanent fund freezing, all-user lockout, or protocol bricking counts — the attacker's gain is extortion leverage or competitor sabotage.`
 
 - [ ] **Step 5: Commit**
 
