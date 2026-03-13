@@ -1,7 +1,7 @@
 """NOOP pre-filter for findings against known FPs (scaffold §7d).
 
 Catches hallucinated "new" findings that match known FPs with different wording.
-Applied between waves: after artifact collection, before routing to PoC/red-team.
+Applied between waves: after artifact collection, before synthesis.
 
 Reads JSON sidecars when available, falls back to markdown parsing.
 """

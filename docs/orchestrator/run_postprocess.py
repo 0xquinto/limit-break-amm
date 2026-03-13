@@ -92,6 +92,6 @@ def run_postprocess(wave_number: int) -> None:
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description="Post-process existing wave artifacts")
-    parser.add_argument("wave", type=int, help="Wave number (1-8)")
+    parser.add_argument("wave", type=int, help="Wave number (1-2)")
     args = parser.parse_args()
     run_postprocess(args.wave)

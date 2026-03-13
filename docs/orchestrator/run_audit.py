@@ -37,15 +37,11 @@ def apply_orchestrator_lessons(wave) -> None:
     lessons = get_orchestrator_lessons()
     for agent in wave.agents:
         for lesson in lessons:
-            # L-002: Calibrated max_turns per role
+            # L-002: Calibrated max_turns per role (TBD — calibrate from first black hat runs)
             if lesson.id == "L-002" and lesson.confidence >= 80:
-                calibrated = {
-                    "auditor": 30, "fuzz-writer": 35, "poc-writer": 15,
-                    "economic": 22, "red-team": 22, "recon": 15,
-                    "cross-contract-tracer": 20,
-                    # Exploit-first roles
-                    "invariant-generator": 35, "invariant-breaker": 35,
-                    "exploit-verifier": 25,
+                calibrated: dict[str, int] = {
+                    "black-hat": 30,
+                    "exploit-verifier": 30,
                 }
                 if agent.role in calibrated:
                     agent.max_turns = calibrated[agent.role]
@@ -85,7 +81,7 @@ def run_regression_check(wave_number: int) -> None:
     if missing:
         for m in missing:
             print(f"    MISSING: {m['id']} — {m['title']}")
-        if wave_number >= 3:
+        if wave_number >= 2:
             print(f"  WARNING: {len(missing)} regression case(s) still missing by wave {wave_number}")
 
 
@@ -93,7 +89,7 @@ async def run_single_wave(wave_number: int, force: bool = False) -> None:
     """Run a single wave (useful for incremental execution).
 
     Args:
-        wave_number: Which wave to run (1-8).
+        wave_number: Which wave to run (1-2).
         force: If True, overwrite existing synthesis without archiving.
     """
     wave = WAVES[wave_number - 1]
@@ -194,7 +190,7 @@ def main():
     """CLI entry point."""
     import argparse
     parser = argparse.ArgumentParser(description="Full-system audit orchestrator")
-    parser.add_argument("--wave", type=int, help="Run a specific wave (1-8)")
+    parser.add_argument("--wave", type=int, help="Run a specific wave (1-2)")
     parser.add_argument("--dry-run", action="store_true", help="Render prompts without spawning")
     parser.add_argument("--fresh", action="store_true",
                         help="Archive ALL existing artifacts and start a clean run")
