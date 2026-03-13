@@ -34,8 +34,12 @@ When spawned with `isolation: worktree`, your worktree will be at `.claude/workt
 | Aderyn | `/opt/homebrew/bin/aderyn` (v0.6.8) | Rust-based Solidity static analyzer (Cyfrin). Complements Slither — different detector set. Run: `aderyn .` |
 | Quimera | `~/.local/bin/quimera` (v0.1) | LLM-driven exploit PoC generation using Foundry. For confirmed vulns: `quimera <contract> --model <model> --iterations 5` |
 | Slither MCP | via `ToolSearch "+slither"` | Static analysis, call graphs, storage layout, detectors |
-| Certora | `.venv/bin/certoraRun` | Formal verification — proves invariants for ALL states. Key loaded from `.env` at project root (`source .env` or use `dotenv`). Use `--solc /opt/homebrew/bin/solc --disable_local_typechecking`. Spec file must be inside the project dir. |
-| Gambit | `~/.local/bin/gambit` | Mutation testing — finds gaps in test coverage. Use `--solc ~/.foundry/bin/forge` or set `solc` in config to pick 0.8.24. |
+| Certora | `.venv/bin/certoraRun` | Formal verification — proves invariants for ALL states. Key loaded from `.env` at project root (`source .env` or use `dotenv`). Use `--solc /opt/homebrew/bin/solc --disable_local_typechecking`. Spec file must be inside the project dir. **Low ROI for exploit hunting** — high spec-writing cost. Use only when proving specific invariant absence after a lead is identified. |
+| Gambit | `~/.local/bin/gambit` | Mutation testing — finds gaps in test coverage. Use `--solc ~/.foundry/bin/forge` or set `solc` in config to pick 0.8.24. **Not used in black hat model** — mutation testing is for test quality, not exploit construction. |
+| Echidna | `/opt/homebrew/bin/echidna` | Coverage-guided stateful property fuzzer (Trail of Bits). Complements Medusa. See tool-guide.md for config. |
+| Anvil | `~/.foundry/bin/anvil` | Local fork node — fork mainnet/testnet at specific blocks for exploit reproduction. |
+| Cast | `~/.foundry/bin/cast` | CLI transaction tool — trace txs, decode calldata, read storage slots. |
+| Heimdall-rs | `~/.local/bin/heimdall` | Bytecode decompiler — recover logic from unverified contracts. |
 | Python + Jupyter | `.venv/bin/python3` / `.venv/bin/jupyter` | Economic modeling (requires `source .venv/bin/activate`) |
 
 ### Trail of Bits Claude Code Skills
@@ -72,19 +76,18 @@ These are AI skills invoked via the **Skill tool** (not CLI). Use them at the ri
 
 You MUST run these tools at the specified phases. Skipping a mandatory checkpoint is a **SAFETY_EVENT** — log it with the failure reason. If a tool errors or crashes, log the error and move on; tool failure after one honest attempt is acceptable, but never skipping the attempt.
 
-### Checkpoint 0: Context Building (turn 1, BEFORE any code reading)
+### Checkpoint 0: Phase 0 Artifacts (turn 1, BEFORE any code reading)
 
-Run BOTH of these skills before reading source code:
+Phase 0 runs automated tools BEFORE agents spawn. Your artifacts are pre-generated at `docs/targets/full-system/artifacts/phase0/`.
 
-1. `Skill("audit-context-building:audit-context-building")` — builds deep architectural context, reduces hallucinations
-2. `Skill("entry-point-analyzer:entry-point-analyzer")` — maps all state-changing entry points and access control patterns
+1. **Read your Phase 0 dossier** — referenced in `{{PHASE0_ARTIFACTS}}` in your template
+2. **Read attack surface index** — `docs/targets/full-system/artifacts/phase0/attack_surface_index.json`
 
-These skills guide WHERE to look. Running them after you've already formed opinions defeats the purpose.
+These replace the old `audit-context-building` and `entry-point-analyzer` skills, which are now optional for agents who want deeper context on a specific module.
 
 Log:
 ```json
-{"event":"TOOL_CHECKPOINT","ts":"<ISO>","agent_id":"<name>","checkpoint":0,"tool":"audit-context-building","status":"complete"}
-{"event":"TOOL_CHECKPOINT","ts":"<ISO>","agent_id":"<name>","checkpoint":0,"tool":"entry-point-analyzer","entry_points":<N>}
+{"event":"TOOL_CHECKPOINT","ts":"<ISO>","agent_id":"<name>","checkpoint":0,"tool":"phase0_artifacts","status":"read"}
 ```
 
 ### Checkpoint 1: Static Analysis Baseline (turns 2-3)
@@ -143,7 +146,22 @@ cd <repo> && /opt/homebrew/bin/medusa fuzz --target-contracts <Contract> --test-
 ```
 Use Quimera to generate alternative PoC approaches for any confirmed finding. It may find exploit paths you missed.
 
-Log: `{"event":"TOOL_CHECKPOINT","ts":"<ISO>","agent_id":"<name>","checkpoint":3,"tool":"halmos|medusa|quimera","target":"<finding_id>","result":"confirmed|unconfirmed"}`
+**Stateful sequence findings → Echidna** (coverage-guided fuzzing):
+```bash
+cd <repo> && echidna . --contract <FuzzContract> --config echidna.yaml
+```
+
+**Unverified external dependency → Heimdall-rs** (decompile):
+```bash
+heimdall decompile <address> --rpc-url $ETH_RPC_URL
+```
+
+**Historical tx reproduction → Cast** (trace):
+```bash
+~/.foundry/bin/cast run <tx_hash> --rpc-url $ETH_RPC_URL
+```
+
+Log: `{"event":"TOOL_CHECKPOINT","ts":"<ISO>","agent_id":"<name>","checkpoint":3,"tool":"halmos|medusa|quimera|echidna|heimdall|cast","target":"<finding_id>","result":"confirmed|unconfirmed"}`
 
 ### Checkpoint 4: Variant + Call Graph Search (after confirming any finding)
 
@@ -156,17 +174,18 @@ Log: `{"event":"TOOL_CHECKPOINT","ts":"<ISO>","agent_id":"<name>","checkpoint":3
 Your JSON sidecar `metadata` MUST include:
 ```json
 "tools_run": {
-  "audit_context_building": {"ran": true},
-  "entry_point_analyzer": {"ran": true, "entry_points": 42},
+  "phase0_artifacts": {"read": true},
   "slither": {"ran": true, "repos": ["lbamm-core"], "high": 2, "medium": 5},
   "aderyn": {"ran": true, "repos": ["lbamm-core"], "findings": 8},
-  "token_integration_analyzer": {"ran": false, "reason": "no handlers in scope"},
-  "sharp_edges": {"ran": false, "reason": "no config interfaces in scope"},
+  "forge_test": {"ran": true, "tests_written": 3, "tests_passed": 2},
+  "chisel": {"ran": true, "expressions_checked": 5},
   "halmos": {"ran": false, "reason": "no math findings to verify"},
-  "medusa": {"ran": true, "target": "INV-S01", "result": "confirmed"},
+  "medusa": {"ran": true, "target": "FuzzContract", "sequences": 50000},
+  "echidna": {"ran": false, "reason": "used Medusa instead"},
+  "cast_run": {"ran": false, "reason": "no historical tx to trace"},
+  "heimdall": {"ran": false, "reason": "no unverified deps"},
   "quimera": {"ran": false, "reason": "no confirmed findings"},
-  "variant_analysis": {"ran": false, "reason": "no confirmed findings"},
-  "differential_review": {"ran": false, "reason": "not exploit-verifier role"}
+  "variant_analysis": {"ran": false, "reason": "no confirmed findings"}
 }
 ```
 
@@ -174,18 +193,19 @@ Your JSON sidecar `metadata` MUST include:
 
 ## Autonomy Rules
 
-Once you start analysis, run to completion without asking the lead for permission:
+You are an independent attacker. Run to completion without asking for permission.
 
 - Do NOT message the lead with "should I investigate X?" — just investigate.
-- Do NOT ask "should I continue?" or "is this worth pursuing?" — use your judgment.
-- Do NOT wait for lead acknowledgment between findings — keep working.
+- Do NOT ask "should I continue?" — use your EV ranking to decide.
+- Do NOT wait for other agents — you have your own attack strategy.
+- Do NOT read other agents' claims during the first 25-30% of your turns (isolation preserves search diversity).
 
 **Only message the lead to:**
-1. Report a confirmed finding (using the deliverable template)
-2. Report completion (with your agent-metrics file summary)
+1. Report a **confirmed finding** with a compiling Forge test
+2. Report completion (with your sidecar JSON)
 3. You are genuinely blocked (tool failure after 3 retries, compilation error you can't fix)
 
-If you exhaust your primary attack vectors, move to secondary vectors. If those are exhausted, attempt composability checks across your confirmed findings, then report completion.
+After ~30% of your turns: read `claims.jsonl` from other agents. If another agent's thesis intersects your attack strategy, investigate from your angle — corroboration from independent approaches is high signal.
 
 ## Safety & Observability
 
@@ -243,7 +263,16 @@ Do NOT:
 
 ## Deliverable Format
 
-For each finding, SendMessage to lead using this template (copy and fill in):
+### Primary: Claims Bus (disk-based)
+
+Write your top theft theses to `claims.jsonl` in your output directory (one JSON line per claim):
+```json
+{"agent": "{{AGENT_NAME}}", "thesis": "description", "victim": "who", "asset": "what", "estimated_ev": 0, "status": "hypothesis|tested|confirmed|ruled_out", "test_file": "path", "ts": "ISO8601"}
+```
+
+### Secondary: SendMessage to lead (confirmed findings only)
+
+For findings that pass the FP gate AND have a compiling Forge test, SendMessage to lead using this template:
 
 ```
 **Finding ID:** {YOUR-MODULE}-{NNN} (e.g., CLOB-001, HOOK-002, PERMIT-001, REG-001, XB-001)
@@ -315,30 +344,20 @@ If ALL answers are NO → do NOT flag for submission. Log as **informational** i
 
 ## Exploit-First Methodology (MANDATORY)
 
-Your goal is to find **exploitable vulnerabilities with economic impact**, not to catalog code quality issues.
+Your primary methodology is defined in your **archetype template preamble** (`black-hat-preamble.md`). Key principles:
 
-### The Invariant-Break-Verify Loop
+1. **Start from profit** — your archetype has a Profit Question. Answer it.
+2. **Name victim and asset** — before reading code, say who loses what.
+3. **Sketch attack sequence** — capital in → distortion → extraction → repayment → profit out.
+4. **Write Forge tests** — no prose-only findings. Every hypothesis gets a test.
+5. **Calculate extractable value** — `profit = extracted - gas - flash_loan_fee`.
+6. **Rank by EV** — `extractable_value / attacker_capital / dependency_count`.
 
-1. **Read the invariant catalog**: `docs/framework/amm-invariant-catalog.md` — this defines what "correct" means
-2. **Pick an invariant**: Start with CRITICAL, then HIGH
-3. **Try to break it**: Write a Foundry test that violates the invariant. Use creative inputs, edge cases, multi-step sequences.
-4. **If it breaks → exploit it**: Calculate economic impact. Write a PoC that demonstrates fund loss or protocol damage.
-5. **If it holds → move on**: Log as ruled-out with the test as evidence. Don't write prose about why it holds — the passing test IS the proof.
-6. **Repeat**: Next invariant.
+### Invariant Catalog (Reference)
 
-### What Counts as a Finding
-
-- **MUST have**: A compiling Foundry PoC that demonstrates the invariant violation
-- **MUST have**: Economic impact calculation (how much can attacker extract?)
-- **MUST have**: Attack path from external caller to exploit (no admin-only paths)
-- **MUST NOT**: Report code quality, gas optimization, or "potential" issues without PoC
-
-### Differential Testing
-
-For math-heavy code, compare against Uniswap V3 reference implementations:
-- Import `@uniswap/v3-core` math libraries as reference
-- Fuzz identical inputs through both implementations
-- Any divergence is a potential bug
+The invariant catalog at `docs/framework/amm-invariant-catalog.md` defines what "correct" means.
+Use it as a **reference for what to break**, not as a sequential checklist.
+Your archetype's Target Map already points you to the highest-value invariants for your attack strategy.
 
 ### Value Lifecycle Analysis Lenses (MANDATORY)
 

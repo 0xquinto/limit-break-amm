@@ -211,6 +211,145 @@ cd <repo> && /opt/homebrew/bin/medusa fuzz
 - Stateful corpus building across many transactions
 - When Foundry fuzz with `runs = 10000` still doesn't find a sequence bug
 
+## Echidna (Stateful Property Fuzzer)
+
+Path: `/opt/homebrew/bin/echidna` (or `~/.local/bin/echidna`)
+
+Echidna is Trail of Bits' mature stateful property fuzzer. It complements Medusa — Echidna is coverage-guided and integrates with Slither for seed generation.
+
+### When to Use Over Medusa
+
+- **Coverage-guided corpus**: Echidna tracks code coverage and biases inputs toward unexplored paths. Better for deep state spaces.
+- **Slither integration**: `echidna --seed-from-slither` uses Slither's data dependency analysis to generate informed seeds.
+- **Multi-contract campaigns**: Echidna handles complex deployment setups well.
+
+### Run Command
+
+```bash
+cd <repo> && echidna . --contract <TestContract> --config echidna.yaml
+```
+
+### Config (echidna.yaml)
+
+```yaml
+testLimit: 50000
+seqLen: 100
+deployer: "0x1234..."
+sender: ["0xaaaa...", "0xbbbb..."]
+```
+
+### Gotchas
+
+- **Requires `echidna.yaml`** — won't run without config.
+- **Test functions must start with `echidna_`** — NOT `test_` (that's Foundry).
+- **Property format**: `function echidna_invariant() public returns (bool)` — returns bool, not assert.
+- **Use with fuzz-utils**: Convert Echidna failures into Foundry repro tests: `fuzz-utils echidna <corpus_dir> --target <Contract>`.
+
+## Anvil (Local Fork Node)
+
+Path: `~/.foundry/bin/anvil`
+
+Anvil is Foundry's local Ethereum node. For exploit reproduction, fork exact mainnet/testnet state.
+
+### Run Command
+
+```bash
+# Fork mainnet at specific block
+~/.foundry/bin/anvil --fork-url $ETH_RPC_URL --fork-block-number 19000000
+
+# Fork with state overrides
+~/.foundry/bin/anvil --fork-url $ETH_RPC_URL --balance 10000
+```
+
+### Best For
+
+- Reproducing exploits against exact historical state
+- Testing multi-tx attack sequences in realistic conditions
+- State override experiments (balance, storage, code injection)
+
+## Cast (CLI Transaction Tool)
+
+Path: `~/.foundry/bin/cast`
+
+Already installed with Foundry. Key exploit-relevant commands:
+
+```bash
+# Trace a historical transaction
+cast run <tx_hash> --rpc-url $ETH_RPC_URL
+
+# Decode calldata
+cast 4byte-decode <calldata>
+
+# Read storage slot
+cast storage <address> <slot> --rpc-url $ETH_RPC_URL
+
+# Call function without sending tx
+cast call <address> "function(args)" --rpc-url $ETH_RPC_URL
+```
+
+### Best For
+
+- Tracing historical exploit transactions step-by-step
+- Reading exact storage state at specific blocks
+- Decoding calldata from known exploits for pattern matching
+
+## Heimdall-rs (Bytecode Decompiler)
+
+Path: `~/.local/bin/heimdall` or `~/.cargo/bin/heimdall`
+
+Decompiles unverified contract bytecode. Essential when target contracts interact with unverified dependencies, proxies, or external handlers.
+
+### Run Command
+
+```bash
+# Decompile deployed contract
+heimdall decompile <address> --rpc-url $ETH_RPC_URL
+
+# Decompile local bytecode
+heimdall decompile --bytecode <hex>
+
+# Get function signatures from bytecode
+heimdall decode <address> --rpc-url $ETH_RPC_URL
+```
+
+### When to Use
+
+- **Unverified external dependencies**: When a target contract calls an unverified address
+- **Proxy implementations**: Recover implementation logic behind proxies
+- **Storage layout recovery**: Understand storage slot usage in unverified contracts
+- **CFG analysis**: Visualize control flow in complex bytecode
+
+### Gotchas
+
+- Decompiled output is pseudo-Solidity — variable names are generic (e.g., `var0`, `stor1`)
+- Works best with simple contracts; complex contracts may produce partial output
+- Requires RPC access for on-chain decompilation
+
+## fuzz-utils (Fuzzer <-> Foundry Bridge)
+
+Path: `pip install fuzz-utils` (Python package)
+
+Converts Echidna/Medusa fuzzing corpus failures into Foundry unit tests for reproducibility. Also generates fuzzing harnesses from existing contracts.
+
+### Key Commands
+
+```bash
+# Convert Echidna corpus to Foundry tests
+fuzz-utils echidna <corpus_dir> --target <Contract> --output test/repro/
+
+# Convert Medusa corpus to Foundry tests
+fuzz-utils medusa <corpus_dir> --target <Contract> --output test/repro/
+
+# Generate fuzzing harness from contract
+fuzz-utils generate --target <Contract> --output test/fuzz/
+```
+
+### When to Use
+
+- **After Echidna/Medusa finds a failing sequence**: Convert to a Foundry test for stable reproduction
+- **Harness generation**: Auto-generate actor/handler fuzz harnesses instead of writing from scratch
+- **Cross-tool workflow**: Echidna finds the sequence → fuzz-utils converts → Forge reproduces and debugs with `-vvvv`
+
 ## Trail of Bits Claude Code Skills
 
 These are AI-powered analysis skills installed as Claude Code plugins. They run inside the conversation (not as CLI tools). See the boilerplate "Trail of Bits Claude Code Skills" table for the full list.
