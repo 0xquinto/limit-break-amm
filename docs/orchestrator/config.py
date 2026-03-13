@@ -89,7 +89,7 @@ class AgentConfig:
     scope: list[str]  # repo names from REPOS
     profile: str = ""  # key into model_profiles.PROFILES (empty = use model field)
     model: str = ""  # DEPRECATED — use profile instead. Kept for backwards compat.
-    max_turns: int = 15
+    max_turns: int = 0  # 0 = uncapped (calibrate from first run metrics)
     permission_mode: str = "bypassPermissions"
     extra_context: dict = field(default_factory=dict)
 
@@ -133,7 +133,7 @@ WAVE_BH1 = WaveConfig(
             template="price-distorter",
             scope=list(REPOS.keys()),
             profile="max_reasoning",
-            max_turns=30,
+
 
         ),
         AgentConfig(
@@ -142,7 +142,7 @@ WAVE_BH1 = WaveConfig(
             template="insolvency-engineer",
             scope=list(REPOS.keys()),
             profile="max_reasoning",
-            max_turns=30,
+
 
         ),
         AgentConfig(
@@ -151,7 +151,7 @@ WAVE_BH1 = WaveConfig(
             template="state-desync",
             scope=list(REPOS.keys()),
             profile="max_reasoning",
-            max_turns=30,
+
 
         ),
         AgentConfig(
@@ -160,7 +160,7 @@ WAVE_BH1 = WaveConfig(
             template="precision-sniper",
             scope=list(REPOS.keys()),
             profile="max_reasoning",
-            max_turns=30,
+
 
         ),
         AgentConfig(
@@ -169,7 +169,7 @@ WAVE_BH1 = WaveConfig(
             template="auth-forger",
             scope=list(REPOS.keys()),
             profile="max_reasoning",
-            max_turns=30,
+
 
         ),
         AgentConfig(
@@ -178,7 +178,7 @@ WAVE_BH1 = WaveConfig(
             template="extension-hijacker",
             scope=list(REPOS.keys()),
             profile="max_reasoning",
-            max_turns=30,
+
 
         ),
     ],

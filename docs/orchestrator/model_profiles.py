@@ -26,8 +26,8 @@ PROFILES: dict[str, ModelProfile] = {
     "max_reasoning": ModelProfile(
         model="claude-opus-4-6",
         effort="max",
-        extended_thinking=True,
-        thinking_budget_tokens=10000,
+        extended_thinking=False,
+        thinking_budget_tokens=0,
         max_tokens=16384,
         temperature=1.0,
         description="Maximum reasoning depth — black hat agents, exploit construction",
@@ -35,8 +35,8 @@ PROFILES: dict[str, ModelProfile] = {
     "deep_reasoning": ModelProfile(
         model="claude-opus-4-6",
         effort="high",
-        extended_thinking=True,
-        thinking_budget_tokens=8000,
+        extended_thinking=False,
+        thinking_budget_tokens=0,
         max_tokens=16384,
         temperature=1.0,
         description="Deep reasoning — exploit development, complex analysis",
