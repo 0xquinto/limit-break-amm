@@ -5,10 +5,9 @@
 
 ## Cumulative Numbers
 
-| Target | Findings | Vectors Ruled Out | Fuzz Tests | Economic Models | Runs |
-|--------|----------|-------------------|------------|-----------------|------|
-| hooks-and-handlers | 5 Low (3 submitted v1 + 1 Low/Info v1 + 1 v2) | 85+ | 67 | 5 | v1, v2 |
-| full-system (all 6 repos) | 0 Medium+ confirmed | 85 ruled-out, 24 invariants held | 22 invariant tests | 0 | waves 1-7 |
+| Target | Findings | Vectors Ruled Out | Invariant Tests | Runs |
+|--------|----------|-------------------|-----------------|------|
+| full-system (all 6 repos) | 0 Medium+ confirmed | 85+ ruled-out, 20 invariants held | 22 | defensive waves 1-7, black hat pending |
 
 ## Top False-Positive Patterns (don't re-investigate)
 1. **Transient storage slot overwrite** — by-design (AMM calls beforeSwap per-token, second overwrites first intentionally)
@@ -18,14 +17,12 @@
 5. **Reentrancy with nonReentrant** — all CLOB entry points guarded
 
 ## Contest Submission Threshold (CRITICAL)
-8/8 submissions marked Invalid in Guardian Defender. Only submit findings where an attacker can **profit**, cause **material victim harm**, or **brick the protocol**. Do NOT submit: dust-level precision, gas waste to caller, defensive hardening, cached view returns, known AMM design properties, unsigned optional permit fields. See `agent-boilerplate.md` "Contest Submission Threshold" section.
+8/8 submissions marked Invalid in Guardian Defender. Only submit findings where an attacker can **profit**, cause **material victim harm**, or **brick the protocol**. Do NOT submit: dust-level precision, gas waste to caller, defensive hardening, cached view returns, known AMM design properties, unsigned optional permit fields. See L-009 in `lessons-learned.md`.
 
-## Methodology: Invariant-First
-All agents MUST read `docs/framework/amm-invariant-catalog.md` before starting analysis. Work through invariants systematically. Every finding needs a compiling Foundry PoC. No PoC = no finding.
+## Methodology: Exploit-First
+Start from profit: "How do I extract value?" Read your archetype's Profit Question. Build the attack sequence first, then verify each step compiles. Every finding needs a compiling Foundry PoC. No PoC = no finding. Read `docs/framework/amm-invariant-catalog.md` to understand what invariants to target.
 
-## Top Lessons
-- `mode: plan` causes 5x resubmission loops — spawn without it for <500 LOC modules
+## Key Lessons
 - Agent self-report metrics more reliable than platform metrics
-- Phase 4 (second pass) adds diminishing returns when Phase 1-2 coverage >85%
-- Only submit Medium+ findings that pass the Submission Threshold Test (see L-009 in lessons-learned.md)
-- Full-system (7 waves, 17 agents): 0 Medium+ findings — codebase well-hardened at invariant level. 22 Foundry invariant tests confirm all 20 catalog invariants hold.
+- Only submit Medium+ findings that pass the Submission Threshold Test (L-009)
+- Codebase is well-hardened at invariant level (20/20 hold) — look for composition and cross-boundary vectors, not single-function bugs
