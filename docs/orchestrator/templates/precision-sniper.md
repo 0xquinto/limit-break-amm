@@ -33,6 +33,13 @@ Then read `docs/CODEBASE_MAP.md` for architecture context.
 2. Fixed height split rounds to zero on one side → free tokens
 3. 100% fee input accepted but output rejected → asymmetric extraction
 4. swapExtraData != 32 bytes → silent default → unexpected price movement
+5. Feed uint256 that truncates on cast to uint128 → downstream math uses truncated value → get more than paid for
+6. Division before multiplication truncates intermediate → pay less fee or get more tokens than intended
+7. Assembly calldataload without masking → dirty high bits treated as valid → overflow downstream computation
+8. Append extra bytes to ABI-encoded call → parser reads garbage as valid params → control unexpected values
+9. Call contract that returns fewer bytes → caller reads past returndata into garbage → use corrupted value to extract
+10. Corrupt free memory pointer via assembly → subsequent Solidity writes to attacker-controlled location → extract
+11. Force low-liquidity → prime/exploit/reset loop 100+ times → harvest 1 wei truncation per iteration → compound into profit
 
 {{PREAMBLE}}
 

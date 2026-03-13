@@ -33,6 +33,10 @@ Then read `docs/CODEBASE_MAP.md` for architecture context.
 2. Multi-swap within hook callback → transient slot overwrite mid-swap
 3. Native ETH refund during hook → reentrancy to observe intermediate state
 4. CLOB settlement callback reads AMM state before swap finalizes
+5. Trigger callback mid-state-update → external integrator reads view function with stale values → arbitrage the difference
+6. Function A writes partial state → call function B before A commits → extract from the inconsistency
+7. External call to sibling repo returns cached value → act on stale data → profit from the gap
+8. ETH transfer triggers 2300 gas callback → observe stale transient slot → extract from outdated state
 
 {{PREAMBLE}}
 
