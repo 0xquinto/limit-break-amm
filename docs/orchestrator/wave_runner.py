@@ -211,13 +211,9 @@ async def run_wave(wave: WaveConfig, prompts: dict[str, str]) -> list[AgentResul
     team_lead_prompt = _build_team_lead_prompt(wave, prompt_paths)
 
     # 4. Resolve dominant profile from wave agents (all BH1 agents share same profile)
-    dominant_profile = None
-    dominant_profile_name = ""
-    for ag in wave.agents:
-        if ag.profile:
-            dominant_profile_name = ag.profile
-            dominant_profile = resolve_profile(ag.profile)
-            break
+    profile_names = [ag.profile for ag in wave.agents if ag.profile]
+    dominant_profile_name = profile_names[0] if profile_names else ""
+    dominant_profile = resolve_profile(dominant_profile_name) if dominant_profile_name else None
 
     # 5. Open ClaudeSDKClient session with profile-derived settings
     #    System prompt + thinking + temperature are inherited by spawned agents.
@@ -229,7 +225,7 @@ async def run_wave(wave: WaveConfig, prompts: dict[str, str]) -> list[AgentResul
         "permission_mode": "bypassPermissions",
         "system_prompt": AUDIT_SYSTEM_PROMPT,
     }
-    if dominant_profile:
+    if dominant_profile is not None:
         sdk_kwargs["temperature"] = dominant_profile.temperature
         sdk_kwargs["max_tokens"] = dominant_profile.max_tokens
         if dominant_profile.extended_thinking and dominant_profile.thinking_budget_tokens > 0:
