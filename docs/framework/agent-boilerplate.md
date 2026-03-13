@@ -295,7 +295,7 @@ Every finding MUST pass this ordered gate pipeline. If ANY gate fails, drop the 
 | Attack path is partial (general idea sound, can't write exact trace) | -20 |
 | Impact is self-contained (only affects attacker's own funds) | -15 |
 
-Include `[score]` in the finding deliverable. Findings below `[60]` are informational-only.
+Include `[score]` in the finding deliverable. Findings below `[75]` are informational-only (listed without fix recommendations, per Pashov standard).
 
 **Three orthogonal dimensions:** Severity (how bad), Exploitability Tier (how exploitable now), and Confidence (how sure it's real) are all independent. A finding can be High severity, Tier B exploitability, [75] confidence.
 
@@ -307,7 +307,7 @@ Reference: `docs/references/pashov-skills/judging.md` for full FP gate rationale
 
 1. **Attacker profit**: Can an attacker profit from this? (steal funds, extract value, MEV)
 2. **Victim harm**: Can an attacker cause material loss to a victim who did nothing wrong? (not self-inflicted, not "misconfigured integrator")
-3. **Protocol impact**: Can an attacker brick or DoS the protocol for other users? (not just waste their own gas)
+3. **Protocol impact**: Can an attacker brick or DoS the protocol for other users? (not just waste their own gas). Permanent fund freezing, all-user lockout, or protocol bricking counts — the attacker's gain is extortion leverage or competitor sabotage.
 4. **Novelty**: Is this a novel issue, not a known design property of the AMM architecture? (e.g., tick traversal gas cost is Uniswap V3 by-design)
 
 If ALL answers are NO → do NOT flag for submission. Log as **informational** in your ruled-out list.
@@ -320,6 +320,12 @@ If ALL answers are NO → do NOT flag for submission. Log as **informational** i
 - Fail-open on malformed input (integrator error, not protocol vulnerability)
 - Gas griefing that mirrors known AMM designs (Uni V3 tick traversal)
 - Unsigned optional fields in permits when limitAmount already caps exposure (intentional design)
+- Missing event emissions (informational, not exploitable)
+- Centralization risks without concrete exploit path (admin-by-design)
+- Issues requiring implausible preconditions (e.g., compromised multisig)
+- Admin powers that are intentional design (owner-controlled settings)
+
+**Token compatibility note:** If the protocol accepts arbitrary ERC20 tokens, common token quirks (fee-on-transfer, rebasing, blacklistable, zero-transfer revert, non-standard returns) are NOT implausible preconditions. Test them as valid attack surfaces.
 
 ## Exploit-First Methodology (MANDATORY)
 
