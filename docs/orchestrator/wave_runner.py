@@ -46,6 +46,7 @@ from claude_agent_sdk import (
 from .config import (
     WaveConfig, AgentConfig, PROJECT_ROOT, ARTIFACTS_DIR, RESULTS_DIR, REPOS,
 )
+from .model_profiles import resolve_profile, AUDIT_SYSTEM_PROMPT
 
 # Must unset before SDK spawns CLI subprocess — nested session check
 os.environ.pop("CLAUDECODE", None)
@@ -209,16 +210,41 @@ async def run_wave(wave: WaveConfig, prompts: dict[str, str]) -> list[AgentResul
     # 3. Build team lead prompt
     team_lead_prompt = _build_team_lead_prompt(wave, prompt_paths)
 
-    # 4. Open ClaudeSDKClient session
-    print(f"  Opening ClaudeSDKClient session (sonnet, max_turns=60)...")
+    # 4. Resolve dominant profile from wave agents (all BH1 agents share same profile)
+    dominant_profile = None
+    dominant_profile_name = ""
+    for ag in wave.agents:
+        if ag.profile:
+            dominant_profile_name = ag.profile
+            dominant_profile = resolve_profile(ag.profile)
+            break
+
+    # 5. Open ClaudeSDKClient session with profile-derived settings
+    #    System prompt + thinking + temperature are inherited by spawned agents.
+    #    Team lead is sonnet (orchestration only), but settings propagate to workers.
+    sdk_kwargs: dict = {
+        "cwd": str(PROJECT_ROOT),
+        "model": "sonnet",
+        "max_turns": 60,
+        "permission_mode": "bypassPermissions",
+        "system_prompt": AUDIT_SYSTEM_PROMPT,
+    }
+    if dominant_profile:
+        sdk_kwargs["temperature"] = dominant_profile.temperature
+        sdk_kwargs["max_tokens"] = dominant_profile.max_tokens
+        if dominant_profile.extended_thinking and dominant_profile.thinking_budget_tokens > 0:
+            sdk_kwargs["thinking"] = {
+                "type": "enabled",
+                "budget_tokens": dominant_profile.thinking_budget_tokens,
+            }
+        print(f"  Profile: {dominant_profile_name} | temp={dominant_profile.temperature} "
+              f"| thinking={dominant_profile.thinking_budget_tokens} "
+              f"| max_tokens={dominant_profile.max_tokens}")
+
+    print(f"  Opening ClaudeSDKClient session...")
     start_time = time.monotonic()
 
-    options = ClaudeAgentOptions(
-        cwd=str(PROJECT_ROOT),
-        model="sonnet",
-        max_turns=60,
-        permission_mode="bypassPermissions",
-    )
+    options = ClaudeAgentOptions(**sdk_kwargs)
 
     safety_events: list[dict] = []
     agents_started: set[str] = set()

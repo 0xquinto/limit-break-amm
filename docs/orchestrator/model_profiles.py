@@ -14,7 +14,9 @@ class ModelProfile:
     model: str
     effort: str  # "low" | "medium" | "high" | "max"
     extended_thinking: bool
+    thinking_budget_tokens: int  # 0 = disabled
     max_tokens: int
+    temperature: float  # 0.0-1.0
     description: str
 
 
@@ -25,33 +27,50 @@ PROFILES: dict[str, ModelProfile] = {
         model="claude-opus-4-6",
         effort="max",
         extended_thinking=True,
+        thinking_budget_tokens=10000,
         max_tokens=16384,
+        temperature=1.0,
         description="Maximum reasoning depth — black hat agents, exploit construction",
     ),
     "deep_reasoning": ModelProfile(
         model="claude-opus-4-6",
         effort="high",
         extended_thinking=True,
+        thinking_budget_tokens=8000,
         max_tokens=16384,
+        temperature=1.0,
         description="Deep reasoning — exploit development, complex analysis",
     ),
     "balanced": ModelProfile(
         model="claude-sonnet-4-6",
         effort="high",
         extended_thinking=False,
+        thinking_budget_tokens=0,
         max_tokens=8192,
-        description="Balanced cost/capability — gap repair, secondary analysis",
+        temperature=1.0,
+        description="Balanced — gap repair, secondary analysis",
     ),
     "fast": ModelProfile(
         model="claude-haiku-4-5",
         effort="low",
         extended_thinking=False,
+        thinking_budget_tokens=0,
         max_tokens=4096,
-        description="Fast/cheap — team lead coordination, simple routing",
+        temperature=1.0,
+        description="Fast — team lead coordination, simple routing",
     ),
 }
 
 # --- End update section ---
+
+# System prompt appended to default Claude Code prompt for all audit agents.
+# Concise — detailed instructions come from disk-based prompt files.
+AUDIT_SYSTEM_PROMPT = """\
+You are a security researcher performing an authorized smart contract audit. \
+Your goal is to find exploitable vulnerabilities that extract value. \
+Think like an attacker: start from profit, name the victim, sketch the attack, write a Forge PoC. \
+Do not report defensive hardening suggestions or dust-level issues. \
+Only findings where an attacker can profit, cause material victim harm, or brick the protocol."""
 
 
 def resolve_profile(name: str) -> ModelProfile:
