@@ -33,6 +33,9 @@ TOOL_PROFILES: dict[str, list[str]] = {
     "invariant-generator": ["Read", "Grep", "Glob", "Write:test/", "Bash:forge_build", "Bash:forge_test"],
     "invariant-breaker": ["Read", "Grep", "Glob", "Write:test/", "Bash:forge_build", "Bash:forge_test", "Bash:halmos", "Bash:medusa", "Bash:gambit", "Bash:certoraRun", "Skill:slither"],
     "exploit-verifier": ["Read", "Grep", "Glob", "Write:test/", "Bash:forge_build", "Bash:forge_test"],
+    "black-hat": ["Read", "Grep", "Glob", "Write:test/", "Bash:forge_build",
+                  "Bash:forge_test", "Bash:chisel", "Bash:cast", "Skill:slither",
+                  "Bash:halmos", "Bash:medusa"],
 }
 
 # Static analysis tool compatibility per repo.
@@ -555,5 +558,81 @@ LAYER_3 = WaveConfig(
     ],
 )
 
-WAVES = [WAVE_1, WAVE_2_TEMPLATE, WAVE_3_TEMPLATE, WAVE_4_TEMPLATE, WAVE_5_TEMPLATE,
-         LAYER_1, LAYER_2, LAYER_3]
+WAVES_DEFENSIVE = [WAVE_1, WAVE_2_TEMPLATE, WAVE_3_TEMPLATE, WAVE_4_TEMPLATE,
+                   WAVE_5_TEMPLATE, LAYER_1, LAYER_2, LAYER_3]
+
+WAVE_BH1 = WaveConfig(
+    number=1,
+    name="black-hat-offense",
+    agents=[
+        AgentConfig(
+            name="price-distorter",
+            role="black-hat",
+            template="price-distorter",
+            scope=list(REPOS.keys()),
+            profile="max_reasoning",
+            max_turns=30,
+            max_cost_usd=15.0,
+        ),
+        AgentConfig(
+            name="insolvency-engineer",
+            role="black-hat",
+            template="insolvency-engineer",
+            scope=list(REPOS.keys()),
+            profile="max_reasoning",
+            max_turns=30,
+            max_cost_usd=15.0,
+        ),
+        AgentConfig(
+            name="state-desync",
+            role="black-hat",
+            template="state-desync",
+            scope=list(REPOS.keys()),
+            profile="max_reasoning",
+            max_turns=30,
+            max_cost_usd=15.0,
+        ),
+        AgentConfig(
+            name="precision-sniper",
+            role="black-hat",
+            template="precision-sniper",
+            scope=list(REPOS.keys()),
+            profile="max_reasoning",
+            max_turns=30,
+            max_cost_usd=15.0,
+        ),
+        AgentConfig(
+            name="auth-forger",
+            role="black-hat",
+            template="auth-forger",
+            scope=list(REPOS.keys()),
+            profile="max_reasoning",
+            max_turns=30,
+            max_cost_usd=15.0,
+        ),
+        AgentConfig(
+            name="extension-hijacker",
+            role="black-hat",
+            template="extension-hijacker",
+            scope=list(REPOS.keys()),
+            profile="max_reasoning",
+            max_turns=30,
+            max_cost_usd=15.0,
+        ),
+    ],
+)
+
+WAVE_BH2 = WaveConfig(
+    number=2,
+    name="exploit-development",
+    dynamic=True,
+    agents=[
+        # Placeholder — populated by synthesizer with top leads
+        # Expected: 2-3 agents (role="exploit-verifier", profile="max_reasoning")
+    ],
+)
+
+WAVES_BLACK_HAT = [WAVE_BH1, WAVE_BH2]
+
+# Active wave configuration — switch between models here
+WAVES = WAVES_BLACK_HAT  # Change to WAVES_DEFENSIVE to revert
