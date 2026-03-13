@@ -455,6 +455,22 @@ def generate_synthesis(
     for sc in sidecars:
         all_invariants_formalized.extend(sc.get("invariants_formalized", []))
 
+    # Exploit-path clustering (black hat waves)
+    exploit_clusters = []
+    if wave.name in ("black-hat-offense", "exploit-development"):
+        exploit_clusters = cluster_by_exploit_path(merged_findings)
+
+    # Collect claims bus data (black hat waves)
+    all_claims = []
+    corroborated = {}
+    if wave.name in ("black-hat-offense", "exploit-development"):
+        all_claims = read_claims_bus(wave)
+        claim_theses = {}
+        for c in all_claims:
+            thesis = c.get("thesis", "").lower().strip()
+            claim_theses.setdefault(thesis, []).append(c["_source_agent"])
+        corroborated = {t: agents for t, agents in claim_theses.items() if len(agents) > 1}
+
     # Detect contradictions between findings and ruled-out vectors
     contradictions = detect_contradictions(merged_findings, all_ruled_out)
 
@@ -595,6 +611,12 @@ Data source: {data_source}
         "ruled_out_count": len(all_ruled_out),
         "invariants_formalized": all_invariants_formalized,
         "tool_coverage_warnings": tool_warnings,
+        "exploit_clusters": exploit_clusters,
+        "claims": all_claims,
+        "corroborated_theses": [
+            {"thesis": t, "agents": agents, "count": len(agents)}
+            for t, agents in corroborated.items()
+        ] if wave.name in ("black-hat-offense", "exploit-development") else [],
     }
     synthesis_json_path = ARTIFACTS_DIR / f"wave{wave.number}-synthesis.json"
     synthesis_json_path.write_text(json.dumps(synthesis_json, indent=2, default=str))
@@ -654,6 +676,141 @@ def _count_models(results: list[AgentResult]) -> dict[str, int]:
     for r in results:
         counts[r.model] = counts.get(r.model, 0) + 1
     return counts
+
+
+# --- Exploit-path clustering (black hat model) ---
+
+def cluster_by_exploit_path(findings: list[dict]) -> list[dict]:
+    """Cluster findings by exploit path instead of file/function.
+
+    Groups by: (attack_primitive, trust_boundary, asset_at_risk).
+    This replaces hotspot scoring for the black hat model.
+    """
+    clusters: dict[tuple, list[dict]] = {}
+    for f in findings:
+        primitive = _classify_primitive(f)
+        boundary = _extract_boundary(f)
+        asset = f.get("victim", f.get("asset", "unknown"))
+        key = (primitive, boundary, asset)
+        clusters.setdefault(key, []).append(f)
+
+    CONFIDENCE_SCORE = {"high": 90, "medium": 60, "low": 30}
+    result = []
+    for key, members in clusters.items():
+        conf_scores = [CONFIDENCE_SCORE.get(m.get("confidence", "low"), 30) for m in members]
+        result.append({
+            "primitive": key[0],
+            "boundary": key[1],
+            "asset": key[2],
+            "findings": members,
+            "agent_count": len(set(m.get("_source_agent", "") for m in members)),
+            "max_confidence": max(conf_scores),
+            "has_test": any(m.get("test_file") for m in members),
+        })
+
+    result.sort(key=lambda c: (c["has_test"], c["max_confidence"], c["agent_count"]),
+                reverse=True)
+    return result
+
+
+def _classify_primitive(finding: dict) -> str:
+    """Classify a finding into an attack primitive category."""
+    text = json.dumps(finding).lower()
+    if any(kw in text for kw in ["flash loan", "flashloan", "borrow", "repay"]):
+        return "flash_loan_composition"
+    if any(kw in text for kw in ["reentr", "callback", "before_swap", "after_swap", "desync"]):
+        return "callback_exploitation"
+    if any(kw in text for kw in ["price", "oracle", "manipulat", "distort", "sandwich"]):
+        return "price_manipulation"
+    if any(kw in text for kw in ["round", "precision", "overflow", "underflow", "truncat"]):
+        return "math_extraction"
+    if any(kw in text for kw in ["auth", "caller", "permit", "signature", "nonce"]):
+        return "auth_bypass"
+    if any(kw in text for kw in ["plugin", "handler", "facet", "proxy", "delegatecall", "extension"]):
+        return "extension_abuse"
+    return "other"
+
+
+def _extract_boundary(finding: dict) -> str:
+    """Extract trust boundary from finding."""
+    repos = finding.get("repos", [])
+    if len(repos) > 1:
+        return f"cross_repo:{'+'.join(sorted(repos))}"
+    contracts = finding.get("contracts", [])
+    if len(contracts) > 1:
+        return f"cross_contract:{'+'.join(sorted(contracts))}"
+    return "single_contract"
+
+
+def should_run_wave2(synthesis: dict) -> tuple[str, str]:
+    """Decide whether wave 2 should run and what type.
+
+    Returns: (decision, reason)
+      - ("exploit_dev", "N confirmed leads with tests")
+      - ("gap_repair", "critical surfaces uncovered")
+      - ("stop", "coverage good, no leads")
+    """
+    clusters = synthesis.get("exploit_clusters", [])
+    confirmed = [c for c in clusters if c.get("has_test") and c["max_confidence"] >= 70]
+
+    if confirmed:
+        return ("exploit_dev", f"{len(confirmed)} confirmed leads with tests")
+
+    coverage = synthesis.get("coverage", {})
+    lens_coverage = coverage.get("lens_pct", 100)
+    critical_surface = coverage.get("critical_surface_pct", 100)
+
+    if lens_coverage < 60 or critical_surface < 60:
+        return ("gap_repair", f"lens={lens_coverage}% critical={critical_surface}% — below threshold")
+
+    return ("stop", "coverage good, no actionable leads")
+
+
+def generate_leads_for_wave2(synthesis: dict) -> str:
+    """Generate markdown leads summary for exploit-developer agents."""
+    clusters = synthesis.get("exploit_clusters", [])
+    if not clusters:
+        return "No leads from wave 1."
+
+    lines = ["## Wave 1 Leads (ranked by confidence)\n"]
+    for i, c in enumerate(clusters[:6], 1):
+        findings = c.get("findings", [])
+        if not findings:
+            continue
+        top = findings[0]
+        lines.append(f"### Lead {i}: {c['primitive']} — {c['boundary']}")
+        lines.append(f"- **Asset at risk:** {c['asset']}")
+        lines.append(f"- **Confidence:** {c['max_confidence']}")
+        lines.append(f"- **Has test:** {c['has_test']}")
+        lines.append(f"- **Contributing agents:** {c['agent_count']}")
+        lines.append(f"- **Top finding:** {top.get('id', 'N/A')} — {top.get('title', 'N/A')}")
+        if top.get('attack_sequence'):
+            lines.append(f"- **Attack sequence:** {' → '.join(top['attack_sequence'])}")
+        lines.append(f"- **Contracts:** {', '.join(top.get('contracts', []))}")
+        lines.append(f"- **Functions:** {', '.join(top.get('functions', []))}")
+        lines.append("")
+    return "\n".join(lines)
+
+
+def read_claims_bus(wave: WaveConfig) -> list[dict]:
+    """Read all claims from the wave's claims.jsonl files.
+
+    Each agent writes to:
+      docs/targets/full-system/artifacts/wave{N}-{agent}/claims.jsonl
+    """
+    claims = []
+    for agent in wave.agents:
+        claims_file = ARTIFACTS_DIR / f"wave{wave.number}-{agent.name}" / "claims.jsonl"
+        if claims_file.exists():
+            for line in claims_file.read_text().strip().split("\n"):
+                if line.strip():
+                    try:
+                        claim = json.loads(line)
+                        claim["_source_agent"] = agent.name
+                        claims.append(claim)
+                    except json.JSONDecodeError:
+                        pass
+    return claims
 
 
 def read_synthesis(wave_number: int) -> str | None:
