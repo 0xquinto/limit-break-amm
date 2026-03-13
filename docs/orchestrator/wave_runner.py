@@ -362,13 +362,14 @@ def _build_results_from_disk(
             report_text = ""
 
         # Try to extract metrics from JSON sidecar
-        # Agents write metadata (not metrics) with tool_uses, completeness_pct, etc.
         num_turns = 0
+        total_tokens = 0
         if has_sidecar:
             try:
                 sidecar = json.loads(sidecar_path.read_text())
                 meta = sidecar.get("metadata", {})
                 num_turns = meta.get("num_turns", 0)
+                total_tokens = meta.get("total_tokens", 0)
             except (json.JSONDecodeError, KeyError):
                 pass
 
@@ -380,7 +381,7 @@ def _build_results_from_disk(
             model=agent.resolved_model,
             num_turns=num_turns,
             duration_ms=total_elapsed_ms,  # wall time (per-agent not available)
-            total_tokens=0,  # populated from sidecar metadata if available
+            total_tokens=total_tokens,
             stop_reason=stop_reason,
             output_text=report_text[-2000:] if report_text else "",
         ))
