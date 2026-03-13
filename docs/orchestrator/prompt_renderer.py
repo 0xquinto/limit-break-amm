@@ -7,7 +7,7 @@ Each agent receives: digest (always), scoped FPs, confirmed patterns, agent less
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from .config import AgentConfig, WaveConfig, REPOS, SPAWN_PROMPTS_DIR, ARTIFACTS_DIR, MEMORY_DIR
+from .config import AgentConfig, WaveConfig, REPOS, SPAWN_PROMPTS_DIR, ARTIFACTS_DIR, MEMORY_DIR, TEMPLATES_DIR
 
 
 # --- Memory parsing (scaffold §7a) ---
@@ -98,6 +98,14 @@ def parse_lessons(path: Path | None = None) -> list[Lesson]:
 def get_orchestrator_lessons() -> list[Lesson]:
     """Lessons the orchestrator uses for its own decision-making (spawning, budgets)."""
     return [l for l in parse_lessons() if l.audience in ("orchestrator", "both")]
+
+
+def _load_preamble() -> str:
+    """Load the shared black hat preamble."""
+    path = TEMPLATES_DIR / "black-hat-preamble.md"
+    if path.exists():
+        return path.read_text()
+    return ""
 
 
 # --- Prompt building ---
@@ -191,6 +199,16 @@ def render_prompt(agent: AgentConfig, wave: WaveConfig, prior_synthesis: str | N
     output_dir = f"docs/targets/full-system/artifacts/wave{wave.number}-{agent.name}"
     prompt = prompt.replace("{{OUTPUT_FILE}}", f"{output_dir}/report.md")
     prompt = prompt.replace("{{FINDINGS_JSON}}", f"{output_dir}/findings.json")
+
+    # Black hat template placeholders
+    if "{{PREAMBLE}}" in prompt:
+        prompt = prompt.replace("{{PREAMBLE}}", _load_preamble())
+    if "{{PREFIX}}" in prompt:
+        prefix = agent.name.split("-")[0].upper() if "-" in agent.name else agent.name[:4].upper()
+        prompt = prompt.replace("{{PREFIX}}", prefix)
+    if "{{LEADS}}" in prompt:
+        leads = agent.extra_context.get("leads", "No leads provided.")
+        prompt = prompt.replace("{{LEADS}}", leads)
 
     # Inject prior synthesis if available
     if prior_synthesis:
