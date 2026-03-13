@@ -44,7 +44,7 @@ from claude_agent_sdk import (
 )
 
 from .config import (
-    WaveConfig, PROJECT_ROOT, ARTIFACTS_DIR, RESULTS_DIR,
+    WaveConfig, AgentConfig, PROJECT_ROOT, ARTIFACTS_DIR, RESULTS_DIR, REPOS,
 )
 
 # Must unset before SDK spawns CLI subprocess — nested session check
@@ -128,7 +128,7 @@ def _build_team_lead_prompt(wave: WaveConfig, prompt_paths: dict[str, str]) -> s
             f"  - prompt: {json.dumps(bootstrap)}\n"
             f"  - description: \"{agent.name}\"\n"
             f"  - team_name: \"{team_name}\"\n"
-            f"  - model: \"{agent.model or 'sonnet'}\"\n"
+            f"  - model: \"{agent.resolved_model}\"\n"
             f"  - mode: \"bypassPermissions\"\n"
             f"  - run_in_background: true"
         )
@@ -355,7 +355,7 @@ def _build_results_from_disk(
         results.append(AgentResult(
             name=agent.name,
             role=agent.role,
-            model=agent.model,
+            model=agent.resolved_model,
             num_turns=num_turns,
             duration_ms=total_elapsed_ms,  # wall time (per-agent not available)
             total_cost_usd=0.0,  # subscription mode
@@ -384,3 +384,34 @@ def collect_artifacts(wave: WaveConfig) -> dict[str, str]:
                   f"at {report_path} or {flat_path}")
             artifacts[agent.name] = ""
     return artifacts
+
+
+def populate_wave2_agents(wave: WaveConfig, synthesis_json: dict) -> WaveConfig:
+    """Populate a dynamic wave's agents from prior synthesis."""
+    if not wave.dynamic:
+        return wave
+
+    from .synthesizer import should_run_wave2, generate_leads_for_wave2
+    decision, reason = should_run_wave2(synthesis_json)
+    print(f"  Wave 2 decision: {decision} — {reason}")
+
+    if decision == "stop":
+        return wave  # empty agents = wave is skipped
+
+    leads_text = generate_leads_for_wave2(synthesis_json)
+    num_agents = min(3, max(1, len(synthesis_json.get("exploit_clusters", []))))
+
+    for i in range(num_agents):
+        agent = AgentConfig(
+            name=f"exploit-dev-{i+1}",
+            role="exploit-verifier",
+            template="exploit-developer",
+            scope=list(REPOS.keys()),
+            profile="max_reasoning",
+            max_turns=30,
+            max_cost_usd=12.0,
+            extra_context={"leads": leads_text},
+        )
+        wave.agents.append(agent)
+
+    return wave
