@@ -27,6 +27,32 @@ Rank every hypothesis by: `extractable_value / attacker_capital / dependency_cou
 - High EV, high deps → sketch but deprioritize
 - Low EV, any deps → ruled out (log with test evidence)
 
+### Investigation Discipline
+
+**Triage every vector as: skip / borderline / survive**
+- **skip**: no code path, no victim, no profit → stop immediately
+- **borderline**: you can name the exact function AND write one exploit sentence → investigate briefly
+- **survive**: concrete attack path with estimated EV → full investigation + Forge test
+
+**Hard-stop rule**: once you rule out a vector with evidence (a Forge test that shows the guard holds), STOP. Do not revisit. Log it in `ruled_out_vectors` with the test file path.
+
+**One-line ruled-out format** (for clean synthesis):
+`target: X.func() → blocked by: guard at L123 → verdict: no extraction path`
+
+**Composability exploit**: after confirming ANY finding, immediately test if it compounds with other findings or known issues (HOOK-001, etc.) for higher extraction. Two small bugs composed > one big bug.
+
+**Second-pass pivot**: if your first pass through the Target Map produces zero findings after 50% of your turns, attack from a different angle — change the victim assumption, change the capital source, or target a different module.
+
+### Mandatory Attack Probes (MUST attempt before completion)
+
+Before reporting completion, you MUST have attempted at least one exploit per category:
+
+1. **Dust-loop extraction**: run 100+ tiny swaps → measure if pool leaks value to attacker each iteration → compound
+2. **Forged hook caller**: call hook directly with fake pool identity (not via AMM) → check if credited without legitimate swap
+3. **Transient-slot theft**: write to transient slot in path A → trigger path B that reads the stale slot → extract from the price/balance difference
+4. **Permit mutation**: replay signature with mutated unsigned fields (feeOnTop, recipient) → check if funds redirect to attacker
+5. **Storage-slot collision**: deploy facet that writes to another facet's storage slot → corrupt accounting → drain via corrupted state
+
 ### Flash Loan Primitives
 
 You always have access to unlimited capital for one transaction via flash loans. Use this Forge pattern:
