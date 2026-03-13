@@ -91,7 +91,8 @@ class AgentConfig:
     role: str  # key into TOOL_PROFILES — determines allowed tools
     template: str  # filename in templates/ (without .md)
     scope: list[str]  # repo names from REPOS
-    model: str = "sonnet"  # sonnet | opus | haiku
+    profile: str = ""  # key into model_profiles.PROFILES (empty = use model field)
+    model: str = ""  # DEPRECATED — use profile instead. Kept for backwards compat.
     max_turns: int = 15
     max_cost_usd: float = 3.0
     permission_mode: str = "bypassPermissions"
@@ -100,6 +101,20 @@ class AgentConfig:
     @property
     def allowed_tools(self) -> list[str]:
         return TOOL_PROFILES.get(self.role, TOOL_PROFILES["auditor"])
+
+    @property
+    def resolved_model(self) -> str:
+        """Return the model string, resolving profile if set."""
+        if self.profile:
+            from .model_profiles import get_model_for_profile
+            return get_model_for_profile(self.profile)
+        return self.model or "claude-sonnet-4-6"
+
+    @property
+    def resolved_profile(self):
+        """Return the full ModelProfile object."""
+        from .model_profiles import resolve_profile
+        return resolve_profile(self.profile) if self.profile else None
 
 
 @dataclass
