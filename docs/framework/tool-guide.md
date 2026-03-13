@@ -127,7 +127,7 @@ aderyn . --src src/handlers/clob/
 ### Gotchas
 
 - Aderyn works natively with Foundry projects — no config needed.
-- Output goes to `report.md` by default — rename if running alongside other tools.
+- **Output overwrites `report.md` by default** — always use `--output aderyn-<repo>.md` to avoid clobbering other tool outputs: `aderyn . --output aderyn-lbamm-core.md`
 - Some detectors overlap with Slither — dedup findings manually.
 
 ### Best Targets in This Codebase
@@ -166,6 +166,50 @@ quimera <ContractName> . --contract <ContractName> --working-dir .
 - Manual mode: copy/paste prompts to any LLM — no API key needed.
 - Iterations control how many refinement loops the LLM runs.
 - Works best with clear vulnerability descriptions passed via `--attachment`.
+
+## Medusa (Corpus-Guided Fuzzer)
+
+Path: `/opt/homebrew/bin/medusa` (v1.5.0)
+
+Medusa is a parallel, corpus-guided fuzzer by Trail of Bits. It finds multi-step sequence bugs that Foundry fuzz misses.
+
+### Setup (REQUIRED before first run)
+
+Medusa requires a `medusa.json` config in the project root. Without it, it fails with "no config found":
+
+```bash
+cd <repo> && /opt/homebrew/bin/medusa init
+```
+
+This generates `medusa.json`. Then edit it to point at your test contract:
+
+```json
+{
+  "fuzzing": {
+    "targetContracts": ["YourFuzzContract"],
+    "testLimit": 10000,
+    "timeout": 60
+  }
+}
+```
+
+### Run Command
+
+```bash
+cd <repo> && /opt/homebrew/bin/medusa fuzz
+```
+
+### Gotchas
+
+- **Always run `medusa init` first** — Medusa cannot find config if it doesn't exist in the project root.
+- **Set `testLimit` and `timeout`** — without these, Medusa runs indefinitely on large contracts. Start with `testLimit: 10000` and `timeout: 60` (seconds), increase if needed.
+- **Test contract paths must match** — if `targetContracts` points at a contract Medusa can't compile, it silently skips. Verify with `medusa fuzz --list-tests`.
+
+### When to Use
+
+- Multi-step sequence bugs (deposit → swap → withdraw invariant violations)
+- Stateful corpus building across many transactions
+- When Foundry fuzz with `runs = 10000` still doesn't find a sequence bug
 
 ## Trail of Bits Claude Code Skills
 
