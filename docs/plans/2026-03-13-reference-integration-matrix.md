@@ -195,6 +195,15 @@ Items that change our interaction patterns, not just system code.
 
 ---
 
+## I. Agent Fault Tolerance (Gap 7)
+
+| # | Item | Source | Status |
+|---|------|--------|--------|
+| I1 | **Agent crash retry**: if an agent produces no artifacts, re-spawn with same prompt (max 1 retry) | Gap 7 | Missing — wave_runner marks as "missing", no retry |
+| I2 | **Partial result salvage**: if agent crashes mid-run but wrote partial sidecar/report, consume what exists | Gap 7 | Missing — all-or-nothing artifact collection |
+
+---
+
 ## Priority Matrix
 
 | Priority | Items | Effort | When |
