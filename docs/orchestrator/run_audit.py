@@ -188,6 +188,22 @@ async def run_single_wave(
     print(f"  Total tokens: {sum(r.total_tokens for r in results):,}")
     print(f"  Synthesis: {ARTIFACTS_DIR / f'wave{wave.number}-synthesis.md'}")
 
+    # Auto-chain: after wave 1, populate and run wave 2 if dynamic wave exists
+    if wave.number == 1 and len(WAVES) > 1 and WAVES[1].dynamic:
+        import json
+        synthesis_json_path = ARTIFACTS_DIR / "wave1-synthesis.json"
+        if synthesis_json_path.exists():
+            synthesis_json = json.loads(synthesis_json_path.read_text())
+            from .wave_runner import populate_wave2_agents
+            wave2 = populate_wave2_agents(WAVES[1], synthesis_json)
+            if wave2.agents:
+                print(f"\n{'='*60}")
+                print(f"AUTO-CHAINING TO WAVE 2")
+                print(f"{'='*60}")
+                await run_single_wave(2, force=force, experiment=False, description="")
+            else:
+                print(f"\n  Wave 2 skipped — no agents populated.")
+
 
 async def run_full_audit(fresh: bool = False) -> None:
     """Run all waves sequentially, skipping unconfigured dynamic waves."""

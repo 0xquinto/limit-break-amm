@@ -471,7 +471,7 @@ def populate_wave2_agents(wave: WaveConfig, synthesis_json: dict) -> WaveConfig:
             template="exploit-developer",
             scope=list(REPOS.keys()),
             profile="max_reasoning",
-            max_turns=30,
+            max_turns=200,
             extra_context={"leads": leads_text},
         )
         wave.agents.append(agent)

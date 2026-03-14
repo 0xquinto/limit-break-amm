@@ -127,23 +127,13 @@ WAVE_BH1 = WaveConfig(
     number=1,
     name="black-hat-offense",
     agents=[
+        # --- 3 original archetypes (best performers) ---
         AgentConfig(
-            name="price-distorter",
+            name="precision-sniper",
             role="black-hat",
-            template="price-distorter",
+            template="precision-sniper",
             scope=list(REPOS.keys()),
             profile="max_reasoning",
-
-
-        ),
-        AgentConfig(
-            name="insolvency-engineer",
-            role="black-hat",
-            template="insolvency-engineer",
-            scope=list(REPOS.keys()),
-            profile="max_reasoning",
-
-
         ),
         AgentConfig(
             name="state-desync",
@@ -151,17 +141,6 @@ WAVE_BH1 = WaveConfig(
             template="state-desync",
             scope=list(REPOS.keys()),
             profile="max_reasoning",
-
-
-        ),
-        AgentConfig(
-            name="precision-sniper",
-            role="black-hat",
-            template="precision-sniper",
-            scope=list(REPOS.keys()),
-            profile="max_reasoning",
-
-
         ),
         AgentConfig(
             name="auth-forger",
@@ -169,17 +148,29 @@ WAVE_BH1 = WaveConfig(
             template="auth-forger",
             scope=list(REPOS.keys()),
             profile="max_reasoning",
-
-
+        ),
+        # --- 3 new specialized archetypes (deep + composability) ---
+        AgentConfig(
+            name="math-deep-diver",
+            role="black-hat",
+            template="math-deep-diver",
+            scope=["lbamm-pool-type-fixed", "amm-pool-type-dynamic",
+                   "lbamm-core", "lbamm-hooks-and-handlers"],
+            profile="max_reasoning",
         ),
         AgentConfig(
-            name="extension-hijacker",
+            name="cross-boundary",
             role="black-hat",
-            template="extension-hijacker",
+            template="cross-boundary",
             scope=list(REPOS.keys()),
             profile="max_reasoning",
-
-
+        ),
+        AgentConfig(
+            name="composability-exploiter",
+            role="black-hat",
+            template="composability-exploiter",
+            scope=list(REPOS.keys()),
+            profile="max_reasoning",
         ),
     ],
 )

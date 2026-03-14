@@ -787,6 +787,18 @@ def should_run_wave2(synthesis: dict) -> tuple[str, str]:
     if confirmed:
         return ("exploit_dev", f"{len(confirmed)} confirmed leads with tests")
 
+    # Also run wave 2 if there are any findings or interesting contradictions
+    findings = synthesis.get("findings", [])
+    contradictions = synthesis.get("contradictions", [])
+    ruled_out = synthesis.get("ruled_out_vectors", [])
+
+    if findings:
+        return ("exploit_dev", f"{len(findings)} findings to develop into PoCs")
+    if contradictions:
+        return ("exploit_dev", f"{len(contradictions)} contradictions to resolve")
+    if len(ruled_out) >= 30:
+        return ("exploit_dev", f"{len(ruled_out)} ruled-out vectors — dig deeper into promising leads")
+
     coverage = synthesis.get("coverage", {})
     lens_coverage = coverage.get("lens_pct", 100)
     critical_surface = coverage.get("critical_surface_pct", 100)
@@ -799,28 +811,52 @@ def should_run_wave2(synthesis: dict) -> tuple[str, str]:
 
 def generate_leads_for_wave2(synthesis: dict) -> str:
     """Generate markdown leads summary for exploit-developer agents."""
-    clusters = synthesis.get("exploit_clusters", [])
-    if not clusters:
-        return "No leads from wave 1."
+    lines = []
 
-    lines = ["## Wave 1 Leads (ranked by confidence)\n"]
-    for i, c in enumerate(clusters[:6], 1):
-        findings = c.get("findings", [])
-        if not findings:
-            continue
-        top = findings[0]
-        lines.append(f"### Lead {i}: {c['primitive']} — {c['boundary']}")
-        lines.append(f"- **Asset at risk:** {c['asset']}")
-        lines.append(f"- **Confidence:** {c['max_confidence']}")
-        lines.append(f"- **Has test:** {c['has_test']}")
-        lines.append(f"- **Contributing agents:** {c['agent_count']}")
-        lines.append(f"- **Top finding:** {top.get('id', 'N/A')} — {top.get('title', 'N/A')}")
-        if top.get('attack_sequence'):
-            lines.append(f"- **Attack sequence:** {' → '.join(top['attack_sequence'])}")
-        lines.append(f"- **Contracts:** {', '.join(top.get('contracts', []))}")
-        lines.append(f"- **Functions:** {', '.join(top.get('functions', []))}")
+    # Include exploit clusters if any
+    clusters = synthesis.get("exploit_clusters", [])
+    if clusters:
+        lines.append("## Wave 1 Exploit Clusters (ranked by confidence)\n")
+        for i, c in enumerate(clusters[:6], 1):
+            findings = c.get("findings", [])
+            if not findings:
+                continue
+            top = findings[0]
+            lines.append(f"### Lead {i}: {c['primitive']} — {c['boundary']}")
+            lines.append(f"- **Asset at risk:** {c['asset']}")
+            lines.append(f"- **Confidence:** {c['max_confidence']}")
+            lines.append(f"- **Has test:** {c['has_test']}")
+            lines.append(f"- **Contributing agents:** {c['agent_count']}")
+            lines.append(f"- **Top finding:** {top.get('id', 'N/A')} — {top.get('title', 'N/A')}")
+            if top.get('attack_sequence'):
+                lines.append(f"- **Attack sequence:** {' → '.join(top['attack_sequence'])}")
+            lines.append(f"- **Contracts:** {', '.join(top.get('contracts', []))}")
+            lines.append(f"- **Functions:** {', '.join(top.get('functions', []))}")
+            lines.append("")
+
+    # Include contradictions — where agents disagree = where bugs hide
+    contradictions = synthesis.get("contradictions", [])
+    if contradictions:
+        lines.append("## Contradictions (agents disagree — investigate deeper)\n")
+        for c in contradictions[:6]:
+            lines.append(f"- {c.get('finding_id', '?')} vs {c.get('ruled_out_id', '?')}: {c.get('match_reason', '')}")
         lines.append("")
-    return "\n".join(lines)
+
+    # Include top ruled-out vectors — wave 2 should try harder to exploit these
+    ruled_out = synthesis.get("ruled_out_vectors", [])
+    if ruled_out and not clusters:
+        lines.append("## Promising Ruled-Out Vectors (wave 1 couldn't exploit — try harder)\n")
+        for i, v in enumerate(ruled_out[:10], 1):
+            vector = v.get("vector", v.get("title", "?"))
+            agent = v.get("_source_agent", "?")
+            contracts = ", ".join(v.get("contracts", []))
+            lines.append(f"{i}. **{vector}** (agent: {agent})")
+            if contracts:
+                lines.append(f"   - Contracts: {contracts}")
+            lines.append(f"   - Why ruled out: {v.get('why_ruled_out', v.get('description', '?'))[:200]}")
+            lines.append("")
+
+    return "\n".join(lines) if lines else "No leads from wave 1."
 
 
 def read_claims_bus(wave: WaveConfig) -> list[dict]:
