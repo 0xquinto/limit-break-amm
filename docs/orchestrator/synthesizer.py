@@ -790,14 +790,14 @@ def should_run_wave2(synthesis: dict) -> tuple[str, str]:
     # Also run wave 2 if there are any findings or interesting contradictions
     findings = synthesis.get("findings", [])
     contradictions = synthesis.get("contradictions", [])
-    ruled_out = synthesis.get("ruled_out_vectors", [])
+    ruled_out_count = synthesis.get("ruled_out_count", 0)
 
     if findings:
         return ("exploit_dev", f"{len(findings)} findings to develop into PoCs")
     if contradictions:
         return ("exploit_dev", f"{len(contradictions)} contradictions to resolve")
-    if len(ruled_out) >= 30:
-        return ("exploit_dev", f"{len(ruled_out)} ruled-out vectors — dig deeper into promising leads")
+    if ruled_out_count >= 30:
+        return ("exploit_dev", f"{ruled_out_count} ruled-out vectors — dig deeper into promising leads")
 
     coverage = synthesis.get("coverage", {})
     lens_coverage = coverage.get("lens_pct", 100)
@@ -842,11 +842,14 @@ def generate_leads_for_wave2(synthesis: dict) -> str:
             lines.append(f"- {c.get('finding_id', '?')} vs {c.get('ruled_out_id', '?')}: {c.get('match_reason', '')}")
         lines.append("")
 
-    # Include top ruled-out vectors — wave 2 should try harder to exploit these
-    ruled_out = synthesis.get("ruled_out_vectors", [])
-    if ruled_out and not clusters:
+    # Include top ruled-out vectors from sidecars — wave 2 should try harder
+    from .config import WAVES
+    all_ruled_out = []
+    for sc in collect_json_sidecars(WAVES[0]):
+        all_ruled_out.extend(sc.get("ruled_out_vectors", []))
+    if all_ruled_out and not clusters:
         lines.append("## Promising Ruled-Out Vectors (wave 1 couldn't exploit — try harder)\n")
-        for i, v in enumerate(ruled_out[:10], 1):
+        for i, v in enumerate(all_ruled_out[:10], 1):
             vector = v.get("vector", v.get("title", "?"))
             agent = v.get("_source_agent", "?")
             contracts = ", ".join(v.get("contracts", []))
