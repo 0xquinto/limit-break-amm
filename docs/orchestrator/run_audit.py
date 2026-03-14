@@ -170,18 +170,20 @@ async def run_single_wave(
     print(f"\nUpdating memory...")
     update_memory_from_results(results, wave)
 
-    # Experiment scoring (autoresearch model)
+    # Experiment scoring (compliance model)
     if experiment:
-        from .experiment import compute_audit_score, log_experiment, best_score
-        result = compute_audit_score(wave.number)
+        from .experiment import compute_compliance_score, log_experiment, best_score
+        result = compute_compliance_score(wave.number)
         result.description = description or f"wave {wave.number} run"
         prev_best = best_score()
-        if result.audit_score > prev_best:
+        if result.compliance_score > prev_best:
             result.status = "keep"
-            print(f"\n  EXPERIMENT: audit_score={result.audit_score} > prev_best={prev_best} → KEEP")
+            print(f"\n  EXPERIMENT: compliance={result.compliance_score} ({result.grade}) "
+                  f"> prev_best={prev_best} → KEEP")
         else:
             result.status = "discard"
-            print(f"\n  EXPERIMENT: audit_score={result.audit_score} <= prev_best={prev_best} → DISCARD")
+            print(f"\n  EXPERIMENT: compliance={result.compliance_score} ({result.grade}) "
+                  f"<= prev_best={prev_best} → DISCARD")
         log_experiment(result)
 
     print(f"\nWave {wave.number} complete.")
