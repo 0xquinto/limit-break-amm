@@ -31,4 +31,11 @@ Limit Break AMM security audit framework. This parent directory orchestrates aud
 - `exploit-developer` — wave 2 PoC construction from wave 1 leads
 - Old defensive templates archived in `docs/orchestrator/templates/archive/`
 
+**Experiment loop** (autoresearch model):
+- `docs/orchestrator/experiment.py` — `compute_audit_score()`, TSV logger, `best_score()`
+- `docs/targets/full-system/experiments.tsv` — persistent experiment log (untracked)
+- `docs/targets/full-system/research-program.md` — meta-researcher instructions (what to optimize, what's modifiable)
+- Run with: `python3 -m docs.orchestrator.run_audit --wave 1 --fresh --experiment --description "what changed"`
+- Baseline: `audit_score=13.9` (0 findings, 0/4 regression, 25% tools, 80 vectors)
+
 For architecture details, see [docs/CODEBASE_MAP.md](docs/CODEBASE_MAP.md).
