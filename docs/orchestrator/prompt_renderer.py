@@ -108,6 +108,28 @@ def _load_preamble() -> str:
     return ""
 
 
+# Agent name → checklist file mapping
+_CHECKLIST_MAP = {
+    "precision-sniper": "checklist-math.md",
+    "math-deep-diver": "checklist-math.md",
+    "state-desync": "checklist-state.md",
+    "composability-exploiter": "checklist-state.md",
+    "auth-forger": "checklist-auth.md",
+    "cross-boundary": "checklist-boundary.md",
+}
+
+
+def _load_checklist(agent_name: str) -> str:
+    """Load the per-archetype Phase C checklist for an agent."""
+    filename = _CHECKLIST_MAP.get(agent_name, "")
+    if not filename:
+        return "(No Phase C checklist assigned to this agent.)"
+    path = TEMPLATES_DIR / filename
+    if path.exists():
+        return path.read_text()
+    return f"(Checklist file {filename} not found.)"
+
+
 # --- Prompt building ---
 
 def build_memory_block(agent_role: str) -> str:
@@ -206,6 +228,8 @@ def render_prompt(agent: AgentConfig, wave: WaveConfig, prior_synthesis: str | N
     if "{{PREFIX}}" in prompt:
         prefix = agent.name.split("-")[0].upper() if "-" in agent.name else agent.name[:4].upper()
         prompt = prompt.replace("{{PREFIX}}", prefix)
+    if "{{CHECKLIST}}" in prompt:
+        prompt = prompt.replace("{{CHECKLIST}}", _load_checklist(agent.name))
     if "{{LEADS}}" in prompt:
         leads = agent.extra_context.get("leads", "No leads provided.")
         prompt = prompt.replace("{{LEADS}}", leads)
