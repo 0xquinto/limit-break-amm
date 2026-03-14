@@ -85,12 +85,19 @@ def run_regression_check(wave_number: int) -> None:
             print(f"  WARNING: {len(missing)} regression case(s) still missing by wave {wave_number}")
 
 
-async def run_single_wave(wave_number: int, force: bool = False) -> None:
+async def run_single_wave(
+    wave_number: int,
+    force: bool = False,
+    experiment: bool = False,
+    description: str = "",
+) -> None:
     """Run a single wave (useful for incremental execution).
 
     Args:
         wave_number: Which wave to run (1-2).
         force: If True, overwrite existing synthesis without archiving.
+        experiment: If True, compute audit_score and log to experiments.tsv.
+        description: Experiment description (what changed).
     """
     wave = WAVES[wave_number - 1]
 
@@ -163,6 +170,20 @@ async def run_single_wave(wave_number: int, force: bool = False) -> None:
     print(f"\nUpdating memory...")
     update_memory_from_results(results, wave)
 
+    # Experiment scoring (autoresearch model)
+    if experiment:
+        from .experiment import compute_audit_score, log_experiment, best_score
+        result = compute_audit_score(wave.number)
+        result.description = description or f"wave {wave.number} run"
+        prev_best = best_score()
+        if result.audit_score > prev_best:
+            result.status = "keep"
+            print(f"\n  EXPERIMENT: audit_score={result.audit_score} > prev_best={prev_best} → KEEP")
+        else:
+            result.status = "discard"
+            print(f"\n  EXPERIMENT: audit_score={result.audit_score} <= prev_best={prev_best} → DISCARD")
+        log_experiment(result)
+
     print(f"\nWave {wave.number} complete.")
     print(f"  Total tokens: {sum(r.total_tokens for r in results):,}")
     print(f"  Synthesis: {ARTIFACTS_DIR / f'wave{wave.number}-synthesis.md'}")
@@ -200,6 +221,10 @@ def main():
                         help="Show current run status and exit")
     parser.add_argument("--init-memory", type=str, metavar="TARGET",
                         help="Initialize fresh memory for a new target (scaffold §7e)")
+    parser.add_argument("--experiment", action="store_true",
+                        help="Score this run and log to experiments.tsv (autoresearch model)")
+    parser.add_argument("--description", type=str, default="",
+                        help="Experiment description (what changed)")
     args = parser.parse_args()
 
     if args.status:
@@ -230,7 +255,11 @@ def main():
         else:
             run_id = ensure_run(fresh=args.fresh)
             print(f"Run ID: {run_id}")
-            anyio.run(run_single_wave, args.wave, args.force)
+            anyio.run(
+                run_single_wave, args.wave, args.force,
+                getattr(args, 'experiment', False),
+                getattr(args, 'description', ''),
+            )
     else:
         anyio.run(run_full_audit, args.fresh)
 
