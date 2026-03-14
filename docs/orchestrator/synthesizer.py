@@ -559,6 +559,27 @@ def generate_synthesis(
     else:
         tool_coverage_section = "(All agents ran mandatory tools)"
 
+    # Compliance scoring
+    from .compliance import score_wave as _score_wave, write_compliance_report
+    try:
+        rc = _score_wave(wave.number)
+        write_compliance_report(rc, wave.number)
+        compliance_lines = [f"**Aggregate: {rc.aggregate_score}/100 ({rc.grade})** — weakest dimension: {rc.weakest_dimension}\n"]
+        for a in rc.agents:
+            compliance_lines.append(
+                f"| {a.name} | {a.total} | {a.grade} | "
+                f"{a.checklist_score}/30 | {a.tool_breadth_score}/20 | "
+                f"{a.evidence_score}/20 | {a.depth_score}/20 | {a.thesis_score}/10 |"
+            )
+        compliance_table = (
+            "| Agent | Total | Grade | Checklist | Tools | Evidence | Depth | Thesis |\n"
+            "|-------|-------|-------|-----------|-------|----------|-------|--------|\n"
+            + "\n".join(compliance_lines[1:])
+        )
+        compliance_section = f"{compliance_lines[0]}\n{compliance_table}"
+    except Exception as e:
+        compliance_section = f"(Compliance scoring failed: {e})"
+
     # Safety log summary (scaffold §6)
     safety_logs = aggregate_safety_logs(wave.number)
     if safety_logs:
@@ -585,6 +606,10 @@ Data source: {data_source}
 ## Tool Coverage
 
 {tool_coverage_section}
+
+## Agent Compliance
+
+{compliance_section}
 
 ## Safety Events
 
