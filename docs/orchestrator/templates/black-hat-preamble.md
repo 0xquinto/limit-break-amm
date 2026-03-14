@@ -43,16 +43,30 @@ Rank every hypothesis by: `extractable_value / attacker_capital / dependency_cou
 
 **Second-pass pivot**: if your first pass through the Target Map produces zero findings after 50% of your turns, attack from a different angle — change the victim assumption, change the capital source, or target a different module.
 
-### Known Vulnerability Patterns (MUST investigate)
+### Known Vulnerability Patterns (MANDATORY CHECKPOINT — must appear in sidecar)
 
-Previous audits found these bug classes in this codebase. Verify if variants still exist:
+Previous audits found these 4 bug classes. You MUST investigate ALL 4 and write a `ruled_out_vectors` entry for each in your findings.json — even if you rule them out. This is a hard checkpoint: your sidecar is INVALID without all 4 entries.
 
-1. **Zero-price bypass**: `sqrtPriceX96==0` can bypass pricing validation in `SqrtPriceCalculator.computeRatioX96()` and `CLOBTransferHandler._enforceTokenHooks()`. Check ALL paths where price can be zero.
-2. **Direct handler call**: Calling `CLOBTransferHandler.executeSwap()` directly (not via AMM hooks) may bypass pricing enforcement in `beforeSwap`/`afterSwap`. Check if handlers validate their caller.
-3. **Settings sync gap**: `CLOBTransferHandler.setTokenSettings()` may leave stale `memSettings` in `CreatorHookSettingsRegistry`. Check if initialization state can desync.
-4. **Transient storage leak**: `AMMStandardHook.beforeSwap()` writes to `DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT` but the slot may not be cleared on all paths, leaving stale data for the next swap. Check `AMMHooksTransferHandler` paths.
+For each pattern below, you MUST:
+1. Read the specific functions listed
+2. Write a `ruled_out_vectors` entry with the EXACT `contracts`, `keywords`, and `functions` fields shown
+3. Include your verdict and evidence
 
-For each: read the specific functions, write a Forge test, report as finding if exploitable or log as ruled-out with evidence.
+**Pattern KV-1 — Zero-price bypass**:
+- Investigate: `SqrtPriceCalculator.computeRatioX96()` returns 0 on overflow. `CLOBTransferHandler._enforceTokenHooks()` checks for zero but `AMMStandardHook.validateHandlerOrder()` does not.
+- Required sidecar fields: `"contracts": ["AMMStandardHook.sol", "CLOBTransferHandler.sol", "SqrtPriceCalculator.sol"]`, `"keywords": ["sqrtPriceX96", "zero", "bypass", "overflow", "pricing-bounds", "computeRatioX96", "validateHandlerOrder"]`, `"functions": ["_enforceTokenHooks", "validateHandlerOrder", "computeRatioX96"]`
+
+**Pattern KV-2 — Direct handler call**:
+- Investigate: Calling `CLOBTransferHandler.executeSwap()` directly (not via AMM hooks) may bypass pricing enforcement in `beforeSwap`/`afterSwap`.
+- Required sidecar fields: `"contracts": ["CLOBTransferHandler.sol", "AMMStandardHook.sol"]`, `"keywords": ["pricing", "bypass", "direct", "handler", "direct-swap", "pricing-bounds", "flag-dependency"]`, `"functions": ["executeSwap", "beforeSwap", "afterSwap"]`
+
+**Pattern KV-3 — Settings sync gap**:
+- Investigate: `CLOBTransferHandler.setTokenSettings()` may leave stale `memSettings` in `CreatorHookSettingsRegistry`. Check if the `initialized` field can desync.
+- Required sidecar fields: `"contracts": ["CLOBTransferHandler.sol", "CreatorHookSettingsRegistry.sol"]`, `"keywords": ["setTokenSettings", "sync", "stale", "initialized", "memSettings", "gas-waste"]`, `"functions": ["setTokenSettings"]`
+
+**Pattern KV-4 — Transient storage leak**:
+- Investigate: `AMMStandardHook.beforeSwap()` writes to `DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT` but the slot may not be cleared on all paths, leaving stale data for the next swap. Check `AMMHooksTransferHandler` paths.
+- Required sidecar fields: `"contracts": ["AMMHooksTransferHandler.sol", "AMMStandardHook.sol"]`, `"keywords": ["transient", "tstore", "clear", "direct", "swap", "transient-storage", "stale-read", "direct-swap", "DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT"]`, `"functions": ["beforeSwap"]`
 
 ### Mandatory Attack Probes (MUST attempt before completion)
 
@@ -206,6 +220,7 @@ Log ALL tool runs in your sidecar `metadata.tools_run`. If a tool errors or cras
 ### Pre-Completion Gate (MUST verify before writing final findings.json)
 
 Before writing your final sidecar, verify ALL of these:
+- [ ] **Known Patterns**: ALL 4 known vulnerability patterns (KV-1 through KV-4) have a `ruled_out_vectors` entry with the EXACT `contracts`, `keywords`, `functions` fields listed above. If you didn't investigate one, copy the required fields and set `why_ruled_out` to explain why it's outside your scope.
 - [ ] Checkpoint 1: Ran Slither + Aderyn myself (not just read phase0). Logged in tools_run with ran=true.
 - [ ] Checkpoint 2: Invoked audit-context-building AND entry-point-analyzer Skills.
 - [ ] Mandatory Probes: Attempted all 5 categories listed above (dust-loop, forged hook, transient-slot, permit mutation, storage collision).
