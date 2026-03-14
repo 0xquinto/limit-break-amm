@@ -1,0 +1,22 @@
+{
+  "agent_name": "insolvency-engineer",
+  "wave": 1,
+  "findings": [],
+  "summary": "No exploitable insolvency vectors found. The protocol's reserve accounting is sound: all token inflows verified by strict balance checks, all fee credits backed by actual token balances, rounding consistently favors the protocol, and reentrancy protection (ENTERED bit + CEI pattern) prevents double-spend. 14 attack vectors thoroughly investigated and ruled out with evidence. The codebase is well-hardened against fund extraction at the reserve/accounting layer.",
+  "tool_runs": {
+    "slither": true,
+    "slither_mcp_run_detectors": true,
+    "aderyn": true,
+    "forge": false,
+    "halmos": false,
+    "medusa": false
+  },
+  "vectors_investigated": 14,
+  "vectors_ruled_out": 14,
+  "regression_patterns_checked": [
+    "zero-price-bypass",
+    "direct-handler-call",
+    "settings-sync-gap",
+    "transient-storage-leak"
+  ]
+}

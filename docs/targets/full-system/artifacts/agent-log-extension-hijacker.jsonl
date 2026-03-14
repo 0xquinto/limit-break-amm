@@ -1,8 +1,9 @@
-{"event":"SESSION_START","ts":"2026-03-14T04:00:00Z","session_id":"wave1-run3","agent_id":"extension-hijacker","model":"claude-opus-4-6","scope":"lbamm-core, lbamm-hooks-and-handlers, secure-proxy — extension points trust model","max_turns":30}
-{"event":"TOOL_CHECKPOINT","ts":"2026-03-14T04:00:01Z","agent_id":"extension-hijacker","checkpoint":0,"tool":"phase0_artifacts","status":"read"}
-{"event":"TOOL_CHECKPOINT","ts":"2026-03-14T04:10:00Z","agent_id":"extension-hijacker","checkpoint":1,"tool":"slither","repos":["lbamm-core","lbamm-hooks-and-handlers","secure-proxy"],"high":8,"medium":7}
-{"event":"TOOL_CHECKPOINT","ts":"2026-03-14T04:10:01Z","agent_id":"extension-hijacker","checkpoint":1,"tool":"aderyn","repos":["lbamm-core"],"findings":10,"note":"hooks-and-handlers crashed"}
-{"event":"TURN_COMPLETE","ts":"2026-03-14T04:15:00Z","agent_id":"extension-hijacker","turn":5,"findings_so_far":0,"vectors_ruled_out_so_far":9,"status":"in_progress"}
-{"event":"TURN_COMPLETE","ts":"2026-03-14T04:25:00Z","agent_id":"extension-hijacker","turn":10,"findings_so_far":0,"vectors_ruled_out_so_far":14,"status":"in_progress"}
-{"event":"TURN_COMPLETE","ts":"2026-03-14T04:35:00Z","agent_id":"extension-hijacker","turn":15,"findings_so_far":0,"vectors_ruled_out_so_far":17,"status":"wrapping_up"}
-{"event":"SESSION_END","ts":"2026-03-14T04:40:00Z","agent_id":"extension-hijacker","total_turns":15,"findings_count":0,"vectors_ruled_out":17,"exit_reason":"task_complete"}
+{"event":"SESSION_START","ts":"2026-03-14T14:30:00Z","session_id":"wave1-exp5","agent_id":"extension-hijacker","model":"claude-opus-4-6","scope":"lbamm-core, lbamm-hooks-and-handlers, secure-proxy — all extension points","max_turns":200}
+{"event":"TOOL_CHECKPOINT","ts":"2026-03-14T14:31:00Z","agent_id":"extension-hijacker","checkpoint":0,"tool":"phase0_artifacts","status":"read"}
+{"event":"TOOL_CHECKPOINT","ts":"2026-03-14T14:35:00Z","agent_id":"extension-hijacker","checkpoint":1,"tool":"slither","repos":["lbamm-core","lbamm-hooks-and-handlers","secure-proxy"],"high":6,"medium":24}
+{"event":"TOOL_CHECKPOINT","ts":"2026-03-14T14:36:00Z","agent_id":"extension-hijacker","checkpoint":1,"tool":"aderyn","repos":["lbamm-core"],"findings":"see report.md","note":"lbamm-hooks-and-handlers crashed"}
+{"event":"TOOL_CHECKPOINT","ts":"2026-03-14T14:40:00Z","agent_id":"extension-hijacker","checkpoint":2,"tool":"entry-point-analyzer","status":"complete"}
+{"event":"TURN_COMPLETE","ts":"2026-03-14T14:45:00Z","agent_id":"extension-hijacker","turn":10,"findings_so_far":0,"vectors_ruled_out_so_far":9,"status":"in_progress"}
+{"event":"TURN_COMPLETE","ts":"2026-03-14T14:55:00Z","agent_id":"extension-hijacker","turn":20,"findings_so_far":0,"vectors_ruled_out_so_far":15,"status":"in_progress"}
+{"event":"TURN_COMPLETE","ts":"2026-03-14T15:00:00Z","agent_id":"extension-hijacker","turn":25,"findings_so_far":0,"vectors_ruled_out_so_far":17,"status":"wrapping_up"}
+{"event":"SESSION_END","ts":"2026-03-14T15:05:00Z","agent_id":"extension-hijacker","total_turns":28,"findings_count":0,"vectors_ruled_out":17,"exit_reason":"task_complete"}

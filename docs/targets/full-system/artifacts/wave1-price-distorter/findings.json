@@ -1,98 +1,183 @@
 {
-  "agent": "price-distorter",
-  "archetype": "Cross-Venue Price Distorter",
+  "agent_id": "price-distorter",
+  "session_id": "wave1-exp5",
+  "wave": 1,
   "model": "claude-opus-4-6",
-  "timestamp": "2026-03-14T06:00:00Z",
-  "target": "full-system",
-  "scope": ["lbamm-core", "amm-pool-type-dynamic", "lbamm-pool-type-single-provider", "lbamm-hooks-and-handlers"],
-  "profit_question": "Can I make the protocol believe inventory is worth more or less than it really is for one transaction?",
+  "scope": [
+    "lbamm-core",
+    "amm-pool-type-dynamic",
+    "lbamm-pool-type-single-provider",
+    "lbamm-hooks-and-handlers"
+  ],
   "findings": [],
-  "ruled_out_vectors": [
+  "ruled_out": [
     {
-      "vector": "Dust-loop extraction via rounding differences across pool types",
-      "why_ruled_out": "All pool types round in favor of the pool. SingleProviderHelper uses mulDiv (rounds down for output) and mulDivRoundingUp (rounds up for input). DynamicPoolType delegates to concentrated liquidity math with same rounding convention. FullMath.mulDiv is 512-bit precision with no phantom overflow. Round-trip swap always loses dust to rounding, never gains.",
-      "evidence": "SingleProviderHelper.sol:calculateFixedInput (mulDiv rounds DOWN output), calculateFixedOutput (mulDivRoundingUp rounds UP input). FullMath.sol: 512-bit phantom overflow protection."
+      "id": "RO-PD-01",
+      "hypothesis": "H3/H9: Malicious SingleProvider hook returns fake price",
+      "target": "SingleProviderPoolType.swapByInput() L323",
+      "blocked_by": "Pool hook set at pool creation by pool creator. LP determined by hook. Attacker creating malicious hook trades against themselves. No external victim.",
+      "verdict": "skip — self-inflicted, no external victim"
     },
     {
-      "vector": "Flash loan fee token denomination mismatch",
-      "why_ruled_out": "Flash loan fee validation at AMMModule._executeTokenFlashloanHooks validates fee token is either the borrowed token or a configured cross-token fee payment. The _computeFlashLoanFee uses the same token's decimal precision. No denomination confusion possible.",
-      "evidence": "AMMModule.sol:3288-3382 (_flashLoan), TOKEN_SETTINGS_FLASHLOANS_VALIDATE_FEE_FLAG guards cross-token fee validation."
+      "id": "RO-PD-02",
+      "hypothesis": "H2: snapPrice sandwich in DynamicHelper",
+      "target": "DynamicHelper.snapPrice() L237",
+      "blocked_by": "Guard at L245: if (poolState.liquidity > 0) revert. Also checks all initialized ticks with liquidity between current and target price (L261-271). Price can only snap when NO active liquidity in entire traversal path.",
+      "verdict": "skip — no extraction path when liquidity is 0"
     },
     {
-      "vector": "feeOnTop unsigned in permit SWAP_TYPEHASH enables executor theft",
-      "why_ruled_out": "While feeOnTop is not signed, the signer sets limitAmount (minimum output) which IS signed. Any feeOnTop inflation reduces input to the swap, reducing output. If output drops below limitAmount, the transaction reverts. The signer is protected by their signed limitAmount.",
-      "evidence": "PermitTransferHandler.sol SWAP_TYPEHASH_STUB: feeOnTop absent from signed fields. AMMModule.sol:2225-2231: feeOnTop deducted from amountIn before swap. Limit check at finalization reverts if amountOut < limitAmount."
+      "id": "RO-PD-03",
+      "hypothesis": "H4: Direct swap bypasses pricing bounds (CP-004 variant)",
+      "target": "AMMStandardHook._validatePricingBounds()",
+      "blocked_by": "Known CP-004. For direct swaps, beforeSwap stores amount in transient slot, afterSwap reads it. Only bypassed when afterSwap flag is disabled — token creator's flag configuration choice.",
+      "verdict": "skip — known finding, self-inflicted config, Tier B at best"
     },
     {
-      "vector": "Forged hook caller bypassing AMM authorization",
-      "why_ruled_out": "All hook entry points validate msg.sender == AMM address. AMMStandardHook has _requireCallerIsAMM() at lines 110, 159, 253, 312. SingleProviderPoolType has onlyAMM modifier on all external functions. CLOBTransferHandler checks msg.sender != AMM at lines 230, 316.",
-      "evidence": "AMMStandardHook.sol:940-944 (_requireCallerIsAMM), SingleProviderPoolType.sol:44-47 (onlyAMM modifier), CLOBTransferHandler.sol:230,316."
+      "id": "RO-PD-04",
+      "hypothesis": "H1: Round-trip rounding extraction in DynamicPool (INV-SW02/SW03)",
+      "target": "SwapMath.computeSwapByInputStep(), SqrtPriceMath.getAmount0Delta/getAmount1Delta",
+      "blocked_by": "Input amounts round UP (getAmount0Delta(..., true)). Output amounts round DOWN (getAmount1Delta(..., false)). Fee amounts use mulDivRoundingUp. All favor the pool. Standard Uniswap V3 rounding policy.",
+      "verdict": "skip — rounding consistently favors protocol"
     },
     {
-      "vector": "Transient storage cross-path theft between swap types",
-      "why_ruled_out": "Reentrancy guards (nonReentrantWithFlags) prevent concurrent swaps. DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT (0xFFFFFFFFFFFFFFFF) in hook contract's address space cannot collide with DIAMOND_STORAGE_QUEUED_FEE_COLLECT (0x9A1D...) in AMM's address space. Different contracts, different slot ranges.",
-      "evidence": "AMMStandardHook.sol:66 (DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT), Constants.sol:11 (DIAMOND_STORAGE_QUEUED_FEE_COLLECT), TstorishReentrancyGuardWithFlags.sol:58-62 (nonReentrantWithFlags)."
+      "id": "RO-PD-05",
+      "hypothesis": "Round-trip rounding extraction in SingleProviderPool",
+      "target": "SingleProviderHelper.calculateFixedInput() L101, calculateFixedOutput() L192",
+      "blocked_by": "calculateFixedInput uses FullMath.mulDiv (rounds down output). calculateFixedOutput uses FullMath.mulDivRoundingUp (rounds up required input). Both favor pool.",
+      "verdict": "skip — rounding consistently favors protocol"
     },
     {
-      "vector": "Storage-slot collision in diamond proxy between modules",
-      "why_ruled_out": "All modules use Storage.appStorage() at slot 0x9A1D (diamond storage pattern). Reentrancy guard at keccak256-derived slot 0xeff970... in transient storage. Queued fees at 0x9A1D00000000... in transient storage. On cancun EVM, tstore/tload and sstore/sload are separate namespaces — no collision possible even at same slot number.",
-      "evidence": "LBAMMStorage.sol:29-31 (appStorage at DIAMOND_STORAGE_LBAMM_VAULT), TstorishReentrancyGuardWithFlags.sol:14 (REENTRANCY_GUARD_STORAGE), Tstorish.sol: separate tstore/sstore paths."
+      "id": "RO-PD-06",
+      "hypothesis": "Flash loan + swap reentrancy price manipulation",
+      "target": "ModuleLiquidity.flashLoan() L257, FLASHLOAN_GUARD_FLAG = 1 << 11",
+      "blocked_by": "Flash loan flag (bit 11) doesn't overlap swap flags (bits 2-6), so swaps ARE allowed during flash loan callback. However, this is by-design. Attacker can't profit from self-initiated swaps due to IL and pool fees deducted on each swap. No price state is stale during flash loan callback.",
+      "verdict": "skip — by-design, no profit path"
     },
     {
-      "vector": "snapPrice manipulation to distort pool pricing",
-      "why_ruled_out": "DynamicPoolType.snapPrice guarded by liquidity > 0 check (reverts if pool has liquidity). Only works on empty pools. Additionally traverses tick bitmap to ensure no initialized ticks between current and target price. Cannot be used on active pools.",
-      "evidence": "DynamicHelper.sol:237-277 (snapPrice function), DynamicPoolType.sol:232-234 (liquidity check before snapPrice call)."
+      "id": "RO-PD-07",
+      "hypothesis": "Flash loan fee token mismatch (Lens 1 denomination trace)",
+      "target": "AMMModule._flashLoan() L3296-3378",
+      "blocked_by": "Fee token determined by _executeTokenFlashloanHooks. Balance validation at L3310-3315 independently checks both loanToken and feeToken balances. Fee amount calculation (L3299-3303) denominated in feeToken. Storage at L3375 stores (loanToken, feeToken, tokenSettings, tokenFeeAmount) — denomination consistent.",
+      "verdict": "skip — token creator controlled, denomination consistent, no external victim"
     },
     {
-      "vector": "computeRatioX96 precision loss enabling price manipulation",
-      "why_ruled_out": "computeRatioX96 is only used for price bounds validation in _validatePricingBounds for direct swaps, not for actual pricing. Direct swap pricing is set by the executor (by design — OTC trades). Known issue CP-004 covers the case where afterSwap flag is disabled.",
-      "evidence": "SqrtPriceCalculator.sol (computeRatioX96), AMMStandardHook.sol:823-871 (_validatePricingBounds)."
+      "id": "RO-PD-08",
+      "hypothesis": "H5/H6/H7/H8: Stale oracle / external pricing hook",
+      "target": "ISingleProviderPoolHook.getPoolPriceForSwap() interface",
+      "blocked_by": "AMM only checks MIN_SQRT_RATIO < price < MAX_SQRT_RATIO (L328-330). Hook deployed and controlled by pool creator/LP. Oracle staleness is hook developer's responsibility. AMM framework has no built-in oracle.",
+      "verdict": "skip — oracle quality is hook developer's responsibility, not protocol bug"
     },
     {
-      "vector": "SingleProviderPoolType hook-delegated pricing allows arbitrary price",
-      "why_ruled_out": "By design: the single provider is both the LP and hook operator. They price their own pool. Users are protected by limitAmount (minimum output). The AMM only validates price is within MIN/MAX_SQRT_RATIO mathematical bounds.",
-      "evidence": "SingleProviderPoolType.sol:306-370 (swapByInput with hook-delegated pricing), ISingleProviderPoolHook.sol (getPoolPriceForSwap interface)."
+      "id": "RO-PD-09",
+      "hypothesis": "H10: Slippage/deadline bypass",
+      "target": "AMMModule._finalizeSwapCollectFundsAndDisburse() L2156, L2171; _validateDeadline() L1980",
+      "blocked_by": "For input swaps: if (amountOut < swapOrder.limitAmount) revert (L2156). For output swaps: if (amountIn > swapOrder.limitAmount) revert (L2171). Deadline checked at entry: if (deadline < block.timestamp) revert.",
+      "verdict": "skip — slippage protection enforced correctly"
     },
     {
-      "vector": "Fee asymmetry between input and output swap paths",
-      "why_ruled_out": "Lens 2 paired operation diff shows fee paths are symmetric within their respective economic contexts. Input swaps deduct fees from amountIn; output swaps add fees to amountIn. The shortage calculation formulas differ but are mathematically correct for their contexts (input path accounts for LP fee deduction, output path only accounts for hop fee).",
-      "evidence": "AMMModule.sol:2598-2677 (_applySwapByInputInputFees), AMMModule.sol:2766-2830 (_applySwapByOutputInputFees), AMMModule.sol:2699-2743 (_applySwapByInputOutputFees), AMMModule.sol:2851-2895 (_applySwapByOutputOutputFees)."
-    },
-    {
-      "vector": "Reentrancy during queued hook fee transfers causes fee loss",
-      "why_ruled_out": "While _executeQueuedHookFeesByHookTransfers clears the reentrancy guard (line 3190) before executing transfers, the queue counter is already reset to 0. Re-entrant swaps could queue new fees that are never consumed, but the attacker doesn't profit — the hook's fees from the re-entrant swap are simply lost in transient storage at tx end. This is a potential low-severity fee-loss-to-hooks issue, NOT a price distortion vector.",
-      "evidence": "AMMModule.sol:3183-3204 (_executeQueuedHookFeesByHookTransfers), line 3189 resets queue to 0, line 3190 clears guard."
+      "id": "RO-PD-10",
+      "hypothesis": "Reentrancy during queued hook fee transfer execution",
+      "target": "AMMModule._executeQueuedHookFeesByHookTransfers() L3183-3204",
+      "blocked_by": "tokensOwed decremented before transfer (L3129), preventing double-withdraw. All pool state (reserves, fees) fully committed before queue execution. Queue length zeroed at L3189. Reentrant swap creates normal sequential operation with fully committed state.",
+      "verdict": "skip — state fully committed before fee transfers, no stale state to exploit"
     }
   ],
-  "tools_used": {
-    "slither": true,
-    "aderyn": false,
-    "forge": false,
-    "halmos": false,
-    "medusa": false,
-    "trail_of_bits_skills": ["audit-context-building", "entry-point-analyzer"]
+  "mandatory_probes": [
+    {
+      "id": "MP-01",
+      "name": "Dust-loop extraction",
+      "description": "100+ tiny swaps in any pool type",
+      "result": "ruled_out",
+      "detail": "Rounding favors protocol in all 3 pool types (DynamicPool, FixedPool, SingleProvider)"
+    },
+    {
+      "id": "MP-02",
+      "name": "Forged hook caller",
+      "description": "Call hook directly bypassing AMM",
+      "result": "ruled_out",
+      "detail": "onlyAMM() modifier on all pool type entry points; hooks queried via hook address stored in pool state"
+    },
+    {
+      "id": "MP-03",
+      "name": "Transient-slot theft",
+      "description": "Cross-path stale transient read",
+      "result": "ruled_out",
+      "detail": "Known CP-004, self-inflicted config. Queue uses dedicated transient slots at 0x9A1D namespace"
+    },
+    {
+      "id": "MP-04",
+      "name": "Permit mutation",
+      "description": "Mutate unsigned feeOnTop fields",
+      "result": "ruled_out",
+      "detail": "limitAmount in SwapOrder protects signer's minimum output regardless of feeOnTop"
+    },
+    {
+      "id": "MP-05",
+      "name": "Storage-slot collision",
+      "description": "Pool type storage overlapping core",
+      "result": "ruled_out",
+      "detail": "Pool types are separate contracts called via external calls (not delegatecall), with isolated storage"
+    }
+  ],
+  "value_lifecycle_lenses": {
+    "L1_TRACE": [
+      "Traced fee values through beforeSwap hook -> _applySwapByInputInputFees -> pool swap -> _applySwapByInputOutputFees -> _finalizeSwapCollectFundsAndDisburse. Denomination consistent at every handoff.",
+      "Traced flash loan fee path: feeToken can differ from loanToken. Balance validation for each token is independent (L3310-3315). Fee stored with correct denomination (L3375-3378).",
+      "Traced hook fee storage: _storeHookFees(tokenFor, tokenFee, ...) matches actual fee token at every call site."
+    ],
+    "L2_DIFF": [
+      "Diffed addLiquidity vs removeLiquidity — symmetric validation, reserve direction correctly inverted.",
+      "Diffed singleSwap vs directSwap — directSwap skips pool type call, hooks still execute. Known asymmetry in pricing bounds (CP-004).",
+      "Diffed swapByInput vs swapByOutput fee paths — input allows 100% fee, output rejects at 100%. Intentional (avoids div-by-zero)."
+    ],
+    "L3_AMP": [
+      "Checked all fee multiplications for denomination mismatch. No amplification factor > 1x found.",
+      "Checked hook fee amounts — bounded by swap amount in _applySwapByInputInputFees (revert if feeAmount > swapAmountIn at L2616)."
+    ]
   },
-  "tool_notes": "Aderyn crashed on both single-provider and dynamic repos (known cross-repo bug). Forge tests not written as no surviving hypotheses warranted PoC development. Halmos/Medusa not triggered as no math findings emerged.",
-  "hypotheses_investigated": 10,
-  "mandatory_probes_completed": {
-    "dust_loop": "ruled_out",
-    "forged_hook_caller": "ruled_out",
-    "transient_slot_theft": "ruled_out",
-    "permit_mutation": "ruled_out",
-    "storage_slot_collision": "ruled_out"
+  "static_analysis": {
+    "slither": "Reviewed phase0 reports. lbamm-core: 1 arbitrary-send-erc20 (FP), 2 reentrancy-balance (FP). Dynamic: 2 incorrect-shift (FP), 21 divide-before-multiply (FP).",
+    "aderyn": "lbamm-core: 1 High (FP — setTokenSettings reentrancy, guarded). amm-pool-type-dynamic: crashed. lbamm-pool-type-single-provider: crashed."
   },
-  "lenses_applied": {
-    "L1_trace": "Applied to fee values through _processHookFees -> _applyFees -> _finalizeSwapCollectFundsAndDisburse. All values maintain consistent denomination.",
-    "L2_diff": "Applied to singleSwap vs directSwap, swapByInput vs swapByOutput, input vs output fee paths. All asymmetries are by design.",
-    "L3_amplify": "Checked fee_rate * amount (same denomination), LP share price (totalAssets/totalShares via pool type), flash loan fee (validated). No amplification > 100x found."
-  },
+  "tools_used": [
+    "slither_mcp_run_detectors",
+    "slither_mcp_get_function_source",
+    "slither_mcp_list_functions",
+    "slither_mcp_get_contract_source",
+    "aderyn",
+    "trail_of_bits_audit_context_building",
+    "trail_of_bits_entry_point_analyzer"
+  ],
+  "files_read": [
+    "lbamm-core/src/modules/AMMModule.sol",
+    "lbamm-core/src/libraries/FeeHelper.sol",
+    "lbamm-core/src/libraries/LBAMMStorage.sol",
+    "lbamm-core/src/Constants.sol",
+    "lbamm-core/src/LimitBreakAMM.sol",
+    "lbamm-core/src/modules/ModuleLiquidity.sol",
+    "lbamm-core/src/modules/ModuleAdmin.sol",
+    "lbamm-core/src/modules/ModuleFeeCollection.sol",
+    "amm-pool-type-dynamic/src/libraries/DynamicHelper.sol",
+    "amm-pool-type-dynamic/src/libraries/SwapMath.sol",
+    "lbamm-pool-type-fixed/src/libraries/FixedHelper.sol",
+    "lbamm-pool-type-single-provider/src/SingleProviderPoolType.sol",
+    "lbamm-pool-type-single-provider/src/libraries/SingleProviderHelper.sol",
+    "lbamm-pool-type-single-provider/src/interfaces/ISingleProviderPoolHook.sol",
+    "lbamm-hooks-and-handlers/src/hooks/AMMStandardHook.sol",
+    "lbamm-hooks-and-handlers/src/hooks/libraries/SqrtPriceCalculator.sol",
+    "lbamm-hooks-and-handlers/src/handlers/clob/CLOBTransferHandler.sol",
+    "lbamm-hooks-and-handlers/src/handlers/clob/libraries/CLOBHelper.sol",
+    "lbamm-hooks-and-handlers/src/handlers/permit/PermitTransferHandler.sol"
+  ],
   "metrics": {
-    "vectors_investigated": 11,
-    "vectors_ruled_out": 11,
-    "findings_submitted": 0,
-    "functions_analyzed": 90,
-    "contracts_analyzed": 8,
-    "slither_findings_reviewed": 7,
-    "completeness_pct": 85
+    "findings_claimed": 0,
+    "findings_confirmed": 0,
+    "findings_rejected": 0,
+    "vectors_ruled_out": 10,
+    "mandatory_probes_completed": 5,
+    "completeness_pct": 95,
+    "tool_uses": 50,
+    "files_read": 19,
+    "poc_results": []
   }
 }

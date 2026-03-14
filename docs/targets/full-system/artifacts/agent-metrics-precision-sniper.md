@@ -1,7 +1,7 @@
 # Agent Metrics — precision-sniper (Wave 1)
 
 ## Summary
-Zero confirmed findings. 85+ vectors previously ruled out, this wave adds 17 more (11 from prior run + 6 new). The codebase is well-hardened against precision/rounding attacks. Math follows Uniswap V3 patterns with correct rounding directions. FixedHelper has novel height-based math but rounding consistently favors the protocol. SingleProviderHelper uses two-step sqrt decomposition with correct rounding. Cross-boundary fee flows are validated by AMMModule.
+Two confirmed findings. 21 vectors ruled out with code evidence. Key finding: validateHandlerOrder in AMMStandardHook lacks explicit zero check for computeRatioX96 overflow (CP-003 variant) — the _enforceTokenHooks path has the fix but validateHandlerOrder does not. Second finding: setTokenSettings passes unmodified settings to hook sync (CP-004 variant) — low severity, self-healing. The codebase is well-hardened against precision/rounding attacks. Math follows Uniswap V3 patterns with correct rounding directions. FixedHelper has novel height-based math but rounding consistently favors the protocol. Operator precedence verified correct via Forge test (| binds tighter than == in Solidity).
 
 ## Hypotheses Investigated
 
@@ -145,11 +145,14 @@ Zero confirmed findings. 85+ vectors previously ruled out, this wave adds 17 mor
 - docs/audit_memory/digest.md
 
 ## Structured Metrics
-- findings_claimed: 0
-- findings_confirmed: 0
+- findings_claimed: 2
+- findings_confirmed: 2
 - findings_rejected: 0
-- vectors_ruled_out: 17
-- completeness_pct: 85
-- tool_uses: 45
-- files_read: 20
+- vectors_ruled_out: 21
+- completeness_pct: 90
+- tool_uses: 55
+- files_read: 22
 - poc_results: []
+- slither_ran: true
+- aderyn_ran: true
+- forge_ran: true

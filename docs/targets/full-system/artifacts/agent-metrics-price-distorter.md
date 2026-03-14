@@ -1,4 +1,4 @@
-# Agent Metrics: price-distorter (Wave 1, Run 3)
+# Agent Metrics: price-distorter (Wave 1, Run 5)
 
 ## Summary
 0 confirmed findings. 10 hypotheses tested, all ruled out. 5 mandatory probes completed, all ruled out.
@@ -93,8 +93,11 @@ The codebase is well-hardened against price manipulation vectors. Rounding consi
 - lbamm-pool-type-single-provider/src/SingleProviderPoolType.sol (full — swapByInput, swapByOutput, addLiquidity, removeLiquidity)
 - lbamm-pool-type-single-provider/src/libraries/SingleProviderHelper.sol (full — swap math, fee calculation, rounding)
 - lbamm-pool-type-single-provider/src/interfaces/ISingleProviderPoolHook.sol (full)
+- lbamm-hooks-and-handlers/src/hooks/AMMStandardHook.sol (_validatePricingBounds, validateHandlerOrder)
+- lbamm-hooks-and-handlers/src/hooks/libraries/SqrtPriceCalculator.sol (computeRatioX96)
+- lbamm-hooks-and-handlers/src/handlers/clob/CLOBTransferHandler.sol (ammHandleTransfer, _enforceTokenHooks, openOrder)
+- lbamm-hooks-and-handlers/src/handlers/clob/libraries/CLOBHelper.sol (calculateFixedInput)
 - lbamm-hooks-and-handlers/src/handlers/permit/PermitTransferHandler.sol (permit mutation probe)
-- Phase0 artifacts: lbamm-core-slither.md, amm-pool-type-dynamic-slither.md, lbamm-pool-type-single-provider-slither.md
 
 ## Static Analysis Checkpoint
 - **Aderyn lbamm-core**: 1 High (FP — setTokenSettings reentrancy, guarded by nonReentrant + admin-only), 9 Low
@@ -107,7 +110,8 @@ The codebase is well-hardened against price manipulation vectors. Rounding consi
 - findings_confirmed: 0
 - findings_rejected: 0
 - vectors_ruled_out: 10
-- completeness_pct: 90
-- tool_uses: 45
-- files_read: 18
+- mandatory_probes_completed: 5
+- completeness_pct: 95
+- tool_uses: 50
+- files_read: 19
 - poc_results: []

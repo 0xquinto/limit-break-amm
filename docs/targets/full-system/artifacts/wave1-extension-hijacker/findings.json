@@ -5,143 +5,199 @@
   "findings": [],
   "ruled_out_vectors": [
     {
-      "vector": "Malicious pool type returns inflated amountOut to drain LP reserves",
-      "why_ruled_out": "Balance check at AMMModule.sol:2208 validates actual token receipt. Reserve decrement via _safeDecrementUint128 at L1437 reverts on underflow. Protocol fee validation at L1654-1677 enforces minimums. actualAmountIn validated <= originalAmountIn at L1405. Per-pool reserve isolation prevents cross-pool drainage.",
+      "vector": "Malicious pool type returns fake amounts to steal from LPs",
+      "why_ruled_out": "Pool type swapByInput return values constrained by _safeDecrementUint128 on pool reserves (AMMModule.sol:1437). amountOut > reserve causes revert. Balance check at AMMModule.sol:2208 validates actual token receipt.",
       "test_file": null,
-      "repos": ["lbamm-core"]
+      "repos": ["lbamm-core"],
+      "contracts": ["AMMModule.sol"],
+      "functions": ["_poolSwapByInput()", "_safeDecrementUint128()"],
+      "keywords": ["pool-type", "reserve-underflow", "balance-check"]
     },
     {
-      "vector": "Malicious transfer handler skips actual token transfer",
-      "why_ruled_out": "Balance check at AMMModule.sol:2208 — balanceInBefore + amountIn == balanceInAfter. Handler MUST transfer actual tokens. Both CLOB and Permit handlers validate msg.sender == AMM.",
+      "vector": "Malicious transfer handler skips actual transfer",
+      "why_ruled_out": "Balance check at AMMModule.sol:2208 ensures balanceInBefore + amountIn == balanceInAfter. Handler must actually transfer tokens to AMM. Both CLOB and Permit handlers validate msg.sender == AMM.",
       "test_file": null,
-      "repos": ["lbamm-core", "lbamm-hooks-and-handlers"]
+      "repos": ["lbamm-core", "lbamm-hooks-and-handlers"],
+      "contracts": ["AMMModule.sol", "CLOBTransferHandler.sol", "PermitTransferHandler.sol"],
+      "functions": ["_finalizeSwapCollectFundsAndDisburse()", "ammHandleTransfer()"],
+      "keywords": ["transfer-handler", "balance-check"]
     },
     {
-      "vector": "Malicious hook returns excessive swap fees to siphon from swappers",
-      "why_ruled_out": "Hook fees bounded at AMMModule.sol:2616 (if feeAmount > swapAmountIn revert) and L2628, L2711, L2723. For liquidity ops, bounded by user-specified maxHookFee. All hooks enforce _requireCallerIsAMM() preventing direct invocation.",
+      "vector": "Direct handler call bypassing AMM hooks",
+      "why_ruled_out": "CLOBTransferHandler.ammHandleTransfer() checks msg.sender != AMM at line 230. PermitTransferHandler.ammHandleTransfer() checks at line 115. Cannot be called directly.",
       "test_file": null,
-      "repos": ["lbamm-core", "lbamm-hooks-and-handlers"]
+      "repos": ["lbamm-hooks-and-handlers"],
+      "contracts": ["CLOBTransferHandler.sol", "PermitTransferHandler.sol"],
+      "functions": ["ammHandleTransfer()"],
+      "keywords": ["direct-call", "access-control"]
     },
     {
-      "vector": "Register pool type at vanity address with 6 leading zero bytes to create malicious pool",
-      "why_ruled_out": "Anyone can create pools with custom pool types (Tier B). But pool type only controls swap math for its own pool. Reserves isolated per pool. Balance checks validate transfers. LPs/swappers choose which pool to use. Token hooks can whitelist allowed pool types.",
+      "vector": "Malicious pool hook manipulates price to extract from swappers",
+      "why_ruled_out": "Pool hook set by pool creator at creation. Users who swap in pool chose to trust it. Tier B - requires custom handler. Reserve decrements still apply. SingleProviderPoolType validates sqrtPriceX96 bounds (SingleProviderPoolType.sol:328-330).",
       "test_file": null,
-      "repos": ["lbamm-core"]
+      "repos": ["lbamm-pool-type-single-provider", "lbamm-core"],
+      "contracts": ["SingleProviderPoolType.sol", "AMMModule.sol"],
+      "functions": ["swapByInput()", "getPoolPriceForSwap()"],
+      "keywords": ["pool-hook", "price-manipulation", "tier-b"]
     },
     {
-      "vector": "Storage-slot collision via malicious extension writing to AMM's diamond storage",
-      "why_ruled_out": "All extensions (pool types, hooks, handlers) called via call not delegatecall. They execute in their own storage context. Only internal modules use delegatecall with immutable constructor addresses.",
+      "vector": "Pool type address collision via 6 leading zero bytes mining",
+      "why_ruled_out": "Pool IDs deterministic from params. poolInitialized[poolId] prevents duplicates. Different pool type address = different pool ID. 2^112 address space makes collision infeasible.",
       "test_file": null,
-      "repos": ["lbamm-core"]
+      "repos": ["lbamm-core"],
+      "contracts": ["AMMModule.sol"],
+      "functions": ["_createPool()"],
+      "keywords": ["pool-type-collision", "address-mining"]
     },
     {
-      "vector": "Multi-hop cross-pool extraction via malicious pool type at one hop",
-      "why_ruled_out": "Output of hop N becomes input of hop N+1 (AMMModule.sol:1469). Reserve decrements at L1437/L1440 prevent extracting more than deposited. Attacker would only trade with themselves.",
+      "vector": "UUPS/beacon takeover before initializer",
+      "why_ruled_out": "Not UUPS/beacon pattern. SecureProxy is EIP-1967 with admin-controlled upgrades. Initialization in constructor (SecureProxy.sol:87-92). Architecture mismatch.",
       "test_file": null,
-      "repos": ["lbamm-core"]
+      "repos": ["secure-proxy"],
+      "contracts": ["SecureProxy.sol"],
+      "functions": ["constructor()"],
+      "keywords": ["proxy", "uups", "initialization"]
     },
     {
-      "vector": "Flash loan cross-token fee exploitation via malicious token hook",
-      "why_ruled_out": "Requires malicious token hook (set by token owner/admin). Fee token hook can validate via FLASHLOANS_VALIDATE_FEE_FLAG. Users choose which tokens to flash loan from. Self-inflicted risk.",
+      "vector": "Diamond facet selector collision",
+      "why_ruled_out": "Not a diamond with dynamic facets. LimitBreakAMM uses fixed immutable module addresses (LimitBreakAMM.sol:35-41). No facet management or selector routing.",
       "test_file": null,
-      "repos": ["lbamm-core"]
+      "repos": ["lbamm-core"],
+      "contracts": ["LimitBreakAMM.sol"],
+      "functions": ["constructor()"],
+      "keywords": ["diamond", "selector-collision", "facet"]
     },
     {
-      "vector": "Direct hook invocation (forged hook caller) to claim fees without swap",
-      "why_ruled_out": "All hook entry points guarded by _requireCallerIsAMM() at AMMStandardHook.sol:940-943 using immutable AMM address. Cannot bypass.",
+      "vector": "CREATE2 destroy and redeploy at same address",
+      "why_ruled_out": "selfdestruct deprecated in Cancun EVM. No self-destruct in any contract. Not possible on target EVM version.",
       "test_file": null,
-      "repos": ["lbamm-hooks-and-handlers"]
+      "repos": ["lbamm-core"],
+      "contracts": [],
+      "functions": [],
+      "keywords": ["create2", "redeploy", "selfdestruct"]
     },
     {
-      "vector": "Transient storage theft (read stale slot from different operation)",
-      "why_ruled_out": "Known Low (CP-001/HOOK-001). By-design: beforeSwap writes transient slot per-token, second call overwrites first. No extraction path beyond documented finding.",
+      "vector": "Facet management bypass without governance",
+      "why_ruled_out": "No facet management exists. Module addresses are immutable constructor parameters. Cannot add/replace modules post-deployment.",
       "test_file": null,
-      "repos": ["lbamm-core"]
+      "repos": ["lbamm-core"],
+      "contracts": ["LimitBreakAMM.sol"],
+      "functions": [],
+      "keywords": ["facet-management", "governance-bypass"]
     },
     {
-      "vector": "Permit mutation (feeOnTop/recipient not signed)",
-      "why_ruled_out": "feeOnTop not in SWAP_TYPEHASH but limitAmount IS signed and caps total exposure. Known Low finding. Executor can set feeOnTop but cannot exceed limitAmount.",
+      "vector": "Malicious ICLOBHook via groupKey blocks/steals from CLOB users",
+      "why_ruled_out": "Anyone can create order books with any hook in groupKey. But users choose which order book to interact with. Malicious hook only affects its own order book (Tier B, self-inflicted).",
       "test_file": null,
-      "repos": ["lbamm-hooks-and-handlers"]
+      "repos": ["lbamm-hooks-and-handlers"],
+      "contracts": ["CLOBTransferHandler.sol"],
+      "functions": ["openOrder()", "ammHandleTransfer()"],
+      "keywords": ["clob-hook", "order-book", "tier-b"]
     },
     {
-      "vector": "Dust-loop extraction via 100+ tiny swaps accumulating rounding errors",
-      "why_ruled_out": "FeeHelper.sol uses mulDiv (rounds down against attacker for input fees) and mulDivRoundingUp (rounds up for LP fees). No profitable dust accumulation path.",
+      "vector": "feeOnTop not signed in permit - executor steals from signer",
+      "why_ruled_out": "Known Low finding. feeOnTop not in SWAP_TYPEHASH (Constants.sol:35). But limitAmount IS signed and caps minimum output. Signer protected by their own limitAmount choice.",
       "test_file": null,
-      "repos": ["lbamm-core"]
+      "repos": ["lbamm-hooks-and-handlers"],
+      "contracts": ["PermitTransferHandler.sol", "Constants.sol"],
+      "functions": ["_executeFillOrKillPermit()"],
+      "keywords": ["permit", "feeOnTop", "unsigned-field"]
     },
     {
-      "vector": "Dynamic pool fee manipulation via malicious pool hook",
-      "why_ruled_out": "Dynamic fee validated at AMMModule.sol:1717 — cannot exceed MAX_BPS for input swaps, MAX_BPS-1 for output. Pool hook fixed at pool creation. Tier B.",
+      "vector": "Zero-price bypass in validateHandlerOrder (CP-003)",
+      "why_ruled_out": "Known Low (CP-003). computeRatioX96 returns 0 on overflow. Direct swap path now reverts on sqrtPriceX96==0 (AMMStandardHook.sol:847-850). validateHandlerOrder still vulnerable when minSqrtPriceX96 not set, but impact limited.",
       "test_file": null,
-      "repos": ["lbamm-core"]
+      "repos": ["lbamm-hooks-and-handlers"],
+      "contracts": ["AMMStandardHook.sol", "SqrtPriceCalculator.sol"],
+      "functions": ["validateHandlerOrder()", "computeRatioX96()"],
+      "keywords": ["zero-price", "overflow", "pricing-bounds"]
     },
     {
-      "vector": "Single provider pool price manipulation via malicious pricing hook",
-      "why_ruled_out": "Price validated against MIN/MAX_SQRT_RATIO (wide range). But pool hook set at creation by creator. Swappers voluntarily choose pool. Tier B.",
+      "vector": "Transient storage leak (HOOK-001/CP-001)",
+      "why_ruled_out": "Known Low (CP-001). DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT written in beforeSwap, read in afterSwap, never cleared. Requires beforeSwap flag disabled + afterSwap enabled in same tx. By-design transient storage pattern.",
       "test_file": null,
-      "repos": ["lbamm-pool-type-single-provider"]
+      "repos": ["lbamm-hooks-and-handlers"],
+      "contracts": ["AMMStandardHook.sol"],
+      "functions": ["_validatePricingBounds()"],
+      "keywords": ["transient-storage", "stale-data", "hook-flags"]
     },
     {
-      "vector": "Transfer handler callback exploitation after swap finalization",
-      "why_ruled_out": "Callback data generated by handler during ammHandleTransfer. Callback executed after finalization. Handler validates msg.sender == AMM. Handler can only modify its own state.",
+      "vector": "registryUpdate functions bypass on AMMStandardHook",
+      "why_ruled_out": "_requireCallerIsRegistry() checks msg.sender == address(SETTINGS_REGISTRY). SETTINGS_REGISTRY is immutable, set in constructor. No bypass path.",
       "test_file": null,
-      "repos": ["lbamm-core", "lbamm-hooks-and-handlers"]
+      "repos": ["lbamm-hooks-and-handlers"],
+      "contracts": ["AMMStandardHook.sol"],
+      "functions": ["_requireCallerIsRegistry()"],
+      "keywords": ["access-control", "registry"]
     },
     {
-      "vector": "Hook fee reentrancy via collectHookFeesByHook during swap",
-      "why_ruled_out": "Fee collection during swap is QUEUED (ModuleFeeCollection.sol:75-76), not executed immediately. Processed via executeQueuedHookFeesByHookTransfers called by AMM self-call (msg.sender == address(this)). No reentrancy.",
+      "vector": "Token creator syncs settings to arbitrary hooks",
+      "why_ruled_out": "setTokenSettings caller controls hooksToSync array, but can only update settings for their OWN token. Token-scoped, no cross-token effect. By design.",
       "test_file": null,
-      "repos": ["lbamm-core"]
+      "repos": ["lbamm-hooks-and-handlers"],
+      "contracts": ["CreatorHookSettingsRegistry.sol"],
+      "functions": ["setTokenSettings()"],
+      "keywords": ["settings-sync", "cross-token"]
     },
     {
-      "vector": "CREATE2 deploy-destroy-redeploy at trusted extension address",
-      "why_ruled_out": "Solidity 0.8.24 + Cancun EVM — selfdestruct is deprecated (only transfers ETH, does not destroy code). Cannot redeploy at same address.",
+      "vector": "Multi-hop cross-pool drain via malicious pool type",
+      "why_ruled_out": "Per-pool reserves + _safeDecrementUint128 (AMMModule.sol:1437). Malicious pool in hop 1 can only move tokens from its own reserves. Net effect: self-trading. No cross-pool extraction.",
       "test_file": null,
-      "repos": ["lbamm-core"]
+      "repos": ["lbamm-core"],
+      "contracts": ["AMMModule.sol"],
+      "functions": ["_poolSwapByInput()"],
+      "keywords": ["multi-hop", "cross-pool", "reserve-isolation"]
+    },
+    {
+      "vector": "Storage-slot collision via external call to extensions",
+      "why_ruled_out": "All extensions (pool types, hooks, handlers) called via call not delegatecall. They execute in their own storage context, cannot access AMM diamond storage at slot 0x9A1D.",
+      "test_file": null,
+      "repos": ["lbamm-core"],
+      "contracts": ["AMMModule.sol"],
+      "functions": ["_executeTransferHandler()", "_executeBeforeSwapHooks()"],
+      "keywords": ["storage-collision", "delegatecall", "call-vs-delegatecall"]
     }
   ],
   "theft_theses": [
     {
-      "thesis": "Malicious pool type returns inflated amountOut to drain LP reserves via swap",
-      "victim": "LPs who added liquidity to the malicious pool",
-      "asset": "LP deposited tokens",
+      "thesis": "Register malicious pool type -> users swap -> pool type returns inflated amountOut -> steal from pool reserves",
+      "victim": "LPs who add liquidity to the malicious pool",
+      "asset": "LP-deposited tokens",
       "estimated_ev": 0,
       "status": "ruled_out"
     },
     {
-      "thesis": "Malicious transfer handler skips token transfer while core believes funds arrived",
-      "victim": "AMM protocol (output tokens sent without input received)",
-      "asset": "Output tokens from AMM reserves",
+      "thesis": "Deploy malicious transfer handler -> executor specifies handler in transferData -> handler skips token transfer but AMM believes funds arrived",
+      "victim": "AMM protocol (pool reserves)",
+      "asset": "Pool reserve tokens",
       "estimated_ev": 0,
       "status": "ruled_out"
     },
     {
-      "thesis": "Malicious hook charges excessive fees to extract value from swappers",
-      "victim": "Swappers trading tokens with malicious hook",
-      "asset": "Swap input/output amounts beyond fair fees",
+      "thesis": "Call hook directly (not via AMM) -> credited without legitimate swap -> extract tokens",
+      "victim": "AMM protocol",
+      "asset": "Hook fee tokens",
       "estimated_ev": 0,
       "status": "ruled_out"
     }
   ],
   "metadata": {
-    "num_turns": 20,
-    "tool_uses": 8,
+    "num_turns": 30,
+    "tool_uses": 12,
     "files_read": 20,
     "tools_run": {
       "phase0_artifacts": {"read": true},
-      "slither": {"ran": true, "repos": ["lbamm-core", "lbamm-hooks-and-handlers", "secure-proxy"], "high": 8, "medium": 27},
-      "aderyn": {"ran": true, "repos": ["lbamm-core", "secure-proxy"], "findings": 0, "notes": "hooks-and-handlers crashed (v0.6.8 fatal bug)"},
-      "forge_test": {"ran": false, "reason": "no findings to test"},
-      "chisel": {"ran": false, "reason": "no math expressions to verify"},
-      "halmos": {"ran": false, "reason": "no math findings to verify"},
-      "medusa": {"ran": false, "reason": "no sequence findings to verify"},
-      "echidna": {"ran": false, "reason": "not used"},
-      "cast_run": {"ran": false, "reason": "no historical tx to trace"},
-      "quimera": {"ran": false, "reason": "no confirmed findings"},
-      "variant_analysis": {"ran": false, "reason": "no confirmed findings"},
-      "audit_context_building": {"ran": true},
-      "entry_point_analyzer": {"ran": true}
+      "slither": {"ran": true, "repos": ["lbamm-core", "lbamm-hooks-and-handlers", "secure-proxy"], "high": 6, "medium": 24},
+      "aderyn": {"ran": true, "repos": ["lbamm-core"], "findings": "see report.md", "note": "lbamm-hooks-and-handlers crashed (aderyn v0.6.8 fatal bug)"},
+      "forge_test": {"ran": false, "reason": "No findings survived triage to warrant PoC development"},
+      "chisel": {"ran": false, "reason": "No math calculations needed verification"},
+      "halmos": {"ran": false, "reason": "No math findings to verify"},
+      "medusa": {"ran": false, "reason": "No multi-step findings to verify"},
+      "cast_run": {"ran": false, "reason": "No historical tx to trace"},
+      "quimera": {"ran": false, "reason": "No confirmed findings"},
+      "variant_analysis": {"ran": false, "reason": "No confirmed findings"},
+      "entry_point_analyzer": {"ran": true, "note": "Used Slither function lists for CLOBTransferHandler, AMMStandardHook, PermitTransferHandler"},
+      "audit_context_building": {"ran": false, "reason": "Equivalent analysis performed via direct code reading + Slither"}
     },
     "theses_tested": 3,
     "theses_confirmed": 0,
