@@ -289,6 +289,27 @@ MANDATORY_TOOLS_BY_ROLE = {
 CONDITIONAL_TOOLS = {"token_integration_analyzer", "sharp_edges"}
 
 
+def _tool_ran(tools_run: dict, tool_name: str) -> bool:
+    """Check if a tool was run, matching by exact key or any key containing the tool name.
+
+    Agents use varied key names like 'slither_mcp_run_detectors' for 'slither',
+    or 'audit_context_building_skill' for 'audit_context_building'.
+    """
+    # Exact match
+    info = tools_run.get(tool_name)
+    if info:
+        ran = info if isinstance(info, bool) else info.get("ran", False)
+        if ran:
+            return True
+    # Fuzzy match: any key containing the tool name
+    for k, v in tools_run.items():
+        if tool_name in k:
+            ran = v if isinstance(v, bool) else (v.get("ran", False) if isinstance(v, dict) else False)
+            if ran:
+                return True
+    return False
+
+
 def check_tool_coverage(sidecars: list[dict]) -> list[str]:
     """Check that agents ran mandatory tools. Returns list of warnings."""
     warnings = []
@@ -305,24 +326,33 @@ def check_tool_coverage(sidecars: list[dict]) -> list[str]:
             )
             continue
 
-        # Check unconditional mandatory tools
+        # Check unconditional mandatory tools (fuzzy match: any key starting with or containing the tool name)
         for tool in MANDATORY_TOOLS_ALL:
-            tool_info = tools_run.get(tool, {})
-            if not tool_info.get("ran", False):
-                reason = tool_info.get("reason", "no reason given")
-                warnings.append(
-                    f"TOOL_COVERAGE: {agent} ({role}) did NOT run {tool} — reason: {reason}"
-                )
+            if _tool_ran(tools_run, tool):
+                continue
+            # Find best reason from partial matches
+            reason = "no reason given"
+            for k, v in tools_run.items():
+                if tool in k and isinstance(v, dict) and v.get("reason"):
+                    reason = v["reason"]
+                    break
+            warnings.append(
+                f"TOOL_COVERAGE: {agent} ({role}) did NOT run {tool} — reason: {reason}"
+            )
 
         # Check role-specific mandatory tools
         role_tools = MANDATORY_TOOLS_BY_ROLE.get(role, set())
         for tool in role_tools:
-            tool_info = tools_run.get(tool, {})
-            if not tool_info.get("ran", False):
-                reason = tool_info.get("reason", "no reason given")
-                warnings.append(
-                    f"TOOL_COVERAGE: {agent} ({role}) did NOT run role-mandatory {tool} — reason: {reason}"
-                )
+            if _tool_ran(tools_run, tool):
+                continue
+            reason = "no reason given"
+            for k, v in tools_run.items():
+                if tool in k and isinstance(v, dict) and v.get("reason"):
+                    reason = v["reason"]
+                    break
+            warnings.append(
+                f"TOOL_COVERAGE: {agent} ({role}) did NOT run role-mandatory {tool} — reason: {reason}"
+            )
 
         # Check conditional tools — warn only if not present (skip vs not-attempted)
         for tool in CONDITIONAL_TOOLS:

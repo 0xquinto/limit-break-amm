@@ -174,15 +174,13 @@ You can use SendMessage to relay important cross-cutting discoveries between age
 
 Once ALL {len(wave.agents)} agents have completed:
 
-1. Send a shutdown message to ALL {len(wave.agents)} agents in a SINGLE message
-   (use SendMessage for each, all in one response). Message: "Shutdown. Wave complete."
-2. In your NEXT turn, call TeamDelete with team_name "{team_name}"
-3. Print a summary listing each agent's completion status
+1. Call TeamDelete with team_name "{team_name}" IMMEDIATELY. Do NOT send shutdown messages first — just delete the team.
+2. If TeamDelete fails, call it ONE more time. If it fails again, skip it.
+3. Print a summary listing each agent's completion status.
 4. On the VERY LAST LINE of your response, output exactly:
    {COMPLETION_MARKER}
 
-IMPORTANT: Do NOT wait for agents to acknowledge shutdown. Send all shutdown
-messages at once, then delete the team on your next turn.
+CRITICAL: Do NOT send SendMessage to agents before TeamDelete. Do NOT retry TeamDelete more than once. Output {COMPLETION_MARKER} regardless of whether TeamDelete succeeded.
 """
 
 
@@ -310,6 +308,18 @@ async def run_wave(wave: WaveConfig, prompts: dict[str, str]) -> list[AgentResul
                     print(f"  SAFETY: Breaking after {result_count} turns")
                     break
 
+                # Safety: bail if teardown is taking too long (>5 min after last agent artifact)
+                if elapsed_ms > 300_000 and len(agents_started) > 0:
+                    # Check if all agent artifacts exist on disk
+                    all_done = all(
+                        (ARTIFACTS_DIR / f"wave{wave.number}-{a.name}" / "findings.json").exists()
+                        for a in wave.agents
+                    )
+                    if all_done and result_count >= len(wave.agents) + 5:
+                        print(f"  SAFETY: All artifacts on disk, teardown stuck. Breaking.")
+                        wave_complete = True
+                        break
+
     # 5. Build results from disk artifacts
     elapsed_ms = int((time.monotonic() - start_time) * 1000)
     results = _build_results_from_disk(wave, elapsed_ms, wave_complete)
@@ -369,9 +379,10 @@ def _build_results_from_disk(
         if has_sidecar:
             try:
                 sidecar = json.loads(sidecar_path.read_text())
-                meta = sidecar.get("metadata", {})
-                num_turns = meta.get("num_turns", 0)
-                total_tokens = meta.get("total_tokens", 0)
+                if isinstance(sidecar, dict):
+                    meta = sidecar.get("metadata", {})
+                    num_turns = meta.get("num_turns", 0)
+                    total_tokens = meta.get("total_tokens", 0)
             except (json.JSONDecodeError, KeyError):
                 pass
 

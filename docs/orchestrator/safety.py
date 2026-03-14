@@ -25,6 +25,8 @@ def extract_findings_from_json(wave: WaveConfig) -> list[dict]:
             data = json.loads(path.read_text())
         except json.JSONDecodeError:
             continue
+        if isinstance(data, list):
+            data = {"findings": data}
         for f in data.get("findings", []):
             f.setdefault("agent", agent.name)
             findings.append(f)

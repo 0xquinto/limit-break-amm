@@ -43,6 +43,17 @@ Rank every hypothesis by: `extractable_value / attacker_capital / dependency_cou
 
 **Second-pass pivot**: if your first pass through the Target Map produces zero findings after 50% of your turns, attack from a different angle — change the victim assumption, change the capital source, or target a different module.
 
+### Known Vulnerability Patterns (MUST investigate)
+
+Previous audits found these bug classes in this codebase. Verify if variants still exist:
+
+1. **Zero-price bypass**: `sqrtPriceX96==0` can bypass pricing validation in `SqrtPriceCalculator.computeRatioX96()` and `CLOBTransferHandler._enforceTokenHooks()`. Check ALL paths where price can be zero.
+2. **Direct handler call**: Calling `CLOBTransferHandler.executeSwap()` directly (not via AMM hooks) may bypass pricing enforcement in `beforeSwap`/`afterSwap`. Check if handlers validate their caller.
+3. **Settings sync gap**: `CLOBTransferHandler.setTokenSettings()` may leave stale `memSettings` in `CreatorHookSettingsRegistry`. Check if initialization state can desync.
+4. **Transient storage leak**: `AMMStandardHook.beforeSwap()` writes to `DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT` but the slot may not be cleared on all paths, leaving stale data for the next swap. Check `AMMHooksTransferHandler` paths.
+
+For each: read the specific functions, write a Forge test, report as finding if exploitable or log as ruled-out with evidence.
+
 ### Mandatory Attack Probes (MUST attempt before completion)
 
 Before reporting completion, you MUST have attempted at least one exploit per category:

@@ -92,7 +92,7 @@ def validate_output(data: dict) -> list[str]:
     """Validate a findings.json against the schema. Returns list of errors (empty = valid)."""
     errors = []
 
-    if "agent_name" not in data:
+    if "agent_name" not in data and "agent" not in data:
         errors.append("Missing 'agent_name'")
     if "findings" not in data and "hot_spots" not in data:
         errors.append("Must have at least 'findings' or 'hot_spots'")
@@ -116,13 +116,19 @@ def validate_output(data: dict) -> list[str]:
 
 
 def load_and_validate(path: Path) -> tuple[dict | None, list[str]]:
-    """Load a findings.json and validate it. Returns (data, errors)."""
+    """Load a findings.json and validate it. Returns (data, errors).
+
+    Handles agents that write a bare list instead of the expected dict wrapper.
+    """
     if not path.exists():
         return None, [f"File not found: {path}"]
     try:
         data = json.loads(path.read_text())
     except json.JSONDecodeError as e:
         return None, [f"Invalid JSON: {e}"]
+    # Normalize bare list → dict wrapper (some agents write [finding, ...] instead of {findings: [...]})
+    if isinstance(data, list):
+        data = {"findings": data, "agent_name": path.parent.name}
     errors = validate_output(data)
     return data, errors
 
