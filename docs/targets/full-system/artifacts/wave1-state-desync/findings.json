@@ -1,0 +1,123 @@
+{
+  "agent_name": "state-desync",
+  "agent_role": "State Desync Operator",
+  "wave": 1,
+  "findings": [],
+  "ruled_out_vectors": [
+    {
+      "vector": "Reentrancy via _executeQueuedHookFeesByHookTransfers — _setReentrancyFlags(NO_FLAGS) clears flags during fee transfers",
+      "why_ruled_out": "_setReentrancyFlags preserves ENTERED bit (bit 1). All nonReentrant* modifiers check ENTERED, so reentrancy is blocked even after flags are cleared. See TstorishReentrancyGuardWithFlags._nonReentrantBefore().",
+      "test_file": "N/A — code review evidence",
+      "repos": ["lbamm-core"]
+    },
+    {
+      "vector": "Cross-operation reentrancy via different guard flag types (SWAP vs LIQUIDITY vs FLASHLOAN)",
+      "why_ruled_out": "ENTERED bit is THE global reentrancy lock. Different flags (bits 2-11) are informational only. _nonReentrantBefore always sets ENTERED and checks it regardless of which flags are requested.",
+      "test_file": "N/A — code review evidence",
+      "repos": ["lbamm-core"]
+    },
+    {
+      "vector": "HOOK-001 transient storage stale read (DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT) for profit extraction",
+      "why_ruled_out": "Already classified as CP-001 (Low). Stale value only affects pricing bounds accept/reject gate in afterSwap for direct swaps. Actual swap amounts are computed by AMM math, not the hook. Impact limited to governance/config enforcement, not direct value extraction.",
+      "test_file": "N/A — known issue CP-001",
+      "repos": ["lbamm-hooks-and-handlers"]
+    },
+    {
+      "vector": "Flash loan + view function desync — getPoolState returns stale reserves during flash loan",
+      "why_ruled_out": "Pool reserves are NOT updated during flash loan (borrowed tokens are returned). Any integrator reading getPoolState sees correct reserves. Balance-of discrepancy is inherent to flash loans, not a protocol bug.",
+      "test_file": "N/A — code review evidence",
+      "repos": ["lbamm-core"]
+    },
+    {
+      "vector": "collectHookFeesByHook without nonReentrant modifier exploitable during swaps",
+      "why_ruled_out": "Correctly uses flag-based routing: queues during swaps (SWAP_GUARD_FLAG set), reverts during flash loans (FLASHLOAN_GUARD_FLAG set), transfers immediately otherwise. During flag-cleared state in _executeQueuedHookFeesByHookTransfers, CEI pattern in _transferHookFeesByHook prevents double-spending (tokensOwed decremented before external call).",
+      "test_file": "N/A — code review evidence",
+      "repos": ["lbamm-core"]
+    },
+    {
+      "vector": "_storeNonTokenHookFees hash key mismatch — uses hash(tokenFor, tokenFor) vs _transferHookFeesByHook hash(tokenFor, tokenFee)",
+      "why_ruled_out": "Intentional design. For pool/liquidity hooks, the fee token IS the associated token (tokenFor == tokenFee). collectHookFeesByHook uses msg.sender as hook address, preventing cross-hook fee theft.",
+      "test_file": "N/A — code review evidence",
+      "repos": ["lbamm-core"]
+    },
+    {
+      "vector": "Fee denomination mismatch (CP-EXT-001 pattern) — output fees stored with wrong denomination",
+      "why_ruled_out": "Traced through _applySwapByInputOutputFees. Denominations are correctly maintained — output fees stored with tokenOut denomination, transferred as tokenOut. No cross-denomination confusion.",
+      "test_file": "N/A — code review evidence",
+      "repos": ["lbamm-core"]
+    },
+    {
+      "vector": "Dust-loop extraction via 100+ tiny swaps compounding rounding errors",
+      "why_ruled_out": "SwapMath.sol uses standard Uniswap V3 rounding: amountIn rounds UP, amountOut rounds DOWN. Dust accumulates in pool's favor, not attacker's. Each iteration loses the attacker dust, not gains.",
+      "test_file": "N/A — code review of SwapMath.sol rounding",
+      "repos": ["amm-pool-type-dynamic"]
+    },
+    {
+      "vector": "Forged hook caller — call hook directly bypassing AMM with fake pool identity",
+      "why_ruled_out": "All hook entry points (beforeSwap, afterSwap, beforeAddLiquidity, afterAddLiquidity) call _requireCallerIsAMM() which checks msg.sender == address(AMM). Hook cannot be called by anyone other than the AMM contract.",
+      "test_file": "N/A — code review of AMMStandardHook.sol lines 110, 159, 253, 312",
+      "repos": ["lbamm-hooks-and-handlers"]
+    },
+    {
+      "vector": "Permit mutation — replay permit signature with mutated feeOnTop (unsigned field) to redirect funds",
+      "why_ruled_out": "feeOnTop is NOT in SWAP_TYPEHASH by design. The executor (msg.sender) supplies feeOnTop via calldata. Protection is via: (1) cosigner validation of executor, (2) hook validation, (3) limitAmount slippage protection. Without cosigner (address(0)), signer explicitly opts out of executor control. This is documented as a known design property.",
+      "test_file": "N/A — code review of PermitTransferHandler.sol and Constants.sol line 35",
+      "repos": ["lbamm-hooks-and-handlers"]
+    },
+    {
+      "vector": "Storage-slot collision — deploy facet that writes to another facet's storage slot",
+      "why_ruled_out": "Only admin can add facets to the diamond proxy. All legitimate facets use structured storage at slot 0x9A1D via Storage.appStorage(). No external attacker can deploy custom facets.",
+      "test_file": "N/A — architectural constraint",
+      "repos": ["lbamm-core", "secure-proxy"]
+    },
+    {
+      "vector": "Transient-slot theft — re-enter collectHookFeesByHook during _executeQueuedHookFeesByHookTransfers to double-claim fees",
+      "why_ruled_out": "CEI pattern: _transferHookFeesByHook decrements tokensOwed BEFORE calling safeTransfer (line 3129). Re-entering collectHookFeesByHook during callback routes to direct transfer (flags cleared), but tokensOwed already reflects the deduction. Underflow check at line 3130 catches over-withdrawal.",
+      "test_file": "N/A — code review evidence",
+      "repos": ["lbamm-core"]
+    },
+    {
+      "vector": "CLOB settlement callback reads AMM state before swap finalizes",
+      "why_ruled_out": "CLOBTransferHandler.ammHandleTransfer is called during _finalizeSwapCollectFundsAndDisburse, which is AFTER pool state (reserves, tick, price) is already updated. The CLOB handler also has its own nonReentrant guard and msg.sender == AMM check.",
+      "test_file": "N/A — code review of AMMModule.sol finalization flow and CLOBTransferHandler.sol",
+      "repos": ["lbamm-core", "lbamm-hooks-and-handlers"]
+    }
+  ],
+  "theft_theses": [
+    {
+      "thesis": "Re-enter via collectHookFeesByHook during _executeQueuedHookFeesByHookTransfers when flags are cleared to double-claim queued fees",
+      "victim": "Protocol / hook fee pool",
+      "asset": "Hook fees (ERC20 tokens)",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Exploit HOOK-001 stale transient slot to bypass pricing bounds on direct swap, then extract value from mispriced swap",
+      "victim": "Token creator / LPs",
+      "asset": "Trading pair tokens",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Mutate unsigned feeOnTop field in permit-based swap to redirect portion of user's tokens to attacker",
+      "victim": "Permit signer",
+      "asset": "Input tokens",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    }
+  ],
+  "metadata": {
+    "num_turns": 30,
+    "tool_uses": 45,
+    "files_read": 18,
+    "tools_run": {
+      "Read": 22,
+      "Grep": 15,
+      "Glob": 3,
+      "Bash": 5
+    },
+    "theses_tested": 3,
+    "theses_confirmed": 0,
+    "theses_ruled_out": 13
+  }
+}

@@ -1,0 +1,124 @@
+{
+  "agent_name": "precision-sniper",
+  "agent_role": "Precision Math Sniper",
+  "wave": 1,
+  "findings": [],
+  "ruled_out_vectors": [
+    {
+      "vector": "H1: Tick crossing at exact boundary — liquidity not properly added/removed",
+      "why_ruled_out": "Standard Uniswap V3 logic at DynamicHelper.computeSwap:411. Tick crossing check is == comparison. getNextSqrtPriceFromInput rounds conservatively. Battle-tested pattern, no novel attack surface.",
+      "test_file": null,
+      "repos": ["amm-pool-type-dynamic"]
+    },
+    {
+      "vector": "H2: Fixed height split rounds to zero on one side — free tokens",
+      "why_ruled_out": "FixedHelper._splitAmountsAndFeesByHeight:1576 uses mulDivRoundingUp for input (user pays more), calculateFixedSwapByRatioRoundingDown for output (user gets less). Guard at L1656 reverts on zero-value swaps. Rounding consistently favors protocol.",
+      "test_file": null,
+      "repos": ["lbamm-pool-type-fixed"]
+    },
+    {
+      "vector": "H3: 100% fee asymmetry — asymmetric extraction",
+      "why_ruled_out": "Known design property (L-04). 100% input fee => amountRemainingLessFee = 0 => amountIn = 0 => no swap occurs. Output swaps reject 100% fee at FeeHelper:219. No extraction path.",
+      "test_file": null,
+      "repos": ["lbamm-core", "amm-pool-type-dynamic"]
+    },
+    {
+      "vector": "H4: swapExtraData != 32 bytes — unexpected price movement",
+      "why_ruled_out": "Known issue (L-01). DynamicPoolType:433 defaults to widest price limit. AMM's limitAmount at AMMModule:2156-2173 provides slippage protection separately.",
+      "test_file": null,
+      "repos": ["amm-pool-type-dynamic"]
+    },
+    {
+      "vector": "H5: uint256 truncation on cast to uint128 in reserve updates",
+      "why_ruled_out": "AMMModule._safeIncrementUint128:3503 and _safeDecrementUint128:3520 use assembly with overflow/underflow checks. Input values come from uint128 storage slots, so truncation can't occur in practice.",
+      "test_file": null,
+      "repos": ["lbamm-core"]
+    },
+    {
+      "vector": "H6: Division before multiplication in fee/swap math — precision loss",
+      "why_ruled_out": "All fee calculations use FullMath.mulDiv or mulDivRoundingUp which handle 512-bit intermediate products. TickMath divide-before-multiply is standard V3 lookup table. No precision loss exploitable.",
+      "test_file": null,
+      "repos": ["lbamm-core", "amm-pool-type-dynamic", "lbamm-pool-type-fixed"]
+    },
+    {
+      "vector": "H7-H10: Assembly calldataload, ABI encoding, returndata corruption, memory pointer attacks",
+      "why_ruled_out": "Solidity 0.8.24 strict mode with compiler protections. Assembly uses calldatacopy (not raw calldataload). Memory-safe assembly blocks. No unmasked data flows to arithmetic.",
+      "test_file": null,
+      "repos": ["lbamm-core"]
+    },
+    {
+      "vector": "H11: Dust-loop extraction — 100+ tiny swaps to harvest rounding errors",
+      "why_ruled_out": "FixedHelper dust (L1695-1710) goes to pool state and is distributed to LPs on withdrawal. Rounding consistently favors protocol: output rounds DOWN, input rounds UP. Attacker loses fees each swap. No extraction path.",
+      "test_file": null,
+      "repos": ["lbamm-pool-type-fixed"]
+    },
+    {
+      "vector": "Probe 2: Forged hook caller — call hooks directly without going through AMM",
+      "why_ruled_out": "_requireCallerIsAMM() at AMMStandardHook.sol:940-942 guards all hook entry points (lines 110, 159, 253, 312). Returns if msg.sender != AMM address.",
+      "test_file": null,
+      "repos": ["lbamm-hooks-and-handlers"]
+    },
+    {
+      "vector": "Probe 4: Permit mutation — replay with mutated feeOnTop",
+      "why_ruled_out": "feeOnTop unsigned is known (rejected submission #8). SWAP_TYPEHASH includes limitAmount which caps total exposure. Signer can't lose more than limitAmount regardless of feeOnTop.",
+      "test_file": null,
+      "repos": ["lbamm-hooks-and-handlers"]
+    },
+    {
+      "vector": "Probe 5: Storage-slot collision — deploy facet that writes to another's slot",
+      "why_ruled_out": "Pool types are external contracts called via regular calls (not delegatecall). Each stores state keyed by msg.sender (AMM address) in globalState mapping. Diamond storage at 0x9A1D is isolated. No collision path.",
+      "test_file": null,
+      "repos": ["amm-pool-type-dynamic", "lbamm-pool-type-fixed", "lbamm-core"]
+    }
+  ],
+  "theft_theses": [
+    {
+      "thesis": "Tick crossing at exact boundary causes liquidity mismatch enabling better-than-market price",
+      "victim": "LPs in dynamic pools",
+      "asset": "Pool reserves (either token)",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Fixed pool height split rounds to zero enabling free tokens on one side",
+      "victim": "LPs in fixed pools",
+      "asset": "Pool reserves (output token)",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Iterated dust-loop extraction via 100+ tiny swaps in fixed pools",
+      "victim": "LPs in fixed pools",
+      "asset": "Pool reserves via accumulated rounding errors",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    }
+  ],
+  "metadata": {
+    "num_turns": 15,
+    "tool_uses": 35,
+    "files_read": 16,
+    "tools_run": {
+      "phase0_artifacts": {"read": true},
+      "slither": {"ran": false, "reason": "pre-generated artifacts read at phase0"},
+      "aderyn": {"ran": false, "reason": "pre-generated artifacts read at phase0"},
+      "forge_test": {"ran": true, "tests_written": 1, "tests_passed": 1},
+      "chisel": {"ran": true, "expressions_checked": 1},
+      "halmos": {"ran": false, "reason": "no math findings to verify"},
+      "medusa": {"ran": false, "reason": "no multi-step findings to verify"},
+      "echidna": {"ran": false, "reason": "not used in this wave"},
+      "cast_run": {"ran": false, "reason": "no historical tx to trace"},
+      "heimdall": {"ran": false, "reason": "no unverified deps"},
+      "quimera": {"ran": false, "reason": "no confirmed findings"},
+      "variant_analysis": {"ran": false, "reason": "no confirmed findings"}
+    },
+    "theses_tested": 3,
+    "theses_confirmed": 0,
+    "theses_ruled_out": 3,
+    "lens_coverage": {
+      "L1_trace": true,
+      "L2_diff": true,
+      "L3_amp": true
+    }
+  }
+}
