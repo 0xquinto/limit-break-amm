@@ -188,55 +188,105 @@ Write your JSON sidecar to `docs/targets/full-system/artifacts/wave{{WAVE_NUMBER
 }
 ```
 
-### Mandatory Tool Checklist (your sidecar is INVALID until ALL are done)
+### Mandatory Tool Checklist (your sidecar is INVALID until ALL items have a logged result)
 
-You MUST execute every item below. This is your workload — you are NOT done until every item has a result logged. Reading phase0 artifacts is NOT a substitute.
+This is your COMPLETE workload. Execute every numbered item. Log every result. You are NOT done until every item below has an outcome in your sidecar.
 
-**Phase A: Static Analysis**
+**Phase A: Static Analysis (run on EVERY repo in your scope)**
 
-Run on EVERY repo in your scope:
-1. Slither MCP — `ToolSearch "+slither"`, then: `mcp__slither__run_detectors path=<repo> impact=["High","Medium"] exclude_paths=["lib/","test/"]`
-2. Slither functions — `mcp__slither__list_functions` for your target contracts
-3. Aderyn — `cd <repo> && /opt/homebrew/bin/aderyn . 2>&1 | tail -40`
+For each repo in your scope, run ALL of:
+- A1. `ToolSearch "+slither"` then `mcp__slither__run_detectors path=<repo> impact=["High","Medium"] exclude_paths=["lib/","test/"]`
+- A2. `mcp__slither__list_functions` for your target contracts — read the output, don't guess function names
+- A3. `cd <repo> && /opt/homebrew/bin/aderyn . 2>&1 | tail -40`
 
 **Phase B: Architectural Analysis**
 
-4. `Skill("audit-context-building:audit-context-building")` — run on your primary modules
-5. `Skill("entry-point-analyzer:entry-point-analyzer")` — run on your primary modules
+- B1. `Skill("audit-context-building:audit-context-building")` on your primary modules
+- B2. `Skill("entry-point-analyzer:entry-point-analyzer")` on your primary modules
 
-**Phase C: Invariant Testing (MANDATORY — this is where bugs hide)**
+**Phase C: Invariant Testing — THE CORE OF YOUR WORK**
 
-Read `docs/framework/amm-invariant-catalog.md`. For every CRITICAL and HIGH invariant relevant to your scope, you MUST:
+Read `docs/framework/amm-invariant-catalog.md` FIRST. Then execute every item in YOUR section below.
 
-6. **Write a Forge invariant test** that tries to BREAK the invariant (not prove it holds). Use `forge test --match-test <name> -vvv`. Log each test file and result.
-7. **Run Halmos** on at least 3 math functions in your scope: `cd <repo> && env PATH="/Users/diego/.foundry/bin:$PATH" ~/.local/bin/halmos --function check_<name> --solver-timeout-assertion 30000 2>&1 | tail -30`. Halmos explores ALL inputs — if an invariant can be broken, it finds the input. Log the output.
-8. **Run Medusa** on at least 1 contract in your scope: `cd <repo> && /opt/homebrew/bin/medusa fuzz --target-contracts <Contract> --test-limit 50000 2>&1 | tail -30`. Medusa throws millions of random inputs at your invariant tests. Log the output.
+**C-MATH (precision-sniper, math-deep-diver):**
+Write a Forge test + run Halmos for EACH of these specific functions:
+- C1. `FixedHelper._splitAmountsAndFeesByHeight` — test: swap amount=1 wei, amount=type(uint128).max. Halmos: `check_splitNoValueCreation`
+- C2. `FixedHelper._calculateSwapByInputFixed` — test: zero liquidity height, max fee=10000 BPS. Halmos: `check_outputBoundedByReserve`
+- C3. `DynamicHelper.computeSwap` — test: exact tick boundary crossing, single-tick range. Halmos: `check_constantProductPerTick`
+- C4. `SqrtPriceMath.getNextSqrtPriceFromInput` — test: amount=0, amount=max, sqrtPrice=MIN_SQRT_RATIO. Halmos: `check_priceMovesCorrectDirection`
+- C5. `SqrtPriceMath.getAmount0Delta` and `getAmount1Delta` — test: sqrtPriceA==sqrtPriceB, liquidity=1. Halmos: `check_deltaRoundingDirection`
+- C6. `SwapMath.computeSwapStep` — test: amountRemaining=1, fee=9999. Halmos: `check_noFreeTokens`
+- C7. `TickMath.getSqrtRatioAtTick` + `getTickAtSqrtPrice` — test: round-trip consistency at every 1000th tick. Halmos: `check_tickPriceConsistency`
+- C8. `FeeHelper.calculateInputFee` + `calculateOutputFee` — test: fee=0, fee=10000, fee=1. Halmos: `check_feeNeverExceedsInput`
+- C9. `CLOBHelper.calculateFixedInput` — test: rounding direction with amount=1. Halmos: `check_makerNeverOverpaid`
+- C10. `SqrtPriceCalculator.computeRatioX96` — test: sqrtPriceX96=0, sqrtPriceX96=type(uint160).max. Halmos: `check_noOverflowBypass`
+- C11. `SingleProviderHelper.calculateFixedInput` + `calculateFixedOutput` — test: price=1, price=max. Halmos: `check_roundTripLoss`
+- C12. Run Medusa fuzz on FixedPoolType: `cd lbamm-pool-type-fixed && /opt/homebrew/bin/medusa fuzz --target-contracts FixedPoolType --test-limit 100000 2>&1 | tail -40`
+- C13. Run Medusa fuzz on DynamicPoolType: `cd amm-pool-type-dynamic && /opt/homebrew/bin/medusa fuzz --target-contracts DynamicPoolType --test-limit 100000 2>&1 | tail -40`
+- C14. Forge fuzz: `INV-SW02 No Profitable Round-Trip` — write stateful test: random swap A→B then B→A, assert A_final <= A_initial. Run with `--fuzz-runs 10000`.
+- C15. Forge fuzz: `INV-SW03 Rounding Favors Protocol` — write test: 1000 sequential 1-wei swaps, assert pool balance never decreases. Run with `--fuzz-runs 5000`.
 
-**Minimum invariant test counts by archetype:**
-- precision-sniper, math-deep-diver: INV-S01, INV-S02, INV-SW01, INV-SW02, INV-SW03, INV-SW04 (6 invariants minimum)
-- state-desync, composability-exploiter: INV-S01, INV-S02, INV-H03, INV-H05, INV-L01, INV-L03 (6 invariants minimum)
-- auth-forger: INV-H01, INV-H02, INV-P01, INV-P02, INV-S01, INV-S02 (6 invariants minimum)
-- cross-boundary: INV-H01, INV-H02, INV-H04, INV-S01, INV-S02, INV-S04 (6 invariants minimum)
+**C-STATE (state-desync, composability-exploiter):**
+Write a Forge test for EACH:
+- C1. `INV-H03 Transient Storage Hygiene` — test: swap A, then swap B in same TX, verify B unaffected by A's transient writes. Test with `AMMStandardHook.beforeSwap`.
+- C2. `INV-H05 Reentrancy Guard Persistence` — test: deploy MaliciousToken (ERC-777 callback), attempt reentry during `_executeQueuedHookFeesByHookTransfers`, assert revert.
+- C3. `INV-L01 Tick-Liquidity Consistency` — test: add/remove liquidity at tick boundary, verify `pool.liquidity == sum(position.liquidity)`.
+- C4. `INV-L03 Tick-Price Consistency` — test: after every swap, verify `tickAtSqrtRatio(pool.sqrtPrice) == pool.tick`.
+- C5. `INV-S01 Token Balance Solvency` — test: after swap+addLiq+removeLiq sequence, verify `contractBalance >= obligations`.
+- C6. `INV-S02 No Value Creation` — test: multi-step handler test: track cumulative in/out, assert `sum(in) >= sum(out)`.
+- C7. Halmos on `_poolSwapByInput` — `check_reserveConsistency`: reserves after swap = reserves before ± amounts.
+- C8. Halmos on `_finalizeSwapCollectFundsAndDisburse` — `check_settlementConservation`: tokens in = tokens out.
+- C9. Run Medusa on AMMModule: `cd lbamm-core && /opt/homebrew/bin/medusa fuzz --target-contracts AMMModule --test-limit 100000 2>&1 | tail -40`
+- C10. Forge multiSwap test: 3 pools in sequence, verify intermediate state not exploitable by hooks.
+- C11. Forge test: `addLiquidity` + `swap` in same TX at tick boundary, verify no phantom liquidity.
+- C12. Forge test: flash loan → large swap → reverse swap, verify attacker loses money (INV-E02).
+
+**C-AUTH (auth-forger):**
+Write a Forge test for EACH:
+- C1. `INV-H01 Hook Callback Access Control` — call `beforeSwap`, `afterSwap`, `validateHandlerOrder`, `validateAddLiquidity` from non-AMM address. Assert ALL revert.
+- C2. `INV-H02 Transfer Handler Settlement Conservation` — wrap `CLOBTransferHandler.ammHandleTransfer` and `PermitTransferHandler.ammHandleTransfer` with balance snapshots. Assert conservation.
+- C3. `INV-P01 Permit Replay Protection` — execute permit, replay same signature, assert revert.
+- C4. `INV-P02 Signed Fields Completeness` — set feeOnTop to max, verify total cost <= limitAmount.
+- C5. `INV-S01` — solvency check after direct swap via CLOB handler.
+- C6. `INV-S02` — no value creation check across permit + swap + settlement.
+- C7. Halmos on `validateHandlerOrder` — `check_noPricingBypass`: verify all paths enforce pricing bounds.
+- C8. Halmos on `SqrtPriceCalculator.computeRatioX96` — `check_noZeroReturn`: verify zero-price input handled.
+- C9. Run Medusa on CLOBTransferHandler: `cd lbamm-hooks-and-handlers && /opt/homebrew/bin/medusa fuzz --target-contracts CLOBTransferHandler --test-limit 100000 2>&1 | tail -40`
+- C10. Run Medusa on PermitTransferHandler: `cd lbamm-hooks-and-handlers && /opt/homebrew/bin/medusa fuzz --target-contracts PermitTransferHandler --test-limit 100000 2>&1 | tail -40`
+- C11. Forge test: call `CLOBTransferHandler.executeSwap` directly (not via AMM), assert pricing enforcement.
+- C12. Forge test: deposit → openOrder → swap fills → closeOrder → withdraw, assert no profit (CLOB round-trip).
+
+**C-BOUNDARY (cross-boundary):**
+Write a Forge test for EACH boundary:
+- C1. Core→PoolType: call `swapByInput` with manipulated return values (mock pool type), verify Core rejects inconsistent amounts.
+- C2. Core→Handler: call `ammHandleTransfer` with mismatched token pair, verify handler validates.
+- C3. Core→Hook: mock hook returns manipulated fee in `beforeSwap`, verify Core caps fees.
+- C4. Hook→Registry: change settings between `beforeSwap` and `afterSwap`, verify consistent enforcement.
+- C5. PoolType→Core return: mock pool returning `amountOut > reserves`, verify Core rejects.
+- C6. Handler→External: `PermitTransferHandler` calls PermitC calls token — test reentrancy through token callback.
+- C7. `INV-H01` — direct call to each hook function from external address.
+- C8. `INV-H02` — settlement conservation across both handlers.
+- C9. `INV-H04` — hook fee integrity: sum(fees) <= maxFee after fee loop.
+- C10. `INV-S04` — output bounded by reserves for every pool type.
+- C11. Halmos on `_validatePricingBounds` — `check_allPathsEnforced`: verify no path skips bounds check.
+- C12. Run Medusa on AMMStandardHook: `cd lbamm-hooks-and-handlers && /opt/homebrew/bin/medusa fuzz --target-contracts AMMStandardHook --test-limit 100000 2>&1 | tail -40`
 
 **Phase D: Known Patterns**
 
-9. Investigate ALL 4 known vulnerability patterns (KV-1 through KV-4) listed above. Write a `ruled_out_vectors` entry for each with the EXACT required fields.
+Investigate ALL 4 known vulnerability patterns (KV-1 through KV-4) listed above. Write a `ruled_out_vectors` entry for each with the EXACT required fields.
 
 **Phase E: Hypothesis-Driven Exploits**
 
-10. For every hypothesis in your Target Map: write a Forge test that attempts to exploit it. Tests that PASS (proving the guard holds) are valuable — log them as ruled-out with test_file.
+For every hypothesis in your Target Map: write a Forge test that attempts to exploit it. Tests that PASS (proving the guard holds) are valuable — log them as ruled-out with test_file.
 
 ### Pre-Completion Gate (MUST verify before writing final findings.json)
 
-Before writing your final sidecar, verify ALL of these:
-- [ ] Phase A complete: Slither + Aderyn ran on every scoped repo. Logged in tools_run.
-- [ ] Phase B complete: audit-context-building AND entry-point-analyzer Skills invoked.
-- [ ] Phase C complete: At least 6 invariant Forge tests written and run. Halmos ran on 3+ functions. Medusa ran on 1+ contract. All results logged.
-- [ ] Phase D complete: ALL 4 KV patterns investigated with exact sidecar fields.
-- [ ] Phase E complete: Every hypothesis has a Forge test (even if it proves the guard holds).
-- [ ] Every ruled-out vector has test_file pointing to a real test.
-- [ ] tools_run in metadata has an entry for EVERY tool (ran=true/false with reason).
-
-**You are NOT done until Phases A-E are ALL complete.** If you finish your hypotheses early, go back to Phase C and test MORE invariants. The bug is in the input space, not in the source code — use the tools to explore it.
+Count your completed items. Your sidecar MUST report:
+- [ ] Phase A: Slither + Aderyn ran on every scoped repo.
+- [ ] Phase B: audit-context-building AND entry-point-analyzer invoked.
+- [ ] Phase C: ALL items in YOUR section completed. Every Forge test written and run. Every Halmos check run. Every Medusa campaign run. Log ALL outputs.
+- [ ] Phase D: ALL 4 KV patterns with exact sidecar fields.
+- [ ] Phase E: Every Target Map hypothesis has a Forge test.
+- [ ] `metadata.checklist_items_completed` in sidecar reports the count (e.g., "C: 15/15, D: 4/4, E: 11/11").
 
 If you cannot check a box, explain WHY in your sidecar metadata before completing.
