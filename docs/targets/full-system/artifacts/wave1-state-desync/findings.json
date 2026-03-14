@@ -1,124 +1,102 @@
 {
-  "agent_name": "state-desync",
-  "agent_role": "State Desync Operator",
+  "agent": "state-desync",
   "wave": 1,
+  "model": "opus",
+  "scope": ["lbamm-core", "lbamm-hooks-and-handlers"],
   "findings": [],
-  "ruled_out_vectors": [
+  "ruled_out": [
     {
-      "vector": "Reentrancy via transfer handler callback during swap to read stale reserves",
-      "why_ruled_out": "ENTERED bit in TstorishReentrancyGuardWithFlags remains set during transfer handler callback (line 70: currentGuard preserves ENTERED). All swap/liquidity entry points use nonReentrantWithFlags which checks ENTERED (line 80). No path to re-enter AMM state-changing functions during callback.",
-      "test_file": "N/A - structural argument, no code path exists",
-      "repos": ["lbamm-core"]
+      "vector": "Hook fee queue reentrancy",
+      "why_ruled_out": "collectHookFeesByHook is re-enterable during _executeQueuedHookFeesByHookTransfers (flags cleared at line 3190), but tokensOwed[hookFeeKey] is decremented BEFORE safeTransfer (line 3127-3129). Re-entrant call for same key underflows and reverts. Separate accumulated fees are intended behavior.",
+      "evidence": "AMMModule.sol:3116-3139, ModuleFeeCollection.sol:72-82, AMMModule.sol:3183-3204"
     },
     {
-      "vector": "Queued hook fee transfer clears custom flags enabling state desync via collectHookFeesByHook",
-      "why_ruled_out": "_executeQueuedHookFeesByHookTransfers clears custom flags (SWAP_GUARD_FLAG etc.) at AMMModule.sol:3190 but preserves ENTERED bit. collectHookFeesByHook (ModuleFeeCollection.sol:72-82) checks custom flags, and when they're cleared, it goes to direct _transferHookFeesByHook which follows checks-effects-interactions: storage.tokensOwed is decremented BEFORE safeTransfer (AMMModule.sol:3128-3129). No double-spend possible. No queue corruption: direct transfer path taken, not queue path.",
-      "test_file": "N/A - structural argument at AMMModule.sol:3127-3138",
-      "repos": ["lbamm-core"]
+      "vector": "Stale transient storage (HOOK-001/CP-001)",
+      "why_ruled_out": "DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT not cleared after direct swap. Low impact only — pricing bounds bypass but no fund extraction path. Known issue.",
+      "evidence": "AMMStandardHook.sol:823-871, slot 0xFFFFFFFFFFFFFFFF"
     },
     {
-      "vector": "Forged hook caller - call hook directly with fake pool identity",
-      "why_ruled_out": "All hook functions in AMMStandardHook check _requireCallerIsAMM() (AMMStandardHook.sol:940-943) which requires msg.sender == AMM (immutable). CLOBTransferHandler.ammHandleTransfer checks msg.sender == AMM (CLOBTransferHandler.sol:230-232). No way to call hooks directly.",
-      "test_file": "N/A - access control at AMMStandardHook.sol:940-943",
-      "repos": ["lbamm-hooks-and-handlers"]
+      "vector": "Read-only reentrancy via flash loan",
+      "why_ruled_out": "During flash loan callback, balanceOf < reserves. No AMM-internal function compares balanceOf to reserves. External integrators only (Tier C).",
+      "evidence": "AMMModule.sol:3288-3382"
     },
     {
-      "vector": "Multi-swap within hook callback overwrites transient slot mid-swap",
-      "why_ruled_out": "ENTERED reentrancy guard prevents re-entering any swap function during hook callbacks. The transient slot DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT is only used in AMMStandardHook for direct swaps, and direct swaps cannot be re-entered.",
-      "test_file": "N/A - reentrancy guard at TstorishReentrancyGuardWithFlags.sol:80",
-      "repos": ["lbamm-core", "lbamm-hooks-and-handlers"]
+      "vector": "Multi-hop intermediate state",
+      "why_ruled_out": "Each hop updates reserves independently (AMMModule.sol:1435-1443). Each pool has isolated state. No cross-hop stale read.",
+      "evidence": "AMMModule.sol:1435-1443"
     },
     {
-      "vector": "Native ETH refund during hook triggers reentrancy to observe intermediate state",
-      "why_ruled_out": "_depositWrappedNativeAndRefundExcess (AMMModule.sol:3247-3260) refunds excess ETH via executor.call{value}. ENTERED bit prevents re-entering any nonReentrant function. 2300 gas not enforced (all gas forwarded) but reentrancy guard blocks exploitation.",
-      "test_file": "N/A - reentrancy guard at TstorishReentrancyGuardWithFlags.sol:80",
-      "repos": ["lbamm-core"]
+      "vector": "CLOB settlement callback timing",
+      "why_ruled_out": "Handler called AFTER reserves updated in _finalizeSwapCollectFundsAndDisburse. afterSwapRefund callback (line 2250-2252) is after all state updates.",
+      "evidence": "AMMModule.sol:2144-2253, CLOBTransferHandler.sol:229"
     },
     {
-      "vector": "CLOB settlement callback reads AMM state before swap finalizes",
-      "why_ruled_out": "In swap flow, pool reserves are updated (AMMModule.sol lines ~1420-1440 for swapByInput) BEFORE _finalizeSwapCollectFundsAndDisburse which calls the transfer handler. CLOB handler reads no AMM state - it fills from its own order book. No stale read possible.",
-      "test_file": "N/A - code ordering at AMMModule.sol",
-      "repos": ["lbamm-core", "lbamm-hooks-and-handlers"]
+      "vector": "ETH refund reentrancy",
+      "why_ruled_out": "ENTERED bit preserved by _setReentrancyFlags (lines 68-72). Native ETH call gives control but re-entry blocked. Low-level call (not send/transfer) avoids gas limit issues.",
+      "evidence": "TstorishReentrancyGuardWithFlags.sol:68-72"
     },
     {
-      "vector": "Storage-slot collision via custom pool type or handler",
-      "why_ruled_out": "Pool types are called via regular call (not delegatecall): ILimitBreakAMMPoolType(poolType).swapByInput(...). Pool types have their own storage, cannot write to AMM diamond storage. Only core modules (AMMModule, ModuleAdmin, etc.) are delegatecalled.",
-      "test_file": "N/A - call pattern at AMMModule.sol:1399",
-      "repos": ["lbamm-core"]
+      "vector": "Partial state write then early read (hook fees mid-swap)",
+      "why_ruled_out": "Queue mechanism for collectHookFeesByHook during swaps (SWAP_GUARD_FLAG check at ModuleFeeCollection.sol:73). Consistent ordering maintained.",
+      "evidence": "ModuleFeeCollection.sol:72-82"
     },
     {
-      "vector": "Dust-loop extraction via 100+ tiny swaps",
-      "why_ruled_out": "SwapMath rounding consistently favors pool/LPs: amountIn rounded UP (swapper pays more), amountOut rounded DOWN (swapper gets less), feeAmount rounded UP. Each tiny swap loses the attacker value to rounding. CLOBHelper.calculateFixedInput rounds UP for makers at taker expense. No pool value leak path.",
-      "test_file": "N/A - rounding analysis at SwapMath.sol:56-77",
-      "repos": ["amm-pool-type-dynamic", "lbamm-hooks-and-handlers"]
+      "vector": "Cached pool type price",
+      "why_ruled_out": "getCurrentPriceX96 returns current state. Pool type updated during swap computation before price is read.",
+      "evidence": "Pool type called via external call with current state"
     },
     {
-      "vector": "Permit mutation - replay with mutated unsigned fields (feeOnTop, recipient)",
-      "why_ruled_out": "Known low-severity finding. feeOnTop is unsigned but limitAmount in the signed permit caps exposure. Executor can set feeOnTop but the signer's amountSpecified bounds total spend. No material extraction beyond what signer authorized.",
-      "test_file": "N/A - known finding, feeOnTop not signed in SWAP_TYPEHASH",
-      "repos": ["lbamm-hooks-and-handlers"]
+      "vector": "Dust-loop extraction (100+ tiny swaps)",
+      "why_ruled_out": "SwapMath rounds amountIn UP and amountOut DOWN consistently. Attacker loses fees each swap. No net extraction.",
+      "evidence": "SwapMath rounding direction verified across all swap paths"
     },
     {
-      "vector": "Stale transient storage (HOOK-001) composed with other vectors for higher extraction",
-      "why_ruled_out": "Known FP-001: DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT overwritten per-token by design. Used only for pricing bounds validation in afterSwap for direct swaps. Even if stale value used for price computation, the result only affects bound checking (revert vs allow). CP-004 already documents that afterSwap flag disabled = bounds bypass. No extraction path beyond known Low findings.",
-      "test_file": "N/A - known pattern FP-001 and CP-004",
-      "repos": ["lbamm-hooks-and-handlers"]
+      "vector": "Forged hook caller",
+      "why_ruled_out": "All hook functions require msg.sender == AMM (immutable). _requireCallerIsAMM() at AMMStandardHook.sol:940-943.",
+      "evidence": "AMMStandardHook.sol:940-943"
     },
     {
-      "vector": "Flash loan callback observes stale state from another module",
-      "why_ruled_out": "Flash loan uses balance snapshots before/after (AMMModule.sol:3308-3315). FLASHLOAN_GUARD_FLAG prevents swap/liquidity during callback. Balance validation after callback ensures exact repayment. No stale state observable - balanceOf calls are real-time.",
-      "test_file": "N/A - structural at AMMModule.sol:3288-3382",
-      "repos": ["lbamm-core"]
+      "vector": "Transient-slot theft (write in path A, read in path B)",
+      "why_ruled_out": "Only 3 transient slot types (reentrancy guard, hook fee queue, direct swap amount). All properly scoped and managed. No cross-path extraction.",
+      "evidence": "TstorishReentrancyGuardWithFlags.sol, AMMModule.sol:3159-3204"
+    },
+    {
+      "vector": "Storage-slot collision via malicious pool type",
+      "why_ruled_out": "Pool types called via external call (not delegatecall) — isolated storage. Pool type addresses restricted to 6 leading zero bytes. Requires deploying malicious contract at restricted address (Tier B).",
+      "evidence": "AMMModule.sol:124-129 (poolId validation), line 109 (address restriction)"
     }
   ],
-  "theft_theses": [
-    {
-      "thesis": "Re-enter AMM during queued hook fee transfer (custom flags cleared, token callback) to extract double hook fees",
-      "victim": "Protocol/LPs (hook fee accounting)",
-      "asset": "Hook fee tokens",
-      "estimated_ev": 0,
-      "status": "ruled_out"
+  "tools_run": {
+    "slither": {
+      "ran": true,
+      "repos": ["lbamm-core", "lbamm-hooks-and-handlers"],
+      "results": {
+        "lbamm-core": "High: 1 arbitrary-send-erc20, 4 incorrect-return, 2 reentrancy-balance; Medium: 20 uninitialized-local, 2 unused-return",
+        "lbamm-hooks-and-handlers": "High: 5 uninitialized-state; Medium: 3 uninitialized-local, 1 unused-return"
+      }
     },
-    {
-      "thesis": "Compose HOOK-001 stale transient storage with pricing bounds bypass to execute swap at manipulated price",
-      "victim": "Pool LPs",
-      "asset": "Pool reserves",
-      "estimated_ev": 0,
-      "status": "ruled_out"
-    },
-    {
-      "thesis": "Flash loan inside hook callback to manipulate reserves observed by view functions, then arbitrage",
-      "victim": "External integrators reading pool state",
-      "asset": "Integrator funds",
-      "estimated_ev": 0,
-      "status": "ruled_out"
+    "aderyn": {
+      "ran": true,
+      "repos": ["lbamm-core"],
+      "results": {
+        "lbamm-core": "1 High, 9 Low",
+        "lbamm-hooks-and-handlers": "CRASHED (aderyn 0.6.8 panic at compile.rs:78)"
+      }
     }
-  ],
-  "metadata": {
-    "num_turns": 8,
-    "tool_uses": 25,
-    "files_read": 15,
-    "tools_run": {
-      "phase0_artifacts": {"read": true},
-      "slither": {"ran": false, "reason": "Phase 0 results reviewed. No targeted queries needed - all vectors ruled out via structural analysis."},
-      "aderyn": {"ran": false, "reason": "Phase 0 results reviewed. No targeted queries needed."},
-      "forge_test": {"ran": false, "reason": "No hypothesis survived triage to warrant a Forge test. All vectors blocked by structural guards (reentrancy, access control, ordering)."},
-      "chisel": {"ran": false, "reason": "No math calculations needed to verify"},
-      "halmos": {"ran": false, "reason": "No math findings to verify"},
-      "medusa": {"ran": false, "reason": "No multi-step sequence findings"},
-      "echidna": {"ran": false, "reason": "Not used"},
-      "cast_run": {"ran": false, "reason": "No historical tx to trace"},
-      "heimdall": {"ran": false, "reason": "No unverified deps"},
-      "quimera": {"ran": false, "reason": "No confirmed findings"},
-      "variant_analysis": {"ran": false, "reason": "No confirmed findings"}
-    },
-    "theses_tested": 3,
-    "theses_confirmed": 0,
-    "theses_ruled_out": 3,
-    "lens_coverage": {
-      "lens1_value_tracing": "Applied to hook fee flow (birth in swap hooks, consumption in _transferHookFeesByHook). No denomination mismatch found.",
-      "lens2_paired_op_diffing": "Compared addLiquidity/removeLiquidity hook execution paths. Symmetric: both use _executeModifyLiquidityHooks with isAdd flag. No asymmetry in validation.",
-      "lens3_amplification": "No mismatches found to compute amplification on."
-    }
+  },
+  "lens_coverage": {
+    "L1_TRACE": "Traced fee values through _applySwapByInputInputFees -> _storeHookFees -> _transferHookFeesByHook. tokenFee encoded in key, amount denominated in tokenFee. _storeNonTokenHookFees uses tokenFor for both slots (fee IS tokenFor). All consistent.",
+    "L2_DIFF": "Diffed singleSwap vs directSwap validation. directSwap skips pool fees but same hook flow. Symmetric guard flags.",
+    "L3_AMP": "Checked multiplications with attacker-controllable operands. No cross-denomination amplification found."
+  },
+  "structured_metrics": {
+    "findings_claimed": 0,
+    "findings_confirmed": 0,
+    "findings_rejected": 0,
+    "vectors_ruled_out": 12,
+    "completeness_pct": 90,
+    "tool_uses": 10,
+    "files_read": 22,
+    "poc_results": []
   }
 }
