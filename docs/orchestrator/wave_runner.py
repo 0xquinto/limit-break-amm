@@ -246,6 +246,8 @@ async def run_wave(wave: WaveConfig, prompts: dict[str, str]) -> list[AgentResul
     agents_started: set[str] = set()
     wave_complete = False
     result_count = 0
+    sdk_usage: dict | None = None
+    sdk_cost: float | None = None
     team_lead_text: list[str] = []  # collect for post-hoc parsing
 
     async with ClaudeSDKClient(options) as client:
@@ -280,6 +282,12 @@ async def run_wave(wave: WaveConfig, prompts: dict[str, str]) -> list[AgentResul
                 result_count += 1
                 elapsed_ms = int((time.monotonic() - start_time) * 1000)
 
+                # Capture SDK usage data
+                if message.usage:
+                    sdk_usage = message.usage
+                if message.total_cost_usd is not None:
+                    sdk_cost = message.total_cost_usd
+
                 if message.is_error:
                     event = log_safety_event(
                         "team-lead", "session_error",
@@ -288,10 +296,15 @@ async def run_wave(wave: WaveConfig, prompts: dict[str, str]) -> list[AgentResul
                     safety_events.append(event)
 
                 if wave_complete:
+                    usage_str = ""
+                    if sdk_usage:
+                        usage_str = f", usage={sdk_usage}"
+                    if sdk_cost is not None:
+                        usage_str += f", cost=${sdk_cost:.4f}"
                     print(f"  Wave complete: {message.stop_reason} "
                           f"({elapsed_ms}ms wall time, "
                           f"{result_count} team-lead turns, "
-                          f"{len(agents_started)} agents started)")
+                          f"{len(agents_started)} agents started{usage_str})")
                     break
                 else:
                     print(f"  Team lead turn #{result_count}: {message.stop_reason} "
@@ -335,7 +348,17 @@ async def run_wave(wave: WaveConfig, prompts: dict[str, str]) -> list[AgentResul
             result.safety_events.append(event)
             safety_events.append(event)
 
-    # 7. Write safety events to JSONL log
+    # 7. Write SDK usage data
+    if sdk_usage or sdk_cost is not None:
+        usage_path = RESULTS_DIR / f"wave{wave.number}-usage.json"
+        usage_path.parent.mkdir(parents=True, exist_ok=True)
+        usage_path.write_text(json.dumps({
+            "usage": sdk_usage,
+            "total_cost_usd": sdk_cost,
+        }, indent=2))
+        print(f"  SDK usage: {usage_path}")
+
+    # 8. Write safety events to JSONL log
     if safety_events:
         safety_log = RESULTS_DIR / f"wave{wave.number}-safety.jsonl"
         safety_log.parent.mkdir(parents=True, exist_ok=True)
