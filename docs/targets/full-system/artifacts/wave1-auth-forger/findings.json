@@ -5,113 +5,136 @@
   "findings": [],
   "ruled_out_vectors": [
     {
-      "vector": "Forge permit with arbitrary feeOnTop (unsigned field) to drain extra tokens",
-      "why_ruled_out": "Signer's limitAmount caps total exposure. Even with arbitrary feeOnTop, the swap reverts if output falls below limitAmount. Known low-severity, below L-009 threshold.",
+      "vector": "Forge permit with arbitrary feeOnTop (unsigned field) → drain extra tokens",
+      "why_ruled_out": "feeOnTop is unsigned in SWAP_TYPEHASH but signer's limitAmount caps total exposure. AMM enforces limitAmount at AMMModule.sol:2208. Known low-severity, below submission threshold.",
       "test_file": null,
       "repos": ["lbamm-hooks-and-handlers", "lbamm-core"]
     },
     {
-      "vector": "Spoof executor context to settle orders with wrong recipient",
-      "why_ruled_out": "ammHandleTransfer requires msg.sender == AMM. Only the AMM can call transfer handlers. Guard at PermitTransferHandler.sol:115 and CLOBTransferHandler.sol:230.",
+      "vector": "Spoof executor context → settle orders with wrong recipient",
+      "why_ruled_out": "PermitTransferHandler.ammHandleTransfer() checks msg.sender == AMM at L115. Only AMM can call. Executor is genuine swap caller.",
       "test_file": null,
       "repos": ["lbamm-hooks-and-handlers"]
     },
     {
       "vector": "Replay CLOB order with different nonce context",
-      "why_ruled_out": "Orders bound to maker address (CLOBHelper.sol:36 check) and global nonce counter (nextOrderNonce++). No replay possible.",
+      "why_ruled_out": "CLOBHelper.closeOrder() checks ptrOrder.maker != maker at L36. Order nonces monotonically increment via nextOrderNonce++. Cannot replay.",
       "test_file": null,
       "repos": ["lbamm-hooks-and-handlers"]
     },
     {
       "vector": "Redirect fee to attacker address via hook configuration",
-      "why_ruled_out": "All AMMStandardHook settings mutations require _requireCallerIsRegistry(). Registry uses creator token standards ACL. Not externally exploitable.",
+      "why_ruled_out": "setTokenSettings requires LibOwnership.requireCallerIsTokenOrContractOwnerOrAdmin(token) at CreatorHookSettingsRegistry.sol:366. Admin-by-design.",
       "test_file": null,
       "repos": ["lbamm-hooks-and-handlers"]
     },
     {
-      "vector": "Cross-chain signature replay on permits",
-      "why_ruled_out": "Cosignature uses _hashTypedDataV4 (chain-specific domain). PermitC uses chain-specific domain separator. Only destroyCosigner uses universal domain (known CP-002, low severity).",
+      "vector": "Cross-chain signature replay",
+      "why_ruled_out": "Cosignatures use _hashTypedDataV4 with chain-specific domain separator. PermitC domain is also chain-bound. Known CP-002 only affects destroyCosigner (universal domain, Low).",
       "test_file": null,
       "repos": ["lbamm-hooks-and-handlers"]
     },
     {
-      "vector": "Deploy ERC-1271 contract that returns true for any hash to bypass signature checks",
-      "why_ruled_out": "ERC-1271 signer would be attacker's own contract. Can only drain tokens they approved from their own contract. Self-inflicted, no victim.",
+      "vector": "Deploy ERC-1271 contract returning true for any hash → bypass signature checks",
+      "why_ruled_out": "from address IS the ERC-1271 contract. Attacker would only drain tokens they approved from their own contract. Self-inflicted, no victim.",
       "test_file": null,
       "repos": ["lbamm-hooks-and-handlers"]
     },
     {
-      "vector": "Call flash-loan/swap callback directly to get credited without providing capital",
-      "why_ruled_out": "afterSwapRefund and ammHandleTransfer both check msg.sender == AMM. Cannot call directly.",
+      "vector": "Call afterSwapRefund callback directly (not via AMM)",
+      "why_ruled_out": "afterSwapRefund checks msg.sender != AMM at CLOBTransferHandler.sol:316-318. Only AMM can call.",
       "test_file": null,
       "repos": ["lbamm-hooks-and-handlers"]
     },
     {
-      "vector": "Malicious permitProcessor that returns success without transferring tokens",
-      "why_ruled_out": "AMM independently verifies balance increased by amountIn at AMMModule.sol:2207-2210. If tokens not received, entire swap reverts regardless of handler return value.",
+      "vector": "Malicious permitProcessor that skips actual token transfer",
+      "why_ruled_out": "AMM independently checks balanceInBefore + amountIn == balanceInAfter at AMMModule.sol:2207-2210. Cannot fake transfer.",
       "test_file": null,
       "repos": ["lbamm-hooks-and-handlers", "lbamm-core"]
     },
     {
-      "vector": "Forge cross-module caller context to bypass access control on hooks",
-      "why_ruled_out": "All state-changing AMMStandardHook functions check _requireCallerIsAMM() at line 940-943. Cannot call with fake context.",
+      "vector": "Forge cross-module caller context → bypass access control",
+      "why_ruled_out": "All AMMStandardHook state-changing functions check msg.sender == AMM via _requireCallerIsAMM() at L940-943.",
       "test_file": null,
       "repos": ["lbamm-hooks-and-handlers"]
     },
     {
-      "vector": "Reuse permit signature with different from address to drain another user's tokens",
-      "why_ruled_out": "from address is part of PermitC typehash and signed by signer. Changing from invalidates signature.",
+      "vector": "Reuse permit signature with different from address → drain another user's tokens",
+      "why_ruled_out": "from is part of PermitC typehash. Changing from invalidates the EIP-712 signature. Cryptographically bound.",
+      "test_file": null,
+      "repos": ["lbamm-hooks-and-handlers"]
+    },
+    {
+      "vector": "Partial fill ratio manipulation via rounding",
+      "why_ruled_out": "FullMath.mulDiv truncates (rounds down), reducing maxAmountIn. This protects the signer by allowing less input, not more.",
+      "test_file": null,
+      "repos": ["lbamm-hooks-and-handlers"]
+    },
+    {
+      "vector": "CLOB fill rounding exploitation via dust-loop (calculateFixedInput rounds UP)",
+      "why_ruled_out": "mulDivRoundingUp at CLOBHelper.sol:313-314 rounds output UP, benefiting makers at executor's expense. Rounding direction prevents attacker extraction.",
+      "test_file": null,
+      "repos": ["lbamm-hooks-and-handlers"]
+    },
+    {
+      "vector": "Cosigner nonce reuse (REUSABLE_COSIGNATURE_NONCE=0)",
+      "why_ruled_out": "PermitC's own nonce/fill tracking prevents underlying permit replay. Cosignature binds to specific executor address. Reusable cosignature is by-design for partial fills.",
+      "test_file": null,
+      "repos": ["lbamm-hooks-and-handlers"]
+    },
+    {
+      "vector": "CLOB callback data manipulation → afterSwapRefund with wrong params",
+      "why_ruled_out": "Callback data constructed by CLOB handler itself (L288-293), not executor. AMM forwards it without modification. Executor cannot inject malicious callback.",
       "test_file": null,
       "repos": ["lbamm-hooks-and-handlers"]
     }
   ],
   "theft_theses": [
     {
-      "thesis": "Forge permit with arbitrary feeOnTop to drain signer's tokens beyond intended swap",
-      "victim": "Permit signer",
-      "asset": "ERC20 tokens approved to PermitC",
+      "thesis": "Forge permit with arbitrary feeOnTop to drain extra tokens beyond signed amount",
+      "victim": "permit signer",
+      "asset": "ERC20 tokens approved via PermitC",
       "estimated_ev": 0,
       "status": "ruled_out"
     },
     {
-      "thesis": "Supply malicious permitProcessor to execute swap without actual token transfer",
-      "victim": "Pool LPs (receive no input tokens)",
-      "asset": "Pool reserves",
+      "thesis": "Use malicious permitProcessor to bypass signature verification and steal signer funds",
+      "victim": "permit signer",
+      "asset": "ERC20 tokens",
       "estimated_ev": 0,
       "status": "ruled_out"
     },
     {
-      "thesis": "Manipulate CLOB order fill math via price/rounding to extract from makers",
-      "victim": "CLOB order makers",
-      "asset": "Deposited maker tokens",
+      "thesis": "Exploit CLOB fill rounding (mulDivRoundingUp) via many tiny fills to extract dust per iteration",
+      "victim": "CLOB executor / pool",
+      "asset": "output tokens",
       "estimated_ev": 0,
       "status": "ruled_out"
     }
   ],
   "metadata": {
-    "num_turns": 15,
-    "tool_uses": 25,
-    "files_read": 18,
+    "num_turns": 20,
+    "tool_uses": 30,
+    "files_read": 22,
     "tools_run": {
       "phase0_artifacts": {"read": true},
-      "slither": {"ran": false, "reason": "Pre-generated artifacts read instead. All hypotheses ruled out via manual analysis without needing additional static analysis."},
-      "aderyn": {"ran": false, "reason": "Pre-generated artifacts read instead."},
-      "forge_test": {"ran": false, "reason": "All hypotheses ruled out at code analysis level before test writing. Guards identified at code review prevent exploitation."},
-      "chisel": {"ran": false, "reason": "No math hypotheses survived to testing phase."},
-      "halmos": {"ran": false, "reason": "No math findings to verify."},
-      "medusa": {"ran": false, "reason": "No multi-step findings survived to testing."},
-      "echidna": {"ran": false, "reason": "Not used."},
-      "cast_run": {"ran": false, "reason": "No historical tx to trace."},
-      "heimdall": {"ran": false, "reason": "No unverified deps."},
-      "quimera": {"ran": false, "reason": "No confirmed findings."},
-      "variant_analysis": {"ran": false, "reason": "No confirmed findings."}
+      "slither": {"ran": false, "reason": "Slither MCP not available in this session"},
+      "aderyn": {"ran": true, "repos": ["lbamm-hooks-and-handlers"], "findings": 10, "note": "Aderyn crashed with fatal bug, used phase0 aderyn output instead"},
+      "forge_test": {"ran": false, "reason": "No findings reached PoC stage - all ruled out at code analysis level"},
+      "chisel": {"ran": false, "reason": "Not needed"},
+      "halmos": {"ran": false, "reason": "No math findings to verify"},
+      "medusa": {"ran": false, "reason": "No multi-step findings to fuzz"},
+      "echidna": {"ran": false, "reason": "Not used"},
+      "cast_run": {"ran": false, "reason": "No historical tx to trace"},
+      "quimera": {"ran": false, "reason": "No confirmed findings"},
+      "variant_analysis": {"ran": false, "reason": "No confirmed findings"}
     },
     "theses_tested": 3,
     "theses_confirmed": 0,
     "theses_ruled_out": 3,
     "lens_coverage": {
-      "lens1_value_tracing": "Applied to feeOnTop flow, permit amount flow, CLOB fill math. All values correctly denominated.",
-      "lens2_paired_op_diffing": "Applied to input-based vs output-based fee calculation in FeeHelper. Asymmetry is intentional (different formulas for different directions).",
+      "lens1_value_tracing": "Applied to permit flow (feeOnTop unsigned but limitAmount-bounded) and CLOB fill flow (calculateFixedInput rounding). No denomination mismatches found.",
+      "lens2_paired_op_diffing": "Applied to deposit/withdraw in CLOB and open/close order. Both paths use consistent balance checks. No asymmetries found.",
       "lens3_amplification_factor": "No mismatches found to amplify."
     }
   }

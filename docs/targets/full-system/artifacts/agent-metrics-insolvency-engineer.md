@@ -44,6 +44,10 @@
 - **Status**: Ruled out
 - **Reason**: Rounding difference is 1 wei max per operation. total_collected >= total_obligations in both paths.
 
+### H11: Operator precedence bug in FixedHelper withdrawLiquidity
+- **Status**: Ruled out
+- **Reason**: `redeposited0 | redeposited1 == 0` evaluates as `(redeposited0 | redeposited1) == 0` in Solidity. Bitwise OR binds tighter than ==. Confirmed via Forge test.
+
 ## Value Lifecycle Lens Checklist
 - [x] L1-TRACE: Fee values from swap -> _finalizeSwap -> protocol fees. Denomination consistent.
 - [x] L1-TRACE: Flash loan fee from hook -> surplus calc -> store. Denomination consistent.
@@ -81,13 +85,14 @@
 8. Storage-slot collision: deterministic slot, msg.sender-keyed mappings
 9. Reserve vs balance desync: balance verification enforces exact token arrival
 10. Fee calculation asymmetry: 1 wei max difference, total conservation holds
+11. Operator precedence in FixedHelper: bitwise OR binds tighter than ==, no bug
 
 ## Structured Metrics
 - findings_claimed: 0
 - findings_confirmed: 0
 - findings_rejected: 0
-- vectors_ruled_out: 10
+- vectors_ruled_out: 11
 - completeness_pct: 100
-- tool_uses: 40
+- tool_uses: 42
 - files_read: 15
 - poc_results: []

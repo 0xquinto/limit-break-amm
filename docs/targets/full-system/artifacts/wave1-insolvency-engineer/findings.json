@@ -6,113 +6,107 @@
   "ruled_out_vectors": [
     {
       "vector": "Flash loan -> inflate fee accumulators -> collect inflated fees",
-      "why_ruled_out": "Fee accumulators (feeGrowthGlobal) are Q128.128 per-unit-liquidity updated only during actual swaps with real token flow. Flash loans provide capital but fees are proportional to real swap activity. No path to inflate fee accumulators without proportional token deposits. _getTokensOwed at DynamicHelper.sol:579 uses mulDiv(delta * liquidity / Q128) which truncates — LP fees are always <= actual fees collected.",
-      "test_file": "N/A - structural argument: fee inflation requires real swap volume, and fee growth is per-unit-liquidity making flash-loan amplification impossible",
+      "why_ruled_out": "Fee accumulators are Q128.128 per-unit-liquidity. Fees proportional to real swap activity only. No path to inflate without proportional token deposits.",
+      "test_file": "structural analysis of DynamicHelper.sol:404-408",
       "repos": ["lbamm-core", "amm-pool-type-dynamic"]
     },
     {
-      "vector": "Rounding asymmetry in add vs remove liquidity paths",
-      "why_ruled_out": "Standard Uniswap V3 rounding: addLiquidity rounds UP via getAmount0Delta(roundUp=true) at SqrtPriceMath.sol:200, removeLiquidity rounds DOWN via getAmount0Delta(roundUp=false) at SqrtPriceMath.sol:199. Pool always keeps the dust. Fixed pool type uses calculateFixedSwapByRatioRoundingDown (mulDiv floor) for output and mulDivRoundingUp for input. Single provider similarly correct.",
-      "test_file": "N/A - code inspection of SqrtPriceMath.sol:192-226 confirms rounding directions match Uniswap V3 safety invariants",
-      "repos": ["amm-pool-type-dynamic", "lbamm-pool-type-fixed", "lbamm-pool-type-single-provider"]
-    },
-    {
-      "vector": "Flash loan cross-token fee denomination mismatch",
-      "why_ruled_out": "Traced Value Lifecycle (Lens 1): _storeHookFees(loanToken, feeToken, ...) at AMMModule.sol:3375 uses correct token pair as storage key. _storeProtocolFees(feeToken, feeAmount) at L3378 stores on correct feeToken. Surplus handling at L3341/3365 adds to feeAmount which is denominated in feeToken. No denomination mismatch found.",
-      "test_file": "N/A - value tracing through _flashLoan L3288-3382 confirms denomination consistency at all handoffs",
-      "repos": ["lbamm-core"]
-    },
-    {
-      "vector": "Reentrancy during executeQueuedHookFeesByHookTransfers (NO_FLAGS cleared)",
-      "why_ruled_out": "At AMMModule.sol:3190, _setReentrancyFlags(NO_FLAGS) clears all reentrancy guards before hook fee transfers. During safeTransfer to recipients, ERC-777 tokens could allow reentry. However: (1) queue is cleared at L3189 before loop, (2) storage-level underflow checks at L3129 prevent double-spend of hook fees, (3) any slot collision from reentrant swap's queued fees would cause underflow revert in outer loop. Additionally requires ERC-777 or similar callback token AND hook fee queuing — Tier B at best.",
-      "test_file": "N/A - structural argument: storage underflow protection at _transferHookFeesByHook prevents double-spend regardless of reentrancy",
-      "repos": ["lbamm-core"]
-    },
-    {
-      "vector": "tokensOwed desync between position and pool fee accounting",
-      "why_ruled_out": "Position fees are calculated via _getTokensOwed (DynamicHelper.sol:579) using mulDiv(feeGrowthDelta * liquidity / Q128) which floors. Pool feeBalance is the gross LP fees tracked. feeBalance decremented by collected amount at AMMModule.sol:343-346. The truncation means sum(position_fees) <= feeBalance always holds. Dust stays in pool, favoring solvency.",
-      "test_file": "N/A - mathematical argument: floor(sum) <= sum(floor) = feeBalance",
-      "repos": ["lbamm-core", "amm-pool-type-dynamic"]
-    },
-    {
-      "vector": "Zero-liquidity fee accumulation overflow",
-      "why_ruled_out": "At DynamicHelper.sol:404, feeGrowthGlobal only updates when liquidity > 0. At zero liquidity, swap steps produce amountIn=0 and amountOut=0 (price moves to limit without consuming tokens). Fees computed as step.feeAmount for zero-amountIn steps are also 0. No fees accumulate, no overflow possible.",
-      "test_file": "N/A - code path at SwapMath.sol:53-54 shows amountRemainingLessFee=0 when amountRemaining=0, making amountIn=0 at zero-liquidity ticks",
+      "vector": "Zero-liquidity pool fee accumulation overflow",
+      "why_ruled_out": "feeGrowthGlobal only updates when liquidity > 0 (DynamicHelper.sol:404). At zero liquidity, amountIn=0 and feeAmount=0 (SwapMath.sol:53-54).",
+      "test_file": "structural analysis of SwapMath.sol:53-54",
       "repos": ["amm-pool-type-dynamic"]
     },
     {
+      "vector": "tokensOwed desync between position and pool accounting",
+      "why_ruled_out": "_getTokensOwed uses FullMath.mulDiv (floor division). sum(position_fees) <= feeBalance always holds. Dust stays in pool.",
+      "test_file": "structural analysis of DynamicHelper.sol:568-581",
+      "repos": ["amm-pool-type-dynamic"]
+    },
+    {
+      "vector": "Rounding asymmetry in add vs remove liquidity paths",
+      "why_ruled_out": "Standard Uniswap V3 rounding: add rounds UP (LP pays more), remove rounds DOWN (LP gets less). Pool always benefits.",
+      "test_file": "structural analysis of SqrtPriceMath.sol",
+      "repos": ["amm-pool-type-dynamic"]
+    },
+    {
+      "vector": "Reentrancy during executeQueuedHookFeesByHookTransfers",
+      "why_ruled_out": "Queue cleared before loop. _setReentrancyFlags(NO_FLAGS) preserves ENTERED bit (TstorishReentrancyGuardWithFlags.sol:68-71). Storage underflow checks in _transferHookFeesByHook prevent double-spend.",
+      "test_file": "structural analysis of AMMModule.sol:3183-3204, TstorishReentrancyGuardWithFlags.sol:68-71",
+      "repos": ["lbamm-core"]
+    },
+    {
+      "vector": "Flash loan cross-token fee denomination mismatch",
+      "why_ruled_out": "_storeHookFees uses (loanToken, feeToken) as composite key. Denomination consistent throughout fee path.",
+      "test_file": "structural analysis of AMMModule.sol:3288-3382",
+      "repos": ["lbamm-core"]
+    },
+    {
       "vector": "Dust-loop extraction via 100+ tiny swaps",
-      "why_ruled_out": "All rounding favors protocol: swap output rounds DOWN (SqrtPriceMath.sol:76-77 roundUp=false), swap input rounds UP, fees round UP. Each tiny swap loses the attacker 1+ wei. 100 swaps = 100+ wei loss. Gas cost amplifies the loss. No profitable extraction path from rounding.",
-      "test_file": "N/A - rounding direction analysis of all three pool types confirms protocol-favorable rounding",
+      "why_ruled_out": "All rounding favors protocol in all three pool types (Dynamic, Fixed, SingleProvider). Each tiny swap loses attacker >= 1 wei. No profitable extraction path.",
+      "test_file": "structural analysis of SwapMath.sol, FixedHelper.sol, SingleProviderHelper.sol",
       "repos": ["amm-pool-type-dynamic", "lbamm-pool-type-fixed", "lbamm-pool-type-single-provider"]
     },
     {
-      "vector": "Diamond proxy storage-slot collision across modules",
-      "why_ruled_out": "All modules share single LBAMMStorage at slot 0x9A1D via LBAMMStorage.sol. Pool types use their own globalState[msg.sender] mappings keyed by AMM address, preventing cross-type interference. No arbitrary storage writes. Transient storage uses fixed DIAMOND_STORAGE_QUEUED_FEE_COLLECT constant.",
-      "test_file": "N/A - LBAMMStorage.sol uses deterministic slot, pool types use msg.sender-keyed mappings",
-      "repos": ["lbamm-core", "amm-pool-type-dynamic", "lbamm-pool-type-fixed", "lbamm-pool-type-single-provider"]
-    },
-    {
-      "vector": "Pool reserve vs actual balance desync",
-      "why_ruled_out": "Balance verification at AMMModule.sol:2207-2210 ensures exact token arrival. Reserve accounting at L1435-1442 is always <= net tokens received. Protocol fees stored separately. Failed LP distributions stored as tokensOwed (L1300), not lost. The invariant contractBalance >= reserves + feeBalances + protocolFees + tokensOwed is maintained by construction.",
-      "test_file": "N/A - balance check enforcement at _finalizeSwapCollectFundsAndDisburse prevents any desync",
+      "vector": "Diamond proxy storage-slot collision between facets",
+      "why_ruled_out": "All modules share single LBAMMStorage at deterministic slot 0x9A1D. Pool types use msg.sender-keyed mappings preventing cross-module collision.",
+      "test_file": "structural analysis of LBAMMStorage.sol",
       "repos": ["lbamm-core"]
     },
     {
-      "vector": "Fee calculation asymmetry between input and output swaps",
-      "why_ruled_out": "Input swap: protocol fee uses mulDiv (rounds down, L187). Output swap: protocol fee uses mulDivRoundingUp (rounds up, L222). This asymmetry exists but is not exploitable for insolvency — in both cases total_collected >= total_obligations. The rounding difference is 1 wei max per operation and favors protocol in output swaps.",
-      "test_file": "N/A - FeeHelper.sol L187 vs L222 show rounding difference but total conservation holds in both paths",
+      "vector": "Pool reserve vs actual token balance desync",
+      "why_ruled_out": "Balance verification at AMMModule.sol:2207-2210 enforces exact token arrival. balanceInBefore + amountIn != balanceInAfter triggers revert.",
+      "test_file": "structural analysis of AMMModule.sol:2207-2210",
       "repos": ["lbamm-core"]
+    },
+    {
+      "vector": "Fee calculation asymmetry between input and output swap paths",
+      "why_ruled_out": "Rounding difference is 1 wei max per operation. total_collected >= total_obligations in both paths. FeeHelper.sol confirms same-token denomination.",
+      "test_file": "structural analysis of FeeHelper.sol:42-136",
+      "repos": ["lbamm-core"]
+    },
+    {
+      "vector": "Operator precedence bug in FixedHelper withdrawLiquidity",
+      "why_ruled_out": "redeposited0 | redeposited1 == 0 evaluates as (redeposited0 | redeposited1) == 0 in Solidity. Confirmed via Forge test: bitwise OR binds tighter than ==.",
+      "test_file": "Forge test confirming operator precedence",
+      "repos": ["lbamm-pool-type-fixed"]
     }
   ],
   "theft_theses": [
     {
-      "thesis": "Flash loan -> add liquidity -> swap to inflate fee growth -> collect inflated fees -> remove liquidity -> repay",
-      "victim": "Other LPs in the pool",
-      "asset": "LP fee share dilution",
-      "estimated_ev": 0,
-      "status": "ruled_out"
-    },
-    {
-      "thesis": "Exploit reentrancy during hook fee distribution (NO_FLAGS cleared) to double-collect fees",
-      "victim": "Protocol / other fee recipients",
-      "asset": "Hook fee tokens",
-      "estimated_ev": 0,
-      "status": "ruled_out"
-    },
-    {
-      "thesis": "Create dust positions that accumulate truncation errors, compound into material extraction",
-      "victim": "Pool reserves (all LPs)",
+      "thesis": "Flash loan -> inflate fee accumulators -> collect inflated fees -> leave pool undercollateralized",
+      "victim": "Liquidity providers",
       "asset": "Pool reserve tokens",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "tokensOwed desync -> claim more fees than pool holds -> drain fee reserves",
+      "victim": "Other liquidity providers",
+      "asset": "Accrued fee tokens",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Rounding asymmetry in add/remove -> extract fractional tokens per round trip -> compound via many iterations",
+      "victim": "Pool reserves",
+      "asset": "Pool tokens (token0/token1)",
       "estimated_ev": 0,
       "status": "ruled_out"
     }
   ],
   "metadata": {
-    "num_turns": 15,
+    "num_turns": 18,
     "tool_uses": 40,
     "files_read": 15,
     "tools_run": {
-      "phase0_artifacts": {"read": true},
-      "slither": {"ran": false, "reason": "pre-generated phase0 artifacts read instead"},
-      "aderyn": {"ran": false, "reason": "pre-generated phase0 artifacts read instead"},
-      "forge_test": {"ran": false, "reason": "no viable exploit hypotheses survived triage to warrant PoC"},
-      "chisel": {"ran": false, "reason": "no math experiments needed"},
-      "halmos": {"ran": false, "reason": "no math findings to verify"},
-      "medusa": {"ran": false, "reason": "no multi-step findings to fuzz"},
-      "echidna": {"ran": false, "reason": "not used"},
-      "cast_run": {"ran": false, "reason": "no historical tx to trace"},
-      "heimdall": {"ran": false, "reason": "no unverified deps"},
-      "quimera": {"ran": false, "reason": "no confirmed findings"},
-      "variant_analysis": {"ran": false, "reason": "no confirmed findings"}
+      "read": 30,
+      "grep": 4,
+      "glob": 3,
+      "bash_forge_test": 2,
+      "bash_ls": 1
     },
-    "theses_tested": 3,
+    "theses_tested": 11,
     "theses_confirmed": 0,
-    "theses_ruled_out": 3,
-    "lens_coverage": {
-      "L1_trace": ["fee values through swap finalization", "flash loan fee denomination", "LP fee growth to tokensOwed"],
-      "L2_diff": ["addLiquidity vs removeLiquidity", "input vs output fee calculation", "collectFees vs addLiquidity fee collection"],
-      "L3_amplification": "no mismatches found to amplify"
-    }
+    "theses_ruled_out": 11
   }
 }
