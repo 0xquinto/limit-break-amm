@@ -77,7 +77,7 @@ Automated tools run BEFORE agents spawn. Your artifacts are pre-generated at `do
 1. **Read your pre-generated dossier** — referenced in `{{PHASE0_ARTIFACTS}}` in your template
 2. **Read attack surface index** — `docs/targets/full-system/artifacts/phase0/attack_surface_index.json`
 
-The `audit-context-building` and `entry-point-analyzer` skills are optional for agents who want deeper context on a specific module.
+Phase 0 artifacts give you static output. The `audit-context-building` and `entry-point-analyzer` skills are MANDATORY for all archetypes (see table above) — they provide interactive analysis that phase 0 cannot replicate. Run them on your primary target modules during checkpoint 0.
 
 Log:
 ```json
@@ -86,7 +86,9 @@ Log:
 
 ### Checkpoint 1: Static Analysis Baseline (turns 2-3)
 
-Run BOTH on every repo in your scope before starting manual analysis:
+Run BOTH on every repo in your scope before starting manual analysis.
+
+**Phase 0 artifacts do NOT satisfy this checkpoint.** Phase 0 ran a generic, repo-wide pass before you were spawned. YOUR checkpoint 1 runs are targeted: you query specific contracts, functions, and detectors based on your archetype hypotheses. You WILL find things the generic pass missed. Skipping this is a SAFETY_EVENT.
 
 **Slither** — Load via `ToolSearch "+slither"`, then:
 - `mcp__slither__run_detectors` with `path=<repo>`, `impact=["High","Medium"]`, `exclude_paths=["lib/","test/"]`

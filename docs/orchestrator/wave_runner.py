@@ -174,14 +174,15 @@ You can use SendMessage to relay important cross-cutting discoveries between age
 
 Once ALL {len(wave.agents)} agents have completed:
 
-1. Call TeamDelete with team_name "{team_name}" IMMEDIATELY — do NOT send shutdown
-   messages to agents first, do NOT wait for agent approval. Just delete the team.
-2. Print a summary listing each agent's completion status
-3. On the VERY LAST LINE of your response, output exactly:
+1. Send a shutdown message to ALL {len(wave.agents)} agents in a SINGLE message
+   (use SendMessage for each, all in one response). Message: "Shutdown. Wave complete."
+2. In your NEXT turn, call TeamDelete with team_name "{team_name}"
+3. Print a summary listing each agent's completion status
+4. On the VERY LAST LINE of your response, output exactly:
    {COMPLETION_MARKER}
 
-IMPORTANT: Do NOT negotiate shutdown with agents via SendMessage. TeamDelete handles
-cleanup directly. The extra round-trips waste turns.
+IMPORTANT: Do NOT wait for agents to acknowledge shutdown. Send all shutdown
+messages at once, then delete the team on your next turn.
 """
 
 
@@ -226,8 +227,6 @@ async def run_wave(wave: WaveConfig, prompts: dict[str, str]) -> list[AgentResul
         "system_prompt": AUDIT_SYSTEM_PROMPT,
     }
     if dominant_profile is not None:
-        sdk_kwargs["temperature"] = dominant_profile.temperature
-        sdk_kwargs["max_tokens"] = dominant_profile.max_tokens
         if dominant_profile.extended_thinking and dominant_profile.thinking_budget_tokens > 0:
             sdk_kwargs["thinking"] = {
                 "type": "enabled",
@@ -373,7 +372,7 @@ def _build_results_from_disk(
             except (json.JSONDecodeError, KeyError):
                 pass
 
-        stop_reason = "completed" if has_report else ("missing" if wave_complete else "unknown")
+        stop_reason = "completed" if (has_report or has_sidecar) else ("missing" if wave_complete else "unknown")
 
         results.append(AgentResult(
             name=agent.name,

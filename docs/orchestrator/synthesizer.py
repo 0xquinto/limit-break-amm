@@ -492,9 +492,10 @@ def generate_synthesis(
     # Format ruled-out for markdown
     ruled_out_lines = []
     for r in all_ruled_out[:30]:
+        label = r.get('vector', r.get('title', r.get('id', '?')))
+        detail = r.get('why_ruled_out', r.get('description', ''))[:100]
         ruled_out_lines.append(
-            f"- {r.get('title', r.get('id', '?'))}: {r.get('description', '')[:100]} "
-            f"— agent: {r.get('_source_agent', '?')}"
+            f"- {label}: {detail} — agent: {r.get('_source_agent', '?')}"
         )
 
     # Format contradictions for markdown
