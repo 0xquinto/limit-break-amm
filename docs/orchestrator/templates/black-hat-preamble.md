@@ -159,3 +159,44 @@ Write your JSON sidecar to `docs/targets/full-system/artifacts/wave{{WAVE_NUMBER
   }
 }
 ```
+
+### Mandatory Tool Checkpoints (ENFORCED — skipping = SAFETY_EVENT)
+
+You MUST execute these tools. Reading phase0 artifacts is NOT a substitute. Phase0 ran a generic pass before you existed. YOUR runs are targeted to your archetype hypotheses and WILL find things the generic pass missed.
+
+**Checkpoint 1 (turns 2-3): Static Analysis — RUN THESE YOURSELF**
+
+Slither MCP — load via `ToolSearch "+slither"`, then run on your primary target repos:
+```
+mcp__slither__run_detectors path=<repo> impact=["High","Medium"] exclude_paths=["lib/","test/"]
+mcp__slither__list_functions — read function lists for your target contracts, don't guess
+```
+
+Aderyn — run on each scoped repo:
+```bash
+cd <repo> && /opt/homebrew/bin/aderyn . 2>&1 | tail -40
+```
+
+**Checkpoint 2 (during analysis): Trail of Bits Skills — INVOKE THESE**
+
+These are Claude Code skills invoked via the Skill tool. They provide interactive analysis:
+- `Skill("audit-context-building:audit-context-building")` — deep architectural context on your primary modules
+- `Skill("entry-point-analyzer:entry-point-analyzer")` — identifies all state-changing entry points
+
+**Checkpoint 3 (for math/sequence findings): Verification**
+- Math findings → Halmos: `env PATH="/Users/diego/.foundry/bin:$PATH" ~/.local/bin/halmos --function check_<name>`
+- Multi-step findings → Medusa: `cd <repo> && /opt/homebrew/bin/medusa fuzz --target-contracts <Contract> --test-limit 50000`
+
+Log ALL tool runs in your sidecar `metadata.tools_run`. If a tool errors or crashes, log the error — tool failure after one attempt is acceptable, but never skipping the attempt.
+
+### Pre-Completion Gate (MUST verify before writing final findings.json)
+
+Before writing your final sidecar, verify ALL of these:
+- [ ] Checkpoint 1: Ran Slither + Aderyn myself (not just read phase0). Logged in tools_run with ran=true.
+- [ ] Checkpoint 2: Invoked audit-context-building AND entry-point-analyzer Skills.
+- [ ] Mandatory Probes: Attempted all 5 categories listed above (dust-loop, forged hook, transient-slot, permit mutation, storage collision).
+- [ ] Every ruled-out vector has a concrete code evidence citation (file:line) or Forge test path.
+- [ ] Every hypothesis that survived triage has a Forge test (even if it proves the guard holds).
+- [ ] tools_run in metadata has an entry for EVERY tool (ran=true/false with reason).
+
+If you cannot check a box, explain WHY in your sidecar metadata before completing.

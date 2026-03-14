@@ -225,6 +225,9 @@ async def run_wave(wave: WaveConfig, prompts: dict[str, str]) -> list[AgentResul
         "max_turns": 60,
         "permission_mode": "bypassPermissions",
         "system_prompt": AUDIT_SYSTEM_PROMPT,
+        # Inherit MCP servers (slither, etc.) and plugins from user/project settings.
+        # Without this, spawned sessions get zero MCP servers.
+        "setting_sources": ["user", "project", "local"],
     }
     if dominant_profile is not None:
         if dominant_profile.extended_thinking and dominant_profile.thinking_budget_tokens > 0:
