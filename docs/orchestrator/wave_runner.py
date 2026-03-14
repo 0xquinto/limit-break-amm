@@ -310,9 +310,10 @@ async def run_wave(wave: WaveConfig, prompts: dict[str, str]) -> list[AgentResul
 
                 # Safety: bail if teardown is taking too long (>5 min after last agent artifact)
                 if elapsed_ms > 300_000 and len(agents_started) > 0:
-                    # Check if all agent artifacts exist on disk
+                    # Check if all agent artifacts exist on disk (subdir or flat path)
                     all_done = all(
                         (ARTIFACTS_DIR / f"wave{wave.number}-{a.name}" / "findings.json").exists()
+                        or (ARTIFACTS_DIR / f"findings-{a.name}.json").exists()
                         for a in wave.agents
                     )
                     if all_done and result_count >= len(wave.agents) + 5:
@@ -365,7 +366,10 @@ def _build_results_from_disk(
         flat_path = ARTIFACTS_DIR / f"wave{wave.number}-{agent.name}.md"
 
         has_report = report_path.exists() or flat_path.exists()
-        has_sidecar = sidecar_path.exists()
+        # Fallback: agents sometimes write sidecar to flat path
+        flat_sidecar = ARTIFACTS_DIR / f"findings-{agent.name}.json"
+        has_sidecar = sidecar_path.exists() or flat_sidecar.exists()
+        effective_sidecar = sidecar_path if sidecar_path.exists() else flat_sidecar
 
         if has_report:
             report_text = (report_path.read_text() if report_path.exists()
@@ -378,7 +382,7 @@ def _build_results_from_disk(
         total_tokens = 0
         if has_sidecar:
             try:
-                sidecar = json.loads(sidecar_path.read_text())
+                sidecar = json.loads(effective_sidecar.read_text())
                 if isinstance(sidecar, dict):
                     meta = sidecar.get("metadata", {})
                     num_turns = meta.get("num_turns", 0)

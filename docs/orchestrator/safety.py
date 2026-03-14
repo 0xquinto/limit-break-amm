@@ -20,6 +20,8 @@ def extract_findings_from_json(wave: WaveConfig) -> list[dict]:
     for agent in wave.agents:
         path = ARTIFACTS_DIR / f"wave{wave.number}-{agent.name}" / "findings.json"
         if not path.exists():
+            path = ARTIFACTS_DIR / f"findings-{agent.name}.json"  # flat path fallback
+        if not path.exists():
             continue
         try:
             data = json.loads(path.read_text())

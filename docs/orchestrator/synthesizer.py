@@ -46,6 +46,11 @@ def collect_json_sidecars(wave: WaveConfig) -> list[dict]:
     for agent in wave.agents:
         path = ARTIFACTS_DIR / f"wave{wave.number}-{agent.name}" / "findings.json"
         data, errors = load_and_validate(path)
+        # Fallback: agents sometimes write to flat path instead of subdirectory
+        if errors:
+            flat_path = ARTIFACTS_DIR / f"findings-{agent.name}.json"
+            if flat_path.exists():
+                data, errors = load_and_validate(flat_path)
         if errors:
             print(f"  WARNING: {agent.name} sidecar invalid: {errors}")
             continue
