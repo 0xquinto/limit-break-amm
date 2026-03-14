@@ -151,7 +151,10 @@ Write your JSON sidecar to `docs/targets/full-system/artifacts/wave{{WAVE_NUMBER
       "vector": "description",
       "why_ruled_out": "reason — must reference a test file or concrete code evidence",
       "test_file": "path to Forge test that proves the guard holds",
-      "repos": ["repo-name"]
+      "repos": ["repo-name"],
+      "contracts": ["Contract.sol"],
+      "functions": ["function()"],
+      "keywords": ["keyword1", "keyword2"]
     }
   ],
   "theft_theses": [
