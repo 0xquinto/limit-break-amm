@@ -188,44 +188,55 @@ Write your JSON sidecar to `docs/targets/full-system/artifacts/wave{{WAVE_NUMBER
 }
 ```
 
-### Mandatory Tool Checkpoints (ENFORCED — skipping = SAFETY_EVENT)
+### Mandatory Tool Checklist (your sidecar is INVALID until ALL are done)
 
-You MUST execute these tools. Reading phase0 artifacts is NOT a substitute. Phase0 ran a generic pass before you existed. YOUR runs are targeted to your archetype hypotheses and WILL find things the generic pass missed.
+You MUST execute every item below. This is your workload — you are NOT done until every item has a result logged. Reading phase0 artifacts is NOT a substitute.
 
-**Checkpoint 1 (turns 2-3): Static Analysis — RUN THESE YOURSELF**
+**Phase A: Static Analysis**
 
-Slither MCP — load via `ToolSearch "+slither"`, then run on your primary target repos:
-```
-mcp__slither__run_detectors path=<repo> impact=["High","Medium"] exclude_paths=["lib/","test/"]
-mcp__slither__list_functions — read function lists for your target contracts, don't guess
-```
+Run on EVERY repo in your scope:
+1. Slither MCP — `ToolSearch "+slither"`, then: `mcp__slither__run_detectors path=<repo> impact=["High","Medium"] exclude_paths=["lib/","test/"]`
+2. Slither functions — `mcp__slither__list_functions` for your target contracts
+3. Aderyn — `cd <repo> && /opt/homebrew/bin/aderyn . 2>&1 | tail -40`
 
-Aderyn — run on each scoped repo:
-```bash
-cd <repo> && /opt/homebrew/bin/aderyn . 2>&1 | tail -40
-```
+**Phase B: Architectural Analysis**
 
-**Checkpoint 2 (during analysis): Trail of Bits Skills — INVOKE THESE**
+4. `Skill("audit-context-building:audit-context-building")` — run on your primary modules
+5. `Skill("entry-point-analyzer:entry-point-analyzer")` — run on your primary modules
 
-These are Claude Code skills invoked via the Skill tool. They provide interactive analysis:
-- `Skill("audit-context-building:audit-context-building")` — deep architectural context on your primary modules
-- `Skill("entry-point-analyzer:entry-point-analyzer")` — identifies all state-changing entry points
+**Phase C: Invariant Testing (MANDATORY — this is where bugs hide)**
 
-**Checkpoint 3 (for math/sequence findings): Verification**
-- Math findings → Halmos: `env PATH="/Users/diego/.foundry/bin:$PATH" ~/.local/bin/halmos --function check_<name>`
-- Multi-step findings → Medusa: `cd <repo> && /opt/homebrew/bin/medusa fuzz --target-contracts <Contract> --test-limit 50000`
+Read `docs/framework/amm-invariant-catalog.md`. For every CRITICAL and HIGH invariant relevant to your scope, you MUST:
 
-Log ALL tool runs in your sidecar `metadata.tools_run`. If a tool errors or crashes, log the error — tool failure after one attempt is acceptable, but never skipping the attempt.
+6. **Write a Forge invariant test** that tries to BREAK the invariant (not prove it holds). Use `forge test --match-test <name> -vvv`. Log each test file and result.
+7. **Run Halmos** on at least 3 math functions in your scope: `cd <repo> && env PATH="/Users/diego/.foundry/bin:$PATH" ~/.local/bin/halmos --function check_<name> --solver-timeout-assertion 30000 2>&1 | tail -30`. Halmos explores ALL inputs — if an invariant can be broken, it finds the input. Log the output.
+8. **Run Medusa** on at least 1 contract in your scope: `cd <repo> && /opt/homebrew/bin/medusa fuzz --target-contracts <Contract> --test-limit 50000 2>&1 | tail -30`. Medusa throws millions of random inputs at your invariant tests. Log the output.
+
+**Minimum invariant test counts by archetype:**
+- precision-sniper, math-deep-diver: INV-S01, INV-S02, INV-SW01, INV-SW02, INV-SW03, INV-SW04 (6 invariants minimum)
+- state-desync, composability-exploiter: INV-S01, INV-S02, INV-H03, INV-H05, INV-L01, INV-L03 (6 invariants minimum)
+- auth-forger: INV-H01, INV-H02, INV-P01, INV-P02, INV-S01, INV-S02 (6 invariants minimum)
+- cross-boundary: INV-H01, INV-H02, INV-H04, INV-S01, INV-S02, INV-S04 (6 invariants minimum)
+
+**Phase D: Known Patterns**
+
+9. Investigate ALL 4 known vulnerability patterns (KV-1 through KV-4) listed above. Write a `ruled_out_vectors` entry for each with the EXACT required fields.
+
+**Phase E: Hypothesis-Driven Exploits**
+
+10. For every hypothesis in your Target Map: write a Forge test that attempts to exploit it. Tests that PASS (proving the guard holds) are valuable — log them as ruled-out with test_file.
 
 ### Pre-Completion Gate (MUST verify before writing final findings.json)
 
 Before writing your final sidecar, verify ALL of these:
-- [ ] **Known Patterns**: ALL 4 known vulnerability patterns (KV-1 through KV-4) have a `ruled_out_vectors` entry with the EXACT `contracts`, `keywords`, `functions` fields listed above. If you didn't investigate one, copy the required fields and set `why_ruled_out` to explain why it's outside your scope.
-- [ ] Checkpoint 1: Ran Slither + Aderyn myself (not just read phase0). Logged in tools_run with ran=true.
-- [ ] Checkpoint 2: Invoked audit-context-building AND entry-point-analyzer Skills.
-- [ ] Mandatory Probes: Attempted all 5 categories listed above (dust-loop, forged hook, transient-slot, permit mutation, storage collision).
-- [ ] Every ruled-out vector has a concrete code evidence citation (file:line) or Forge test path.
-- [ ] Every hypothesis that survived triage has a Forge test (even if it proves the guard holds).
+- [ ] Phase A complete: Slither + Aderyn ran on every scoped repo. Logged in tools_run.
+- [ ] Phase B complete: audit-context-building AND entry-point-analyzer Skills invoked.
+- [ ] Phase C complete: At least 6 invariant Forge tests written and run. Halmos ran on 3+ functions. Medusa ran on 1+ contract. All results logged.
+- [ ] Phase D complete: ALL 4 KV patterns investigated with exact sidecar fields.
+- [ ] Phase E complete: Every hypothesis has a Forge test (even if it proves the guard holds).
+- [ ] Every ruled-out vector has test_file pointing to a real test.
 - [ ] tools_run in metadata has an entry for EVERY tool (ran=true/false with reason).
+
+**You are NOT done until Phases A-E are ALL complete.** If you finish your hypotheses early, go back to Phase C and test MORE invariants. The bug is in the input space, not in the source code — use the tools to explore it.
 
 If you cannot check a box, explain WHY in your sidecar metadata before completing.
