@@ -1,0 +1,363 @@
+{
+  "wave": 1,
+  "aggregate_score": 39.8,
+  "grade": "F",
+  "weakest_dimension": "checklist",
+  "agents": [
+    {
+      "name": "precision-sniper",
+      "total": 60.0,
+      "grade": "D",
+      "checklist": 13.1,
+      "tool_breadth": 16,
+      "evidence": 0.9,
+      "depth": 20.0,
+      "thesis": 10.0,
+      "details": {
+        "checklist": {
+          "completed": 28,
+          "expected": 64,
+          "pct": 43.8,
+          "source": "inferred"
+        },
+        "tool_breadth": {
+          "required_used": [
+            "aderyn",
+            "forge",
+            "halmos",
+            "medusa",
+            "slither"
+          ],
+          "required_missing": [],
+          "bonus_used": [
+            "entry-point-analyzer"
+          ],
+          "score_breakdown": "15 (required) + 1 (bonus)"
+        },
+        "evidence": {
+          "ruled_out_total": 22,
+          "ruled_out_with_test": 1,
+          "ruled_out_prose_only": 21,
+          "findings_with_test": 0,
+          "evidence_pct": 4.5
+        },
+        "depth": {
+          "turns": 160,
+          "turns_score": 6.0,
+          "files_read": 38,
+          "files_score": 6.0,
+          "forge_tests": 34,
+          "tests_score": 8.0
+        },
+        "thesis": {
+          "theses": 3,
+          "progressed": 3,
+          "statuses": {
+            "hypothesis": 0,
+            "tested": 0,
+            "confirmed": 0,
+            "ruled_out": 3
+          }
+        }
+      }
+    },
+    {
+      "name": "state-desync",
+      "total": 19.9,
+      "grade": "F",
+      "checklist": 0.0,
+      "tool_breadth": 6,
+      "evidence": 0.0,
+      "depth": 3.9,
+      "thesis": 10.0,
+      "details": {
+        "checklist": {
+          "completed": 0,
+          "expected": 59,
+          "pct": 0.0,
+          "source": "structured"
+        },
+        "tool_breadth": {
+          "required_used": [
+            "aderyn",
+            "slither"
+          ],
+          "required_missing": [
+            "forge",
+            "halmos",
+            "medusa"
+          ],
+          "bonus_used": [],
+          "score_breakdown": "6 (required) + 0 (bonus)"
+        },
+        "evidence": {
+          "ruled_out_total": 12,
+          "ruled_out_with_test": 0,
+          "ruled_out_prose_only": 12,
+          "findings_with_test": 0,
+          "evidence_pct": 0.0
+        },
+        "depth": {
+          "turns": 15,
+          "turns_score": 0.9,
+          "files_read": 15,
+          "files_score": 3.0,
+          "forge_tests": 0,
+          "tests_score": 0.0
+        },
+        "thesis": {
+          "theses": 5,
+          "progressed": 5,
+          "statuses": {
+            "hypothesis": 0,
+            "tested": 0,
+            "confirmed": 0,
+            "ruled_out": 5
+          }
+        }
+      }
+    },
+    {
+      "name": "auth-forger",
+      "total": 55.7,
+      "grade": "F",
+      "checklist": 2.1,
+      "tool_breadth": 9,
+      "evidence": 20.0,
+      "depth": 14.6,
+      "thesis": 10.0,
+      "details": {
+        "checklist": {
+          "completed": 4,
+          "expected": 58,
+          "pct": 6.9,
+          "source": "structured"
+        },
+        "tool_breadth": {
+          "required_used": [
+            "aderyn",
+            "forge",
+            "slither"
+          ],
+          "required_missing": [
+            "halmos",
+            "medusa"
+          ],
+          "bonus_used": [],
+          "score_breakdown": "9 (required) + 0 (bonus)"
+        },
+        "evidence": {
+          "ruled_out_total": 20,
+          "ruled_out_with_test": 20,
+          "ruled_out_prose_only": 0,
+          "findings_with_test": 0,
+          "evidence_pct": 100.0
+        },
+        "depth": {
+          "turns": 30,
+          "turns_score": 1.8,
+          "files_read": 24,
+          "files_score": 4.8,
+          "forge_tests": 20,
+          "tests_score": 8.0
+        },
+        "thesis": {
+          "theses": 3,
+          "progressed": 3,
+          "statuses": {
+            "hypothesis": 0,
+            "tested": 0,
+            "confirmed": 0,
+            "ruled_out": 3
+          }
+        }
+      }
+    },
+    {
+      "name": "math-deep-diver",
+      "total": 48.5,
+      "grade": "F",
+      "checklist": 11.1,
+      "tool_breadth": 11,
+      "evidence": 8.0,
+      "depth": 8.4,
+      "thesis": 10.0,
+      "details": {
+        "checklist": {
+          "completed": 20,
+          "expected": 54,
+          "pct": 37.0,
+          "source": "inferred"
+        },
+        "tool_breadth": {
+          "required_used": [
+            "aderyn",
+            "forge",
+            "slither"
+          ],
+          "required_missing": [
+            "halmos",
+            "medusa"
+          ],
+          "bonus_used": [
+            "audit-context-building",
+            "entry-point-analyzer"
+          ],
+          "score_breakdown": "9 (required) + 2 (bonus)"
+        },
+        "evidence": {
+          "ruled_out_total": 15,
+          "ruled_out_with_test": 6,
+          "ruled_out_prose_only": 9,
+          "findings_with_test": 0,
+          "evidence_pct": 40.0
+        },
+        "depth": {
+          "turns": 50,
+          "turns_score": 3.0,
+          "files_read": 15,
+          "files_score": 3.0,
+          "forge_tests": 6,
+          "tests_score": 2.4
+        },
+        "thesis": {
+          "theses": 5,
+          "progressed": 5,
+          "statuses": {
+            "hypothesis": 0,
+            "tested": 0,
+            "confirmed": 0,
+            "ruled_out": 5
+          }
+        }
+      }
+    },
+    {
+      "name": "cross-boundary",
+      "total": 54.7,
+      "grade": "F",
+      "checklist": 2.1,
+      "tool_breadth": 9,
+      "evidence": 17.3,
+      "depth": 16.3,
+      "thesis": 10.0,
+      "details": {
+        "checklist": {
+          "completed": 4,
+          "expected": 57,
+          "pct": 7.0,
+          "source": "structured"
+        },
+        "tool_breadth": {
+          "required_used": [
+            "aderyn",
+            "forge",
+            "slither"
+          ],
+          "required_missing": [
+            "halmos",
+            "medusa"
+          ],
+          "bonus_used": [],
+          "score_breakdown": "9 (required) + 0 (bonus)"
+        },
+        "evidence": {
+          "ruled_out_total": 22,
+          "ruled_out_with_test": 19,
+          "ruled_out_prose_only": 3,
+          "findings_with_test": 0,
+          "evidence_pct": 86.4
+        },
+        "depth": {
+          "turns": 45,
+          "turns_score": 2.7,
+          "files_read": 35,
+          "files_score": 6.0,
+          "forge_tests": 19,
+          "tests_score": 7.6
+        },
+        "thesis": {
+          "theses": 5,
+          "progressed": 5,
+          "statuses": {
+            "hypothesis": 0,
+            "tested": 0,
+            "confirmed": 0,
+            "ruled_out": 5
+          }
+        }
+      }
+    },
+    {
+      "name": "composability-exploiter",
+      "total": 0.0,
+      "grade": "F",
+      "checklist": 0.0,
+      "tool_breadth": 0,
+      "evidence": 0.0,
+      "depth": 0.0,
+      "thesis": 0.0,
+      "details": {
+        "checklist": {
+          "completed": 0,
+          "expected": 59,
+          "pct": 0.0,
+          "source": "inferred"
+        },
+        "tool_breadth": {
+          "required_used": [],
+          "required_missing": [
+            "aderyn",
+            "forge",
+            "halmos",
+            "medusa",
+            "slither"
+          ],
+          "bonus_used": [],
+          "score_breakdown": "0 (required) + 0 (bonus)"
+        },
+        "evidence": {
+          "ruled_out_total": 0,
+          "with_evidence": 0,
+          "pct": 0
+        },
+        "depth": {
+          "turns": 0,
+          "turns_score": 0.0,
+          "files_read": 0,
+          "files_score": 0.0,
+          "forge_tests": 0,
+          "tests_score": 0.0
+        },
+        "thesis": {
+          "theses": 0,
+          "progressed": 0
+        }
+      }
+    }
+  ],
+  "details": {
+    "dimension_averages": {
+      "checklist": 5.7,
+      "tool_breadth": 10.2,
+      "evidence": 9.2,
+      "depth": 12.6,
+      "thesis": 10.0
+    },
+    "dimension_pcts": {
+      "checklist": 18.9,
+      "tool_breadth": 51.0,
+      "evidence": 46.2,
+      "depth": 63.2,
+      "thesis": 100.0
+    },
+    "agent_scores": {
+      "precision-sniper": 60.0,
+      "state-desync": 19.9,
+      "auth-forger": 55.7,
+      "math-deep-diver": 48.5,
+      "cross-boundary": 54.7,
+      "composability-exploiter": 0.0
+    }
+  }
+}
