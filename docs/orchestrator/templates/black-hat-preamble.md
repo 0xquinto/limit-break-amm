@@ -43,6 +43,8 @@ Rank every hypothesis by: `extractable_value / attacker_capital / dependency_cou
 
 **Second-pass pivot**: if your first pass through the Target Map produces zero findings after 50% of your turns, attack from a different angle — change the victim assumption, change the capital source, or target a different module.
 
+**Depth floor**: You have 200 turns. If you've used fewer than 80, you have NOT completed your Phase C checklist. Go back and test more edge cases, run more fuzz campaigns, or investigate more hypotheses. Ending early is a compliance violation.
+
 ### Known Vulnerability Patterns (MANDATORY CHECKPOINT — must appear in sidecar)
 
 Previous audits found these 4 bug classes. You MUST investigate ALL 4 and write a `ruled_out_vectors` entry for each in your findings.json — even if you rule them out. This is a hard checkpoint: your sidecar is INVALID without all 4 entries.
@@ -188,6 +190,11 @@ Write your JSON sidecar to `docs/targets/full-system/artifacts/wave{{WAVE_NUMBER
 }
 ```
 
+**test_file format rule**: `"N/A"` is NOT acceptable as a test_file value. Use one of:
+- **Test file path**: `"lbamm-core/test/audit/AuditStateDesync.t.sol"` — for Forge/Halmos/Medusa tests you wrote
+- **Code citation**: `"code-analysis: AMMModule.sol:2144-2180"` — for vectors ruled out by code path analysis (cite specific lines)
+- **Not applicable**: `"not-applicable: [reason]"` — only if the vector genuinely cannot be tested
+
 ### Mandatory Tool Checklist (your sidecar is INVALID until ALL items have a logged result)
 
 This is your COMPLETE workload. Execute every numbered item. Log every result. You are NOT done until every item below has an outcome in your sidecar.
@@ -217,6 +224,8 @@ For each repo in your scope, run ALL of:
 
 Read `docs/framework/amm-invariant-catalog.md` FIRST. Then execute every item in YOUR section below.
 
+**Tool gate**: Each C-item that specifies "Halmos:" or "Medusa:" means you MUST invoke that tool for that item. Skipping a tool invocation = the item is NOT completed. If the tool errors, log the error — that counts as completed. Only "not attempted" is a violation.
+
 {{CHECKLIST}}
 
 **Phase D: Known Patterns**
@@ -226,6 +235,33 @@ Investigate ALL 4 known vulnerability patterns (KV-1 through KV-4) listed above.
 **Phase E: Hypothesis-Driven Exploits**
 
 For every hypothesis in your Target Map: write a Forge test that attempts to exploit it. Tests that PASS (proving the guard holds) are valuable — log them as ruled-out with test_file.
+
+### Mandatory Metadata (MUST be in your findings.json — copy and fill in real values)
+
+Your sidecar's `metadata` field MUST contain ALL of these keys with real values. Copy this template and fill it in:
+
+```json
+{
+  "checklist_items_completed": "A: N/N, B: N/N, C: N/N, D: 4/4, E: N/N",
+  "tools_run": {
+    "slither": {"ran": true, "repos": ["..."], "note": "..."},
+    "aderyn": {"ran": true, "repos": ["..."], "note": "..."},
+    "forge": {"ran": true, "note": "N tests total. File: path/to/test.sol"},
+    "halmos": {"ran": true, "note": "N checks. File: path/to/halmos.sol"},
+    "medusa": {"ran": true, "note": "N calls, N failures"},
+    "audit-context-building": {"ran": true},
+    "entry-point-analyzer": {"ran": true}
+  },
+  "num_turns": 0,
+  "tool_uses": 0,
+  "files_read": 0,
+  "theses_tested": 0,
+  "theses_confirmed": 0,
+  "theses_ruled_out": 0
+}
+```
+
+Set `"ran": false` with a `"reason"` field for any tool you could not run. Do NOT omit tools — every tool must be reported.
 
 ### Pre-Completion Gate (MUST verify before writing final findings.json)
 
