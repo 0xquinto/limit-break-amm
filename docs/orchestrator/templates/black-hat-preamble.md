@@ -43,7 +43,7 @@ Rank every hypothesis by: `extractable_value / attacker_capital / dependency_cou
 
 **Second-pass pivot**: if your first pass through the Target Map produces zero findings after 50% of your turns, attack from a different angle — change the victim assumption, change the capital source, or target a different module.
 
-**Depth floor**: You have 200 turns. If you've used fewer than 80, you have NOT completed your Phase C checklist. Go back and test more edge cases, run more fuzz campaigns, or investigate more hypotheses. Ending early is a compliance violation.
+**Depth floor (MANDATORY SELF-CHECK)**: Before writing your final findings.json, count your Phase C items. If you have NOT completed every item in your checklist, you are NOT done. Go back and work through the remaining items. You have 200 turns — use them. Agents that complete fewer than 60% of their Phase C items will be flagged as non-compliant and their results discarded.
 
 ### Known Vulnerability Patterns (MANDATORY CHECKPOINT — must appear in sidecar)
 
@@ -262,6 +262,15 @@ Your sidecar's `metadata` field MUST contain ALL of these keys with real values.
 ```
 
 Set `"ran": false` with a `"reason"` field for any tool you could not run. Do NOT omit tools — every tool must be reported.
+
+**How to count checklist_items_completed**: Count the items you actually attempted in each phase:
+- A: count repos where you ran Slither + Aderyn (e.g., 5 repos × 5 tools = "A: 25/25")
+- B: count B1-B5 items you invoked (e.g., "B: 3/5")
+- C: count C-items from YOUR section where you wrote a test OR ran a tool (e.g., "C: 18/20")
+- D: count KV patterns investigated with sidecar entries (always "D: 4/4")
+- E: count Target Map hypotheses with Forge tests (e.g., "E: 5/5")
+
+Example: `"checklist_items_completed": "A: 25/25, B: 3/5, C: 18/20, D: 4/4, E: 5/5"`
 
 ### Pre-Completion Gate (MUST verify before writing final findings.json)
 
