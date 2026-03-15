@@ -101,10 +101,28 @@ def validate_output(data: dict) -> list[str]:
         missing = REQUIRED_FINDING_FIELDS - set(f.keys())
         if missing:
             errors.append(f"findings[{i}]: missing fields {missing}")
-        if f.get("severity") and f["severity"] not in [s.value for s in Severity]:
-            errors.append(f"findings[{i}]: invalid severity '{f['severity']}'")
-        if f.get("confidence") and f["confidence"] not in [c.value for c in Confidence]:
-            errors.append(f"findings[{i}]: invalid confidence '{f['confidence']}'")
+        # Normalize severity (case-insensitive)
+        sev = f.get("severity", "")
+        if sev:
+            f["severity"] = sev.lower()
+            if f["severity"] not in [s.value for s in Severity]:
+                errors.append(f"findings[{i}]: invalid severity '{sev}'")
+        # Coerce numeric confidence to enum
+        conf = f.get("confidence", "")
+        if conf and conf not in [c.value for c in Confidence]:
+            try:
+                num = int(conf) if isinstance(conf, str) and conf.isdigit() else (int(conf) if isinstance(conf, (int, float)) else None)
+                if num is not None:
+                    if num >= 80:
+                        f["confidence"] = "high"
+                    elif num >= 50:
+                        f["confidence"] = "medium"
+                    else:
+                        f["confidence"] = "low"
+                else:
+                    errors.append(f"findings[{i}]: invalid confidence '{conf}'")
+            except (ValueError, TypeError):
+                errors.append(f"findings[{i}]: invalid confidence '{conf}'")
         if f.get("status") and f["status"] not in [v.value for v in VectorStatus]:
             errors.append(f"findings[{i}]: invalid status '{f['status']}'")
 
