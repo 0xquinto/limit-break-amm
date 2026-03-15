@@ -394,6 +394,20 @@ def _build_results_from_disk(
         has_sidecar = sidecar_path.exists() or flat_sidecar.exists()
         effective_sidecar = sidecar_path if sidecar_path.exists() else flat_sidecar
 
+        # Write fallback sidecar for crashed/silent agents
+        if not has_sidecar:
+            fallback = {
+                "agent_name": agent.name,
+                "agent_role": agent.role,
+                "wave": wave.number,
+                "findings": [],
+                "ruled_out_vectors": [],
+                "metadata": {"error": "no sidecar produced", "num_turns": 0},
+            }
+            flat_sidecar.write_text(json.dumps(fallback, indent=2))
+            has_sidecar = True
+            effective_sidecar = flat_sidecar
+
         if has_report:
             report_text = (report_path.read_text() if report_path.exists()
                            else flat_path.read_text())

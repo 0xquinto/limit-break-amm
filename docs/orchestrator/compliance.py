@@ -169,32 +169,30 @@ def _score_evidence(sidecar: dict) -> tuple[float, dict]:
     if not ruled_out and not findings:
         return 0.0, {"ruled_out_total": 0, "with_evidence": 0, "pct": 0}
 
-    # Count ruled-out with real test evidence
-    with_test = 0
-    prose_only = 0
+    # Count ruled-out with weighted evidence credit
+    total_credit = 0.0
     for ro in ruled_out:
         tf = ro.get("test_file", "")
-        if tf and not tf.startswith("N/A"):
-            with_test += 1
-        else:
-            prose_only += 1
+        if tf and not tf.startswith("N/A") and not tf.startswith("code-analysis:") and not tf.startswith("not-applicable:"):
+            total_credit += 1.0  # Full credit: real test file
+        elif tf and tf.startswith("code-analysis:"):
+            total_credit += 0.5  # Partial credit: code citation with line numbers
 
     # Count findings with test evidence
     findings_with_test = sum(1 for f in findings if f.get("test_file") and f.get("test_passes"))
+    total_credit += findings_with_test
 
     total_vectors = len(ruled_out) + len(findings)
-    total_with_evidence = with_test + findings_with_test
 
     if total_vectors == 0:
         pct = 0.0
     else:
-        pct = total_with_evidence / total_vectors
+        pct = total_credit / total_vectors
 
     score = round(pct * 20, 1)
     details = {
         "ruled_out_total": len(ruled_out),
-        "ruled_out_with_test": with_test,
-        "ruled_out_prose_only": prose_only,
+        "total_credit": round(total_credit, 1),
         "findings_with_test": findings_with_test,
         "evidence_pct": round(pct * 100, 1),
     }
@@ -234,10 +232,10 @@ def _score_depth(sidecar: dict, num_turns: int) -> tuple[float, dict]:
     if test_count_match:
         forge_tests = int(test_count_match.group(1))
     else:
-        # Fallback: count ruled_out with real test files
+        # Fallback: count ruled_out with real test files (NOT code-analysis citations)
         for ro in sidecar.get("ruled_out_vectors", []):
             tf = ro.get("test_file", "")
-            if tf and not tf.startswith("N/A"):
+            if tf and not tf.startswith("N/A") and not tf.startswith("code-analysis:") and not tf.startswith("not-applicable:"):
                 forge_tests += 1
 
     tests_score = min(8.0, forge_tests / 20 * 8)
