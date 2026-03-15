@@ -32,20 +32,11 @@ REGRESSION_CASES_PATH = Path(__file__).parent / "regression_cases.json"
 def apply_orchestrator_lessons(wave) -> None:
     """Apply orchestrator-level lessons to wave agents before spawning (scaffold §7b).
 
-    Example: L-001 removes mode:plan for small modules, L-002 adjusts max_turns.
+    Currently no active lessons modify agent configs at spawn time.
+    L-001 (no plan mode) is handled by config. L-002 (calibrated max_turns)
+    was removed — 200-turn default is correct for 82-item checklists.
     """
-    lessons = get_orchestrator_lessons()
-    for agent in wave.agents:
-        for lesson in lessons:
-            # L-002: Calibrated max_turns per role (TBD — calibrate from first black hat runs)
-            if lesson.id == "L-002" and lesson.confidence >= 80:
-                calibrated: dict[str, int] = {
-                    "black-hat": 30,
-                    "exploit-verifier": 30,
-                }
-                if agent.role in calibrated:
-                    agent.max_turns = calibrated[agent.role]
-                    print(f"  L-002 applied: {agent.name} max_turns={agent.max_turns}")
+    pass
 
 
 def validate_sidecars(wave) -> list[dict]:
