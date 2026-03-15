@@ -1,4 +1,4 @@
-**C-MATH (precision-sniper, math-deep-diver) — 25 items:**
+**C-MATH (precision-sniper, math-deep-diver, price-distorter) — 25 items:**
 
 *Core math Forge tests + Halmos checks:*
 - C1. `FullMath.mulDiv` — Forge: mulDiv(type(uint256).max, type(uint256).max, type(uint256).max). Halmos: `check_mulDivNoPhantomOverflow` (result * denominator <= numerator * multiplier + denominator - 1)

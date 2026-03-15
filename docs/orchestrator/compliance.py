@@ -16,10 +16,13 @@ from .config import RESULTS_DIR
 CHECKLIST_EXPECTED: dict[str, int] = {
     "precision-sniper": 25,
     "math-deep-diver": 25,
+    "price-distorter": 25,
     "state-desync": 20,
     "composability-exploiter": 20,
+    "insolvency-engineer": 20,
     "auth-forger": 19,
     "cross-boundary": 18,
+    "extension-hijacker": 18,
 }
 
 # Phase A has 5 items per repo. Phase B has 3-5 items. Phase D has 4 items.

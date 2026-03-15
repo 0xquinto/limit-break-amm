@@ -1,4 +1,4 @@
-**C-STATE (state-desync, composability-exploiter) — 20 items:**
+**C-STATE (state-desync, composability-exploiter, insolvency-engineer) — 20 items:**
 
 *Invariant Forge tests:*
 - C1. `INV-H03 Transient Storage Hygiene` — swap A then swap B in same TX, verify B unaffected by A's transient writes to `DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT`. Test with AMMStandardHook.beforeSwap

@@ -112,10 +112,13 @@ def _load_preamble() -> str:
 _CHECKLIST_MAP = {
     "precision-sniper": "checklist-math.md",
     "math-deep-diver": "checklist-math.md",
+    "price-distorter": "checklist-math.md",
     "state-desync": "checklist-state.md",
     "composability-exploiter": "checklist-state.md",
+    "insolvency-engineer": "checklist-state.md",
     "auth-forger": "checklist-auth.md",
     "cross-boundary": "checklist-boundary.md",
+    "extension-hijacker": "checklist-boundary.md",
 }
 
 

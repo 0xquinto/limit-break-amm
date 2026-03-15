@@ -1,4 +1,4 @@
-**C-BOUNDARY (cross-boundary) — 18 items:**
+**C-BOUNDARY (cross-boundary, extension-hijacker) — 18 items:**
 
 *Boundary crossing tests (one per boundary):*
 - C1. Core→PoolType: deploy mock pool type that returns `amountOut > actual tokens moved`. Call `singleSwap`. Verify Core detects inconsistency (or document if it trusts blindly — FINDING)

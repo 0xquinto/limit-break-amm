@@ -17,7 +17,7 @@ MEMORY_DIR = PROJECT_ROOT / "docs" / "audit_memory"
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 
 # Safety constants
-MAX_CONCURRENT_AGENTS = 6  # backpressure semaphore limit
+MAX_CONCURRENT_AGENTS = 9  # backpressure semaphore limit
 LOOP_DETECTION_WINDOW = 3  # consecutive identical output hashes to detect loop
 LOOP_HASH_LENGTH = 500  # chars of output to hash for loop detection
 
@@ -170,6 +170,28 @@ WAVE_BH1 = WaveConfig(
             role="black-hat",
             template="composability-exploiter",
             scope=list(REPOS.keys()),
+            profile="max_reasoning",
+        ),
+        # --- 3 original archetypes (restored for coverage) ---
+        AgentConfig(
+            name="price-distorter",
+            role="black-hat",
+            template="price-distorter",
+            scope=list(REPOS.keys()),
+            profile="max_reasoning",
+        ),
+        AgentConfig(
+            name="insolvency-engineer",
+            role="black-hat",
+            template="insolvency-engineer",
+            scope=list(REPOS.keys()),
+            profile="max_reasoning",
+        ),
+        AgentConfig(
+            name="extension-hijacker",
+            role="black-hat",
+            template="extension-hijacker",
+            scope=["lbamm-hooks-and-handlers", "lbamm-core"],
             profile="max_reasoning",
         ),
     ],
