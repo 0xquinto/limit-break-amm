@@ -222,20 +222,26 @@ async def run_single_wave(
             print(f"\n  All agents above compliance threshold ({CONTINUATION_THRESHOLD}) — no continuation needed.")
 
     # Auto-chain: after wave 1, populate and run wave 2 if dynamic wave exists
+    # Gate: only proceed to wave 2 if wave 1 compliance is 100/100
     if wave.number == 1 and len(WAVES) > 1 and WAVES[1].dynamic:
-        import json
-        synthesis_json_path = ARTIFACTS_DIR / "wave1-synthesis.json"
-        if synthesis_json_path.exists():
-            synthesis_json = json.loads(synthesis_json_path.read_text())
-            from .wave_runner import populate_wave2_agents
-            wave2 = populate_wave2_agents(WAVES[1], synthesis_json)
-            if wave2.agents:
-                print(f"\n{'='*60}")
-                print(f"AUTO-CHAINING TO WAVE 2")
-                print(f"{'='*60}")
-                await run_single_wave(2, force=force, experiment=False, description="")
-            else:
-                print(f"\n  Wave 2 skipped — no agents populated.")
+        from .compliance import score_wave as _score_w1
+        rc_w1 = _score_w1(wave.number)
+        if rc_w1.aggregate_score < 100.0:
+            print(f"\n  Wave 2 skipped — wave 1 compliance {rc_w1.aggregate_score}/100 < 100. Fix wave 1 first.")
+        else:
+            import json
+            synthesis_json_path = ARTIFACTS_DIR / "wave1-synthesis.json"
+            if synthesis_json_path.exists():
+                synthesis_json = json.loads(synthesis_json_path.read_text())
+                from .wave_runner import populate_wave2_agents
+                wave2 = populate_wave2_agents(WAVES[1], synthesis_json)
+                if wave2.agents:
+                    print(f"\n{'='*60}")
+                    print(f"AUTO-CHAINING TO WAVE 2")
+                    print(f"{'='*60}")
+                    await run_single_wave(2, force=force, experiment=False, description="")
+                else:
+                    print(f"\n  Wave 2 skipped — no agents populated.")
 
 
 async def run_full_audit(fresh: bool = False) -> None:
