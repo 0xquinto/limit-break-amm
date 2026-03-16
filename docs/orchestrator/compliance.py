@@ -326,6 +326,14 @@ def score_agent(sidecar: dict, agent_name: str, num_repos: int, num_turns: int =
         c.details = {"gate_bypassed": True}
         return c
 
+    # Stale agent detection: no num_turns in sidecar metadata means primary agent never ran
+    sidecar_turns = meta.get("num_turns")
+    if sidecar_turns is None or sidecar_turns == 0:
+        c.total = 0.0
+        c.grade = "F"
+        c.details = {"stale": True, "reason": "no num_turns in sidecar — primary agent did not run"}
+        return c
+
     c.checklist_score, d1 = _score_checklist(sidecar, agent_name, num_repos)
     c.tool_breadth_score, d2 = _score_tool_breadth(sidecar)
     c.evidence_score, d3 = _score_evidence(sidecar)
@@ -380,7 +388,8 @@ def score_wave(wave_number: int = 1) -> RunCompliance:
     if not agents:
         return RunCompliance(agents=[], aggregate_score=0.0, grade="F")
 
-    aggregate = round(sum(a.total for a in agents) / len(agents), 1)
+    active_agents = [a for a in agents if a.total > 0]
+    aggregate = round(sum(a.total for a in active_agents) / len(active_agents), 1) if active_agents else 0.0
 
     # Find weakest dimension across all agents (only those with scores)
     scored_agents = [a for a in agents if a.total > 0]
