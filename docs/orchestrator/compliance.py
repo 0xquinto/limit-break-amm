@@ -76,23 +76,23 @@ def _score_checklist(sidecar: dict, agent_name: str, num_repos: int) -> tuple[fl
     expected_c = CHECKLIST_EXPECTED.get(agent_name, 0)
     expected_total = (PHASE_A_ITEMS_PER_REPO * num_repos) + PHASE_B_ITEMS + expected_c + PHASE_D_ITEMS
 
-    # Try parsing the structured checklist report
+    # Parse structured checklist report if available
     checklist_str = meta.get("checklist_items_completed", "")
-    completed = 0
-
+    reported = 0
     if checklist_str:
-        # Parse formats like "C: 25/25, D: 4/4" or "A: 15/15, B: 5/5, C: 20/20, D: 4/4"
         for match in re.finditer(r'(\d+)/(\d+)', str(checklist_str)):
-            completed += int(match.group(1))
-    else:
-        # Fallback: infer from actual sidecar content
-        tools = meta.get("tools_run", {})
-        completed += sum(1 for _, v in tools.items()
-                        if (v is True) or (isinstance(v, dict) and v.get("ran")))
-        # Count ruled_out_vectors as evidence of Phase C/D work
-        completed += len(sidecar.get("ruled_out_vectors", []))
-        # Count findings
-        completed += len(sidecar.get("findings", []))
+            reported += int(match.group(1))
+
+    # Always compute inferred count from actual sidecar content
+    tools = meta.get("tools_run", {})
+    inferred = sum(1 for _, v in tools.items()
+                   if (v is True) or (isinstance(v, dict) and v.get("ran")))
+    inferred += len(sidecar.get("ruled_out_vectors", []))
+    inferred += len(sidecar.get("findings", []))
+
+    # Use the higher of reported vs inferred — agents under-report but do the work
+    completed = max(reported, inferred)
+    source = "reported" if reported >= inferred else "inferred"
 
     if expected_total == 0:
         pct = 0.0
@@ -104,7 +104,9 @@ def _score_checklist(sidecar: dict, agent_name: str, num_repos: int) -> tuple[fl
         "completed": completed,
         "expected": expected_total,
         "pct": round(pct * 100, 1),
-        "source": "structured" if checklist_str else "inferred",
+        "source": source,
+        "reported": reported,
+        "inferred": inferred,
     }
     return score, details
 
