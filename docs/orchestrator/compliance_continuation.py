@@ -110,6 +110,7 @@ def build_continuation_prompt(
 
     # Output path for continuation sidecar
     output_path = ARTIFACTS_DIR / f"findings-{agent_name}-cont.json"
+    output_draft_path = ARTIFACTS_DIR / f"findings-{agent_name}-cont-draft.json"
 
     # Substitute
     prompt = template
@@ -123,6 +124,7 @@ def build_continuation_prompt(
     prompt = prompt.replace("{{COMPLIANCE_GAPS}}", "\n".join(gap_lines))
     prompt = prompt.replace("{{CHECKLIST}}", checklist)
     prompt = prompt.replace("{{OUTPUT_SIDECAR_PATH}}", str(output_path))
+    prompt = prompt.replace("{{OUTPUT_SIDECAR_PATH_DRAFT}}", str(output_draft_path))
     prompt = prompt.replace("{{SCOPE_REPOS}}", scope_text)
 
     # Build explicit tool-missing block with commands

@@ -134,7 +134,16 @@ Write your top 3 theft theses to `claims.jsonl` (one JSON line per claim):
 
 ### Sidecar Schema
 
-Write your JSON sidecar to `docs/targets/full-system/artifacts/wave{{WAVE_NUMBER}}-{{AGENT_NAME}}/findings.json`:
+Write your JSON sidecar as a DRAFT first, then validate it through the gate:
+
+1. Write to: `docs/targets/full-system/artifacts/findings-{{AGENT_NAME}}-draft.json`
+2. Validate: `.venv/bin/python3 docs/orchestrator/sidecar_gate.py docs/targets/full-system/artifacts/findings-{{AGENT_NAME}}-draft.json`
+3. If ACCEPTED — done. The gate promotes it to the final path.
+4. If REJECTED — read the error output, fix the gaps, rewrite the draft, and retry.
+
+DO NOT write directly to `findings-{{AGENT_NAME}}.json` — the gate is the only path to the final sidecar. If you skip the gate, your work will not be scored.
+
+Sidecar schema:
 ```json
 {
   "agent_name": "{{AGENT_NAME}}",

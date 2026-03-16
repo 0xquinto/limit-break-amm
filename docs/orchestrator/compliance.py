@@ -307,6 +307,14 @@ def score_agent(sidecar: dict, agent_name: str, num_repos: int, num_turns: int =
     """Score a single agent's compliance from their sidecar."""
     c = AgentCompliance(name=agent_name)
 
+    # Gate enforcement: sidecars that bypassed the gate get 0 score
+    meta = sidecar.get("metadata", {})
+    if not meta.get("gate_passed"):
+        c.total = 0.0
+        c.grade = "F"
+        c.details = {"gate_bypassed": True}
+        return c
+
     c.checklist_score, d1 = _score_checklist(sidecar, agent_name, num_repos)
     c.tool_breadth_score, d2 = _score_tool_breadth(sidecar)
     c.evidence_score, d3 = _score_evidence(sidecar)
