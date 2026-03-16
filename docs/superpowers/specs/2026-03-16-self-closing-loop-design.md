@@ -26,6 +26,20 @@ Two-phase system where the audit framework automatically improves between runs. 
 
 ---
 
+## Pipeline Order
+
+**Important:** The current `run_audit.py` pipeline order must be changed. The new order is:
+
+```
+wave completion → compliance continuation → reflection → experiment logging → phase gate → (wave 2 if phase2)
+```
+
+Currently experiment logging runs before continuation. Reflection must run after continuation (needs final compliance scores) and before experiment logging (so the experiment log captures the post-reflection state).
+
+**Compliance report dependency:** Reflection reads `wave1-compliance.json`. Currently this file is only written by `compute_compliance_score()` inside experiment logging. Since reflection now runs before experiment logging, reflection must call `score_wave()` and `write_compliance_report()` itself to produce the compliance report it needs. This also means experiment logging can skip re-computing compliance (it reads the report reflection already wrote).
+
+---
+
 ## Component 1: Deterministic Reflection Module
 
 **File:** `docs/orchestrator/reflection.py`
@@ -34,13 +48,15 @@ Two-phase system where the audit framework automatically improves between runs. 
 
 ### 1a. Auto-update memory files
 
+**Data sources:** `staged-fps.json` and `staged-lessons.json` are produced by `memory_lifecycle.py` (existing module, no changes needed) and written to `MEMORY_DIR` (`docs/audit_memory/`). Reflection reads from that same directory.
+
 - **`digest.md`**: Update current numbers — vectors ruled out (total across agents), findings count, tool usage rates (e.g., "halmos used by 3/9 agents"), run count.
 - **`false-positives.md`**: Ingest entries from `staged-fps.json` with confidence >= 80. Uses existing FP format (`### FP-NNN` blocks).
 - **`lessons-learned.md`**: Bump confidence on existing lessons when re-observed. Append entries from `staged-lessons.json` after review. (Note: lesson *creation* stays in `memory_lifecycle.py`. Reflection only updates confidence on existing ones.)
 
 ### 1b. Structured reflection report
 
-**Output:** `results/wave1-reflection.json`
+**Output:** `results/wave1-reflection.json` — overwritten each run. Historical trends are derived from `experiments.tsv`, not from prior reflection files.
 
 Schema:
 ```json
@@ -86,6 +102,7 @@ Schema:
     }
   ],
   "trigger_agent_reflection": false,
+  "regression_failed": false,
   "agent_suggestions": []
 }
 ```
@@ -93,8 +110,8 @@ Schema:
 ### 1c. Stall/regression detection
 
 - Read last 3 compliance scores from `experiments.tsv`
-- **Stalled:** delta < 2 across 3 consecutive runs
-- **Regressed:** current score < previous score
+- **Stalled:** all 3 consecutive deltas < 1 point each (avoids false triggers near 100 where 99→99.5→99.8 shows real progress)
+- **Regressed:** current score < previous score by more than 1 point (ignores noise)
 - Either condition sets `trigger_agent_reflection: true` in the report
 
 ### What is auto_safe
@@ -140,6 +157,10 @@ The agent reads (passed inline or via file paths):
 - No source code reading, no tool execution, no file writes
 - Output: appends to `wave1-reflection.json` under `agent_suggestions` key
 
+### Failure handling
+
+Agent reflection is **non-fatal**. If the diagnostic agent crashes, times out, or produces malformed output, log a warning and continue the pipeline. The deterministic reflection report is already written at that point — the agent's suggestions are supplementary.
+
 ### Cost
 
 ~$1-2 per invocation. Expected frequency: ~1 in 3 runs (only on stall/regression).
@@ -153,10 +174,15 @@ The agent reads (passed inline or via file paths):
 ### Logic
 
 ```python
-def detect_phase(experiments_tsv: Path) -> str:
+from .config import TARGETS_DIR
+
+EXPERIMENTS_TSV = TARGETS_DIR / "experiments.tsv"
+
+def detect_phase() -> str:
     """Read last 3 runs from experiments.tsv.
     If all 3 have compliance_score == 100.0, return 'phase2'.
     Otherwise return 'phase1'.
+    Falls back to 'phase1' if fewer than 3 runs exist.
     """
 ```
 
@@ -172,6 +198,8 @@ def detect_phase(experiments_tsv: Path) -> str:
 
 **Location:** New CLI flags on `run_audit.py`.
 
+**Important:** These are human-only CLI commands, run interactively between experiments. They must NOT be called from within `anyio.run()` or agent contexts. They use `input()` for interactive prompts.
+
 ### Commands
 
 ```
@@ -180,6 +208,16 @@ def detect_phase(experiments_tsv: Path) -> str:
 - Looks up finding by ID across all sidecars in `ARTIFACTS_DIR`
 - Extracts `contracts`, `functions`, `keywords` from the finding
 - Appends a new entry to `regression_cases.json` with auto-generated `REG-NNN` ID
+- Also appends a new entry to `confirmed-patterns.md` using the existing format:
+  ```
+  ### CP-NNN: <title from finding>
+  - **Source finding**: <finding-id>
+  - **Severity**: <from finding>
+  - **Pattern**: <from finding description>
+  - **Detection**: <from finding proof_sketch or evidence>
+  - **Contracts**: <from finding contracts list>
+  - **Generalizable**: <human fills in later>
+  ```
 - Prints confirmation with the new regression case
 
 ```
@@ -195,8 +233,8 @@ def detect_phase(experiments_tsv: Path) -> str:
 - Reads `wave1-reflection.json`
 - Prints each `auto_safe: false` suggestion with index
 - Prompts: accept (a), reject (r), or skip (s) for each
-- Accepted suggestions: applies the change to the target file
-- Updates the suggestion entry with `applied: true/false`
+- Accepted suggestions: prints the suggested change and the target file path. The human applies the change manually (suggestions are natural-language descriptions, not programmatic diffs). After applying, the suggestion is marked `applied: true`.
+- Rejected suggestions: marked `applied: false`
 
 ### Constraints
 
@@ -212,13 +250,13 @@ Same `reflection.py` module, different codepath activated when `detect_phase() =
 
 ### 5a. Regression gate (hard)
 
-- After every run, `run_regression_check()` already checks sidecars against `regression_cases.json`
-- Change: if any regression case is missing, set `regression_failed: true` in reflection report
-- No wave 2 if regression fails. Same UX as compliance gate.
+- After every run, regression is checked against `regression_cases.json`
+- Change: `run_regression_check()` currently returns `None` (only prints). Modify it to return the result dict from `check_regression()`. Reflection calls the modified function and sets `regression_failed: true` in its report if `result["missing"]` is non-empty.
+- The wave 2 gate in `run_audit.py` checks both `detect_phase() == "phase2"` AND `not reflection.get("regression_failed")`. Both must pass for wave 2 to run.
 
 ### 5b. Findings diff
 
-- Compare current run's findings against archived sidecars from prior runs
+- Compare current run's findings against prior runs. Prior run sidecars are located in `ARCHIVE_DIR` (`artifacts/archive/run-{timestamp}/`). Reflection reads the most recent N archived runs by sorting directory names (ISO timestamps sort lexicographically). Falls back gracefully if no archive exists (first run = all findings are "new").
 - Report fields added to `wave1-reflection.json`:
   - `new_findings`: findings in this run not seen in any prior run (by ID or fuzzy contract+keyword match)
   - `lost_findings`: findings from prior runs not rediscovered
@@ -238,8 +276,8 @@ Diagnostic agent prompt shifts from process compliance to:
 ### 5d. Memory auto-updates (Phase 2)
 
 - `digest.md`: finding counts, regression coverage percentage
-- `confirmed-patterns.md`: new entries when user triages a finding as real (via `--triage-finding`)
-- `false-positives.md`: grows as user triages FPs
+- `confirmed-patterns.md`: new entries when user triages a finding as real (via `--triage-finding --verdict real`)
+- `false-positives.md`: grows as user triages FPs (via `--triage-finding --verdict fp`)
 
 ---
 
@@ -247,32 +285,52 @@ Diagnostic agent prompt shifts from process compliance to:
 
 ### run_audit.py modifications
 
-After compliance continuation pass, before experiment logging:
+**Pipeline reorder:** Move experiment logging after reflection. New order:
 
 ```python
-# Deterministic reflection (always)
+# 1. Wave completion (existing)
+# 2. Compliance continuation (existing)
+# 3. Deterministic reflection (NEW — always runs)
 from .reflection import run_reflection
 reflection = run_reflection(wave.number)
 
-# Agent reflection (conditional)
+# 4. Agent reflection (NEW — conditional)
 if reflection.get("trigger_agent_reflection"):
-    # Spawn diagnostic agent, append suggestions
+    # Spawn diagnostic agent, append suggestions to reflection report
+    # Non-fatal: log warning on failure, continue pipeline
     ...
 
-# Phase-aware wave 2 gate
+# 5. Experiment logging (MOVED — was before continuation, now after reflection)
+if experiment:
+    ...
+
+# 6. Phase-aware wave 2 gate (MODIFIED)
 from .reflection import detect_phase
 phase = detect_phase()
 if phase == "phase1":
     print(f"  Phase 1 — compliance not yet stable at 100. No wave 2.")
 elif phase == "phase2":
-    # Existing wave 2 auto-chain logic, plus regression gate
-    ...
+    if reflection.get("regression_failed"):
+        print(f"  Phase 2 — regression failed. No wave 2.")
+    else:
+        # Existing wave 2 auto-chain logic
+        ...
 ```
 
 ### New CLI flags on run_audit.py
 
-- `--triage-finding <id> --verdict <real|fp>`
-- `--review-suggestions`
+- `--triage-finding <id> --verdict <real|fp>` — human-only, interactive
+- `--review-suggestions` — human-only, interactive
+
+### Dependencies
+
+| Producer | Consumer | Data |
+|----------|----------|------|
+| `memory_lifecycle.py` | `reflection.py` | `staged-fps.json`, `staged-lessons.json` |
+| `compliance.py` | `reflection.py` | `wave1-compliance.json` |
+| `experiment.py` | `reflection.py` | `experiments.tsv` (for trends + phase detection) |
+| `regression.py` | `reflection.py` | regression check results |
+| `reflection.py` | `run_audit.py` | `wave1-reflection.json`, phase detection |
 
 ### Files NOT modified
 
@@ -280,6 +338,7 @@ elif phase == "phase2":
 - `wave_runner.py` — no changes to agent spawning
 - `config.py` — no new config needed
 - `prompt_renderer.py` — reflection doesn't alter template rendering
+- `memory_lifecycle.py` — produces staged files that reflection consumes (existing, no changes)
 
 ---
 
@@ -289,5 +348,5 @@ elif phase == "phase2":
 |------|--------|---------|
 | `docs/orchestrator/reflection.py` | Create | Deterministic reflection + phase detection + triage ingestion |
 | `docs/orchestrator/templates/reflection-agent-prompt.md` | Create | Diagnostic agent prompt (Phase 1 + Phase 2 variants) |
-| `docs/orchestrator/run_audit.py` | Modify | Wire reflection, phase gate, CLI flags |
-| `docs/orchestrator/regression.py` | Modify | Add `regression_failed` flag for Phase 2 hard gate |
+| `docs/orchestrator/run_audit.py` | Modify | Wire reflection, phase gate, CLI flags, reorder pipeline |
+| `docs/orchestrator/regression.py` | Modify | `run_regression_check()` returns result dict instead of None |
