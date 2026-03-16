@@ -93,12 +93,16 @@ def archive_wave(wave_number: int) -> bool:
         archive_subdir = ARCHIVE_DIR / f"untagged-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}"
 
     wave_prefix = f"wave{wave_number}-"
+    # Flat-path prefixes agents sometimes use instead of wave{N}-{name}/ subdirs
+    FLAT_PREFIXES = ("findings-", "claims-", "agent-log-", "agent-metrics-")
     items_to_archive = []
 
-    # Find all wave artifacts (dirs and files)
+    # Find all wave artifacts (dirs and files with wave prefix + flat-path sidecars)
     if ARTIFACTS_DIR.exists():
         for item in ARTIFACTS_DIR.iterdir():
             if item.name.startswith(wave_prefix) and item.name != "archive":
+                items_to_archive.append(item)
+            elif any(item.name.startswith(p) for p in FLAT_PREFIXES):
                 items_to_archive.append(item)
 
     # Find wave results (metrics, safety)

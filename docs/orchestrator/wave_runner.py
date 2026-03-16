@@ -427,7 +427,12 @@ def _build_results_from_disk(
             except (json.JSONDecodeError, KeyError):
                 pass
 
-        stop_reason = "completed" if (has_report or has_sidecar) else ("missing" if wave_complete else "unknown")
+        # Detect stale sidecars: sidecar exists but agent had 0 turns (likely from prior run)
+        if has_sidecar and num_turns == 0 and not has_report:
+            stop_reason = "stale"
+            print(f"  WARNING: {agent.name} has sidecar but 0 turns and no report — likely stale artifact")
+        else:
+            stop_reason = "completed" if (has_report or has_sidecar) else ("missing" if wave_complete else "unknown")
 
         results.append(AgentResult(
             name=agent.name,
