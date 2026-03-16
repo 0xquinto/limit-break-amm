@@ -197,6 +197,8 @@ Write your JSON sidecar to `docs/targets/full-system/artifacts/wave{{WAVE_NUMBER
 - **Code citation**: `"code-analysis: AMMModule.sol:2144-2180"` — for vectors ruled out by code path analysis (cite specific lines)
 - **Not applicable**: `"not-applicable: [reason]"` — only if the vector genuinely cannot be tested
 
+`"code-analysis:"` citations receive PARTIAL credit only (50%). To get FULL credit, write a Forge test file. Even a simple `assertEq` test that demonstrates the vector was investigated counts as full credit. Prioritize writing tests over citing code.
+
 ### Mandatory Tool Checklist (your sidecar is INVALID until ALL items have a logged result)
 
 This is your COMPLETE workload. Execute every numbered item. Log every result. You are NOT done until every item below has an outcome in your sidecar.
