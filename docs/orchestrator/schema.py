@@ -98,13 +98,25 @@ def validate_output(data: dict) -> list[str]:
         errors.append("Must have at least 'findings' or 'hot_spots'")
 
     for i, f in enumerate(data.get("findings", [])):
+        # Normalize alternate field names agents sometimes use
+        _FIELD_ALIASES = {
+            "affected_contracts": "contracts",
+            "affected_functions": "functions",
+            "affected_repos": "repos",
+        }
+        for alias, canonical in _FIELD_ALIASES.items():
+            if alias in f and canonical not in f:
+                f[canonical] = f.pop(alias)
+
         missing = REQUIRED_FINDING_FIELDS - set(f.keys())
         if missing:
             errors.append(f"findings[{i}]: missing fields {missing}")
-        # Normalize severity (case-insensitive)
+        # Normalize severity (case-insensitive, "informational" → "info")
         sev = f.get("severity", "")
         if sev:
             f["severity"] = sev.lower()
+            if f["severity"] == "informational":
+                f["severity"] = "info"
             if f["severity"] not in [s.value for s in Severity]:
                 errors.append(f"findings[{i}]: invalid severity '{sev}'")
         # Coerce numeric confidence to enum
