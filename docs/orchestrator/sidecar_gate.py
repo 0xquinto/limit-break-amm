@@ -14,6 +14,8 @@ from pathlib import Path
 
 # Inline thresholds (mirrors compliance.py:REQUIRED_TOOLS)
 REQUIRED_TOOLS = {"slither", "aderyn", "forge", "halmos", "medusa"}
+# Phase B skills — mandatory for all agents (B1, B2)
+REQUIRED_PHASE_B = {"audit-context-building", "entry-point-analyzer"}
 MIN_VECTORS = 8
 MIN_EVIDENCE_PCT = 0.40  # 40% of vectors must have test_file
 
@@ -38,6 +40,22 @@ def validate(sidecar: dict) -> list[str]:
         errors.append(
             f"MISSING TOOLS ({len(missing)}): {', '.join(sorted(missing))}. "
             f"Run each one and log in metadata.tools_run."
+        )
+
+    # Phase B skill check (fuzzy match)
+    phase_b_found = set()
+    for skill in REQUIRED_PHASE_B:
+        for k, v in tools_run.items():
+            if skill.replace("-", "_") in k.lower().replace("-", "_"):
+                ran = (v is True) or (isinstance(v, dict) and v.get("ran"))
+                if ran:
+                    phase_b_found.add(skill)
+                    break
+    missing_b = REQUIRED_PHASE_B - phase_b_found
+    if missing_b:
+        errors.append(
+            f"MISSING PHASE B SKILLS ({len(missing_b)}): {', '.join(sorted(missing_b))}. "
+            f"Invoke each via Skill() and log in metadata.tools_run."
         )
 
     # Vector count check

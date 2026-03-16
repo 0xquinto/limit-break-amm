@@ -36,11 +36,11 @@ PHASE_B4_AGENTS = {"precision-sniper", "math-deep-diver", "price-distorter"}
 PHASE_D_ITEMS = 4
 
 # Required tools (every agent must attempt these)
-REQUIRED_TOOLS = {"slither", "aderyn", "forge", "halmos", "medusa"}
+REQUIRED_TOOLS = {"slither", "aderyn", "forge", "halmos", "medusa",
+                  "audit-context-building", "entry-point-analyzer"}
 
 # Bonus tools (archetype-specific, give extra credit)
 BONUS_TOOLS = {
-    "entry-point-analyzer", "audit-context-building",
     "property-based-testing", "variant-analysis",
 }
 
@@ -129,13 +129,13 @@ def _score_tool_breadth(sidecar: dict) -> tuple[float, dict]:
     meta = sidecar.get("metadata", {})
     tools_run = meta.get("tools_run", {})
 
-    # Check required tools (fuzzy match — agents use varied key names)
+    # Check required tools (fuzzy match — agents use varied key names, hyphens/underscores)
     required_used = []
     required_missing = []
     for tool in REQUIRED_TOOLS:
         found = False
         for k, v in tools_run.items():
-            if tool in k.lower():
+            if tool.replace("-", "_") in k.lower().replace("-", "_"):
                 ran = v if isinstance(v, bool) else (v.get("ran", False) if isinstance(v, dict) else False)
                 if ran:
                     found = True
