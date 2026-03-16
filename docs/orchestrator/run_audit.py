@@ -181,6 +181,46 @@ async def run_single_wave(
     print(f"  Total tokens: {sum(r.total_tokens for r in results):,}")
     print(f"  Synthesis: {ARTIFACTS_DIR / f'wave{wave.number}-synthesis.md'}")
 
+    # Compliance continuation: repair low-scoring agents
+    if wave.number == 1:
+        from .compliance_continuation import (
+            identify_failing_agents, build_continuation_prompt,
+            build_continuation_wave, merge_continuation_sidecars,
+            CONTINUATION_THRESHOLD,
+        )
+        failing = identify_failing_agents(wave.number)
+        if failing:
+            print(f"\n{'='*60}")
+            print(f"COMPLIANCE CONTINUATION — {len(failing)} agents below {CONTINUATION_THRESHOLD}")
+            print(f"{'='*60}")
+            for ac, gaps in failing:
+                print(f"  {ac.name}: {ac.total}/100 ({ac.grade}) — gaps: {list(gaps.keys())}")
+
+            # Build continuation prompts
+            cont_wave = build_continuation_wave(failing, wave)
+            cont_prompts = {}
+            for (ac, gaps), cont_agent in zip(failing, cont_wave.agents):
+                orig_agent = next((a for a in wave.agents if a.name == ac.name), None)
+                scope = orig_agent.scope if orig_agent else []
+                cont_prompts[cont_agent.name] = build_continuation_prompt(
+                    ac.name, wave.number, gaps, scope,
+                )
+
+            # Run continuation agents
+            print(f"\nSpawning {len(cont_wave.agents)} continuation agents...")
+            cont_results = await run_wave(cont_wave, cont_prompts)
+
+            # Merge continuation sidecars into originals
+            merged = merge_continuation_sidecars(wave.number)
+            print(f"\n  Merged {merged} continuation sidecars")
+
+            # Re-run compliance scoring to show improvement
+            from .compliance import score_wave as _score_wave
+            rc_after = _score_wave(wave.number)
+            print(f"  Post-continuation compliance: {rc_after.aggregate_score}/100 ({rc_after.grade})")
+        else:
+            print(f"\n  All agents above compliance threshold ({CONTINUATION_THRESHOLD}) — no continuation needed.")
+
     # Auto-chain: after wave 1, populate and run wave 2 if dynamic wave exists
     if wave.number == 1 and len(WAVES) > 1 and WAVES[1].dynamic:
         import json

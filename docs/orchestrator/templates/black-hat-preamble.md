@@ -29,6 +29,8 @@ Rank every hypothesis by: `extractable_value / attacker_capital / dependency_cou
 
 ### Investigation Discipline
 
+**Context persistence**: Your context window will be automatically compacted as it approaches its limit. Do NOT stop tasks early due to token budget concerns. Keep working through your checklist until every item is complete.
+
 **Triage every vector as: skip / borderline / survive**
 - **skip**: no code path, no victim, no profit → stop immediately
 - **borderline**: you can name the exact function AND write one exploit sentence → investigate briefly
