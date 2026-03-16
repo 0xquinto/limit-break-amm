@@ -336,14 +336,27 @@ async def _run_diagnostic_agent(reflection_report: dict, wave_number: int) -> No
 
         full_text = "\n".join(output_parts)
 
-        # Extract JSON from output (last { ... } block)
-        start = full_text.rfind("{")
-        end = full_text.rfind("}")
-        if start < 0 or end <= start:
+        # Extract JSON from output — find the outermost { ... } block by
+        # scanning forward from the first '{' with a brace counter.
+        parsed = None
+        first_brace = full_text.find("{")
+        if first_brace >= 0:
+            depth = 0
+            for idx, ch in enumerate(full_text[first_brace:], start=first_brace):
+                if ch == "{":
+                    depth += 1
+                elif ch == "}":
+                    depth -= 1
+                    if depth == 0:
+                        try:
+                            parsed = json.loads(full_text[first_brace:idx + 1])
+                        except json.JSONDecodeError:
+                            pass
+                        break
+
+        if parsed is None:
             print("  WARNING: diagnostic agent produced no parseable JSON — suggestions not added")
             return
-
-        parsed = json.loads(full_text[start:end + 1])
         agent_suggestions = parsed.get("suggestions", [])
 
         # Append to reflection report
@@ -493,6 +506,15 @@ async def run_single_wave(
     # Post-run memory lifecycle update (scaffold §7b)
     print(f"\nUpdating memory...")
     update_memory_from_results(results, wave)
+
+    # Score compliance HERE while original sidecars still exist.
+    # Compliance continuation's run_wave() calls archive_wave() which moves the
+    # flat-path findings-*.json files. Reflection reads from the written report.
+    if wave.number == 1:
+        from .compliance import score_wave as _score_pre, write_compliance_report as _write_pre
+        _rc_pre = _score_pre(wave.number)
+        _write_pre(_rc_pre, wave.number)
+        print(f"  Pre-continuation compliance: {_rc_pre.aggregate_score}/100 ({_rc_pre.grade})")
 
     # ── Compliance continuation (wave 1 only — moved before reflection) ──────
     if wave.number == 1:

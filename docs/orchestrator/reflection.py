@@ -406,13 +406,24 @@ def run_reflection(wave_number: int) -> dict:
     """
     run_date = date.today().isoformat()
 
-    # 1. Score compliance and write wave{N}-compliance.json
-    from .compliance import score_wave, write_compliance_report
-    rc = score_wave(wave_number)
-    compliance_path = write_compliance_report(rc, wave_number)
-    print(f"  Compliance report written to {compliance_path}")
-    compliance_report = json.loads(compliance_path.read_text())
-    current_score = rc.aggregate_score
+    # 1. Read pre-written compliance report (written before continuation archived sidecars).
+    #    Compliance continuation's run_wave() calls archive_wave() which moves flat-path
+    #    findings-*.json files, making score_wave() return 0 if called here.
+    #    run_audit.py scores compliance right after update_memory_from_results() and
+    #    writes the report before spawning continuation agents.
+    compliance_path = RESULTS_DIR / f"wave{wave_number}-compliance.json"
+    if compliance_path.exists():
+        compliance_report = json.loads(compliance_path.read_text())
+        current_score = compliance_report["aggregate_score"]
+        print(f"  Compliance report read from {compliance_path} (score={current_score})")
+    else:
+        # Fallback: sidecars still accessible (e.g., no continuation ran)
+        from .compliance import score_wave, write_compliance_report
+        rc = score_wave(wave_number)
+        compliance_path = write_compliance_report(rc, wave_number)
+        compliance_report = json.loads(compliance_path.read_text())
+        current_score = rc.aggregate_score
+        print(f"  Compliance report written to {compliance_path}")
 
     # 2. Load synthesis for digest updates
     synthesis_path = ARTIFACTS_DIR / f"wave{wave_number}-synthesis.json"
