@@ -9,11 +9,13 @@ Integrates:
 - Post-run memory lifecycle update (scaffold §7b)
 """
 
+import json
+import re
 import sys
 import anyio
 from pathlib import Path
 
-from .config import WAVES, ARTIFACTS_DIR, RESULTS_DIR
+from .config import WAVES, ARTIFACTS_DIR, RESULTS_DIR, ARCHIVE_DIR, MEMORY_DIR
 from .prompt_renderer import render_wave_prompts, get_orchestrator_lessons
 from .synthesizer import generate_synthesis, read_synthesis, collect_json_sidecars
 from .wave_runner import run_wave, collect_artifacts, AgentResult
@@ -27,6 +29,333 @@ from .run_manager import (
 
 
 REGRESSION_CASES_PATH = Path(__file__).parent / "regression_cases.json"
+
+# English stopwords for keyword extraction
+_STOPWORDS = frozenset({
+    "the", "a", "an", "is", "in", "of", "to", "and", "or", "with", "for",
+    "on", "at", "by", "that", "this", "it", "its", "be", "are", "was", "were",
+    "has", "have", "had", "not", "from", "can", "will", "when", "if", "all",
+    "but", "as", "which", "their", "they", "there", "then", "any", "also",
+    "via", "into", "would", "should", "could", "may", "must",
+})
+
+
+# ─── Triage helpers ───────────────────────────────────────────────────────────
+
+def _find_finding_by_id(finding_id: str) -> dict | None:
+    """Search current and archived sidecars for a finding with the given ID."""
+    # Search current run first
+    for sidecar_path in ARTIFACTS_DIR.glob("findings-*.json"):
+        try:
+            sidecar = json.loads(sidecar_path.read_text())
+        except (json.JSONDecodeError, OSError):
+            continue
+        for f in sidecar.get("findings", []):
+            if f.get("id") == finding_id:
+                return f
+    # Search archived runs (newest first)
+    for run_dir in sorted(ARCHIVE_DIR.glob("run-*"), reverse=True):
+        for sidecar_path in run_dir.glob("findings-*.json"):
+            try:
+                sidecar = json.loads(sidecar_path.read_text())
+            except (json.JSONDecodeError, OSError):
+                continue
+            for f in sidecar.get("findings", []):
+                if f.get("id") == finding_id:
+                    return f
+    return None
+
+
+def _extract_keywords(finding: dict) -> list[str]:
+    """Extract top 10 keywords from finding title + description."""
+    text = (finding.get("title", "") + " " + finding.get("description", "")).lower()
+    tokens = re.findall(r'\b[a-z][a-z0-9_]{2,}\b', text)
+    freq: dict[str, int] = {}
+    for t in tokens:
+        if t not in _STOPWORDS:
+            freq[t] = freq.get(t, 0) + 1
+    return [t for t, _ in sorted(freq.items(), key=lambda x: -x[1])[:10]]
+
+
+def _next_reg_id() -> str:
+    """Get next REG-NNN ID from regression_cases.json."""
+    if not REGRESSION_CASES_PATH.exists():
+        return "REG-001"
+    try:
+        cases = json.loads(REGRESSION_CASES_PATH.read_text())
+        nums = [int(m.group(1)) for c in cases
+                if (m := re.match(r'REG-(\d+)', c.get("id", "")))]
+        return f"REG-{(max(nums, default=0) + 1):03d}"
+    except (json.JSONDecodeError, OSError):
+        return "REG-001"
+
+
+def _next_cp_id() -> str:
+    """Get next CP-NNN ID from confirmed-patterns.md."""
+    cp_path = MEMORY_DIR / "confirmed-patterns.md"
+    if not cp_path.exists():
+        return "CP-001"
+    nums = [int(m) for m in re.findall(r'### CP-(\d+):', cp_path.read_text())]
+    return f"CP-{(max(nums, default=0) + 1):03d}"
+
+
+def _next_fp_id() -> str:
+    """Get next FP-NNN ID from false-positives.md."""
+    fp_path = MEMORY_DIR / "false-positives.md"
+    if not fp_path.exists():
+        return "FP-001"
+    nums = [int(m) for m in re.findall(r'### FP-(\d{3}):', fp_path.read_text())]
+    return f"FP-{(max(nums, default=0) + 1):03d}"
+
+
+def _triage_finding(finding_id: str, verdict: str) -> None:
+    """Human triage: mark a finding as 'real' (add to regression) or 'fp'.
+
+    Must be run outside anyio.run() — uses input() if interactive UI needed.
+    """
+    finding = _find_finding_by_id(finding_id)
+    if not finding:
+        print(f"  ERROR: Finding {finding_id} not found in current or archived sidecars.")
+        return
+
+    if verdict == "real":
+        _triage_real(finding_id, finding)
+    elif verdict == "fp":
+        _triage_fp(finding_id, finding)
+    else:
+        print(f"  ERROR: Unknown verdict '{verdict}'. Use 'real' or 'fp'.")
+
+
+def _triage_real(finding_id: str, finding: dict) -> None:
+    """Add finding to regression_cases.json and confirmed-patterns.md."""
+    keywords = _extract_keywords(finding)
+    reg_id = _next_reg_id()
+
+    reg_case = {
+        "id": reg_id,
+        "source": "human-triage",
+        "title": finding.get("title", "untitled"),
+        "contracts": finding.get("contracts", []),
+        "functions": finding.get("functions", []),
+        "category": str(finding.get("severity", "medium")).lower(),
+        "keywords": keywords,
+    }
+
+    # Append to regression_cases.json
+    cases = json.loads(REGRESSION_CASES_PATH.read_text()) if REGRESSION_CASES_PATH.exists() else []
+    cases.append(reg_case)
+    REGRESSION_CASES_PATH.write_text(json.dumps(cases, indent=2))
+
+    # Append to confirmed-patterns.md
+    cp_id = _next_cp_id()
+    cp_path = MEMORY_DIR / "confirmed-patterns.md"
+    detection = finding.get("proof_sketch", finding.get("evidence", "(detection notes not available)"))
+    cp_entry = (
+        f"\n### {cp_id}: {finding.get('title', 'untitled')}\n"
+        f"- **Source finding**: {finding_id}\n"
+        f"- **Severity**: {finding.get('severity', 'medium')}\n"
+        f"- **Pattern**: {finding.get('description', '(no description)')}\n"
+        f"- **Detection**: {detection}\n"
+        f"- **Contracts**: {', '.join(finding.get('contracts', []))}\n"
+        f"- **Generalizable**: (human fills in later)\n"
+    )
+    if cp_path.exists():
+        cp_path.write_text(cp_path.read_text().rstrip() + "\n" + cp_entry)
+    else:
+        cp_path.write_text(f"# Confirmed Vulnerability Patterns\n\n---\n{cp_entry}")
+
+    print(f"  Added {reg_id} to regression_cases.json")
+    print(f"  Added {cp_id} to confirmed-patterns.md")
+    print(f"  Triage complete: {finding_id} → REAL ('{finding.get('title', '?')}')")
+
+
+def _triage_fp(finding_id: str, finding: dict) -> None:
+    """Add finding to false-positives.md."""
+    fp_id = _next_fp_id()
+    fp_path = MEMORY_DIR / "false-positives.md"
+    title = finding.get("title", "untitled")
+    fp_entry = (
+        f"\n### {fp_id}: {title}\n"
+        f"- **Scope**: [human-triage]\n"
+        f"- **Contracts**: {', '.join(finding.get('contracts', []))}\n"
+        f"- **Vector**: {finding.get('description', '(no description)')}\n"
+        f"- **Why false**: (human fills in reasoning)\n"
+        f"- **Confidence**: 80\n"
+        f"- **Source**: human-triage ({finding_id})\n"
+        f"- **Category**: HUMAN_TRIAGE\n"
+    )
+    if fp_path.exists():
+        fp_path.write_text(fp_path.read_text().rstrip() + "\n" + fp_entry)
+    else:
+        fp_path.write_text(f"# False Positives Registry\n\n---\n{fp_entry}")
+
+    print(f"  Added {fp_id} to false-positives.md")
+    print(f"  Triage complete: {finding_id} → FP ('{title}')")
+
+
+def _review_suggestions() -> None:
+    """Interactive review of pending suggestions from reflection report and backlog."""
+    reflection_path = RESULTS_DIR / "wave1-reflection.json"
+    pending_path = RESULTS_DIR / "pending-suggestions.jsonl"
+
+    # Load current-run pending suggestions
+    current_suggestions: list[dict] = []
+    if reflection_path.exists():
+        try:
+            reflection = json.loads(reflection_path.read_text())
+            current_suggestions = [
+                s for s in reflection.get("suggestions", [])
+                if s.get("status") == "pending"
+            ]
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    # Load backlog
+    backlog: list[dict] = []
+    if pending_path.exists():
+        with open(pending_path) as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    try:
+                        backlog.append(json.loads(line))
+                    except json.JSONDecodeError:
+                        pass
+
+    all_items = [(s, "current") for s in current_suggestions] + [(s, "backlog") for s in backlog]
+    if not all_items:
+        print("  No pending suggestions to review.")
+        return
+
+    print(f"\n  {len(all_items)} suggestion(s) pending review:\n")
+
+    remaining_backlog: list[dict] = []
+    for i, (s, source) in enumerate(all_items):
+        print(f"  [{i+1}/{len(all_items)}] SOURCE: {source}")
+        print(f"  TARGET : {s.get('target', '?')}")
+        print(f"  CHANGE : {s.get('change', '?')}")
+        print(f"  REASON : {s.get('reason', '?')}")
+        print()
+        choice = input("  (a)ccept / (r)eject / (s)kip: ").strip().lower()
+
+        if choice == "a":
+            s["status"] = "applied"
+            print(f"  → ACCEPTED. Apply change manually to: {s.get('target', '?')}")
+        elif choice == "r":
+            s["status"] = "rejected"
+            print(f"  → REJECTED.")
+        else:
+            s["status"] = "skipped"
+            print(f"  → SKIPPED (will remain in backlog).")
+            if source == "backlog":
+                remaining_backlog.append(s)
+        print()
+
+    # Update reflection report status for current-run suggestions
+    if current_suggestions and reflection_path.exists():
+        try:
+            reflection = json.loads(reflection_path.read_text())
+            updated_map = {(s.get("target"), s.get("change")): s for s in current_suggestions}
+            for j, existing in enumerate(reflection.get("suggestions", [])):
+                key = (existing.get("target"), existing.get("change"))
+                if key in updated_map:
+                    reflection["suggestions"][j] = updated_map[key]
+            reflection_path.write_text(json.dumps(reflection, indent=2))
+        except (json.JSONDecodeError, OSError) as e:
+            print(f"  WARNING: Could not update reflection report: {e}")
+
+    # Rewrite pending-suggestions.jsonl with only remaining skipped backlog entries
+    if remaining_backlog:
+        with open(pending_path, "w") as f:
+            for s in remaining_backlog:
+                f.write(json.dumps(s) + "\n")
+    elif pending_path.exists():
+        pending_path.unlink()
+
+    accepted = sum(1 for s, _ in all_items if s.get("status") == "applied")
+    rejected = sum(1 for s, _ in all_items if s.get("status") == "rejected")
+    skipped = sum(1 for s, _ in all_items if s.get("status") == "skipped")
+    print(f"  Review complete: {accepted} accepted, {rejected} rejected, {skipped} skipped.")
+
+
+# ─── Diagnostic agent (conditional) ──────────────────────────────────────────
+
+async def _run_diagnostic_agent(reflection_report: dict, wave_number: int) -> None:
+    """Spawn diagnostic reflection agent. Non-fatal — appends suggestions to reflection report."""
+    from .config import TEMPLATES_DIR, PROJECT_ROOT
+
+    try:
+        template_path = TEMPLATES_DIR / "reflection-agent-prompt.md"
+        if not template_path.exists():
+            print("  WARNING: reflection-agent-prompt.md not found — skipping diagnostic agent")
+            return
+
+        template = template_path.read_text()
+        phase = reflection_report.get("phase", "phase1")
+
+        # Collect paths for checklist files that exist
+        checklist_paths = "\n".join(
+            str(TEMPLATES_DIR / f"checklist-{c}.md")
+            for c in ("math", "state", "auth", "boundary")
+            if (TEMPLATES_DIR / f"checklist-{c}.md").exists()
+        )
+
+        prompt = (
+            template
+            .replace("{{PHASE}}", phase)
+            .replace("{{REFLECTION_REPORT_PATH}}", str(RESULTS_DIR / f"wave{wave_number}-reflection.json"))
+            .replace("{{COMPLIANCE_REPORT_PATH}}", str(RESULTS_DIR / f"wave{wave_number}-compliance.json"))
+            .replace("{{EXPERIMENT_ROWS}}", str(RESULTS_DIR.parent / "experiments.tsv"))
+            .replace("{{LESSONS_PATH}}", str(MEMORY_DIR / "lessons-learned.md"))
+            .replace("{{CHECKLIST_PATHS}}", checklist_paths or "(none found)")
+        )
+
+        from claude_agent_sdk import (
+            ClaudeAgentOptions, ClaudeSDKClient,
+            AssistantMessage, ResultMessage, TextBlock,
+        )
+
+        options = ClaudeAgentOptions(
+            cwd=str(PROJECT_ROOT),
+            model="sonnet",
+            max_turns=30,
+            permission_mode="bypassPermissions",
+            setting_sources=["user", "project", "local"],
+        )
+
+        output_parts: list[str] = []
+        async with ClaudeSDKClient(options) as client:
+            await client.query(prompt)
+            async for message in client.receive_messages():
+                if isinstance(message, AssistantMessage):
+                    for block in message.content:
+                        if isinstance(block, TextBlock):
+                            output_parts.append(block.text)
+                elif isinstance(message, ResultMessage):
+                    break
+
+        full_text = "\n".join(output_parts)
+
+        # Extract JSON from output (last { ... } block)
+        start = full_text.rfind("{")
+        end = full_text.rfind("}")
+        if start < 0 or end <= start:
+            print("  WARNING: diagnostic agent produced no parseable JSON — suggestions not added")
+            return
+
+        parsed = json.loads(full_text[start:end + 1])
+        agent_suggestions = parsed.get("suggestions", [])
+
+        # Append to reflection report
+        report_path = RESULTS_DIR / f"wave{wave_number}-reflection.json"
+        if report_path.exists():
+            report = json.loads(report_path.read_text())
+            report["agent_suggestions"] = agent_suggestions
+            report_path.write_text(json.dumps(report, indent=2))
+            print(f"  Diagnostic agent: {len(agent_suggestions)} suggestion(s) appended")
+
+    except Exception as e:
+        print(f"  WARNING: diagnostic agent failed: {e} — continuing pipeline")
 
 
 def apply_orchestrator_lessons(wave) -> None:
@@ -58,11 +387,14 @@ def _collect_cumulative_sidecars(up_to_wave: int) -> list[dict]:
     return cumulative
 
 
-def run_regression_check(wave_number: int) -> None:
-    """Check cumulative sidecars (all waves up to current) against known regression cases."""
+def run_regression_check(wave_number: int) -> dict:
+    """Check cumulative sidecars (all waves up to current) against known regression cases.
+
+    Returns the result dict from check_regression (found/missing/total).
+    """
     if not REGRESSION_CASES_PATH.exists():
         print(f"  No regression cases file found at {REGRESSION_CASES_PATH}")
-        return
+        return {"found": [], "missing": [], "total": 0}
     cumulative = _collect_cumulative_sidecars(wave_number)
     result = check_regression(cumulative, REGRESSION_CASES_PATH)
     found = len(result["found"])
@@ -74,6 +406,7 @@ def run_regression_check(wave_number: int) -> None:
             print(f"    MISSING: {m['id']} — {m['title']}")
         if wave_number >= 2:
             print(f"  WARNING: {len(missing)} regression case(s) still missing by wave {wave_number}")
+    return result
 
 
 async def run_single_wave(
@@ -161,27 +494,7 @@ async def run_single_wave(
     print(f"\nUpdating memory...")
     update_memory_from_results(results, wave)
 
-    # Experiment scoring (compliance model)
-    if experiment:
-        from .experiment import compute_compliance_score, log_experiment, best_score
-        result = compute_compliance_score(wave.number)
-        result.description = description or f"wave {wave.number} run"
-        prev_best = best_score()
-        if result.compliance_score > prev_best:
-            result.status = "keep"
-            print(f"\n  EXPERIMENT: compliance={result.compliance_score} ({result.grade}) "
-                  f"> prev_best={prev_best} → KEEP")
-        else:
-            result.status = "discard"
-            print(f"\n  EXPERIMENT: compliance={result.compliance_score} ({result.grade}) "
-                  f"<= prev_best={prev_best} → DISCARD")
-        log_experiment(result)
-
-    print(f"\nWave {wave.number} complete.")
-    print(f"  Total tokens: {sum(r.total_tokens for r in results):,}")
-    print(f"  Synthesis: {ARTIFACTS_DIR / f'wave{wave.number}-synthesis.md'}")
-
-    # Compliance continuation: repair low-scoring agents
+    # ── Compliance continuation (wave 1 only — moved before reflection) ──────
     if wave.number == 1:
         from .compliance_continuation import (
             identify_failing_agents, build_continuation_prompt,
@@ -208,40 +521,74 @@ async def run_single_wave(
 
             # Run continuation agents
             print(f"\nSpawning {len(cont_wave.agents)} continuation agents...")
-            cont_results = await run_wave(cont_wave, cont_prompts)
+            await run_wave(cont_wave, cont_prompts)
 
             # Merge continuation sidecars into originals
             merged = merge_continuation_sidecars(wave.number)
             print(f"\n  Merged {merged} continuation sidecars")
-
-            # Re-run compliance scoring to show improvement
-            from .compliance import score_wave as _score_wave
-            rc_after = _score_wave(wave.number)
-            print(f"  Post-continuation compliance: {rc_after.aggregate_score}/100 ({rc_after.grade})")
         else:
             print(f"\n  All agents above compliance threshold ({CONTINUATION_THRESHOLD}) — no continuation needed.")
 
-    # Auto-chain: after wave 1, populate and run wave 2 if dynamic wave exists
-    # Gate: only proceed to wave 2 if wave 1 compliance is 100/100
-    if wave.number == 1 and len(WAVES) > 1 and WAVES[1].dynamic:
-        from .compliance import score_wave as _score_w1
-        rc_w1 = _score_w1(wave.number)
-        if rc_w1.aggregate_score < 100.0:
-            print(f"\n  Wave 2 skipped — wave 1 compliance {rc_w1.aggregate_score}/100 < 100. Fix wave 1 first.")
+    # ── Deterministic reflection (always runs — wave 1 only) ─────────────────
+    reflection: dict = {}
+    if wave.number == 1:
+        print(f"\n{'='*60}")
+        print(f"REFLECTION")
+        print(f"{'='*60}")
+        from .reflection import run_reflection
+        reflection = run_reflection(wave.number)
+
+        # Conditional agent reflection (non-fatal if it fails)
+        if reflection.get("trigger_agent_reflection"):
+            print(f"\n  Score stalled or regressed — spawning diagnostic agent...")
+            await _run_diagnostic_agent(reflection, wave.number)
+
+    # ── Experiment logging (after reflection — reads compliance from disk) ────
+    if experiment:
+        from .experiment import compute_compliance_score, log_experiment, best_score
+        exp_result = compute_compliance_score(wave.number)
+        exp_result.description = description or f"wave {wave.number} run"
+        # Phase 2: attach new_findings_count from reflection report
+        if reflection.get("phase") == "phase2":
+            exp_result.new_findings_count = len(reflection.get("new_findings", []))
+        prev_best = best_score()
+        if exp_result.compliance_score > prev_best:
+            exp_result.status = "keep"
+            print(f"\n  EXPERIMENT: compliance={exp_result.compliance_score} ({exp_result.grade}) "
+                  f"> prev_best={prev_best} → KEEP")
         else:
-            import json
-            synthesis_json_path = ARTIFACTS_DIR / "wave1-synthesis.json"
-            if synthesis_json_path.exists():
-                synthesis_json = json.loads(synthesis_json_path.read_text())
-                from .wave_runner import populate_wave2_agents
-                wave2 = populate_wave2_agents(WAVES[1], synthesis_json)
-                if wave2.agents:
-                    print(f"\n{'='*60}")
-                    print(f"AUTO-CHAINING TO WAVE 2")
-                    print(f"{'='*60}")
-                    await run_single_wave(2, force=force, experiment=False, description="")
-                else:
-                    print(f"\n  Wave 2 skipped — no agents populated.")
+            exp_result.status = "discard"
+            print(f"\n  EXPERIMENT: compliance={exp_result.compliance_score} ({exp_result.grade}) "
+                  f"<= prev_best={prev_best} → DISCARD")
+        log_experiment(exp_result)
+
+    print(f"\nWave {wave.number} complete.")
+    print(f"  Total tokens: {sum(r.total_tokens for r in results):,}")
+    print(f"  Synthesis: {ARTIFACTS_DIR / f'wave{wave.number}-synthesis.md'}")
+
+    # ── Phase-aware wave 2 gate ───────────────────────────────────────────────
+    if wave.number == 1 and len(WAVES) > 1 and WAVES[1].dynamic:
+        from .reflection import detect_phase as _detect_phase
+        current_score = reflection.get("compliance_score")
+        phase = _detect_phase(current_score=current_score)
+        if phase == "phase1":
+            print(f"\n  Phase 1 — compliance not yet stable at 100/100 for 3 runs. No wave 2.")
+        elif phase == "phase2":
+            if reflection.get("regression_failed"):
+                print(f"\n  Phase 2 — regression failed. No wave 2 until regression cases pass.")
+            else:
+                synthesis_json_path = ARTIFACTS_DIR / "wave1-synthesis.json"
+                if synthesis_json_path.exists():
+                    synthesis_json = json.loads(synthesis_json_path.read_text())
+                    from .wave_runner import populate_wave2_agents
+                    wave2 = populate_wave2_agents(WAVES[1], synthesis_json)
+                    if wave2.agents:
+                        print(f"\n{'='*60}")
+                        print(f"AUTO-CHAINING TO WAVE 2")
+                        print(f"{'='*60}")
+                        await run_single_wave(2, force=force, experiment=False, description="")
+                    else:
+                        print(f"\n  Wave 2 skipped — no agents populated.")
 
 
 async def run_full_audit(fresh: bool = False) -> None:
@@ -280,6 +627,13 @@ def main():
                         help="Score this run and log to experiments.tsv (autoresearch model)")
     parser.add_argument("--description", type=str, default="",
                         help="Experiment description (what changed)")
+    # Human triage commands (interactive — must NOT be run inside anyio context)
+    parser.add_argument("--triage-finding", type=str, metavar="FINDING_ID",
+                        help="Triage a finding by ID (use with --verdict real|fp)")
+    parser.add_argument("--verdict", type=str, choices=["real", "fp"],
+                        help="Triage verdict: 'real' (add to regression) or 'fp' (add to false-positives)")
+    parser.add_argument("--review-suggestions", action="store_true",
+                        help="Interactively review pending suggestions from reflection reports")
     args = parser.parse_args()
 
     if args.status:
@@ -296,6 +650,17 @@ def main():
     if args.init_memory:
         from .memory_lifecycle import init_memory_for_new_target
         init_memory_for_new_target(args.init_memory)
+        return
+
+    if args.triage_finding:
+        if not args.verdict:
+            print("ERROR: --triage-finding requires --verdict (real or fp)")
+            sys.exit(1)
+        _triage_finding(args.triage_finding, args.verdict)
+        return
+
+    if args.review_suggestions:
+        _review_suggestions()
         return
 
     if args.wave:

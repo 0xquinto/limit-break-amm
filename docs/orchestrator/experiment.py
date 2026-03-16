@@ -10,8 +10,9 @@ metric, keep/discard selection pressure, persistent TSV log.
 import csv
 import json
 import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Optional
 
 from .config import ARTIFACTS_DIR, RESULTS_DIR
 
@@ -20,43 +21,55 @@ from .config import ARTIFACTS_DIR, RESULTS_DIR
 class ExperimentResult:
     """One row in experiments.tsv."""
     run_id: str
-    commit: str               # git short hash at time of run
-    compliance_score: float   # aggregate compliance (0-100, higher = better)
-    grade: str                # letter grade (A-F)
-    weakest_dim: str          # dimension that dragged score down
-    regression: str           # "4/4" format
-    findings: int             # confirmed findings count
-    vectors: int              # total ruled-out vectors
-    wall_time_s: int          # wall clock seconds
-    status: str               # "keep" | "discard" | "crash"
-    description: str          # what changed in this experiment
+    commit: str                        # git short hash at time of run
+    compliance_score: float            # aggregate compliance (0-100, higher = better)
+    grade: str                         # letter grade (A-F)
+    weakest_dim: str                   # dimension that dragged score down
+    regression: str                    # "4/4" format
+    findings: int                      # confirmed findings count
+    vectors: int                       # total ruled-out vectors
+    wall_time_s: int                   # wall clock seconds
+    status: str                        # "keep" | "discard" | "crash"
+    description: str                   # what changed in this experiment
+    new_findings_count: Optional[int] = field(default=None)  # Phase 2 only: novel findings this run
 
 
 # --- Scoring ---
 
 def compute_compliance_score(wave_number: int = 1) -> ExperimentResult:
-    """Compute compliance_score from agent sidecars and metrics.
+    """Build ExperimentResult from already-written compliance report and metrics.
 
     Reads:
-      - Agent sidecar JSONs (findings-{name}.json)
+      - wave{N}-compliance.json (written by reflection.run_reflection — do NOT recompute)
       - wave{N}-metrics.json (turns, duration)
       - manifest.json (run_id)
       - regression_cases.json (known bugs)
 
-    This function does NOT run any agents — it scores what already exists.
+    This function does NOT run any agents and does NOT recompute compliance.
+    Reflection already ran score_wave() and wrote the compliance report.
     """
-    from .compliance import score_wave, write_compliance_report
-
     metrics_path = RESULTS_DIR / f"wave{wave_number}-metrics.json"
     manifest_path = ARTIFACTS_DIR / "manifest.json"
+    compliance_path = RESULTS_DIR / f"wave{wave_number}-compliance.json"
 
     metrics = json.loads(metrics_path.read_text()) if metrics_path.exists() else {}
     manifest = json.loads(manifest_path.read_text()) if manifest_path.exists() else {}
 
-    # Score compliance
-    rc = score_wave(wave_number)
-    compliance_path = write_compliance_report(rc, wave_number)
-    print(f"  Compliance report written to {compliance_path}")
+    # Read compliance report written by reflection (do not recompute)
+    if compliance_path.exists():
+        cr = json.loads(compliance_path.read_text())
+        compliance_score = cr.get("aggregate_score", 0.0)
+        grade = cr.get("grade", "F")
+        weakest_dim = cr.get("weakest_dimension", "?")
+    else:
+        # Fallback: compliance not yet written (should not happen in normal pipeline)
+        from .compliance import score_wave, write_compliance_report
+        rc = score_wave(wave_number)
+        compliance_path = write_compliance_report(rc, wave_number)
+        compliance_score = rc.aggregate_score
+        grade = rc.grade
+        weakest_dim = rc.weakest_dimension
+        print(f"  (fallback) Compliance report written to {compliance_path}")
 
     # Regression check (still important — guards against prompt regressions)
     regression_found, regression_total = _check_regression(wave_number)
@@ -79,15 +92,16 @@ def compute_compliance_score(wave_number: int = 1) -> ExperimentResult:
     return ExperimentResult(
         run_id=manifest.get("run_id", "unknown"),
         commit=commit,
-        compliance_score=rc.aggregate_score,
-        grade=rc.grade,
-        weakest_dim=rc.weakest_dimension,
+        compliance_score=compliance_score,
+        grade=grade,
+        weakest_dim=weakest_dim,
         regression=f"{regression_found}/{regression_total}",
         findings=confirmed_findings,
         vectors=vectors_ruled_out,
         wall_time_s=wall_time_s,
         status="pending",
         description="",
+        new_findings_count=None,  # Caller sets this for Phase 2 runs
     )
 
 
@@ -118,7 +132,7 @@ def _git_short_hash() -> str:
 # --- TSV Logger ---
 
 EXPERIMENTS_TSV = Path(__file__).parent.parent / "targets" / "full-system" / "experiments.tsv"
-TSV_HEADER = "run_id\tcommit\tcompliance_score\tgrade\tweakest_dim\tregression\tfindings\tvectors\twall_time_s\tstatus\tdescription\n"
+TSV_HEADER = "run_id\tcommit\tcompliance_score\tgrade\tweakest_dim\tregression\tfindings\tvectors\twall_time_s\tstatus\tdescription\tnew_findings_count\n"
 
 
 def log_experiment(result: ExperimentResult) -> None:
@@ -126,11 +140,12 @@ def log_experiment(result: ExperimentResult) -> None:
     if not EXPERIMENTS_TSV.exists():
         EXPERIMENTS_TSV.write_text(TSV_HEADER)
 
+    nfc = "" if result.new_findings_count is None else str(result.new_findings_count)
     row = (
         f"{result.run_id}\t{result.commit}\t{result.compliance_score}\t"
         f"{result.grade}\t{result.weakest_dim}\t{result.regression}\t"
         f"{result.findings}\t{result.vectors}\t{result.wall_time_s}\t"
-        f"{result.status}\t{result.description}\n"
+        f"{result.status}\t{result.description}\t{nfc}\n"
     )
     with open(EXPERIMENTS_TSV, "a") as f:
         f.write(row)
@@ -150,6 +165,8 @@ def read_experiments() -> list[ExperimentResult]:
         for row in reader:
             # Handle both old (audit_score) and new (compliance_score) formats
             score = float(row.get("compliance_score", row.get("audit_score", "0")))
+            nfc_raw = row.get("new_findings_count", "")
+            nfc: Optional[int] = int(nfc_raw) if nfc_raw.strip() else None
             results.append(ExperimentResult(
                 run_id=row["run_id"],
                 commit=row["commit"],
@@ -162,6 +179,7 @@ def read_experiments() -> list[ExperimentResult]:
                 wall_time_s=int(row.get("wall_time_s", "0")),
                 status=row["status"],
                 description=row["description"],
+                new_findings_count=nfc,
             ))
     return results
 
