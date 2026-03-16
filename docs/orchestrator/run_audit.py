@@ -544,9 +544,9 @@ async def run_single_wave(
                     ac.name, wave.number, gaps, scope,
                 )
 
-            # Run continuation agents
+            # Run continuation agents (skip_archive=True so originals survive for merge)
             print(f"\nSpawning {len(cont_wave.agents)} continuation agents...")
-            await run_wave(cont_wave, cont_prompts)
+            await run_wave(cont_wave, cont_prompts, skip_archive=True)
 
             # Merge continuation sidecars into originals
             merged = merge_continuation_sidecars(wave.number)

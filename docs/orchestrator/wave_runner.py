@@ -184,7 +184,11 @@ CRITICAL: Do NOT send SendMessage to agents before TeamDelete. Do NOT retry Team
 """
 
 
-async def run_wave(wave: WaveConfig, prompts: dict[str, str]) -> list[AgentResult]:
+async def run_wave(
+    wave: WaveConfig,
+    prompts: dict[str, str],
+    skip_archive: bool = False,
+) -> list[AgentResult]:
     """Run all agents in a wave as an Agent Team via ClaudeSDKClient.
 
     The team lead manages the full lifecycle internally:
@@ -192,11 +196,17 @@ async def run_wave(wave: WaveConfig, prompts: dict[str, str]) -> list[AgentResul
     - Agent Teams route notifications to the team lead via auto-started turns
     - Python watches for WAVE_COMPLETE marker to detect completion
     - Agent results are collected from disk artifacts after completion
+
+    Args:
+        skip_archive: If True, skip archive_wave() before spawning. Used for
+            continuation waves that write -cont.json files alongside originals.
     """
 
     # 1. Archive existing wave artifacts before writing anything new
-    from .run_manager import archive_wave
-    archive_wave(wave.number)
+    #    Skipped for continuation waves — they need the originals to merge into.
+    if not skip_archive:
+        from .run_manager import archive_wave
+        archive_wave(wave.number)
 
     # 2. Write prompts to disk (after archive, so they don't get archived)
     print(f"  Writing {len(prompts)} prompts to disk...")
