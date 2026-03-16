@@ -25,9 +25,14 @@ CHECKLIST_EXPECTED: dict[str, int] = {
     "extension-hijacker": 18,
 }
 
-# Phase A has 5 items per repo. Phase B has 3-5 items. Phase D has 4 items.
-PHASE_A_ITEMS_PER_REPO = 5
-PHASE_B_ITEMS = 5
+# Phase A: 4 base items per repo (A1-A4). A5 (storage layout) only for specific agents.
+PHASE_A_BASE_PER_REPO = 4
+PHASE_A5_AGENTS = {"cross-boundary", "state-desync"}
+
+# Phase B: 3 base items (B1-B3). B4 only for C-MATH agents. B5 is conditional (never counted).
+PHASE_B_BASE = 3
+PHASE_B4_AGENTS = {"precision-sniper", "math-deep-diver", "price-distorter"}
+
 PHASE_D_ITEMS = 4
 
 # Required tools (every agent must attempt these)
@@ -74,7 +79,11 @@ def _score_checklist(sidecar: dict, agent_name: str, num_repos: int) -> tuple[fl
     """
     meta = sidecar.get("metadata", {})
     expected_c = CHECKLIST_EXPECTED.get(agent_name, 0)
-    expected_total = (PHASE_A_ITEMS_PER_REPO * num_repos) + PHASE_B_ITEMS + expected_c + PHASE_D_ITEMS
+    phase_a = PHASE_A_BASE_PER_REPO * num_repos
+    if agent_name in PHASE_A5_AGENTS:
+        phase_a += num_repos  # A5 adds 1 item per repo
+    phase_b = PHASE_B_BASE + (1 if agent_name in PHASE_B4_AGENTS else 0)
+    expected_total = phase_a + phase_b + expected_c + PHASE_D_ITEMS
 
     # Parse structured checklist report if available
     checklist_str = meta.get("checklist_items_completed", "")
