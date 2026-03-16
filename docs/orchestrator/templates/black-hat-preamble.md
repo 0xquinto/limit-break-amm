@@ -224,6 +224,8 @@ For each repo in your scope, run ALL of:
 
 Read `docs/framework/amm-invariant-catalog.md` FIRST. Then execute every item in YOUR section below.
 
+**CRITICAL**: Your checklist items are the **numbered C1, C2, C3... items** listed below (e.g., C-MATH has C1-C25, C-STATE has C1-C20). These are YOUR items. Count ONLY these numbered items for your `checklist_items_completed` C score. Do NOT count your own investigation patterns — count the specific numbered items you completed from the list.
+
 **Tool gate**: Each C-item that specifies "Halmos:" or "Medusa:" means you MUST invoke that tool for that item. Skipping a tool invocation = the item is NOT completed. If the tool errors, log the error — that counts as completed. Only "not attempted" is a violation.
 
 {{CHECKLIST}}
