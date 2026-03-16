@@ -393,26 +393,6 @@ def _archive_pending_suggestions(wave_number: int) -> None:
             f.write(json.dumps(s) + "\n")
 
 
-# ─── Phase transition message ─────────────────────────────────────────────────
-
-def _maybe_print_phase_transition(wave_number: int, new_phase: str) -> None:
-    """Print one-time transition message when moving from phase1 → phase2."""
-    if new_phase != "phase2":
-        return
-    report_path = RESULTS_DIR / f"wave{wave_number}-reflection.json"
-    if not report_path.exists():
-        # First run ever, no previous report — skip
-        return
-    try:
-        prev = json.loads(report_path.read_text())
-    except (json.JSONDecodeError, OSError):
-        return
-    if prev.get("phase") == "phase1":
-        print(
-            "\n  PHASE TRANSITION: compliance stable at 100/100 for 3 runs. "
-            "Entering Phase 2 — findings optimization."
-        )
-
 
 # ─── Main entry point ─────────────────────────────────────────────────────────
 
@@ -522,7 +502,15 @@ def run_reflection(wave_number: int) -> dict:
     cross_agent_patterns = _generate_cross_agent_patterns(per_agent_gaps, n_agents)
 
     # 10. Archive pending suggestions from prior report (before overwriting)
+    #     Also capture previous phase for transition detection
     _archive_pending_suggestions(wave_number)
+    prev_phase = "phase1"
+    report_path = RESULTS_DIR / f"wave{wave_number}-reflection.json"
+    if report_path.exists():
+        try:
+            prev_phase = json.loads(report_path.read_text()).get("phase", "phase1")
+        except (json.JSONDecodeError, OSError):
+            pass
 
     # 11. Build suggestions list (applied auto-safe + pending auto-unsafe)
     suggestions = (
@@ -551,6 +539,10 @@ def run_reflection(wave_number: int) -> dict:
     print(f"  Reflection report: {report_path}")
 
     # Phase transition one-time message
-    _maybe_print_phase_transition(wave_number, phase)
+    if phase == "phase2" and prev_phase == "phase1":
+        print(
+            "\n  PHASE TRANSITION: compliance stable at 100/100 for 3 runs. "
+            "Entering Phase 2 — findings optimization."
+        )
 
     return report
