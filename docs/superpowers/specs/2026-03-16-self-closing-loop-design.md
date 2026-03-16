@@ -36,7 +36,7 @@ wave completion → compliance continuation → reflection → experiment loggin
 
 Currently experiment logging runs before continuation. Reflection must run after continuation (needs final compliance scores) and before experiment logging (so the experiment log captures the post-reflection state).
 
-**Compliance report dependency:** Reflection reads `wave1-compliance.json`. Currently this file is only written by `compute_compliance_score()` inside experiment logging. Since reflection now runs before experiment logging, reflection must call `score_wave()` and `write_compliance_report()` itself to produce the compliance report it needs. This also means experiment logging can skip re-computing compliance (it reads the report reflection already wrote).
+**Compliance report dependency:** Reflection reads `wave1-compliance.json`. Currently this file is only written by `compute_compliance_score()` inside experiment logging. Since reflection now runs before experiment logging, reflection must call `score_wave()` and `write_compliance_report()` itself to produce the compliance report it needs. Experiment logging in `experiment.py` continues to call `score_wave()` independently — the re-computation is cheap and keeps `experiment.py` unchanged.
 
 ---
 
@@ -52,7 +52,7 @@ Currently experiment logging runs before continuation. Reflection must run after
 
 - **`digest.md`**: Update current numbers — vectors ruled out (total across agents), findings count, tool usage rates (e.g., "halmos used by 3/9 agents"), run count.
 - **`false-positives.md`**: Ingest entries from `staged-fps.json` with confidence >= 80. Uses existing FP format (`### FP-NNN` blocks).
-- **`lessons-learned.md`**: Bump confidence on existing lessons when re-observed. Append entries from `staged-lessons.json` after review. (Note: lesson *creation* stays in `memory_lifecycle.py`. Reflection only updates confidence on existing ones.)
+- **`lessons-learned.md`**: Bump confidence on existing lessons when re-observed. Matching strategy: for each staged lesson, search `lessons-learned.md` for an existing `### L-NNN` block whose `**Belief**` field contains the staged lesson's `belief` text as a substring (case-insensitive). If matched, increment confidence by 5 (capped at 99). If no match, the staged lesson is left in `staged-lessons.json` for human review — reflection does not auto-create new lessons. (Note: lesson *creation* stays in `memory_lifecycle.py` and human review.)
 
 ### 1b. Structured reflection report
 
@@ -251,7 +251,7 @@ Same `reflection.py` module, different codepath activated when `detect_phase() =
 ### 5a. Regression gate (hard)
 
 - After every run, regression is checked against `regression_cases.json`
-- Change: `run_regression_check()` currently returns `None` (only prints). Modify it to return the result dict from `check_regression()`. Reflection calls the modified function and sets `regression_failed: true` in its report if `result["missing"]` is non-empty.
+- Change: `run_regression_check()` in `run_audit.py` currently returns `None` (only prints). Modify it to return the result dict from `check_regression()`. Reflection calls `check_regression()` directly (not `run_regression_check()`) and sets `regression_failed: true` in its report if `result["missing"]` is non-empty. The existing `run_regression_check()` call in `run_audit.py` (line 143) stays as-is — it provides the human-readable print output during wave completion. Reflection's call is separate and produces the structured flag.
 - The wave 2 gate in `run_audit.py` checks both `detect_phase() == "phase2"` AND `not reflection.get("regression_failed")`. Both must pass for wave 2 to run.
 
 ### 5b. Findings diff
