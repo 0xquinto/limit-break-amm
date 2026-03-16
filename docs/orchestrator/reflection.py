@@ -396,26 +396,35 @@ def _archive_pending_suggestions(wave_number: int) -> None:
 
 # ─── Main entry point ─────────────────────────────────────────────────────────
 
-def run_reflection(wave_number: int) -> dict:
+def run_reflection(wave_number: int, pre_compliance: dict | None = None) -> dict:
     """Run deterministic reflection after wave completion.
 
-    Scores compliance (writes compliance report for experiment.py to read),
-    updates memory files, produces wave{N}-reflection.json.
+    Args:
+        wave_number: Which wave (1 or 2).
+        pre_compliance: Pre-computed compliance report dict, passed from run_audit.py
+            which scores compliance while sidecars still exist (before continuation's
+            archive_wave() moves both artifacts AND results/wave1-*.json files).
 
     Returns the reflection report dict.
     """
     run_date = date.today().isoformat()
 
-    # 1. Read pre-written compliance report (written before continuation archived sidecars).
-    #    Compliance continuation's run_wave() calls archive_wave() which moves flat-path
-    #    findings-*.json files, making score_wave() return 0 if called here.
-    #    run_audit.py scores compliance right after update_memory_from_results() and
-    #    writes the report before spawning continuation agents.
+    # 1. Get compliance data.
+    #    Prefer pre_compliance (scored before continuation archive).
+    #    archive_wave() moves BOTH findings-*.json AND results/wave1-*.json,
+    #    so neither score_wave() nor disk reads work after continuation.
     compliance_path = RESULTS_DIR / f"wave{wave_number}-compliance.json"
-    if compliance_path.exists():
+    if pre_compliance is not None:
+        compliance_report = pre_compliance
+        current_score = pre_compliance["aggregate_score"]
+        # Re-write to disk so experiment.py can read it
+        RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+        compliance_path.write_text(json.dumps(pre_compliance, indent=2))
+        print(f"  Compliance restored from pre-continuation snapshot (score={current_score})")
+    elif compliance_path.exists():
         compliance_report = json.loads(compliance_path.read_text())
         current_score = compliance_report["aggregate_score"]
-        print(f"  Compliance report read from {compliance_path} (score={current_score})")
+        print(f"  Compliance report read from disk (score={current_score})")
     else:
         # Fallback: sidecars still accessible (e.g., no continuation ran)
         from .compliance import score_wave, write_compliance_report
@@ -423,7 +432,7 @@ def run_reflection(wave_number: int) -> dict:
         compliance_path = write_compliance_report(rc, wave_number)
         compliance_report = json.loads(compliance_path.read_text())
         current_score = rc.aggregate_score
-        print(f"  Compliance report written to {compliance_path}")
+        print(f"  Compliance report scored fresh (score={current_score})")
 
     # 2. Load synthesis for digest updates
     synthesis_path = ARTIFACTS_DIR / f"wave{wave_number}-synthesis.json"

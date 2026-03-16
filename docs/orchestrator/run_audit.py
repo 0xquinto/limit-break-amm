@@ -508,12 +508,15 @@ async def run_single_wave(
     update_memory_from_results(results, wave)
 
     # Score compliance HERE while original sidecars still exist.
-    # Compliance continuation's run_wave() calls archive_wave() which moves the
-    # flat-path findings-*.json files. Reflection reads from the written report.
+    # Compliance continuation's run_wave() calls archive_wave() which moves BOTH
+    # flat-path findings-*.json AND results/wave1-*.json files. We must read the
+    # compliance report into memory before that happens, then pass it to reflection.
+    pre_compliance: dict | None = None
     if wave.number == 1:
         from .compliance import score_wave as _score_pre, write_compliance_report as _write_pre
         _rc_pre = _score_pre(wave.number)
-        _write_pre(_rc_pre, wave.number)
+        _comp_path = _write_pre(_rc_pre, wave.number)
+        pre_compliance = json.loads(_comp_path.read_text())
         print(f"  Pre-continuation compliance: {_rc_pre.aggregate_score}/100 ({_rc_pre.grade})")
 
     # ── Compliance continuation (wave 1 only — moved before reflection) ──────
@@ -558,7 +561,7 @@ async def run_single_wave(
         print(f"REFLECTION")
         print(f"{'='*60}")
         from .reflection import run_reflection
-        reflection = run_reflection(wave.number)
+        reflection = run_reflection(wave.number, pre_compliance=pre_compliance)
 
         # Conditional agent reflection (non-fatal if it fails)
         if reflection.get("trigger_agent_reflection"):
