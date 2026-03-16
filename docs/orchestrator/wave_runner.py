@@ -194,13 +194,13 @@ async def run_wave(wave: WaveConfig, prompts: dict[str, str]) -> list[AgentResul
     - Agent results are collected from disk artifacts after completion
     """
 
-    # 1. Write prompts to disk
-    print(f"  Writing {len(prompts)} prompts to disk...")
-    prompt_paths = _write_prompts_to_disk(wave, prompts)
-
-    # 2. Archive existing wave artifacts, then create clean output directories
+    # 1. Archive existing wave artifacts before writing anything new
     from .run_manager import archive_wave
     archive_wave(wave.number)
+
+    # 2. Write prompts to disk (after archive, so they don't get archived)
+    print(f"  Writing {len(prompts)} prompts to disk...")
+    prompt_paths = _write_prompts_to_disk(wave, prompts)
 
     for agent in wave.agents:
         artifact_dir = ARTIFACTS_DIR / f"wave{wave.number}-{agent.name}"
