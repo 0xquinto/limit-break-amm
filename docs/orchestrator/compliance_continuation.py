@@ -94,7 +94,7 @@ def build_continuation_prompt(
     gap_lines = []
     for dim, detail in gaps.items():
         if dim == "tools_missing":
-            gap_lines.append(f"- **Tools not run**: {', '.join(detail)} — you MUST run these")
+            continue  # Handled by {{TOOLS_MISSING_BLOCK}} — don't duplicate
         elif dim == "checklist":
             gap_lines.append(f"- **Checklist incomplete**: {detail}")
         elif dim == "evidence":
@@ -124,6 +124,27 @@ def build_continuation_prompt(
     prompt = prompt.replace("{{CHECKLIST}}", checklist)
     prompt = prompt.replace("{{OUTPUT_SIDECAR_PATH}}", str(output_path))
     prompt = prompt.replace("{{SCOPE_REPOS}}", scope_text)
+
+    # Build explicit tool-missing block with commands
+    tools_missing = gaps.get("tools_missing", [])
+    if tools_missing:
+        tool_cmds = []
+        for tool in tools_missing:
+            if tool == "halmos":
+                tool_cmds.append("- **halmos**: `cd <repo> && ~/.local/bin/halmos --contract <Target> --function check_ --loop 4`")
+            elif tool == "medusa":
+                tool_cmds.append("- **medusa**: `cd <repo> && /opt/homebrew/bin/medusa fuzz --target-contracts <Target> --test-limit 100000`")
+            elif tool == "forge":
+                tool_cmds.append("- **forge**: `cd <repo> && forge test --match-contract <YourTest> -vvv`")
+            elif tool == "aderyn":
+                tool_cmds.append("- **aderyn**: `cd <repo> && /opt/homebrew/bin/aderyn .`")
+            elif tool == "slither":
+                tool_cmds.append("- **slither**: Use Slither MCP tools (mcp__slither__run_detectors, etc.)")
+        tools_block = "\n".join(tool_cmds)
+    else:
+        tools_block = "(all required tools were run — focus on checklist completion)"
+
+    prompt = prompt.replace("{{TOOLS_MISSING_BLOCK}}", tools_block)
 
     return prompt
 
