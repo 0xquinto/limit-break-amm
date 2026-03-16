@@ -44,8 +44,8 @@ _STOPWORDS = frozenset({
 
 def _find_finding_by_id(finding_id: str) -> dict | None:
     """Search current and archived sidecars for a finding with the given ID."""
-    # Search current run first
-    for sidecar_path in ARTIFACTS_DIR.glob("findings-*.json"):
+    # Search current run — both flat-path and subdirectory sidecars
+    for sidecar_path in list(ARTIFACTS_DIR.glob("findings-*.json")) + list(ARTIFACTS_DIR.glob("*/findings.json")):
         try:
             sidecar = json.loads(sidecar_path.read_text())
         except (json.JSONDecodeError, OSError):
@@ -53,9 +53,9 @@ def _find_finding_by_id(finding_id: str) -> dict | None:
         for f in sidecar.get("findings", []):
             if f.get("id") == finding_id:
                 return f
-    # Search archived runs (newest first)
+    # Search archived runs (newest first) — both flat and subdir
     for run_dir in sorted(ARCHIVE_DIR.glob("run-*"), reverse=True):
-        for sidecar_path in run_dir.glob("findings-*.json"):
+        for sidecar_path in list(run_dir.glob("findings-*.json")) + list(run_dir.glob("*/findings.json")):
             try:
                 sidecar = json.loads(sidecar_path.read_text())
             except (json.JSONDecodeError, OSError):
@@ -247,8 +247,7 @@ def _review_suggestions() -> None:
         else:
             s["status"] = "skipped"
             print(f"  → SKIPPED (will remain in backlog).")
-            if source == "backlog":
-                remaining_backlog.append(s)
+            remaining_backlog.append(s)  # Persist all skipped items regardless of source
         print()
 
     # Update reflection report status for current-run suggestions

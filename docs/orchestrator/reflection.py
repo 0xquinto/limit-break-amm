@@ -328,14 +328,7 @@ def _compute_dimension_means(agents_data: list[dict]) -> dict:
     dims = ("checklist", "tool_breadth", "evidence", "depth", "thesis")
     means = {}
     for dim in dims:
-        field = {
-            "checklist": "checklist",
-            "tool_breadth": "tool_breadth",
-            "evidence": "evidence",
-            "depth": "depth",
-            "thesis": "thesis",
-        }.get(dim, dim)
-        vals = [ag.get(field, 0.0) for ag in agents_data]
+        vals = [ag.get(dim, 0.0) for ag in agents_data]
         means[dim] = round(sum(vals) / len(vals), 2) if vals else 0.0
     return means
 
@@ -380,8 +373,10 @@ def _archive_pending_suggestions(wave_number: int) -> None:
     except (json.JSONDecodeError, OSError):
         return
 
+    # Archive pending suggestions from both suggestions and agent_suggestions
+    all_suggestions = prev_report.get("suggestions", []) + prev_report.get("agent_suggestions", [])
     pending_to_archive = [
-        s for s in prev_report.get("suggestions", [])
+        s for s in all_suggestions
         if s.get("status") == "pending" and s.get("auto_safe") is False
     ]
     if not pending_to_archive:
