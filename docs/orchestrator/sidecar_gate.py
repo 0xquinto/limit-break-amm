@@ -120,6 +120,19 @@ def validate(sidecar: dict) -> list[str]:
             "INCOMPLETE TRIAGE LOG: triage_log must have skip, borderline, and survive counts."
         )
 
+    # Confidence scoring check on findings
+    for i, f in enumerate(findings):
+        if "confidence_score" not in f:
+            errors.append(
+                f"FINDING #{i+1} ({f.get('id', '?')}): missing confidence_score. "
+                f"Start at 100, apply deductions, record in confidence_deductions list."
+            )
+        elif "confidence_deductions" not in f:
+            errors.append(
+                f"FINDING #{i+1} ({f.get('id', '?')}): missing confidence_deductions list. "
+                f"Even if score is 100, include an empty list []."
+            )
+
     return errors
 
 

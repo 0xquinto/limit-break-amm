@@ -156,6 +156,26 @@ Every finding MUST pass all 5 gates before inclusion. Record the result of each 
 
 If you cannot pass all 5 gates, the finding is NOT confirmed. Move it to `ruled_out_vectors` with the failing gate as the reason.
 
+### Confidence Scoring (MANDATORY per finding)
+
+Every finding starts at **confidence_score: 100**. Apply these deductions:
+
+| Condition | Deduction |
+|-----------|-----------|
+| Requires privileged caller (owner, admin) | -25 |
+| Attack path is partial (missing one step) | -20 |
+| Impact is self-contained (attacker only hurts themselves) | -15 |
+| Requires specific token/pool configuration | -10 |
+| No Forge PoC (only code-analysis reasoning) | -10 |
+
+Record the final score and deductions list:
+```json
+"confidence_score": 75,
+"confidence_deductions": ["-25: requires admin caller"]
+```
+
+Findings below 50 are likely false positives — reconsider before including.
+
 ### Sidecar Schema
 
 Write your JSON sidecar as a DRAFT first, then validate it through the gate:
@@ -178,7 +198,8 @@ Sidecar schema:
       "id": "{{PREFIX}}-NNN",
       "title": "one-line theft thesis",
       "severity": "critical",
-      "confidence": "high",
+      "confidence_score": 100,
+      "confidence_deductions": [],
       "status": "confirmed",
       "category": "price-manipulation",
       "description": "one-line theft thesis",

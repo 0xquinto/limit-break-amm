@@ -22,12 +22,6 @@ class Severity(str, Enum):
     INFO = "info"
 
 
-class Confidence(str, Enum):
-    HIGH = "high"
-    MEDIUM = "medium"
-    LOW = "low"
-
-
 class VectorStatus(str, Enum):
     CONFIRMED = "confirmed"      # believed exploitable
     RULED_OUT = "ruled_out"      # investigated, not exploitable
@@ -40,7 +34,8 @@ class Finding:
     id: str                          # e.g. "CORE-001"
     title: str                       # short description
     severity: str                    # Severity enum value
-    confidence: str                  # Confidence enum value
+    confidence_score: int                # starts at 100, deductions applied
+    confidence_deductions: list[str]     # list of deduction reason strings
     status: str                      # VectorStatus enum value
     contracts: list[str]             # e.g. ["AMMModule.sol", "DynamicPoolType.sol"]
     functions: list[str]             # e.g. ["_finalizeSwapCollectFundsAndDisburse"]
@@ -84,7 +79,7 @@ class AgentOutput:
     metadata: dict = field(default_factory=dict)  # turns, tokens, duration, etc.
 
 
-REQUIRED_FINDING_FIELDS = {"id", "title", "severity", "confidence", "status",
+REQUIRED_FINDING_FIELDS = {"id", "title", "severity", "status",
                            "contracts", "functions", "category", "description"}
 
 
@@ -96,6 +91,14 @@ def validate_output(data: dict) -> list[str]:
         errors.append("Missing 'agent_name'")
     if "findings" not in data and "hot_spots" not in data:
         errors.append("Must have at least 'findings' or 'hot_spots'")
+
+    # Coerce old confidence enum to scored format (must run before enum validation below)
+    for f in data.get("findings", []):
+        if "confidence" in f and "confidence_score" not in f:
+            enum_map = {"high": 90, "medium": 70, "low": 40}
+            old = f.pop("confidence", "medium")
+            f["confidence_score"] = enum_map.get(str(old).lower(), 70)
+            f["confidence_deductions"] = [f"coerced from enum: {old}"]
 
     for i, f in enumerate(data.get("findings", [])):
         # Normalize alternate field names agents sometimes use
@@ -119,9 +122,9 @@ def validate_output(data: dict) -> list[str]:
                 f["severity"] = "info"
             if f["severity"] not in [s.value for s in Severity]:
                 errors.append(f"findings[{i}]: invalid severity '{sev}'")
-        # Coerce numeric confidence to enum
+        # Coerce numeric confidence to enum (skip if agent used new confidence_score format)
         conf = f.get("confidence", "")
-        if conf and conf not in [c.value for c in Confidence]:
+        if conf and "confidence_score" not in f and conf not in ("high", "medium", "low"):
             try:
                 num = int(conf) if isinstance(conf, str) and conf.isdigit() else (int(conf) if isinstance(conf, (int, float)) else None)
                 if num is not None:
