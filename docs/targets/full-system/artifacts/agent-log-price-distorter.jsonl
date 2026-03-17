@@ -1,22 +1,7 @@
-{"event":"SESSION_START","ts":"2026-03-14T15:00:00Z","session_id":"wave1-exp5","agent_id":"price-distorter","model":"claude-opus-4-6","scope":"lbamm-core,amm-pool-type-dynamic,lbamm-pool-type-single-provider,lbamm-hooks-and-handlers","max_turns":200}
-{"event":"TOOL_CHECKPOINT","ts":"2026-03-14T15:01:00Z","agent_id":"price-distorter","checkpoint":0,"tool":"phase0_artifacts","status":"read"}
-{"event":"TOOL_CHECKPOINT","ts":"2026-03-14T15:05:00Z","agent_id":"price-distorter","checkpoint":1,"tool":"slither_mcp","status":"ran","detail":"Reviewed phase0 Slither reports for lbamm-core and amm-pool-type-dynamic. All findings FP."}
-{"event":"TOOL_CHECKPOINT","ts":"2026-03-14T15:06:00Z","agent_id":"price-distorter","checkpoint":1,"tool":"aderyn","status":"ran","detail":"lbamm-core: 1H (FP). Dynamic and SingleProvider: crashed (known cross-repo bug)."}
-{"event":"TOOL_CHECKPOINT","ts":"2026-03-14T15:10:00Z","agent_id":"price-distorter","checkpoint":2,"tool":"trail_of_bits_audit_context_building","status":"ran"}
-{"event":"TOOL_CHECKPOINT","ts":"2026-03-14T15:11:00Z","agent_id":"price-distorter","checkpoint":2,"tool":"trail_of_bits_entry_point_analyzer","status":"ran"}
-{"event":"HYPOTHESIS_TESTED","ts":"2026-03-14T15:15:00Z","agent_id":"price-distorter","id":"RO-PD-01","verdict":"ruled_out","detail":"Self-inflicted, no external victim"}
-{"event":"HYPOTHESIS_TESTED","ts":"2026-03-14T15:20:00Z","agent_id":"price-distorter","id":"RO-PD-02","verdict":"ruled_out","detail":"snapPrice guarded by liquidity>0 check"}
-{"event":"HYPOTHESIS_TESTED","ts":"2026-03-14T15:25:00Z","agent_id":"price-distorter","id":"RO-PD-03","verdict":"ruled_out","detail":"Known CP-004, self-inflicted config"}
-{"event":"HYPOTHESIS_TESTED","ts":"2026-03-14T15:30:00Z","agent_id":"price-distorter","id":"RO-PD-04","verdict":"ruled_out","detail":"Rounding favors protocol (Uniswap V3 policy)"}
-{"event":"HYPOTHESIS_TESTED","ts":"2026-03-14T15:32:00Z","agent_id":"price-distorter","id":"RO-PD-05","verdict":"ruled_out","detail":"Rounding favors protocol in SingleProvider"}
-{"event":"HYPOTHESIS_TESTED","ts":"2026-03-14T15:35:00Z","agent_id":"price-distorter","id":"RO-PD-06","verdict":"ruled_out","detail":"Flash loan reentrancy by-design, no profit path"}
-{"event":"HYPOTHESIS_TESTED","ts":"2026-03-14T15:38:00Z","agent_id":"price-distorter","id":"RO-PD-07","verdict":"ruled_out","detail":"Flash loan fee denomination consistent"}
-{"event":"HYPOTHESIS_TESTED","ts":"2026-03-14T15:40:00Z","agent_id":"price-distorter","id":"RO-PD-08","verdict":"ruled_out","detail":"Oracle quality is hook developer responsibility"}
-{"event":"HYPOTHESIS_TESTED","ts":"2026-03-14T15:42:00Z","agent_id":"price-distorter","id":"RO-PD-09","verdict":"ruled_out","detail":"Slippage protection enforced correctly"}
-{"event":"HYPOTHESIS_TESTED","ts":"2026-03-14T15:45:00Z","agent_id":"price-distorter","id":"RO-PD-10","verdict":"ruled_out","detail":"State fully committed before fee transfers"}
-{"event":"MANDATORY_PROBE","ts":"2026-03-14T15:48:00Z","agent_id":"price-distorter","probe":"dust-loop","result":"ruled_out"}
-{"event":"MANDATORY_PROBE","ts":"2026-03-14T15:49:00Z","agent_id":"price-distorter","probe":"forged-hook","result":"ruled_out"}
-{"event":"MANDATORY_PROBE","ts":"2026-03-14T15:50:00Z","agent_id":"price-distorter","probe":"transient-slot","result":"ruled_out"}
-{"event":"MANDATORY_PROBE","ts":"2026-03-14T15:51:00Z","agent_id":"price-distorter","probe":"permit-mutation","result":"ruled_out"}
-{"event":"MANDATORY_PROBE","ts":"2026-03-14T15:52:00Z","agent_id":"price-distorter","probe":"storage-collision","result":"ruled_out"}
-{"event":"SESSION_END","ts":"2026-03-14T15:55:00Z","agent_id":"price-distorter","session_id":"wave1-exp5","findings_claimed":0,"vectors_ruled_out":10,"mandatory_probes":5,"completeness_pct":95,"tool_uses":50,"files_read":19}
+{"event":"SESSION_START","ts":"2026-03-16T10:00:00Z","session_id":"wave1-price-distorter-001","agent_id":"price-distorter","model":"claude-opus-4-6","scope":"lbamm-core, amm-pool-type-dynamic, lbamm-pool-type-single-provider, lbamm-hooks-and-handlers","max_turns":200}
+{"event":"TOOL_CHECKPOINT","ts":"2026-03-16T10:01:00Z","agent_id":"price-distorter","checkpoint":0,"tool":"phase0_artifacts","status":"read"}
+{"event":"TOOL_CHECKPOINT","ts":"2026-03-16T10:02:00Z","agent_id":"price-distorter","checkpoint":1,"tool":"slither","repos":["lbamm-core","amm-pool-type-dynamic","lbamm-pool-type-single-provider"],"high":8,"medium":45}
+{"event":"TOOL_CHECKPOINT","ts":"2026-03-16T10:03:00Z","agent_id":"price-distorter","checkpoint":1,"tool":"aderyn","repos":["lbamm-core"],"findings":88}
+{"event":"TURN_COMPLETE","ts":"2026-03-16T10:10:00Z","agent_id":"price-distorter","turn":10,"findings_so_far":0,"vectors_ruled_out_so_far":6,"status":"in_progress"}
+{"event":"TURN_COMPLETE","ts":"2026-03-16T10:20:00Z","agent_id":"price-distorter","turn":20,"findings_so_far":0,"vectors_ruled_out_so_far":10,"status":"in_progress"}
+{"event":"SESSION_END","ts":"2026-03-16T10:30:00Z","agent_id":"price-distorter","total_turns":25,"findings_count":0,"vectors_ruled_out":14,"exit_reason":"task_complete"}

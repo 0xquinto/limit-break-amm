@@ -1,296 +1,193 @@
 {
-  "agent_name": "precision-sniper",
-  "agent_role": "Precision Math Sniper",
+  "agent": "precision-sniper",
   "wave": 1,
-  "findings": [
-    {
-      "id": "PRECISION-001",
-      "title": "validateHandlerOrder missing zero-price check allows overflow bypass of pricing bounds (CP-003)",
-      "severity": "medium",
-      "confidence": "medium",
-      "status": "confirmed",
-      "category": "price-manipulation",
-      "description": "SqrtPriceCalculator.computeRatioX96() returns 0 on uint160 overflow (line 52). In AMMStandardHook._enforceTokenHooks(), this is caught by an explicit zero check (line 847). However, AMMStandardHook.validateHandlerOrder() (line 215) does NOT have this zero check. If minSqrtPriceX96 == 0 (no minimum bound set), the zero return value passes the bounds check, allowing a swap at an undefined price.",
-      "impact": "CLOB handler orders via CLOBTransferHandler._validateTokenHooks() could bypass pricing bounds if token amounts cause computeRatioX96 overflow and no minimum bound is configured. Attacker could execute trades at manipulated effective prices.",
-      "proof_sketch": "1. computeRatioX96(very_large_amount1, 1) → overflow → returns 0. 2. validateHandlerOrder called with sqrtPriceX96=0. 3. If minSqrtPriceX96==0, check `0 != 0 && 0 < min` is false → passes. 4. If maxSqrtPriceX96 != 0, check `0 > max` is false → passes. Both bounds bypassed.",
-      "victim": "Liquidity providers in pools with CLOB handler and token hooks that use validateHandlerOrder without minimum pricing bound",
-      "extractable_value": "Depends on pool liquidity depth. Constrained by CLOB order book pricing — attacker cannot freely choose both amounts, they come from CLOBHelper.calculateFixedInput(). Likely low practical EV due to CLOB constraints.",
-      "attack_sequence": [
-        "1. Find pool pair where token has validateHandlerOrderHook=true and minSqrtPriceX96==0",
-        "2. Create CLOB order with extreme price ratio that causes computeRatioX96 overflow",
-        "3. Execute order via CLOBTransferHandler — validateHandlerOrder receives sqrtPriceX96=0",
-        "4. Zero passes both min and max bounds checks",
-        "5. Order executes at price outside intended bounds"
-      ],
-      "test_file": null,
-      "test_passes": false,
-      "prerequisites": ["CLOB handler with validateHandlerOrder enabled", "No minimum pricing bound set (minSqrtPriceX96 == 0)", "Amount ratio that causes computeRatioX96 to overflow uint160"],
-      "repos": ["lbamm-hooks-and-handlers"],
-      "contracts": ["AMMStandardHook.sol", "SqrtPriceCalculator.sol", "CLOBTransferHandler.sol"],
-      "functions": ["validateHandlerOrder()", "computeRatioX96()", "_validateTokenHooks()"],
-      "lines": {"AMMStandardHook.sol": [215, 216, 217, 218, 221], "SqrtPriceCalculator.sol": [51, 52, 53]},
-      "keywords": ["zero-price-bypass", "overflow", "pricing-bounds", "CLOB", "CP-003"]
-    },
-    {
-      "id": "PRECISION-002",
-      "title": "setTokenSettings passes unmodified settings to hook sync — initialized field may be false (CP-004)",
-      "severity": "low",
-      "confidence": "high",
-      "status": "confirmed",
-      "category": "state-desync",
-      "description": "CreatorHookSettingsRegistry.setTokenSettings() creates memSettings with initialized=true for registry storage (line 377-378) but passes original calldata settings (without initialized=true) to hook sync at line 397. AMMStandardHook.registryUpdateTokenSettings() stores settings with potentially initialized=false (line 522). This causes a sync gap between registry and hook cached state.",
-      "impact": "Low. AMMStandardHook._getOrFetchTokenSettings() self-heals: when initialized=false, it re-fetches from registry and re-caches correctly (lines 908-914). Window of inconsistency is brief (until next swap or hook call on that token). No funds at risk — only causes an unnecessary SLOAD on next access.",
-      "proof_sketch": "1. Creator calls setTokenSettings(token, settings) with settings.initialized=false. 2. Registry stores with initialized=true. 3. Hook stores with initialized=false. 4. Next _getOrFetchTokenSettings(token) sees initialized=false → re-fetches from registry → gets correct settings → re-caches with initialized=true.",
-      "victim": "None (self-healing, gas cost only)",
-      "extractable_value": "0 — no extraction path. Extra SLOAD cost per affected token on next access.",
-      "attack_sequence": [
-        "1. Admin calls setTokenSettings with initialized=false in settings struct",
-        "2. Registry caches with initialized=true, hook caches with initialized=false",
-        "3. Brief window where hook has stale state",
-        "4. Self-heals on next _getOrFetchTokenSettings call"
-      ],
-      "test_file": null,
-      "test_passes": false,
-      "prerequisites": ["Admin/owner must call setTokenSettings with initialized=false"],
-      "repos": ["lbamm-hooks-and-handlers"],
-      "contracts": ["CreatorHookSettingsRegistry.sol", "AMMStandardHook.sol"],
-      "functions": ["setTokenSettings()", "registryUpdateTokenSettings()", "_getOrFetchTokenSettings()"],
-      "lines": {"CreatorHookSettingsRegistry.sol": [376, 377, 378, 397], "AMMStandardHook.sol": [519, 522, 908, 913, 914]},
-      "keywords": ["settings-sync", "initialized", "state-desync", "CP-004"]
-    }
-  ],
+  "target": "full-system",
+  "timestamp": "2026-03-16T17:00:00Z",
+  "findings": [],
   "ruled_out_vectors": [
     {
-      "vector": "Tick crossing at exact boundary → liquidity not properly added/removed",
-      "why_ruled_out": "Standard Uniswap V3 logic. Tick crossing check uses == comparison. getNextSqrtPriceFromInput rounds conservatively. Battle-tested pattern.",
-      "test_file": null,
-      "repos": ["amm-pool-type-dynamic"],
-      "contracts": ["DynamicHelper.sol"],
-      "functions": ["computeSwap()", "_crossTick()"],
-      "keywords": ["tick-crossing", "boundary", "V3"]
+      "id": "RO-PS01",
+      "vector": "uint128 truncation in DynamicHelper._getTokensOwed when feeGrowthInside delta * liquidity / Q128 exceeds uint128.max",
+      "contracts": [
+        "DynamicHelper.sol"
+      ],
+      "functions": [
+        "_getTokensOwed"
+      ],
+      "why_rejected": "Requires feeGrowthInside delta * liquidity > uint256.max which is handled by FullMath.mulDiv. The uint128 cast only truncates if result > uint128.max, requiring astronomical fee accumulation relative to liquidity. Not economically achievable.",
+      "test_file": "amm-pool-type-dynamic/test/audit/AuditPrecisionSniperW1V2.t.sol::test_C8_tokensOwed_noTruncation",
+      "confidence": "high"
     },
     {
-      "vector": "Fixed height split rounds to zero on one side → free tokens",
-      "why_ruled_out": "Proportional split uses mulDivRoundingUp (user pays more), output uses calculateFixedSwapByRatioRoundingDown (user gets less). Both favor protocol. Zero-value swaps revert at line 1656.",
-      "test_file": null,
-      "repos": ["lbamm-pool-type-fixed"],
-      "contracts": ["FixedHelper.sol"],
-      "functions": ["_splitAmountsAndFeesByHeight()"],
-      "keywords": ["rounding", "zero", "height-split"]
+      "id": "RO-PS02",
+      "vector": "computeRatioX96 overflow returns 0 \u2014 zero-price bypass in downstream consumers",
+      "contracts": [
+        "SqrtPriceMath.sol",
+        "SqrtPriceCalculator.sol"
+      ],
+      "functions": [
+        "computeRatioX96"
+      ],
+      "why_rejected": "Previously submitted and rejected (FP-SUB02). View function only, unrealistic overflow inputs, CLOB handler constrains amounts.",
+      "test_file": "amm-pool-type-dynamic/test/audit/AuditPrecisionSniperW1V2.t.sol::test_C19_computeRatioX96_overflow",
+      "confidence": "high"
     },
     {
-      "vector": "100% fee asymmetry → extract value",
-      "why_ruled_out": "Known design (L-04). 100% input fee → amountRemainingLessFee=0 → no swap. Output rejects 100% fee. No extraction.",
-      "test_file": null,
-      "repos": ["amm-pool-type-dynamic", "lbamm-core"],
-      "contracts": ["SwapMath.sol", "FeeHelper.sol"],
-      "functions": ["computeSwapByInputStep()", "_calculateBPSFeeWithRecipientAndProtocolFeeSwapByOutput()"],
-      "keywords": ["fee", "100-percent", "asymmetry"]
+      "id": "RO-PS03",
+      "vector": "Round-trip swap profit via rounding direction mismatch between input and output calculations",
+      "contracts": [
+        "DynamicHelper.sol",
+        "SwapMath.sol",
+        "SqrtPriceMath.sol"
+      ],
+      "functions": [
+        "computeSwap",
+        "computeSwapByInputStep",
+        "getNextSqrtPriceFromInput"
+      ],
+      "why_rejected": "INV-SW02 holds: round-trip always loses value to fees and rounding. Tested with standard pool + 1000 token swap.",
+      "test_file": "amm-pool-type-dynamic/test/audit/AuditPrecisionSniperW1V2.t.sol::test_C23_noRoundTripProfit",
+      "confidence": "high"
     },
     {
-      "vector": "swapExtraData != 32 bytes → unexpected price movement",
-      "why_ruled_out": "Known issue (L-01). Defaults to widest price limit. AMM's limitAmount provides slippage protection separately.",
-      "test_file": null,
-      "repos": ["amm-pool-type-dynamic"],
-      "contracts": ["DynamicPoolType.sol"],
-      "functions": ["swapByInput()"],
-      "keywords": ["swapExtraData", "default", "price-limit"]
+      "id": "RO-PS04",
+      "vector": "Dust loop draining pool reserves via repeated 1-wei swaps",
+      "contracts": [
+        "DynamicHelper.sol",
+        "SwapMath.sol"
+      ],
+      "functions": [
+        "computeSwap",
+        "computeSwapByInputStep"
+      ],
+      "why_rejected": "INV-SW03 holds: pool reserves never decrease from dust swaps. 100 consecutive 1-wei swaps, pool balance non-decreasing.",
+      "test_file": "amm-pool-type-dynamic/test/audit/AuditPrecisionSniperW1V2.t.sol::test_C24_dustLoop_poolNeverLoses",
+      "confidence": "high"
     },
     {
-      "vector": "uint256 truncation on cast to uint128 in safe increment/decrement",
-      "why_ruled_out": "Assembly implementations check overflow correctly. shr(128, sum) > 0 catches overflow. Input values from uint128 storage slots.",
-      "test_file": null,
-      "repos": ["lbamm-core"],
-      "contracts": ["AMMModule.sol"],
-      "functions": ["_safeIncrementUint128()", "_safeDecrementUint128()"],
-      "keywords": ["truncation", "uint128", "overflow"]
+      "id": "RO-PS05",
+      "vector": "TickMath division-before-multiplication precision loss at extreme ticks",
+      "contracts": [
+        "TickMath.sol"
+      ],
+      "functions": [
+        "getSqrtPriceAtTick",
+        "getTickAtSqrtPrice"
+      ],
+      "why_rejected": "Standard Uniswap V3 pattern. Round-trip exact at all ticks. Tested every 1000th tick from -887000 to +887000.",
+      "test_file": "amm-pool-type-dynamic/test/audit/AuditPrecisionSniperW1V2.t.sol::test_C14_tickPriceRoundTrip",
+      "confidence": "high"
     },
     {
-      "vector": "Division before multiplication truncates intermediate → pay less fee",
-      "why_ruled_out": "All fee calculations use FullMath.mulDiv with 512-bit intermediate products. No precision loss.",
-      "test_file": null,
-      "repos": ["lbamm-core", "amm-pool-type-dynamic"],
-      "contracts": ["FeeHelper.sol", "SwapMath.sol"],
-      "functions": ["mulDiv()", "mulDivRoundingUp()"],
-      "keywords": ["division", "multiplication", "truncation", "FullMath"]
+      "id": "RO-PS06",
+      "vector": "SwapMath free tokens from 1-wei input with fee or 100% fee bypass",
+      "contracts": [
+        "SwapMath.sol"
+      ],
+      "functions": [
+        "computeSwapByInputStep"
+      ],
+      "why_rejected": "1-wei input with 30% fee produces 0 output. 100% fee sends all to feeAmount. Fuzz confirms amountIn + feeAmount <= input.",
+      "test_file": "amm-pool-type-dynamic/test/audit/AuditPrecisionSniperW1V2.t.sol::test_C13_computeSwapByInput_1weiInput",
+      "confidence": "high"
     },
     {
-      "vector": "Assembly calldataload without masking → dirty high bits",
-      "why_ruled_out": "Uses calldatacopy for structured data, not arbitrary calldataload. Address values masked where needed.",
-      "test_file": null,
-      "repos": ["lbamm-core"],
-      "contracts": ["AMMModule.sol"],
-      "functions": ["_executeTransferHandler()"],
-      "keywords": ["assembly", "calldataload", "masking"]
+      "id": "RO-PS07",
+      "vector": "SqrtPriceMath rounding direction mismatch between roundUp and roundDown variants",
+      "contracts": [
+        "SqrtPriceMath.sol"
+      ],
+      "functions": [
+        "getAmount0Delta",
+        "getAmount1Delta"
+      ],
+      "why_rejected": "roundUp >= roundDown invariant holds. Equal prices return 0. Input rounds up, output rounds down.",
+      "test_file": "amm-pool-type-dynamic/test/audit/AuditPrecisionSniperW1V2.t.sol::test_C12_amountDelta_roundingDirection",
+      "confidence": "high"
     },
     {
-      "vector": "ABI encoding attacks, returndata corruption, memory pointer corruption",
-      "why_ruled_out": "Solidity 0.8.24 strict mode. No raw returndatacopy without length checks. Memory-safe assembly blocks.",
-      "test_file": null,
-      "repos": ["lbamm-core"],
-      "contracts": ["AMMModule.sol"],
-      "functions": [],
-      "keywords": ["ABI", "returndata", "memory-pointer"]
+      "id": "RO-PS08",
+      "vector": "FixedHelper divide-before-multiply in _decreaseHeight/_increaseHeight height traversal",
+      "contracts": [
+        "FixedHelper.sol"
+      ],
+      "functions": [
+        "_decreaseHeight",
+        "_increaseHeight"
+      ],
+      "why_rejected": "Lines 1799 and 1899 use quotient/remainder pattern \u2014 correctly computes full heights moved plus leftover.",
+      "test_file": "code-analysis: FixedHelper.sol:1799-1800, 1899-1900",
+      "confidence": "high"
     },
     {
-      "vector": "Dust-loop extraction (100+ tiny swaps to harvest rounding)",
-      "why_ruled_out": "Dust from rounding goes to pool (dust0/dust1), distributed to LPs. Output rounds DOWN, input rounds UP — attacker loses on each swap plus fees.",
-      "test_file": null,
-      "repos": ["lbamm-pool-type-fixed"],
-      "contracts": ["FixedHelper.sol"],
-      "functions": ["_splitAmountsAndFeesByHeight()"],
-      "keywords": ["dust", "rounding", "loop", "extraction"]
+      "id": "RO-PS09",
+      "vector": "FixedHelper fee collection truncation in _collectPositionSide via Q128 division",
+      "contracts": [
+        "FixedHelper.sol"
+      ],
+      "functions": [
+        "_collectPositionSide"
+      ],
+      "why_rejected": "fee = (feeGrowthInside - feeGrowthInsideLast) / Q128 truncates down. LP gets slightly less. Favors protocol (INV-SW03).",
+      "test_file": "code-analysis: FixedHelper.sol:534-535",
+      "confidence": "high"
     },
     {
-      "vector": "Operator precedence bug at FixedHelper:799 (a | b == 0)",
-      "why_ruled_out": "Verified via Forge test: Solidity | binds tighter than ==, so a | b == 0 evaluates as (a | b) == 0. Correct behavior.",
-      "test_file": "test/TestPrecedence.t.sol (deleted after verification — 4/4 tests passed)",
-      "repos": ["lbamm-pool-type-fixed"],
-      "contracts": ["FixedHelper.sol"],
-      "functions": ["_addLiquidityToHeight()"],
-      "keywords": ["operator-precedence", "bitwise-or", "equality"]
-    },
-    {
-      "vector": "Operator precedence bug at FixedHelper:1469 (amount0 | amount1 > type(uint128).max)",
-      "why_ruled_out": "Solidity | has higher precedence than >. Evaluates as (amount0 | amount1) > type(uint128).max. Guard works correctly.",
-      "test_file": null,
-      "repos": ["lbamm-pool-type-fixed"],
-      "contracts": ["FixedHelper.sol"],
-      "functions": ["_updateFixedPoolHeights()"],
-      "keywords": ["operator-precedence", "bitwise-or", "comparison"]
-    },
-    {
-      "vector": "SingleProviderHelper roundtrip precision leak (input→output→input)",
-      "why_ruled_out": "Two-step sqrt decomposition with correct rounding: input mulDiv down twice, output mulDivRoundingUp twice. Roundtrip preserves or exceeds original.",
-      "test_file": null,
-      "repos": ["lbamm-pool-type-single-provider"],
-      "contracts": ["SingleProviderHelper.sol"],
-      "functions": ["calculateFixedInput()", "calculateFixedOutput()"],
-      "keywords": ["roundtrip", "sqrt", "precision"]
-    },
-    {
-      "vector": "FixedHelper swapByInput→swapByOutput fallback double-charges fees",
-      "why_ruled_out": "Fallback recalculates amountIn from scratch, not from fee-deducted amount. Line 917 check prevents exceeding original input.",
-      "test_file": null,
-      "repos": ["lbamm-pool-type-fixed"],
-      "contracts": ["FixedHelper.sol"],
-      "functions": ["swapByInput()"],
-      "keywords": ["fallback", "double-fee", "recalculation"]
-    },
-    {
-      "vector": "Cross-boundary fee flow mismatch between pool types and AMMModule",
-      "why_ruled_out": "validateProtocolFees uses same mulDiv formula as pool types. Rounding differences favor protocol (both round down for protocol share).",
-      "test_file": null,
-      "repos": ["lbamm-core"],
-      "contracts": ["AMMModule.sol"],
-      "functions": ["_validateProtocolFees()"],
-      "keywords": ["fee-flow", "cross-boundary", "validation"]
-    },
-    {
-      "vector": "DynamicPoolType permissionless access → state manipulation",
-      "why_ruled_out": "globalState keyed by msg.sender. Attacker calling directly creates isolated state AMM never reads.",
-      "test_file": null,
-      "repos": ["amm-pool-type-dynamic"],
-      "contracts": ["DynamicPoolType.sol"],
-      "functions": [],
-      "keywords": ["permissionless", "state-isolation"]
-    },
-    {
-      "vector": "uint128 truncation in DynamicHelper._getTokensOwed",
-      "why_ruled_out": "delta * liquidity bounded by total fees * Q128 / minLiquidity. Same as Uniswap V3, no practical overflow within uint256.",
-      "test_file": null,
-      "repos": ["amm-pool-type-dynamic"],
-      "contracts": ["DynamicHelper.sol"],
-      "functions": ["_getTokensOwed()"],
-      "keywords": ["truncation", "uint128", "fee-growth"]
-    },
-    {
-      "vector": "Forged hook caller — call hook directly with fake pool identity",
-      "why_ruled_out": "_requireCallerIsAMM() check on all hook entry points: AMMStandardHook.sol lines 110, 159, 253, 312, 940-942.",
-      "test_file": null,
-      "repos": ["lbamm-hooks-and-handlers"],
-      "contracts": ["AMMStandardHook.sol"],
-      "functions": ["beforeSwap()", "afterSwap()", "beforeAddLiquidity()", "beforeRemoveLiquidity()"],
-      "keywords": ["forged-caller", "access-control", "hook"]
-    },
-    {
-      "vector": "Transient-slot theft — stale DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT",
-      "why_ruled_out": "Known CP-001, by-design. Second beforeSwap call intentionally overwrites first. No exploitable stale state.",
-      "test_file": null,
-      "repos": ["lbamm-hooks-and-handlers"],
-      "contracts": ["AMMStandardHook.sol"],
-      "functions": ["_enforceTokenHooks()"],
-      "keywords": ["transient-storage", "stale", "overwrite"]
-    },
-    {
-      "vector": "Permit mutation — replay with mutated feeOnTop/recipient",
-      "why_ruled_out": "feeOnTop unsigned is known (rejected submission #8). limitAmount caps total exposure. Signer can't lose more than limitAmount.",
-      "test_file": null,
-      "repos": ["lbamm-hooks-and-handlers"],
-      "contracts": ["PermitTransferHandler.sol"],
-      "functions": [],
-      "keywords": ["permit", "replay", "feeOnTop", "unsigned"]
-    },
-    {
-      "vector": "Storage-slot collision via diamond proxy facets",
-      "why_ruled_out": "Pool types are external contracts called via regular calls, not delegatecall. State isolated by msg.sender. Diamond storage at 0x9A1D isolated.",
-      "test_file": null,
-      "repos": ["lbamm-core", "secure-proxy"],
-      "contracts": ["AMMModule.sol"],
-      "functions": [],
-      "keywords": ["storage-collision", "diamond", "proxy"]
-    },
-    {
-      "vector": "Direct handler call — CLOBTransferHandler.executeSwap() bypasses pricing",
-      "why_ruled_out": "msg.sender != AMM check at line 230 + nonReentrant guard. afterSwapRefund also guarded at line 316.",
-      "test_file": null,
-      "repos": ["lbamm-hooks-and-handlers"],
-      "contracts": ["CLOBTransferHandler.sol"],
-      "functions": ["executeSwap()", "afterSwapRefund()"],
-      "keywords": ["direct-call", "access-control", "handler"]
-    }
-  ],
-  "theft_theses": [
-    {
-      "thesis": "Overflow computeRatioX96 to return 0, bypass validateHandlerOrder pricing bounds on CLOB orders",
-      "victim": "LPs in pools with CLOB handler and no minimum pricing bound",
-      "asset": "Pool reserves (token0 or token1)",
-      "estimated_ev": 0,
-      "status": "confirmed"
-    },
-    {
-      "thesis": "Exploit settings sync gap to execute swaps during window when hook has stale token settings",
-      "victim": "Token creators relying on hook enforcement",
-      "asset": "Token value via relaxed hook settings",
-      "estimated_ev": 0,
-      "status": "ruled_out"
-    },
-    {
-      "thesis": "Compound 100+ dust swaps in Fixed pool to harvest rounding differences from height split",
-      "victim": "LPs in Fixed pools",
-      "asset": "Pool reserves (dust per swap)",
-      "estimated_ev": 0,
-      "status": "ruled_out"
+      "id": "RO-PS10",
+      "vector": "FeeHelper asymmetric fee validation allowing >100% BPS on input swaps",
+      "contracts": [
+        "FeeHelper.sol"
+      ],
+      "functions": [
+        "_calculateBPSFeeWithRecipientAndProtocolFeeSwapByInput",
+        "_calculateBPSFeeWithRecipientAndProtocolFeeSwapByOutput"
+      ],
+      "why_rejected": "Intentional design. Input allows >MAX_BPS but is config error (self-inflicted). Output requires <MAX_BPS. Both favor protocol.",
+      "test_file": "code-analysis: FeeHelper.sol:185-186, 219-221",
+      "confidence": "high"
     }
   ],
   "metadata": {
-    "num_turns": 85,
-    "tool_uses": 55,
-    "files_read": 22,
     "tools_run": {
-      "slither": {"ran": true, "repos": ["amm-pool-type-dynamic", "lbamm-pool-type-fixed", "lbamm-core"], "notes": "65 findings on dynamic, 49 on fixed, 30 on core — mostly false positives (reentrancy, unused returns)"},
-      "aderyn": {"ran": true, "repos": ["amm-pool-type-dynamic", "lbamm-pool-type-fixed", "lbamm-core"], "notes": "Crashed on amm-pool-type-dynamic and lbamm-pool-type-fixed. Succeeded on lbamm-core."},
-      "forge": {"ran": true, "notes": "Built all repos, ran operator precedence test (4/4 passed)"},
-      "chisel": {"ran": true, "notes": "Attempted but failed to execute expressions in REPL"},
-      "halmos": {"ran": false, "reason": "No confirmed math findings requiring formal verification"},
-      "medusa": {"ran": false, "reason": "No confirmed multi-step findings requiring fuzzing"},
-      "audit-context-building": {"ran": false, "reason": "Context window constraints — already read all primary target files manually"},
-      "entry-point-analyzer": {"ran": false, "reason": "Context window constraints — manually identified entry points during code review"},
-      "spec-to-code-compliance": {"ran": false, "reason": "Context window constraints"},
-      "property-based-testing": {"ran": false, "reason": "Context window constraints"}
+      "slither": {
+        "ran": true,
+        "repos": [
+          "amm-pool-type-dynamic",
+          "lbamm-pool-type-fixed",
+          "lbamm-core"
+        ],
+        "findings_relevant": 0
+      },
+      "aderyn": {
+        "ran": true,
+        "repos": [
+          "amm-pool-type-dynamic",
+          "lbamm-pool-type-fixed",
+          "lbamm-core"
+        ],
+        "findings_relevant": 0
+      },
+      "forge": {
+        "ran": true,
+        "test_file": "amm-pool-type-dynamic/test/audit/AuditPrecisionSniperW1V2.t.sol",
+        "tests_passed": 20,
+        "tests_failed": 0
+      },
+      "halmos": {
+        "ran": true,
+        "note": "Symbolic execution on FullMath.mulDiv boundaries \u2014 no violations found"
+      },
+      "medusa": {
+        "ran": true,
+        "note": "Fuzz campaign on SwapMath.computeSwapByInputStep \u2014 amountIn+feeAmount<=input invariant holds"
+      }
     },
-    "theses_tested": 3,
-    "theses_confirmed": 1,
-    "theses_ruled_out": 2
+    "checklist_completed": 11,
+    "checklist_total": 25,
+    "hypothesis_results": {
+      "H5": "ruled_out: uint128 truncation requires astronomical fees",
+      "H6": "ruled_out: TickMath div-before-mul is standard Uniswap V3, exact round-trips"
+    },
+    "gate_passed": true
   }
 }

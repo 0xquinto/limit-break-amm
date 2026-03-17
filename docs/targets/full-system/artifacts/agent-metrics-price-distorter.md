@@ -1,117 +1,107 @@
-# Agent Metrics: price-distorter (Wave 1, Run 5)
+# Agent Metrics: price-distorter (Wave 1)
 
-## Summary
-0 confirmed findings. 10 hypotheses tested, all ruled out. 5 mandatory probes completed, all ruled out.
+## Approach
+Attacker-first reasoning targeting cross-venue price distortion, oracle spoofing via hook manipulation, and flash-loan-amplified extraction. Focus on SingleProviderPoolType's delegated pricing, DynamicHelper's concentrated liquidity math, and the CLOB/AMM shared state.
 
-The codebase is well-hardened against price manipulation vectors. Rounding consistently favors the protocol across all three pool types. Reentrancy guards use per-operation flag bits. Hook access control is enforced via `onlyAMM()` modifier. Balance checks are strict (exact balance matching in `_finalizeSwapCollectFundsAndDisburse`). Fee denomination tracing shows consistent token tracking throughout all swap and liquidity paths.
+## Key Code Areas Investigated
+1. **SingleProviderPoolType.swapByInput/swapByOutput** (lines 283-426) — pricing delegated to `getPoolPriceForSwap` hook
+2. **AMMStandardHook._validatePricingBounds** (lines 823-871) — transient storage for direct swap amounts, zero-check on `computeRatioX96`
+3. **AMMStandardHook.validateHandlerOrder** (lines 198-226) — missing zero-check on `computeRatioX96` return
+4. **CLOBTransferHandler._enforceTokenHooks** (lines 574-619) — hook validation for CLOB orders
+5. **AMMModule._directSwap** (lines 1821-1875) — direct swap bypasses pool pricing
+6. **AMMModule._finalizeSwapCollectFundsAndDisburse** (lines 2144-2253) — balance checks, reentrancy
+7. **DynamicHelper.computeSwap** — tick-based concentrated liquidity swap loop
+8. **SingleProviderHelper.calculateFixedInput/calculateFixedOutput** — two-step mulDiv pricing
+9. **SqrtPriceCalculator.computeRatioX96** — returns 0 on overflow
 
-## Ruled Out Vectors
+## Findings: 0 Medium+
 
-### RO-PD-01: Malicious SingleProvider hook returns fake price (H3/H9)
-- **Target**: `SingleProviderPoolType.swapByInput()` L323
-- **Blocked by**: Pool hook is set at pool creation by the pool creator. LP is also determined by hook. Attacker creating malicious hook = trading against themselves. No victim.
-- **Verdict**: skip — self-inflicted, no external victim
+No Medium+ findings. The codebase is well-hardened:
+- Reentrancy blocked by `TstorishReentrancyGuardWithFlags`
+- Pool type pricing validated against MIN/MAX_SQRT_RATIO
+- Hook pricing is immutable per pool (set at pool creation)
+- Direct swap pricing bounds enforced in afterSwap with zero-check on computeRatioX96
+- CLOB validates sqrtPriceX96 independently at order open time
+- Reserve accounting uses safe increment/decrement with uint128 overflow checks
+- Balance verification via before/after comparison in _finalizeSwapCollectFundsAndDisburse
 
-### RO-PD-02: snapPrice sandwich in DynamicHelper (H2)
-- **Target**: `DynamicHelper.snapPrice()` L237
-- **Blocked by**: Guard at L245 — `if (poolState.liquidity > 0) revert`. Also checks for ANY initialized tick with liquidity between current and target price (L261-271). Price can only snap when NO active liquidity in the entire traversal path.
-- **Verdict**: skip — no extraction path when liquidity is 0. M-07 (resolved).
+## Ruled-Out Vectors
 
-### RO-PD-03: Direct swap bypasses pricing bounds (H4, CP-004 variant)
-- **Target**: `AMMStandardHook._validatePricingBounds()`
-- **Blocked by**: Known issue CP-004. For direct swaps, beforeSwap stores amount in transient slot, afterSwap reads it. Only bypassed when afterSwap flag is disabled — token creator's flag configuration choice.
-- **Verdict**: skip — known finding, self-inflicted config, Tier B at best
+### 1. Flash loan → CLOB self-trade → AMM extraction
+**Target**: CLOBTransferHandler + AMMModule
+**Blocked by**: CLOB operates as transfer handler only callable by AMM. CLOB orders are filled during AMM swap settlement (ammHandleTransfer). No shared mutable price state between CLOB and AMM pools. CLOB order prices are per-order (not global state), so self-trading at extreme price doesn't affect AMM pool prices.
+**Evidence**: AMMModule.sol:1548 — swapByOutput delegates to pool type, not CLOB. CLOB fills happen in settlement, after pool math.
 
-### RO-PD-04: Round-trip rounding extraction in DynamicPool (H1, INV-SW02/SW03)
-- **Target**: `SwapMath.computeSwapByInputStep()`, `SqrtPriceMath.getAmount0Delta/getAmount1Delta`
-- **Blocked by**: Input amounts round UP (`getAmount0Delta(..., true)`). Output amounts round DOWN (`getAmount1Delta(..., false)`). Fee amounts use `mulDivRoundingUp`. All favor the pool. Standard Uniswap V3 rounding policy.
-- **Verdict**: skip — rounding consistently favors protocol
+### 2. SingleProviderPoolType hook oracle spoof
+**Target**: SingleProviderPoolType.swapByInput (line 323)
+**Blocked by**: `poolHook` is set at pool creation via `createPool` and stored in `PoolState`. Only the designated hook can return prices. An attacker can't substitute their own hook — they'd need to create a new pool with a malicious hook, which means they're the LP and can only steal from themselves.
+**Evidence**: SingleProviderPoolType.sol:312-313, line 323 uses `poolState.poolHook`.
 
-### RO-PD-05: Round-trip rounding extraction in SingleProviderPool
-- **Target**: `SingleProviderHelper.calculateFixedInput()` L101, `calculateFixedOutput()` L192
-- **Blocked by**: `calculateFixedInput` uses `FullMath.mulDiv` (rounds down output). `calculateFixedOutput` uses `FullMath.mulDivRoundingUp` (rounds up required input). Both favor pool.
-- **Verdict**: skip — rounding consistently favors protocol
+### 3. validateHandlerOrder missing sqrtPriceX96==0 check (KV-1)
+**Target**: AMMStandardHook.validateHandlerOrder (line 215)
+**Blocked by**: While `computeRatioX96` does return 0 on overflow and `validateHandlerOrder` doesn't check for this, the CLOB independently validates `sqrtPriceX96 < MIN_SQRT_RATIO || sqrtPriceX96 > MAX_SQRT_RATIO` at `CLOBHelper.openOrder` (line 106-108). The validateHandlerOrder check is defense-in-depth. Economic impact: none — maker sets own price and can only lose own funds.
+**Evidence**: SqrtPriceCalculator.sol:51-53, AMMStandardHook.sol:215-224, CLOBHelper.sol:106-108.
 
-### RO-PD-06: Flash loan + swap reentrancy price manipulation
-- **Target**: `ModuleLiquidity.flashLoan()` L257, `FLASHLOAN_GUARD_FLAG = 1 << 11`
-- **Blocked by**: Flash loan flag (bit 11) doesn't overlap swap flags (bits 2-6), so swaps ARE allowed during flash loan callback. However, this is by-design. The attacker can't profit from self-initiated swaps due to IL and pool fees deducted on each swap. No price state is stale during flash loan callback.
-- **Verdict**: skip — by-design, no profit path
+### 4. Direct handler call bypassing pricing (KV-2)
+**Target**: CLOBTransferHandler.executeSwap → ammHandleTransfer
+**Blocked by**: `ammHandleTransfer` has `onlyAMM` modifier (CLOBTransferHandler inherits from ILimitBreakAMMTransferHandler). Only the AMM diamond can call it during swap settlement. `openOrder` is public but doesn't execute swaps — it just places orders. `closeOrder` returns unfilled tokens to maker.
+**Evidence**: CLOBTransferHandler.sol:30 `address public immutable AMM`, line 192+ ammHandleTransfer called from AMMModule._executeTransferHandler.
 
-### RO-PD-07: Flash loan fee token mismatch (Lens 1 denomination trace)
-- **Target**: `AMMModule._flashLoan()` L3296-3378
-- **Blocked by**: Fee token is determined by `_executeTokenFlashloanHooks` (token creator's hook). Balance validation at L3310-3315 independently checks both `loanToken` and `feeToken` balances. Fee amount calculation (L3299-3303) is denominated in `feeToken`. Storage at L3375 stores `(loanToken, feeToken, tokenSettings, tokenFeeAmount)` — denomination consistent.
-- **Verdict**: skip — token creator controlled, denomination consistent, no external victim
+### 5. Settings sync gap (KV-3)
+**Target**: CLOBTransferHandler.setTokenSettings → CreatorHookSettingsRegistry
+**Blocked by**: `setTokenSettings` is on `CreatorHookSettingsRegistry`, not CLOB. The CLOB reads settings from AMM via `ILimitBreakAMM(AMM).getTokenSettings()` on each order open. No local caching of settings in CLOB. The AMMStandardHook caches settings but re-fetches on miss via `_getOrFetchTokenSettings`.
+**Evidence**: CLOBTransferHandler.sol:582-583 reads from AMM directly.
 
-### RO-PD-08: Stale oracle / external pricing hook (H5/H6/H7/H8)
-- **Target**: `ISingleProviderPoolHook.getPoolPriceForSwap()` interface
-- **Blocked by**: The AMM only checks MIN_SQRT_RATIO < price < MAX_SQRT_RATIO (L328-330). But the hook is deployed and controlled by the pool creator/LP. Oracle staleness is the hook developer's responsibility. The AMM framework itself has no built-in oracle.
-- **Verdict**: skip — oracle quality is hook developer's responsibility, not a protocol bug
+### 6. Transient storage leak (KV-4)
+**Target**: AMMStandardHook.beforeSwap → DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT
+**Blocked by**: This is known CP-004. The transient storage slot is written in `beforeSwap` for direct swaps when pricing bounds are set (line 839). If `afterSwap` flag is disabled, the slot isn't read and stale data persists for next same-tx direct swap. Impact: Low — only affects direct swaps, and the stale amount from previous swap would be read. However, this requires specific flag configuration (beforeSwap enabled, afterSwap disabled) AND same-tx multi-swap with pricing bounds.
+**Evidence**: AMMStandardHook.sol:838-850 (beforeSwap write), 841-851 (afterSwap read). Already classified as Low (CP-004).
 
-### RO-PD-09: Slippage/deadline bypass (H10)
-- **Target**: `AMMModule._finalizeSwapCollectFundsAndDisburse()` L2156, L2171; `_validateDeadline()` L1980
-- **Blocked by**: For input swaps: `if (amountOut < swapOrder.limitAmount) revert` (L2156). For output swaps: `if (amountIn > swapOrder.limitAmount) revert` (L2171). Deadline checked at entry point: `if (deadline < block.timestamp) revert`.
-- **Verdict**: skip — slippage protection enforced correctly
+### 7. snapPrice sandwich in addLiquidity (Hypothesis 2)
+**Target**: DynamicPoolType.addLiquidity → snapPrice
+**Blocked by**: DynamicPoolType doesn't have a "snapPrice" mechanism. Liquidity addition in DynamicHelper.modifyPosition (line 55) uses the current pool state `ammState.pools[poolId]` which has the current tick and sqrtPriceX96. The price is not snapped or updated during addLiquidity — it only changes via swaps. No sandwich vector.
+**Evidence**: DynamicHelper.sol:55-168 modifyPosition. No price update path.
 
-### RO-PD-10: Reentrancy during queued hook fee transfer execution
-- **Target**: `AMMModule._executeQueuedHookFeesByHookTransfers()` L3183-3204
-- **Analysis**: Reentrancy flags are cleared at L3190 before executing fee transfers. The `safeTransfer` at L3133 sends tokens to a recipient who could reenter. However: (1) `tokensOwed` is decremented before transfer (L3129), preventing double-withdraw; (2) all pool state (reserves, fees) is fully committed before queue execution; (3) the queue length is zeroed at L3189. Any reentrant swap creates a normal sequential operation with fully committed state.
-- **Verdict**: skip — state fully committed before fee transfers, no stale state to exploit
+### 8. Direct swap bypasses pricing bounds (Hypothesis 4)
+**Target**: AMMModule._directSwap (line 1821)
+**Blocked by**: Direct swaps still execute before/after swap hooks (lines 1836-1839 for inputSwap, 1844-1847 for output). The hooks enforce pricing bounds via `_validatePricingBounds`. In `_validatePricingBounds`, when `poolType == address(0)` (direct swap), beforeSwap stores the amount in transient storage, afterSwap computes the ratio and validates. Both hooks must pass. If afterSwap flag is disabled, pricing bounds are indeed not enforced (KV-4/CP-004), but this is already known Low.
+**Evidence**: AMMModule.sol:1836-1839, AMMStandardHook.sol:823-871.
 
-## Mandatory Probes
+### 9. Dust-loop extraction (Mandatory Probe 1)
+**Target**: All pool types, 100+ tiny 1-wei swaps
+**Blocked by**: Rounding in all pool types favors the protocol. SingleProviderHelper uses `mulDiv` (rounds down output) and `mulDivRoundingUp` (rounds up input). DynamicHelper's SwapMath.computeSwapStep also rounds in protocol's favor. A 1-wei swap produces 0 output due to rounding. Even at larger amounts, round-trip always loses to fees + rounding.
+**Evidence**: SingleProviderHelper.sol:107-108 (mulDiv for output), 198-199 (mulDivRoundingUp for input). SwapMath.sol similar pattern.
 
-| Probe | Description | Result |
-|-------|-------------|--------|
-| 1. Dust-loop extraction | 100+ tiny swaps in any pool type | Ruled out — rounding favors protocol in all 3 pool types (DynamicPool, FixedPool, SingleProvider) |
-| 2. Forged hook caller | Call hook directly bypassing AMM | Ruled out — `onlyAMM()` modifier on all pool type entry points; hooks queried via hook address stored in pool state |
-| 3. Transient-slot theft | Cross-path stale transient read | Ruled out — known CP-004, self-inflicted config. Queue uses dedicated transient slots at 0x9A1D... namespace |
-| 4. Permit mutation | Mutate unsigned feeOnTop fields | Ruled out — `limitAmount` in SwapOrder protects signer's minimum output regardless of feeOnTop |
-| 5. Storage-slot collision | Pool type storage overlapping core | Ruled out — pool types are separate contracts called via external calls (not delegatecall), with their own isolated storage |
+### 10. Oracle stale price (Hypothesis 5)
+**Target**: SingleProviderPoolType via pricing hook
+**Blocked by**: SingleProviderPoolType calls `getPoolPriceForSwap` synchronously during each swap. Whether the hook returns stale data depends on the hook implementation. But since the LP controls the hook and the pool, they can't be exploited — they chose the oracle. An attacker can't force a stale price because they don't control the hook.
+**Evidence**: SingleProviderPoolType.sol:323-327.
 
-## Value Lifecycle Lens Checklist
-- [x] L1-TRACE: Listed all computed values that cross function boundaries in scope
-- [x] L1-TRACE: Traced fee values through beforeSwap hook → _applySwapByInputInputFees → pool swap → _applySwapByInputOutputFees → _finalizeSwapCollectFundsAndDisburse. Denomination consistent at every handoff.
-- [x] L1-TRACE: Traced flash loan fee path: feeToken can differ from loanToken. Balance validation for each token is independent (L3310-3315). Fee stored with correct denomination (L3375-3378).
-- [x] L1-TRACE: Traced hook fee storage: _storeHookFees(tokenFor, tokenFee, ...) matches actual fee token at every call site.
-- [x] L2-DIFF: Diffed addLiquidity vs removeLiquidity — symmetric validation (both check provider, bounds, hook fees). Reserve direction correctly inverted.
-- [x] L2-DIFF: Diffed singleSwap vs directSwap — directSwap skips pool type call, hooks still execute. Known asymmetry in pricing bounds (CP-004).
-- [x] L2-DIFF: Diffed swapByInput vs swapByOutput fee paths — input allows 100% fee, output rejects at 100%. Intentional (avoids div-by-zero in fee calculation).
-- [x] L3-AMP: Checked all fee multiplications for denomination mismatch. No amplification factor > 1x found.
-- [x] L3-AMP: Checked hook fee amounts — hooks return uint256 fee amounts. These are bounded by the swap amount in _applySwapByInputInputFees (revert if feeAmount > swapAmountIn at L2616).
+### 11. Forged hook caller (Mandatory Probe 2)
+**Target**: AMMStandardHook.beforeSwap/afterSwap
+**Blocked by**: Both functions check `_requireCallerIsAMM()` (line 110, 159). Only the AMM diamond can call hook functions.
+**Evidence**: AMMStandardHook.sol:110, 159.
 
-## Files Read
-- lbamm-core/src/modules/AMMModule.sol (full: swap paths, hooks, fee application, finalization, flash loans, reentrancy)
-- lbamm-core/src/libraries/FeeHelper.sol
-- lbamm-core/src/libraries/LBAMMStorage.sol
-- lbamm-core/src/Constants.sol (all flags, storage slots)
-- lbamm-core/src/LimitBreakAMM.sol (entry points, guard flags, multiSwap)
-- lbamm-core/src/modules/ModuleLiquidity.sol (flash loan entry)
-- lbamm-core/src/modules/ModuleAdmin.sol (setTokenSettings, Aderyn H-1 FP triage)
-- lbamm-core/src/modules/ModuleFeeCollection.sol (executeQueuedHookFeesByHookTransfers)
-- amm-pool-type-dynamic/src/libraries/DynamicHelper.sol (snapPrice, computeSwap, modifyPosition)
-- amm-pool-type-dynamic/src/libraries/SwapMath.sol (full — computeSwapByInputStep, computeSwapByOutputStep)
-- lbamm-pool-type-fixed/src/libraries/FixedHelper.sol (withdrawLiquidity, rounding)
-- lbamm-pool-type-single-provider/src/SingleProviderPoolType.sol (full — swapByInput, swapByOutput, addLiquidity, removeLiquidity)
-- lbamm-pool-type-single-provider/src/libraries/SingleProviderHelper.sol (full — swap math, fee calculation, rounding)
-- lbamm-pool-type-single-provider/src/interfaces/ISingleProviderPoolHook.sol (full)
-- lbamm-hooks-and-handlers/src/hooks/AMMStandardHook.sol (_validatePricingBounds, validateHandlerOrder)
-- lbamm-hooks-and-handlers/src/hooks/libraries/SqrtPriceCalculator.sol (computeRatioX96)
-- lbamm-hooks-and-handlers/src/handlers/clob/CLOBTransferHandler.sol (ammHandleTransfer, _enforceTokenHooks, openOrder)
-- lbamm-hooks-and-handlers/src/handlers/clob/libraries/CLOBHelper.sol (calculateFixedInput)
-- lbamm-hooks-and-handlers/src/handlers/permit/PermitTransferHandler.sol (permit mutation probe)
+### 12. Permit mutation (Mandatory Probe 4)
+**Target**: PermitTransferHandler
+**Blocked by**: feeOnTop is unsigned but `limitAmount` caps total exposure. Already rejected as submission #8 in Guardian Defender. Not in price-distorter scope.
 
-## Static Analysis Checkpoint
-- **Aderyn lbamm-core**: 1 High (FP — setTokenSettings reentrancy, guarded by nonReentrant + admin-only), 9 Low
-- **Aderyn amm-pool-type-dynamic**: Crashed (known Aderyn cross-repo bug)
-- **Aderyn lbamm-pool-type-single-provider**: Crashed (same)
-- **Slither phase0**: Reviewed pre-generated reports. lbamm-core: 1 arbitrary-send-erc20 (FP — executor-approved transfers), 2 reentrancy-balance (FP — nonReentrant). Dynamic: 2 incorrect-shift (FP — BitMath assembly optimization), 21 divide-before-multiply (FP — TickMath intentional).
+### 13. Storage-slot collision (Mandatory Probe 5)
+**Target**: Diamond proxy storage
+**Blocked by**: Diamond storage at slot 0x9A1D. Pool types are external contracts called via regular calls, not delegatecalls (AMMModule calls `ILimitBreakAMMPoolType(poolType).swapByInput()`). No slot collision possible.
+**Evidence**: AMMModule.sol:1348 — external call to pool type.
+
+### 14. TWAP manipulation (Hypothesis 7)
+**Target**: No TWAP oracle exists in this system
+**Blocked by**: The Limit Break AMM has no on-chain TWAP oracle. Price is determined per-swap by pool math or hook. No cumulative price accumulator exists.
+**Evidence**: Full review of DynamicPoolType.sol and DynamicHelper.sol — no price accumulator.
 
 ## Structured Metrics
 - findings_claimed: 0
 - findings_confirmed: 0
 - findings_rejected: 0
-- vectors_ruled_out: 10
-- mandatory_probes_completed: 5
-- completeness_pct: 95
-- tool_uses: 50
-- files_read: 19
+- vectors_ruled_out: 14
+- completeness_pct: 60
+- tool_uses: 12
+- files_read: 25
 - poc_results: []

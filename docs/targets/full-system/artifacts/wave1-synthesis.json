@@ -1,704 +1,215 @@
 {
   "wave": 1,
   "name": "black-hat-offense",
-  "timestamp": "2026-03-14T14:31:23Z",
-  "run_id": "run-2026-03-14T14-07-40Z",
+  "timestamp": "2026-03-16T22:15:20Z",
+  "run_id": "run-2026-03-16T21-39-19Z",
   "hot_spots": [],
-  "findings": [
-    {
-      "id": "PRECISION-001",
-      "title": "validateHandlerOrder missing zero-price check allows overflow bypass of pricing bounds (CP-003)",
-      "severity": "medium",
-      "confidence": "medium",
-      "status": "confirmed",
-      "category": "price-manipulation",
-      "description": "SqrtPriceCalculator.computeRatioX96() returns 0 on uint160 overflow (line 52). In AMMStandardHook._enforceTokenHooks(), this is caught by an explicit zero check (line 847). However, AMMStandardHook.validateHandlerOrder() (line 215) does NOT have this zero check. If minSqrtPriceX96 == 0 (no minimum bound set), the zero return value passes the bounds check, allowing a swap at an undefined price.",
-      "impact": "CLOB handler orders via CLOBTransferHandler._validateTokenHooks() could bypass pricing bounds if token amounts cause computeRatioX96 overflow and no minimum bound is configured. Attacker could execute trades at manipulated effective prices.",
-      "proof_sketch": "1. computeRatioX96(very_large_amount1, 1) \u2192 overflow \u2192 returns 0. 2. validateHandlerOrder called with sqrtPriceX96=0. 3. If minSqrtPriceX96==0, check `0 != 0 && 0 < min` is false \u2192 passes. 4. If maxSqrtPriceX96 != 0, check `0 > max` is false \u2192 passes. Both bounds bypassed.",
-      "victim": "Liquidity providers in pools with CLOB handler and token hooks that use validateHandlerOrder without minimum pricing bound",
-      "extractable_value": "Depends on pool liquidity depth. Constrained by CLOB order book pricing \u2014 attacker cannot freely choose both amounts, they come from CLOBHelper.calculateFixedInput(). Likely low practical EV due to CLOB constraints.",
-      "attack_sequence": [
-        "1. Find pool pair where token has validateHandlerOrderHook=true and minSqrtPriceX96==0",
-        "2. Create CLOB order with extreme price ratio that causes computeRatioX96 overflow",
-        "3. Execute order via CLOBTransferHandler \u2014 validateHandlerOrder receives sqrtPriceX96=0",
-        "4. Zero passes both min and max bounds checks",
-        "5. Order executes at price outside intended bounds"
-      ],
-      "test_file": null,
-      "test_passes": false,
-      "prerequisites": [
-        "CLOB handler with validateHandlerOrder enabled",
-        "No minimum pricing bound set (minSqrtPriceX96 == 0)",
-        "Amount ratio that causes computeRatioX96 to overflow uint160"
-      ],
-      "repos": [
-        "lbamm-hooks-and-handlers"
-      ],
-      "contracts": [
-        "AMMStandardHook.sol",
-        "CLOBTransferHandler.sol",
-        "SqrtPriceCalculator.sol"
-      ],
-      "functions": [
-        "_validateTokenHooks()",
-        "computeRatioX96()",
-        "validateHandlerOrder()"
-      ],
-      "lines": {
-        "AMMStandardHook.sol": [
-          215,
-          216,
-          217,
-          218,
-          221
-        ],
-        "SqrtPriceCalculator.sol": [
-          51,
-          52,
-          53
-        ]
-      },
-      "keywords": [
-        "zero-price-bypass",
-        "overflow",
-        "pricing-bounds",
-        "CLOB",
-        "CP-003"
-      ],
-      "_source_agent": "precision-sniper",
-      "consensus_count": 1,
-      "contributing_agents": [
-        "precision-sniper"
-      ],
-      "canonical_id": "HOOK-001"
-    },
-    {
-      "id": "PRECISION-002",
-      "title": "setTokenSettings passes unmodified settings to hook sync \u2014 initialized field may be false (CP-004)",
-      "severity": "low",
-      "confidence": "high",
-      "status": "confirmed",
-      "category": "state-desync",
-      "description": "CreatorHookSettingsRegistry.setTokenSettings() creates memSettings with initialized=true for registry storage (line 377-378) but passes original calldata settings (without initialized=true) to hook sync at line 397. AMMStandardHook.registryUpdateTokenSettings() stores settings with potentially initialized=false (line 522). This causes a sync gap between registry and hook cached state.",
-      "impact": "Low. AMMStandardHook._getOrFetchTokenSettings() self-heals: when initialized=false, it re-fetches from registry and re-caches correctly (lines 908-914). Window of inconsistency is brief (until next swap or hook call on that token). No funds at risk \u2014 only causes an unnecessary SLOAD on next access.",
-      "proof_sketch": "1. Creator calls setTokenSettings(token, settings) with settings.initialized=false. 2. Registry stores with initialized=true. 3. Hook stores with initialized=false. 4. Next _getOrFetchTokenSettings(token) sees initialized=false \u2192 re-fetches from registry \u2192 gets correct settings \u2192 re-caches with initialized=true.",
-      "victim": "None (self-healing, gas cost only)",
-      "extractable_value": "0 \u2014 no extraction path. Extra SLOAD cost per affected token on next access.",
-      "attack_sequence": [
-        "1. Admin calls setTokenSettings with initialized=false in settings struct",
-        "2. Registry caches with initialized=true, hook caches with initialized=false",
-        "3. Brief window where hook has stale state",
-        "4. Self-heals on next _getOrFetchTokenSettings call"
-      ],
-      "test_file": null,
-      "test_passes": false,
-      "prerequisites": [
-        "Admin/owner must call setTokenSettings with initialized=false"
-      ],
-      "repos": [
-        "lbamm-hooks-and-handlers"
-      ],
-      "contracts": [
-        "AMMStandardHook.sol",
-        "CreatorHookSettingsRegistry.sol"
-      ],
-      "functions": [
-        "_getOrFetchTokenSettings()",
-        "registryUpdateTokenSettings()",
-        "setTokenSettings()"
-      ],
-      "lines": {
-        "CreatorHookSettingsRegistry.sol": [
-          376,
-          377,
-          378,
-          397
-        ],
-        "AMMStandardHook.sol": [
-          519,
-          522,
-          908,
-          913,
-          914
-        ]
-      },
-      "keywords": [
-        "settings-sync",
-        "initialized",
-        "state-desync",
-        "CP-004"
-      ],
-      "_source_agent": "precision-sniper",
-      "consensus_count": 1,
-      "contributing_agents": [
-        "precision-sniper"
-      ],
-      "canonical_id": "HOOK-002"
-    }
-  ],
-  "contradictions": [
-    {
-      "finding_id": "PRECISION-001",
-      "finding_agent": "precision-sniper",
-      "ruled_out_id": "?",
-      "ruled_out_agent": "state-desync",
-      "shared_contracts": [
-        "CLOBTransferHandler.sol"
-      ],
-      "match_reason": "keywords: ['CLOB']",
-      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
-    },
-    {
-      "finding_id": "PRECISION-001",
-      "finding_agent": "precision-sniper",
-      "ruled_out_id": "?",
-      "ruled_out_agent": "state-desync",
-      "shared_contracts": [
-        "AMMStandardHook.sol",
-        "CLOBTransferHandler.sol",
-        "SqrtPriceCalculator.sol"
-      ],
-      "match_reason": "functions: ['computeRatioX96()', 'validateHandlerOrder()']; keywords: ['overflow']",
-      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
-    },
-    {
-      "finding_id": "PRECISION-001",
-      "finding_agent": "precision-sniper",
-      "ruled_out_id": "?",
-      "ruled_out_agent": "state-desync",
-      "shared_contracts": [
-        "AMMStandardHook.sol"
-      ],
-      "match_reason": "functions: ['validateHandlerOrder()']",
-      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
-    },
-    {
-      "finding_id": "PRECISION-001",
-      "finding_agent": "precision-sniper",
-      "ruled_out_id": "?",
-      "ruled_out_agent": "auth-forger",
-      "shared_contracts": [
-        "CLOBTransferHandler.sol"
-      ],
-      "match_reason": "keywords: ['CLOB']",
-      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
-    },
-    {
-      "finding_id": "PRECISION-001",
-      "finding_agent": "precision-sniper",
-      "ruled_out_id": "?",
-      "ruled_out_agent": "auth-forger",
-      "shared_contracts": [
-        "AMMStandardHook.sol"
-      ],
-      "match_reason": "keywords: ['pricing-bounds']",
-      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
-    },
-    {
-      "finding_id": "PRECISION-001",
-      "finding_agent": "precision-sniper",
-      "ruled_out_id": "?",
-      "ruled_out_agent": "auth-forger",
-      "shared_contracts": [
-        "CLOBTransferHandler.sol"
-      ],
-      "match_reason": "keywords: ['CLOB']",
-      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
-    },
-    {
-      "finding_id": "PRECISION-001",
-      "finding_agent": "precision-sniper",
-      "ruled_out_id": "?",
-      "ruled_out_agent": "extension-hijacker",
-      "shared_contracts": [
-        "AMMStandardHook.sol",
-        "SqrtPriceCalculator.sol"
-      ],
-      "match_reason": "functions: ['computeRatioX96()', 'validateHandlerOrder()']; keywords: ['overflow', 'pricing-bounds']",
-      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
-    },
-    {
-      "finding_id": "PRECISION-002",
-      "finding_agent": "precision-sniper",
-      "ruled_out_id": "?",
-      "ruled_out_agent": "auth-forger",
-      "shared_contracts": [
-        "CreatorHookSettingsRegistry.sol"
-      ],
-      "match_reason": "functions: ['setTokenSettings()']",
-      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
-    },
-    {
-      "finding_id": "PRECISION-002",
-      "finding_agent": "precision-sniper",
-      "ruled_out_id": "?",
-      "ruled_out_agent": "extension-hijacker",
-      "shared_contracts": [
-        "CreatorHookSettingsRegistry.sol"
-      ],
-      "match_reason": "functions: ['setTokenSettings()']; keywords: ['settings-sync']",
-      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
-    }
-  ],
-  "ruled_out_count": 70,
+  "findings": [],
+  "contradictions": [],
+  "ruled_out_count": 124,
   "invariants_formalized": [],
   "tool_coverage_warnings": [
-    "TOOL_COVERAGE: state-desync (State Desync Operator) did not report on conditional tool sharp_edges \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: unknown (unknown) did NOT run entry_point_analyzer \u2014 reason: no reason given",
+    "TOOL_COVERAGE: unknown (unknown) did NOT run audit_context_building \u2014 reason: no reason given",
+    "TOOL_COVERAGE: unknown (unknown) did not report on conditional tool token_integration_analyzer \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: unknown (unknown) did not report on conditional tool sharp_edges \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: state-desync (State Desync Operator) did NOT run entry_point_analyzer \u2014 reason: no reason given",
+    "TOOL_COVERAGE: state-desync (State Desync Operator) did NOT run audit_context_building \u2014 reason: no reason given",
     "TOOL_COVERAGE: state-desync (State Desync Operator) did not report on conditional tool token_integration_analyzer \u2014 add to tools_run with ran=false and reason if not applicable",
-    "TOOL_COVERAGE: precision-sniper (Precision Math Sniper) did NOT run entry_point_analyzer \u2014 reason: no reason given",
-    "TOOL_COVERAGE: precision-sniper (Precision Math Sniper) did NOT run audit_context_building \u2014 reason: no reason given",
-    "TOOL_COVERAGE: precision-sniper (Precision Math Sniper) did not report on conditional tool sharp_edges \u2014 add to tools_run with ran=false and reason if not applicable",
-    "TOOL_COVERAGE: precision-sniper (Precision Math Sniper) did not report on conditional tool token_integration_analyzer \u2014 add to tools_run with ran=false and reason if not applicable",
-    "TOOL_COVERAGE: auth-forger (Authorization & Settlement Forger) did NOT run audit_context_building \u2014 reason: Used entry-point-analyzer and spec-to-code-compliance instead",
+    "TOOL_COVERAGE: state-desync (State Desync Operator) did not report on conditional tool sharp_edges \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: auth-forger (Authorization & Settlement Forger) did NOT run entry_point_analyzer \u2014 reason: no reason given",
+    "TOOL_COVERAGE: auth-forger (Authorization & Settlement Forger) did NOT run audit_context_building \u2014 reason: no reason given",
+    "TOOL_COVERAGE: auth-forger (Authorization & Settlement Forger) did not report on conditional tool token_integration_analyzer \u2014 add to tools_run with ran=false and reason if not applicable",
     "TOOL_COVERAGE: auth-forger (Authorization & Settlement Forger) did not report on conditional tool sharp_edges \u2014 add to tools_run with ran=false and reason if not applicable",
-    "TOOL_COVERAGE: extension-hijacker (Extension Hijacker) did NOT run audit_context_building \u2014 reason: Equivalent analysis performed via direct code reading + Slither",
-    "TOOL_COVERAGE: extension-hijacker (Extension Hijacker) did not report on conditional tool sharp_edges \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: math-deep-diver (Math Deep-Diver) did NOT run entry_point_analyzer \u2014 reason: no reason given",
+    "TOOL_COVERAGE: math-deep-diver (Math Deep-Diver) did NOT run audit_context_building \u2014 reason: no reason given",
+    "TOOL_COVERAGE: math-deep-diver (Math Deep-Diver) did not report on conditional tool token_integration_analyzer \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: math-deep-diver (Math Deep-Diver) did not report on conditional tool sharp_edges \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: cross-boundary (Cross-Boundary Tracer) did NOT run entry_point_analyzer \u2014 reason: no reason given",
+    "TOOL_COVERAGE: cross-boundary (Cross-Boundary Tracer) did NOT run audit_context_building \u2014 reason: no reason given",
+    "TOOL_COVERAGE: cross-boundary (Cross-Boundary Tracer) did not report on conditional tool token_integration_analyzer \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: cross-boundary (Cross-Boundary Tracer) did not report on conditional tool sharp_edges \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: composability-exploiter (Composability Exploiter) did NOT run entry_point_analyzer \u2014 reason: no reason given",
+    "TOOL_COVERAGE: composability-exploiter (Composability Exploiter) did NOT run audit_context_building \u2014 reason: no reason given",
+    "TOOL_COVERAGE: composability-exploiter (Composability Exploiter) did not report on conditional tool token_integration_analyzer \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: composability-exploiter (Composability Exploiter) did not report on conditional tool sharp_edges \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: price-distorter (Cross-Venue Price Distorter) did NOT run entry_point_analyzer \u2014 reason: no reason given",
+    "TOOL_COVERAGE: price-distorter (Cross-Venue Price Distorter) did NOT run audit_context_building \u2014 reason: no reason given",
+    "TOOL_COVERAGE: price-distorter (Cross-Venue Price Distorter) did not report on conditional tool token_integration_analyzer \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: price-distorter (Cross-Venue Price Distorter) did not report on conditional tool sharp_edges \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: insolvency-engineer (Insolvency Engineer) did NOT run entry_point_analyzer \u2014 reason: no reason given",
+    "TOOL_COVERAGE: insolvency-engineer (Insolvency Engineer) did NOT run audit_context_building \u2014 reason: no reason given",
+    "TOOL_COVERAGE: insolvency-engineer (Insolvency Engineer) did not report on conditional tool token_integration_analyzer \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: insolvency-engineer (Insolvency Engineer) did not report on conditional tool sharp_edges \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: extension-hijacker (Extension Hijacker) did NOT run entry_point_analyzer \u2014 reason: no reason given",
+    "TOOL_COVERAGE: extension-hijacker (Extension Hijacker) did NOT run audit_context_building \u2014 reason: no reason given",
     "TOOL_COVERAGE: extension-hijacker (Extension Hijacker) did not report on conditional tool token_integration_analyzer \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: extension-hijacker (Extension Hijacker) did not report on conditional tool sharp_edges \u2014 add to tools_run with ran=false and reason if not applicable",
+    "LENS_COVERAGE: unknown (unknown) has no lens_coverage in metadata \u2014 likely did NOT apply value lifecycle lenses",
     "LENS_COVERAGE: state-desync (State Desync Operator) has no lens_coverage in metadata \u2014 likely did NOT apply value lifecycle lenses",
-    "LENS_COVERAGE: precision-sniper (Precision Math Sniper) has no lens_coverage in metadata \u2014 likely did NOT apply value lifecycle lenses"
+    "LENS_COVERAGE: auth-forger (Authorization & Settlement Forger) has no lens_coverage in metadata \u2014 likely did NOT apply value lifecycle lenses",
+    "LENS_COVERAGE: math-deep-diver (Math Deep-Diver) has no lens_coverage in metadata \u2014 likely did NOT apply value lifecycle lenses",
+    "LENS_COVERAGE: cross-boundary (Cross-Boundary Tracer) has no lens_coverage in metadata \u2014 likely did NOT apply value lifecycle lenses",
+    "LENS_COVERAGE: composability-exploiter (Composability Exploiter) has no lens_coverage in metadata \u2014 likely did NOT apply value lifecycle lenses",
+    "LENS_COVERAGE: price-distorter (Cross-Venue Price Distorter) has no lens_coverage in metadata \u2014 likely did NOT apply value lifecycle lenses",
+    "LENS_COVERAGE: insolvency-engineer (Insolvency Engineer) has no lens_coverage in metadata \u2014 likely did NOT apply value lifecycle lenses",
+    "LENS_COVERAGE: extension-hijacker (Extension Hijacker) has no lens_coverage in metadata \u2014 likely did NOT apply value lifecycle lenses"
   ],
-  "exploit_clusters": [
-    {
-      "primitive": "callback_exploitation",
-      "boundary": "cross_contract:AMMStandardHook.sol+CreatorHookSettingsRegistry.sol",
-      "asset": "None (self-healing, gas cost only)",
-      "findings": [
-        {
-          "id": "PRECISION-002",
-          "title": "setTokenSettings passes unmodified settings to hook sync \u2014 initialized field may be false (CP-004)",
-          "severity": "low",
-          "confidence": "high",
-          "status": "confirmed",
-          "category": "state-desync",
-          "description": "CreatorHookSettingsRegistry.setTokenSettings() creates memSettings with initialized=true for registry storage (line 377-378) but passes original calldata settings (without initialized=true) to hook sync at line 397. AMMStandardHook.registryUpdateTokenSettings() stores settings with potentially initialized=false (line 522). This causes a sync gap between registry and hook cached state.",
-          "impact": "Low. AMMStandardHook._getOrFetchTokenSettings() self-heals: when initialized=false, it re-fetches from registry and re-caches correctly (lines 908-914). Window of inconsistency is brief (until next swap or hook call on that token). No funds at risk \u2014 only causes an unnecessary SLOAD on next access.",
-          "proof_sketch": "1. Creator calls setTokenSettings(token, settings) with settings.initialized=false. 2. Registry stores with initialized=true. 3. Hook stores with initialized=false. 4. Next _getOrFetchTokenSettings(token) sees initialized=false \u2192 re-fetches from registry \u2192 gets correct settings \u2192 re-caches with initialized=true.",
-          "victim": "None (self-healing, gas cost only)",
-          "extractable_value": "0 \u2014 no extraction path. Extra SLOAD cost per affected token on next access.",
-          "attack_sequence": [
-            "1. Admin calls setTokenSettings with initialized=false in settings struct",
-            "2. Registry caches with initialized=true, hook caches with initialized=false",
-            "3. Brief window where hook has stale state",
-            "4. Self-heals on next _getOrFetchTokenSettings call"
-          ],
-          "test_file": null,
-          "test_passes": false,
-          "prerequisites": [
-            "Admin/owner must call setTokenSettings with initialized=false"
-          ],
-          "repos": [
-            "lbamm-hooks-and-handlers"
-          ],
-          "contracts": [
-            "AMMStandardHook.sol",
-            "CreatorHookSettingsRegistry.sol"
-          ],
-          "functions": [
-            "_getOrFetchTokenSettings()",
-            "registryUpdateTokenSettings()",
-            "setTokenSettings()"
-          ],
-          "lines": {
-            "CreatorHookSettingsRegistry.sol": [
-              376,
-              377,
-              378,
-              397
-            ],
-            "AMMStandardHook.sol": [
-              519,
-              522,
-              908,
-              913,
-              914
-            ]
-          },
-          "keywords": [
-            "settings-sync",
-            "initialized",
-            "state-desync",
-            "CP-004"
-          ],
-          "_source_agent": "precision-sniper",
-          "consensus_count": 1,
-          "contributing_agents": [
-            "precision-sniper"
-          ],
-          "canonical_id": "HOOK-002"
-        }
-      ],
-      "agent_count": 1,
-      "max_confidence": 90,
-      "has_test": false
-    },
-    {
-      "primitive": "price_manipulation",
-      "boundary": "cross_contract:AMMStandardHook.sol+CLOBTransferHandler.sol+SqrtPriceCalculator.sol",
-      "asset": "Liquidity providers in pools with CLOB handler and token hooks that use validateHandlerOrder without minimum pricing bound",
-      "findings": [
-        {
-          "id": "PRECISION-001",
-          "title": "validateHandlerOrder missing zero-price check allows overflow bypass of pricing bounds (CP-003)",
-          "severity": "medium",
-          "confidence": "medium",
-          "status": "confirmed",
-          "category": "price-manipulation",
-          "description": "SqrtPriceCalculator.computeRatioX96() returns 0 on uint160 overflow (line 52). In AMMStandardHook._enforceTokenHooks(), this is caught by an explicit zero check (line 847). However, AMMStandardHook.validateHandlerOrder() (line 215) does NOT have this zero check. If minSqrtPriceX96 == 0 (no minimum bound set), the zero return value passes the bounds check, allowing a swap at an undefined price.",
-          "impact": "CLOB handler orders via CLOBTransferHandler._validateTokenHooks() could bypass pricing bounds if token amounts cause computeRatioX96 overflow and no minimum bound is configured. Attacker could execute trades at manipulated effective prices.",
-          "proof_sketch": "1. computeRatioX96(very_large_amount1, 1) \u2192 overflow \u2192 returns 0. 2. validateHandlerOrder called with sqrtPriceX96=0. 3. If minSqrtPriceX96==0, check `0 != 0 && 0 < min` is false \u2192 passes. 4. If maxSqrtPriceX96 != 0, check `0 > max` is false \u2192 passes. Both bounds bypassed.",
-          "victim": "Liquidity providers in pools with CLOB handler and token hooks that use validateHandlerOrder without minimum pricing bound",
-          "extractable_value": "Depends on pool liquidity depth. Constrained by CLOB order book pricing \u2014 attacker cannot freely choose both amounts, they come from CLOBHelper.calculateFixedInput(). Likely low practical EV due to CLOB constraints.",
-          "attack_sequence": [
-            "1. Find pool pair where token has validateHandlerOrderHook=true and minSqrtPriceX96==0",
-            "2. Create CLOB order with extreme price ratio that causes computeRatioX96 overflow",
-            "3. Execute order via CLOBTransferHandler \u2014 validateHandlerOrder receives sqrtPriceX96=0",
-            "4. Zero passes both min and max bounds checks",
-            "5. Order executes at price outside intended bounds"
-          ],
-          "test_file": null,
-          "test_passes": false,
-          "prerequisites": [
-            "CLOB handler with validateHandlerOrder enabled",
-            "No minimum pricing bound set (minSqrtPriceX96 == 0)",
-            "Amount ratio that causes computeRatioX96 to overflow uint160"
-          ],
-          "repos": [
-            "lbamm-hooks-and-handlers"
-          ],
-          "contracts": [
-            "AMMStandardHook.sol",
-            "CLOBTransferHandler.sol",
-            "SqrtPriceCalculator.sol"
-          ],
-          "functions": [
-            "_validateTokenHooks()",
-            "computeRatioX96()",
-            "validateHandlerOrder()"
-          ],
-          "lines": {
-            "AMMStandardHook.sol": [
-              215,
-              216,
-              217,
-              218,
-              221
-            ],
-            "SqrtPriceCalculator.sol": [
-              51,
-              52,
-              53
-            ]
-          },
-          "keywords": [
-            "zero-price-bypass",
-            "overflow",
-            "pricing-bounds",
-            "CLOB",
-            "CP-003"
-          ],
-          "_source_agent": "precision-sniper",
-          "consensus_count": 1,
-          "contributing_agents": [
-            "precision-sniper"
-          ],
-          "canonical_id": "HOOK-001"
-        }
-      ],
-      "agent_count": 1,
-      "max_confidence": 60,
-      "has_test": false
-    }
-  ],
+  "exploit_clusters": [],
   "claims": [
     {
-      "agent_id": "price-distorter",
-      "type": "ruled_out",
-      "id": "RO-PD-01",
-      "hypothesis": "Malicious SingleProvider hook returns fake price",
-      "target": "SingleProviderPoolType.swapByInput() L323",
-      "verdict": "skip \u2014 self-inflicted, no external victim",
-      "_source_agent": "price-distorter"
-    },
-    {
-      "agent_id": "price-distorter",
-      "type": "ruled_out",
-      "id": "RO-PD-02",
-      "hypothesis": "snapPrice sandwich in DynamicHelper",
-      "target": "DynamicHelper.snapPrice() L237",
-      "verdict": "skip \u2014 no extraction path when liquidity is 0",
-      "_source_agent": "price-distorter"
-    },
-    {
-      "agent_id": "price-distorter",
-      "type": "ruled_out",
-      "id": "RO-PD-03",
-      "hypothesis": "Direct swap bypasses pricing bounds (CP-004)",
-      "target": "AMMStandardHook._validatePricingBounds()",
-      "verdict": "skip \u2014 known finding, self-inflicted config",
-      "_source_agent": "price-distorter"
-    },
-    {
-      "agent_id": "price-distorter",
-      "type": "ruled_out",
-      "id": "RO-PD-04",
-      "hypothesis": "Round-trip rounding extraction in DynamicPool",
-      "target": "SwapMath.computeSwapByInputStep()",
-      "verdict": "skip \u2014 rounding consistently favors protocol",
-      "_source_agent": "price-distorter"
-    },
-    {
-      "agent_id": "price-distorter",
-      "type": "ruled_out",
-      "id": "RO-PD-05",
-      "hypothesis": "Round-trip rounding extraction in SingleProviderPool",
-      "target": "SingleProviderHelper.calculateFixedInput() L101",
-      "verdict": "skip \u2014 rounding consistently favors protocol",
-      "_source_agent": "price-distorter"
-    },
-    {
-      "agent_id": "price-distorter",
-      "type": "ruled_out",
-      "id": "RO-PD-06",
-      "hypothesis": "Flash loan + swap reentrancy price manipulation",
-      "target": "ModuleLiquidity.flashLoan() L257",
-      "verdict": "skip \u2014 by-design, no profit path",
-      "_source_agent": "price-distorter"
-    },
-    {
-      "agent_id": "price-distorter",
-      "type": "ruled_out",
-      "id": "RO-PD-07",
-      "hypothesis": "Flash loan fee token mismatch",
-      "target": "AMMModule._flashLoan() L3296-3378",
-      "verdict": "skip \u2014 denomination consistent, no external victim",
-      "_source_agent": "price-distorter"
-    },
-    {
-      "agent_id": "price-distorter",
-      "type": "ruled_out",
-      "id": "RO-PD-08",
-      "hypothesis": "Stale oracle / external pricing hook",
-      "target": "ISingleProviderPoolHook.getPoolPriceForSwap()",
-      "verdict": "skip \u2014 oracle quality is hook developer responsibility",
-      "_source_agent": "price-distorter"
-    },
-    {
-      "agent_id": "price-distorter",
-      "type": "ruled_out",
-      "id": "RO-PD-09",
-      "hypothesis": "Slippage/deadline bypass",
-      "target": "AMMModule._finalizeSwapCollectFundsAndDisburse() L2156",
-      "verdict": "skip \u2014 slippage protection enforced correctly",
-      "_source_agent": "price-distorter"
-    },
-    {
-      "agent_id": "price-distorter",
-      "type": "ruled_out",
-      "id": "RO-PD-10",
-      "hypothesis": "Reentrancy during queued hook fee transfers",
-      "target": "AMMModule._executeQueuedHookFeesByHookTransfers() L3183",
-      "verdict": "skip \u2014 state fully committed before fee transfers",
-      "_source_agent": "price-distorter"
-    },
-    {
-      "agent_id": "price-distorter",
-      "type": "mandatory_probe",
-      "id": "MP-01",
-      "name": "Dust-loop extraction",
-      "result": "ruled_out",
-      "detail": "Rounding favors protocol in all 3 pool types",
-      "_source_agent": "price-distorter"
-    },
-    {
-      "agent_id": "price-distorter",
-      "type": "mandatory_probe",
-      "id": "MP-02",
-      "name": "Forged hook caller",
-      "result": "ruled_out",
-      "detail": "onlyAMM() modifier on all pool type entry points",
-      "_source_agent": "price-distorter"
-    },
-    {
-      "agent_id": "price-distorter",
-      "type": "mandatory_probe",
-      "id": "MP-03",
-      "name": "Transient-slot theft",
-      "result": "ruled_out",
-      "detail": "Known CP-004, self-inflicted config",
-      "_source_agent": "price-distorter"
-    },
-    {
-      "agent_id": "price-distorter",
-      "type": "mandatory_probe",
-      "id": "MP-04",
-      "name": "Permit mutation",
-      "result": "ruled_out",
-      "detail": "limitAmount protects signer minimum output regardless of feeOnTop",
-      "_source_agent": "price-distorter"
-    },
-    {
-      "agent_id": "price-distorter",
-      "type": "mandatory_probe",
-      "id": "MP-05",
-      "name": "Storage-slot collision",
-      "result": "ruled_out",
-      "detail": "Pool types use external calls with isolated storage",
-      "_source_agent": "price-distorter"
-    },
-    {
-      "agent": "state-desync",
-      "thesis": "Overflow computeRatioX96 to bypass validateHandlerOrder pricing bounds, place CLOB order at invalid price, fill it to extract from counterparty",
-      "victim": "CLOB order makers who set max price bounds",
-      "asset": "ERC20 tokens in CLOB orders",
+      "agent": "precision-sniper",
+      "thesis": "uint128 truncation in DynamicHelper._getTokensOwed when feeGrowthInside delta * liquidity / Q128 exceeds uint128.max",
+      "victim": "LPs with large positions",
+      "asset": "Uncollected swap fees",
       "estimated_ev": 0,
       "status": "ruled_out",
-      "test_file": "lbamm-hooks-and-handlers/test/audit/poc/ValidateHandlerOrderZeroPrice.t.sol",
-      "ts": "2026-03-14T15:30:00Z",
-      "_source_agent": "state-desync"
-    },
-    {
-      "agent": "state-desync",
-      "thesis": "Read stale transient storage from prior direct swap during CLOB settlement callback, compute wrong price, extract difference",
-      "victim": "Direct swap counterparty or CLOB makers",
-      "asset": "Swap output tokens",
-      "estimated_ev": 0,
-      "status": "ruled_out",
-      "test_file": "lbamm-hooks-and-handlers/test/audit/poc/TransientSlotTheft.t.sol",
-      "ts": "2026-03-14T15:35:00Z",
-      "_source_agent": "state-desync"
-    },
-    {
-      "agent": "state-desync",
-      "thesis": "Re-enter AMM during transfer handler callback to observe pre-finalization reserves, arbitrage the difference via flash loan",
-      "victim": "Pool liquidity providers",
-      "asset": "LP tokens or pool reserves",
-      "estimated_ev": 0,
-      "status": "ruled_out",
-      "test_file": "lbamm-hooks-and-handlers/test/audit/poc/TransientSlotTheft.t.sol",
-      "ts": "2026-03-14T15:40:00Z",
-      "_source_agent": "state-desync"
+      "test_file": "amm-pool-type-dynamic/test/audit/AuditPrecisionSniperW1V2.t.sol::test_C8_tokensOwed_noTruncation",
+      "ts": "2026-03-16T17:00:00Z",
+      "_source_agent": "precision-sniper"
     },
     {
       "agent": "precision-sniper",
-      "thesis": "Overflow computeRatioX96 to return 0, bypass validateHandlerOrder pricing bounds on CLOB orders",
-      "victim": "LPs in pools with CLOB handler and no minimum pricing bound",
+      "thesis": "computeRatioX96 overflow returns 0 allowing zero-price bypass in downstream consumers",
+      "victim": "Token creators with pricing bounds",
+      "asset": "Trading rule enforcement",
+      "estimated_ev": 0,
+      "status": "ruled_out",
+      "test_file": "amm-pool-type-dynamic/test/audit/AuditPrecisionSniperW1V2.t.sol::test_C19_computeRatioX96_overflow",
+      "ts": "2026-03-16T17:00:00Z",
+      "_source_agent": "precision-sniper"
+    },
+    {
+      "agent": "precision-sniper",
+      "thesis": "Round-trip swap profit via rounding direction mismatch between input and output fee calculations",
+      "victim": "LPs providing liquidity",
       "asset": "Pool reserves",
       "estimated_ev": 0,
-      "status": "confirmed",
-      "test_file": null,
-      "ts": "2026-03-14T15:30:00Z",
+      "status": "ruled_out",
+      "test_file": "amm-pool-type-dynamic/test/audit/AuditPrecisionSniperW1V2.t.sol::test_C23_noRoundTripProfit",
+      "ts": "2026-03-16T17:00:00Z",
       "_source_agent": "precision-sniper"
     },
     {
-      "agent": "precision-sniper",
-      "thesis": "Settings sync gap: setTokenSettings passes unmodified settings to hook sync, initialized may be false",
-      "victim": "Token creators relying on hook enforcement",
-      "asset": "Token value",
-      "estimated_ev": 0,
-      "status": "confirmed",
-      "test_file": null,
-      "ts": "2026-03-14T15:30:00Z",
-      "_source_agent": "precision-sniper"
-    },
-    {
-      "agent": "precision-sniper",
-      "thesis": "Compound 100+ dust swaps in Fixed pool to harvest rounding differences from height split",
-      "victim": "LPs in Fixed pools",
-      "asset": "Pool reserves (dust per swap)",
+      "thesis": "Pool type returns amountOut > actual tokens moved, Core credits user excess",
+      "victim": "AMM liquidity providers",
+      "asset": "pool reserve tokens",
       "estimated_ev": 0,
       "status": "ruled_out",
-      "test_file": null,
-      "ts": "2026-03-14T15:00:00Z",
-      "_source_agent": "precision-sniper"
+      "reason": "_safeDecrementUint128 underflow check at AMMModule.sol:3520 catches amountOut > reserve. Core also validates balance before/after at line 2208.",
+      "_source_agent": "cross-boundary"
     },
     {
-      "agent": "auth-forger",
-      "thesis": "Forge permit with arbitrary feeOnTop (unsigned field) to drain extra tokens",
-      "victim": "permit signer",
-      "asset": "ERC20 tokens",
+      "thesis": "Transfer handler called with mismatched token pair steals from settlement",
+      "victim": "swap counterparty",
+      "asset": "input tokens",
       "estimated_ev": 0,
       "status": "ruled_out",
-      "test_file": "",
-      "ts": "2026-03-14T14:30:00Z",
-      "_source_agent": "auth-forger"
+      "reason": "ammHandleTransfer requires msg.sender==AMM (line 230 CLOBTransferHandler, line 115 PermitTransferHandler). Balance check at AMMModule:2208 catches under-delivery.",
+      "_source_agent": "cross-boundary"
     },
     {
-      "agent": "auth-forger",
-      "thesis": "Operator precedence bug in pricing bounds setting silently unsets bounds",
-      "victim": "token creators",
-      "asset": "LP funds (unprotected prices)",
+      "thesis": "Reentrancy through wrapped native deposit/refund corrupts swap state",
+      "victim": "AMM",
+      "asset": "wrapped native tokens",
       "estimated_ev": 0,
       "status": "ruled_out",
-      "test_file": "test/audit/poc/PricingBoundsOperatorPrecedence.t.sol",
-      "ts": "2026-03-14T14:40:00Z",
-      "_source_agent": "auth-forger"
+      "reason": "Balance-before/after check at AMMModule:2208 validates exact amount transferred. The _depositWrappedNativeAndRefundExcess refund callback cannot manipulate the AMM's balance because WETH deposit is atomic and the excess refund goes to executor.",
+      "_source_agent": "cross-boundary"
     },
     {
-      "agent": "auth-forger",
-      "thesis": "CLOB mulDivRoundingUp accumulates rounding leak over many small fills",
-      "victim": "swap executor",
-      "asset": "output token dust",
-      "estimated_ev": 0,
+      "id": "EH-T1",
+      "thesis": "Malicious pool type returns inflated amountOut to drain pool reserves",
       "status": "ruled_out",
-      "test_file": "test/audit/poc/CLOBRoundingExploit.t.sol",
-      "ts": "2026-03-14T14:50:00Z",
-      "_source_agent": "auth-forger"
-    },
-    {
-      "agent": "extension-hijacker",
-      "thesis": "Register malicious pool type that returns inflated amountOut to steal from LP reserves",
-      "victim": "LPs who deposit into malicious pool",
-      "asset": "LP-deposited tokens",
-      "estimated_ev": 0,
-      "status": "ruled_out",
-      "test_file": null,
-      "ts": "2026-03-14T15:00:00Z",
+      "confidence": "high",
+      "evidence": "Pool type address must have 6 leading zero bytes (AMMModule.sol:109). _safeDecrementUint128 reverts if amountOut > reserve (AMMModule.sol:1437). Balance check at AMMModule.sol:2208 verifies actual ERC20 transfer.",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_singleSwapInputBased",
+        "_finalizeSwapCollectFundsAndDisburse"
+      ],
       "_source_agent": "extension-hijacker"
     },
     {
-      "agent": "extension-hijacker",
-      "thesis": "Deploy malicious transfer handler that skips actual token transfer while AMM believes funds arrived",
-      "victim": "AMM protocol reserves",
-      "asset": "Pool reserve tokens",
-      "estimated_ev": 0,
+      "id": "EH-T2",
+      "thesis": "Malicious transfer handler skips token transfer but core believes funds arrived",
       "status": "ruled_out",
-      "test_file": null,
-      "ts": "2026-03-14T15:00:00Z",
+      "confidence": "high",
+      "evidence": "Core checks balanceInBefore + swapCache.amountIn != balanceInAfter at AMMModule.sol:2208. Non-transferring handler caught by balance verification.",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_finalizeSwapCollectFundsAndDisburse"
+      ],
       "_source_agent": "extension-hijacker"
     },
     {
-      "agent": "extension-hijacker",
-      "thesis": "Call hook functions directly (not via AMM) to get credited without legitimate swap",
-      "victim": "AMM protocol",
-      "asset": "Hook fee tokens",
-      "estimated_ev": 0,
+      "id": "EH-T3",
+      "thesis": "Bypass pricing bounds via computeRatioX96 overflow in validateHandlerOrder",
       "status": "ruled_out",
-      "test_file": null,
-      "ts": "2026-03-14T15:00:00Z",
+      "confidence": "high",
+      "evidence": "computeRatioX96 returns 0 on overflow (SqrtPriceCalculator.sol:51-53). validateHandlerOrder missing zero check vs _validatePricingBounds which has it (line 847). But CLOB fills go through AMM swap path which has the check. Low severity only (CP-003). Confirmed via Halmos symbolic execution.",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol",
+        "SqrtPriceCalculator.sol"
+      ],
+      "functions": [
+        "validateHandlerOrder",
+        "computeRatioX96",
+        "_validatePricingBounds"
+      ],
+      "_source_agent": "extension-hijacker"
+    },
+    {
+      "id": "EH-T4",
+      "thesis": "Storage slot collision across diamond facets corrupts pool accounting",
+      "status": "ruled_out",
+      "confidence": "high",
+      "evidence": "Slither storage layout confirms all 4 modules have 0 local slots. All state via LBAMMStorage.appStorage() at slot 0x9A1D. No collision possible.",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol",
+        "ModuleAdmin.sol",
+        "ModuleFeeCollection.sol",
+        "ModuleLiquidity.sol"
+      ],
+      "functions": [],
+      "_source_agent": "extension-hijacker"
+    },
+    {
+      "id": "EH-T5",
+      "thesis": "Forged hook caller triggers hook logic with fake parameters to extract value",
+      "status": "ruled_out",
+      "confidence": "high",
+      "evidence": "All state-changing hooks check _requireCallerIsAMM() (lines 110, 159, 253, 320, 366, 386). validateHandlerOrder is view-only. Confirmed via Medusa fuzzing (10000 sequences, 0 failures).",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "beforeSwap",
+        "afterSwap",
+        "validateAddLiquidity",
+        "validateRemoveLiquidity"
+      ],
       "_source_agent": "extension-hijacker"
     }
   ],
-  "corroborated_theses": [
-    {
-      "thesis": "",
-      "agents": [
-        "price-distorter",
-        "price-distorter",
-        "price-distorter",
-        "price-distorter",
-        "price-distorter",
-        "price-distorter",
-        "price-distorter",
-        "price-distorter",
-        "price-distorter",
-        "price-distorter",
-        "price-distorter",
-        "price-distorter",
-        "price-distorter",
-        "price-distorter",
-        "price-distorter"
-      ],
-      "count": 15
-    }
-  ]
+  "corroborated_theses": []
 }

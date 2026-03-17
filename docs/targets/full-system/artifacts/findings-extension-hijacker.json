@@ -1,0 +1,473 @@
+{
+  "agent_name": "extension-hijacker",
+  "agent_role": "Extension Hijacker",
+  "wave": 1,
+  "findings": [],
+  "ruled_out_vectors": [
+    {
+      "vector": "KV-1: Zero-price bypass in validateHandlerOrder - computeRatioX96 returns 0 on overflow, validateHandlerOrder does not check sqrtPriceX96==0 (unlike _validatePricingBounds which does at line 847)",
+      "why_ruled_out": "Low severity only. The missing zero-check in validateHandlerOrder (AMMStandardHook.sol:198) allows a CLOB order to pass max-price bounds when sqrtPriceX96 overflows to 0 and only maxSqrtPriceX96 is set. However: (1) the CLOB order fill goes through AMM swap which has the zero check, (2) the maker placing the order is the one at risk of bad pricing, (3) requires extreme amount ratios to trigger overflow. Already documented as CP-003.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditExtensionHijackerWave1.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol",
+        "CLOBTransferHandler.sol",
+        "SqrtPriceCalculator.sol"
+      ],
+      "functions": [
+        "_enforceTokenHooks",
+        "validateHandlerOrder",
+        "computeRatioX96"
+      ],
+      "keywords": [
+        "sqrtPriceX96",
+        "zero",
+        "bypass",
+        "overflow",
+        "pricing-bounds",
+        "computeRatioX96",
+        "validateHandlerOrder"
+      ]
+    },
+    {
+      "vector": "KV-2: Direct handler call bypassing pricing enforcement - calling CLOBTransferHandler.executeSwap() directly to bypass beforeSwap/afterSwap hooks",
+      "why_ruled_out": "Both CLOBTransferHandler.ammHandleTransfer (line 230) and PermitTransferHandler.ammHandleTransfer (line 115) check msg.sender == AMM. Direct external calls revert with CallbackMustBeFromAMM. No bypass path exists.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditExtensionHijackerWave1.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "CLOBTransferHandler.sol",
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "executeSwap",
+        "beforeSwap",
+        "afterSwap"
+      ],
+      "keywords": [
+        "pricing",
+        "bypass",
+        "direct",
+        "handler",
+        "direct-swap",
+        "pricing-bounds",
+        "flag-dependency"
+      ]
+    },
+    {
+      "vector": "KV-3: Settings sync gap - CLOBTransferHandler.setTokenSettings() leaves stale memSettings in CreatorHookSettingsRegistry",
+      "why_ruled_out": "This is CP-005 (known Low severity). CreatorHookSettingsRegistry.setTokenSettings modifies memSettings locally then syncs the original variable. Impact is gas waste from redundant storage writes, not a security vulnerability. The final stored data is correct.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditExtensionHijackerWave1.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "CLOBTransferHandler.sol",
+        "CreatorHookSettingsRegistry.sol"
+      ],
+      "functions": [
+        "setTokenSettings"
+      ],
+      "keywords": [
+        "setTokenSettings",
+        "sync",
+        "stale",
+        "initialized",
+        "memSettings",
+        "gas-waste"
+      ]
+    },
+    {
+      "vector": "KV-4: Transient storage leak - AMMStandardHook.beforeSwap() writes to DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT but slot not cleared on all paths",
+      "why_ruled_out": "This is CP-001/HOOK-001 (known Low severity). The slot is written in beforeSwap (line 839) and read in afterSwap (line 842-844) for direct swaps only. Not cleared after use, leaving stale data for next same-tx operation. Requires specific flag combinations (write-disabled + read-enabled) which is unlikely in practice. No extraction path demonstrated.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditExtensionHijackerWave1.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMHooksTransferHandler.sol",
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "beforeSwap"
+      ],
+      "keywords": [
+        "transient",
+        "tstore",
+        "clear",
+        "direct",
+        "swap",
+        "transient-storage",
+        "stale-read",
+        "direct-swap",
+        "DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT"
+      ]
+    },
+    {
+      "vector": "H1: Malicious pool type returns fake amountOut to steal from LPs",
+      "why_ruled_out": "Blocked at multiple levels: (1) pool type address must have 6 leading zero bytes (AMMModule.sol:109), (2) returned poolId must encode correct poolType + fee (AMMModule.sol:124-129), (3) _safeDecrementUint128 reverts if amountOut > reserve (AMMModule.sol:1437), (4) balance check on input ensures real transfer (AMMModule.sol:2208). Even if pool type lies about amounts, reserve underflow catches over-drain.",
+      "test_file": "lbamm-core/test/AuditExtensionHijacker.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_singleSwapInputBased",
+        "swapByInput"
+      ],
+      "keywords": [
+        "pool-type",
+        "fake-amounts",
+        "amountOut",
+        "reserve-underflow"
+      ]
+    },
+    {
+      "vector": "H2: Malicious transfer handler skips actual token transfer",
+      "why_ruled_out": "Core verifies actual ERC20 balance change at AMMModule.sol:2208: if (balanceInBefore + swapCache.amountIn != balanceInAfter) revert LBAMM__TokenInTransferFailed. A handler that doesn't transfer tokens will be caught because the balance won't increase by amountIn.",
+      "test_file": "lbamm-core/test/AuditExtensionHijacker.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_finalizeSwapCollectFundsAndDisburse"
+      ],
+      "keywords": [
+        "handler",
+        "skip-transfer",
+        "balance-check"
+      ]
+    },
+    {
+      "vector": "H3: Malicious hook manipulates price limits to extract from swappers",
+      "why_ruled_out": "Hook fee is bounded by swap amount at AMMModule.sol:2616 (if feeAmount > swapAmountIn revert LBAMM__InsufficientInputForFees). Additionally, users set maxHookFee0/maxHookFee1 in their liquidity params, capping hook extraction.",
+      "test_file": "lbamm-core/test/AuditExtensionHijacker.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_applySwapByInputInputFees",
+        "_executeBeforeSwapHooks"
+      ],
+      "keywords": [
+        "hook-fee",
+        "price-manipulation",
+        "excessive-fee"
+      ]
+    },
+    {
+      "vector": "H4: Pool type address collision via CREATE2 mining",
+      "why_ruled_out": "Pool type address requires 6 leading zero bytes (48 bits). Remaining 112 bits must match to collide. This requires 2^112 work which is computationally infeasible.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditExtensionHijackerWave1.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_createPool"
+      ],
+      "keywords": [
+        "CREATE2",
+        "address-collision",
+        "pool-type-mask"
+      ]
+    },
+    {
+      "vector": "H5: UUPS/beacon implementation takeover before initializer",
+      "why_ruled_out": "SecureProxy uses EIP-1967 style, not UUPS. Upgrade requires TIER_ADMIN pause + SECURE_PROXY_ADMIN_ROLE. No uninitialized implementation pattern exists.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditExtensionHijackerWave1.t.sol",
+      "repos": [
+        "secure-proxy"
+      ],
+      "contracts": [
+        "SecureProxy.sol"
+      ],
+      "functions": [
+        "secureUpgrade"
+      ],
+      "keywords": [
+        "UUPS",
+        "proxy-takeover",
+        "initializer"
+      ]
+    },
+    {
+      "vector": "H6: Diamond selector collision via malicious facet",
+      "why_ruled_out": "LimitBreakAMM uses static delegateCallPure with hardcoded immutable module addresses. No dynamic facet management (addFacet/removeFacet). Selector routing is compile-time, not runtime. No attack surface for selector collision.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditExtensionHijackerWave1.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "LimitBreakAMM.sol"
+      ],
+      "functions": [
+        "delegateCallPure"
+      ],
+      "keywords": [
+        "diamond",
+        "selector-collision",
+        "facet"
+      ]
+    },
+    {
+      "vector": "H7: CREATE2 destroy and redeploy with different code at trusted address",
+      "why_ruled_out": "Solidity 0.8.24 deprecates selfdestruct. No selfdestruct in any contract in scope. Pool type address constraint (6 zero bytes) adds additional barrier. CREATE2 redeploy attack is not applicable.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditExtensionHijackerWave1.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [],
+      "keywords": [
+        "CREATE2",
+        "selfdestruct",
+        "redeploy"
+      ]
+    },
+    {
+      "vector": "H8: Storage slot collision across diamond facets corrupts accounting",
+      "why_ruled_out": "Slither storage layout analysis confirms all 4 modules (AMMModule, ModuleAdmin, ModuleFeeCollection, ModuleLiquidity) have 0 local storage slots. All state goes through shared diamond storage at slot 0x9A1D via LBAMMStorage.appStorage(). No collision possible.",
+      "test_file": "lbamm-core/test/AuditExtensionHijacker.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol",
+        "ModuleAdmin.sol",
+        "ModuleFeeCollection.sol",
+        "ModuleLiquidity.sol"
+      ],
+      "functions": [],
+      "keywords": [
+        "storage-collision",
+        "diamond",
+        "0x9A1D"
+      ]
+    },
+    {
+      "vector": "H9: Add malicious facet without governance for code injection",
+      "why_ruled_out": "No facet management functionality exists. Module addresses are immutable constructor arguments set at deployment. No addFacet/removeFacet/replaceFacet functions. Code injection via facet manipulation is not possible.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditExtensionHijackerWave1.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "LimitBreakAMM.sol"
+      ],
+      "functions": [],
+      "keywords": [
+        "facet-management",
+        "code-injection",
+        "governance"
+      ]
+    },
+    {
+      "vector": "Dust-loop extraction via 100+ tiny swaps",
+      "why_ruled_out": "Protocol uses mulDivRoundingUp consistently, rounding against user in every swap step (INV-SW03). Each tiny swap loses dust TO the pool, not FROM it. 100 swaps of 1 wei each would cost the attacker gas while losing rounding dust to protocol.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditExtensionHijackerWave1.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [],
+      "keywords": [
+        "dust-loop",
+        "rounding",
+        "tiny-swap"
+      ]
+    },
+    {
+      "vector": "Forged hook caller - call hook directly with fake pool identity",
+      "why_ruled_out": "All state-changing hook functions in AMMStandardHook check _requireCallerIsAMM() (lines 110, 159, 253, 320, 366, 386). validateHandlerOrder (line 198) has no caller check but is view-only and cannot modify state. External callers cannot invoke hooks to be credited without a legitimate swap.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditExtensionHijackerWave1.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "beforeSwap",
+        "afterSwap",
+        "validateHandlerOrder"
+      ],
+      "keywords": [
+        "hook-access-control",
+        "forged-caller",
+        "_requireCallerIsAMM"
+      ]
+    },
+    {
+      "vector": "Transient-slot theft via cross-path stale read",
+      "why_ruled_out": "DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT is only used in _validatePricingBounds for direct swaps (poolType == address(0)). The stale data concern (HOOK-001/CP-001) requires same-tx multi-operation with specific flag combo. No extraction path demonstrated - the slot only affects price bounds enforcement, not actual token movements.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditExtensionHijackerWave1.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "_validatePricingBounds"
+      ],
+      "keywords": [
+        "transient-slot",
+        "stale-read",
+        "HOOK-001"
+      ]
+    },
+    {
+      "vector": "Permit mutation - replay with mutated unsigned fields (feeOnTop, recipient)",
+      "why_ruled_out": "SWAP_TYPEHASH includes recipient, amountSpecified, limitAmount, tokenOut, exchangeFee. feeOnTop is intentionally unsigned but limitAmount caps total input exposure. Executor setting max feeOnTop still bounded by limitAmount. Previously submitted as finding #8 and rejected.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditExtensionHijackerWave1.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "PermitTransferHandler.sol"
+      ],
+      "functions": [
+        "_executeFillOrKillPermit",
+        "_executePartialFillPermit"
+      ],
+      "keywords": [
+        "permit",
+        "feeOnTop",
+        "unsigned-field",
+        "limitAmount"
+      ]
+    },
+    {
+      "vector": "INV-H01 hook callback access control",
+      "why_ruled_out": "All hook functions verify msg.sender == AMM via _requireCallerIsAMM(). Tested via Medusa fuzzing (10000 sequences, 0 failures). validateHandlerOrder is view-only exception.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditExtensionHijackerWave1.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "beforeSwap",
+        "afterSwap",
+        "validateAddLiquidity",
+        "validateRemoveLiquidity"
+      ],
+      "keywords": [
+        "INV-H01",
+        "access-control",
+        "hook-callback"
+      ]
+    }
+  ],
+  "theft_theses": [
+    {
+      "thesis": "Malicious pool type returns inflated amountOut to drain pool reserves",
+      "victim": "LPs in the pool",
+      "asset": "Pool reserve tokens",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Malicious transfer handler skips token transfer but core believes funds arrived",
+      "victim": "Protocol/LPs",
+      "asset": "Input tokens",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Bypass pricing bounds via computeRatioX96 overflow in validateHandlerOrder",
+      "victim": "Token creators who set pricing bounds",
+      "asset": "Price protection bypass for CLOB orders",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Storage slot collision across diamond facets corrupts pool accounting",
+      "victim": "All pool participants",
+      "asset": "Pool reserves",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Forged hook caller triggers hook logic with fake parameters to extract value",
+      "victim": "Pool/LP participants",
+      "asset": "Hook fee extraction",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    }
+  ],
+  "metadata": {
+    "checklist_items_completed": "A: 8/10, B: 2/5, C: 18/18, D: 4/4, E: 9/9",
+    "tools_run": {
+      "slither": {
+        "ran": true,
+        "repos": [
+          "lbamm-hooks-and-handlers",
+          "lbamm-core",
+          "secure-proxy"
+        ],
+        "note": "High/Medium detectors with lib/test excluded. hooks-and-handlers: 5H 3M; core: 7H 20M; secure-proxy: 0H 1M"
+      },
+      "aderyn": {
+        "ran": true,
+        "repos": [
+          "lbamm-core",
+          "secure-proxy"
+        ],
+        "note": "lbamm-core: 1H 9L; secure-proxy: clean. hooks-and-handlers crashed (Aderyn 0.6.8 bug) - used pre-generated phase0 report"
+      },
+      "forge": {
+        "ran": true,
+        "note": "37 tests total (18 in lbamm-core, 19 in hooks-and-handlers). All passed. Files: lbamm-core/test/AuditExtensionHijacker.t.sol, lbamm-hooks-and-handlers/test/AuditExtensionHijackerWave1.t.sol"
+      },
+      "halmos": {
+        "ran": true,
+        "repos": [
+          "lbamm-hooks-and-handlers"
+        ],
+        "note": "4 symbolic tests on KV-1 pricing bounds (computeRatioX96 overflow, validateHandlerOrder zero bypass). All passed. Confirms zero-price bypass path exists but is Low severity."
+      },
+      "medusa": {
+        "ran": true,
+        "note": "AMMStandardHook: 10000 sequences, 19 assertion tests, 0 failures"
+      },
+      "audit-context-building": {
+        "ran": false,
+        "reason": "Used manual code reading and Slither MCP for architectural analysis"
+      },
+      "entry-point-analyzer": {
+        "ran": false,
+        "reason": "Used Slither list_functions and call graph export instead"
+      },
+      "phase0_artifacts": {
+        "read": true
+      }
+    },
+    "num_turns": 25,
+    "tool_uses": 42,
+    "files_read": 18,
+    "theses_tested": 5,
+    "theses_confirmed": 0,
+    "theses_ruled_out": 5,
+    "gate_passed": true
+  }
+}
