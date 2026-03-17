@@ -36,6 +36,8 @@ Rank every hypothesis by: `extractable_value / attacker_capital / dependency_cou
 - **borderline**: you can name the exact function AND write one exploit sentence → investigate briefly
 - **survive**: concrete attack path with estimated EV → full investigation + Forge test
 
+**Log your triage** in metadata as `"triage_log": {"skip": N, "borderline": N, "survive": N}`. Every vector from your checklist must be triaged. The gate will reject sidecars without a triage_log.
+
 **Hard-stop rule**: once you rule out a vector with evidence (a Forge test that shows the guard holds), STOP. Do not revisit. Log it in `ruled_out_vectors` with the test file path.
 
 **One-line ruled-out format** (for clean synthesis):
@@ -225,7 +227,8 @@ Sidecar schema:
   "metadata": {
     "num_turns": 0, "tool_uses": 0, "files_read": 0,
     "tools_run": {},
-    "theses_tested": 0, "theses_confirmed": 0, "theses_ruled_out": 0
+    "theses_tested": 0, "theses_confirmed": 0, "theses_ruled_out": 0,
+    "triage_log": {"skip": 0, "borderline": 0, "survive": 0}
   }
 }
 ```
@@ -301,7 +304,8 @@ Your sidecar's `metadata` field MUST contain ALL of these keys with real values.
   "files_read": 0,
   "theses_tested": 0,
   "theses_confirmed": 0,
-  "theses_ruled_out": 0
+  "theses_ruled_out": 0,
+  "triage_log": {"skip": 0, "borderline": 0, "survive": 0}
 }
 ```
 

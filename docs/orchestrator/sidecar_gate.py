@@ -107,6 +107,19 @@ def validate(sidecar: dict) -> list[str]:
                     f"{', '.join(failed_gates)}. Move to ruled_out_vectors instead."
                 )
 
+    # Triage log check
+    triage = meta.get("triage_log")
+    if not triage:
+        errors.append(
+            "MISSING TRIAGE LOG: metadata must contain "
+            "\"triage_log\": {\"skip\": N, \"borderline\": N, \"survive\": N}. "
+            "Triage every vector before deep analysis."
+        )
+    elif not all(k in triage for k in ("skip", "borderline", "survive")):
+        errors.append(
+            "INCOMPLETE TRIAGE LOG: triage_log must have skip, borderline, and survive counts."
+        )
+
     return errors
 
 
