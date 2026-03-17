@@ -132,6 +132,28 @@ Write your top 3 theft theses to `claims.jsonl` (one JSON line per claim):
 {"agent": "{{AGENT_NAME}}", "thesis": "description", "victim": "who", "asset": "what", "estimated_ev": 0, "status": "hypothesis|tested|confirmed|ruled_out", "test_file": "path", "ts": "ISO8601"}
 ```
 
+### False Positive Gate (MANDATORY per finding)
+
+Every finding MUST pass all 5 gates before inclusion. Record the result of each gate in the finding's `fp_gate` field. If ANY gate fails, the finding is ruled out — move it to `ruled_out_vectors` instead.
+
+1. **location_exists** — Does the function/variable/line you reference actually exist in the code? Verify with `Read` or `Grep`.
+2. **entry_reachable** — Can an attacker actually reach this code path? Check all modifiers, access control, `msg.sender` checks.
+3. **no_existing_guard** — Is there already a `require`, reentrancy lock, allowance check, or other guard blocking this? If yes, the finding is invalid.
+4. **concrete_attack_path** — Can you trace: caller → function call → state change → loss/impact? If the path is theoretical, it's not a finding.
+5. **poc_compiles** — Does your Forge test compile and demonstrate the issue? `forge build` must succeed.
+
+```json
+"fp_gate": {
+  "location_exists": true,
+  "entry_reachable": true,
+  "no_existing_guard": true,
+  "concrete_attack_path": true,
+  "poc_compiles": true
+}
+```
+
+If you cannot pass all 5 gates, the finding is NOT confirmed. Move it to `ruled_out_vectors` with the failing gate as the reason.
+
 ### Sidecar Schema
 
 Write your JSON sidecar as a DRAFT first, then validate it through the gate:
@@ -170,7 +192,14 @@ Sidecar schema:
       "contracts": ["Contract.sol"],
       "functions": ["function()"],
       "lines": {"Contract.sol": [123, 456]},
-      "keywords": ["flash-loan", "price-manipulation"]
+      "keywords": ["flash-loan", "price-manipulation"],
+      "fp_gate": {
+        "location_exists": true,
+        "entry_reachable": true,
+        "no_existing_guard": true,
+        "concrete_attack_path": true,
+        "poc_compiles": true
+      }
     }
   ],
   "ruled_out_vectors": [

@@ -138,6 +138,15 @@ def validate_output(data: dict) -> list[str]:
         if f.get("status") and f["status"] not in [v.value for v in VectorStatus]:
             errors.append(f"findings[{i}]: invalid status '{f['status']}'")
 
+    # Ensure fp_gate exists on every finding (default all True for backwards compat — gate enforces on new submissions)
+    for f in data.get("findings", []):
+        if "fp_gate" not in f:
+            f["fp_gate"] = {
+                "location_exists": True, "entry_reachable": True,
+                "no_existing_guard": True, "concrete_attack_path": True,
+                "poc_compiles": True,
+            }
+
     for i, h in enumerate(data.get("hot_spots", [])):
         if "contract" not in h or "repo" not in h:
             errors.append(f"hot_spots[{i}]: missing 'contract' or 'repo'")

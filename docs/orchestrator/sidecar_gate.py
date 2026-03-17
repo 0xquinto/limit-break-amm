@@ -82,6 +82,31 @@ def validate(sidecar: dict) -> list[str]:
                 f"Write Forge tests or add code-analysis citations."
             )
 
+    # FP gate check: every finding must have all 5 gate fields
+    FP_GATE_FIELDS = {"location_exists", "entry_reachable", "no_existing_guard",
+                      "concrete_attack_path", "poc_compiles"}
+    findings = sidecar.get("findings", [])
+    for i, f in enumerate(findings):
+        fp = f.get("fp_gate")
+        if not fp:
+            errors.append(
+                f"FINDING #{i+1} ({f.get('id', '?')}): missing fp_gate field. "
+                f"Every finding must pass the 5-gate FP check."
+            )
+        else:
+            missing_gates = FP_GATE_FIELDS - set(fp.keys())
+            if missing_gates:
+                errors.append(
+                    f"FINDING #{i+1} ({f.get('id', '?')}): fp_gate missing fields: "
+                    f"{', '.join(sorted(missing_gates))}."
+                )
+            failed_gates = [g for g in FP_GATE_FIELDS if fp.get(g) is False]
+            if failed_gates:
+                errors.append(
+                    f"FINDING #{i+1} ({f.get('id', '?')}): fp_gate FAILED: "
+                    f"{', '.join(failed_gates)}. Move to ruled_out_vectors instead."
+                )
+
     return errors
 
 
