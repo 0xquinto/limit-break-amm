@@ -18,7 +18,9 @@ REQUIRED_TOOLS = {"slither", "aderyn", "forge", "halmos", "medusa"}
 REQUIRED_PHASE_B = {"audit-context-building", "entry-point-analyzer"}
 MIN_VECTORS = 8
 MIN_EVIDENCE_PCT = 0.40  # 40% of vectors must have test_file
+MAX_CODE_ANALYSIS_PCT = 0.50  # at most 50% of vectors can use code-analysis (must write real tests)
 MIN_CHECKLIST_PCT = 0.80  # 80% of self-reported checklist items must be completed
+MIN_TURNS = 50  # agents must use at least 50 turns before submitting
 
 
 def validate(sidecar: dict) -> list[str]:
@@ -82,6 +84,30 @@ def validate(sidecar: dict) -> list[str]:
                 f"({pct:.0%}) have test files (minimum {MIN_EVIDENCE_PCT:.0%}). "
                 f"Write Forge tests or add code-analysis citations."
             )
+
+    # Code-analysis ratio check — too many code-analysis citations means agent skipped writing tests
+    if vectors:
+        code_analysis_count = sum(
+            1 for v in vectors
+            if v.get("test_file", "").startswith("code-analysis:")
+        )
+        ca_pct = code_analysis_count / len(vectors)
+        if ca_pct > MAX_CODE_ANALYSIS_PCT:
+            errors.append(
+                f"TOO MANY CODE-ANALYSIS CITATIONS: {code_analysis_count}/{len(vectors)} "
+                f"({ca_pct:.0%}) use code-analysis instead of real test files "
+                f"(maximum {MAX_CODE_ANALYSIS_PCT:.0%}). "
+                f"Convert code-analysis vectors to Forge tests for full credit."
+            )
+
+    # Minimum turns check — agents must not declare completion too early
+    num_turns = meta.get("num_turns") or meta.get("turns", 0)
+    if isinstance(num_turns, (int, float)) and num_turns < MIN_TURNS:
+        errors.append(
+            f"TOO FEW TURNS: {num_turns} (minimum {MIN_TURNS}). "
+            f"You have 200 turns — use them. Work through every checklist item "
+            f"and write Forge tests for all vectors before submitting."
+        )
 
     # FP gate check: every finding must have all 5 gate fields
     FP_GATE_FIELDS = {"location_exists", "entry_reachable", "no_existing_guard",
