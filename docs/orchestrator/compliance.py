@@ -251,11 +251,11 @@ def _score_depth(sidecar: dict, num_turns: int) -> tuple[float, dict]:
             forge_info = v
             break
 
-    # Try to extract test count from forge note
+    # Try to extract test count from forge note (tolerate "details" as variant of "note")
     forge_tests = 0
-    note = forge_info.get("note", "") if isinstance(forge_info, dict) else ""
-    # Look for "N tests" pattern
-    test_count_match = re.search(r'(\d+)\s+tests?\s+total', note)
+    note = (forge_info.get("note", "") or forge_info.get("details", "")) if isinstance(forge_info, dict) else ""
+    # Look for "N tests" pattern — tolerate "total", "passing", or bare "N tests"
+    test_count_match = re.search(r'(\d+)\s+tests?\s+(?:total|pass)', note) or re.search(r'(\d+)\s+tests?', note)
     if test_count_match:
         forge_tests = int(test_count_match.group(1))
     else:
@@ -302,8 +302,10 @@ def _score_thesis(sidecar: dict) -> tuple[float, dict]:
         score = round(has_theses_pts + progress_pts, 1)
         return score, {"theses": total, "progressed": tested + confirmed + ruled_out, "source": "metadata"}
 
-    # Count thesis progression
-    progressed = sum(1 for t in theses if t.get("status") in ("tested", "confirmed", "ruled_out"))
+    # Count thesis progression (tolerate "verdict" as variant of "status")
+    PROGRESSED_STATUSES = {"tested", "confirmed", "ruled_out", "disproven", "rejected"}
+    progressed = sum(1 for t in theses
+                     if (t.get("status") or t.get("verdict", "")) in PROGRESSED_STATUSES)
     has_theses_pts = 2.0
     progress_pts = min(8.0, progressed / max(len(theses), 1) * 8)
 
@@ -311,7 +313,7 @@ def _score_thesis(sidecar: dict) -> tuple[float, dict]:
     details = {
         "theses": len(theses),
         "progressed": progressed,
-        "statuses": {s: sum(1 for t in theses if t.get("status") == s)
+        "statuses": {s: sum(1 for t in theses if (t.get("status") or t.get("verdict", "")) == s)
                      for s in ("hypothesis", "tested", "confirmed", "ruled_out")},
     }
     return score, details
