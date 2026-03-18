@@ -407,18 +407,17 @@ def score_wave(wave_number: int = 1) -> RunCompliance:
     if not agents:
         return RunCompliance(agents=[], aggregate_score=0.0, grade="F")
 
-    active_agents = [a for a in agents if a.total > 0]
-    aggregate = round(sum(a.total for a in active_agents) / len(active_agents), 1) if active_agents else 0.0
+    # Include ALL agents in aggregate — crashed/stale agents (score 0) are compliance failures
+    aggregate = round(sum(a.total for a in agents) / len(agents), 1) if agents else 0.0
 
-    # Find weakest dimension across all agents (only those with scores)
-    scored_agents = [a for a in agents if a.total > 0]
-    if scored_agents:
+    # Find weakest dimension across ALL agents (including crashed — they drag dimensions down)
+    if agents:
         dim_avgs = {
-            "checklist": sum(a.checklist_score for a in scored_agents) / len(scored_agents),
-            "tool_breadth": sum(a.tool_breadth_score for a in scored_agents) / len(scored_agents),
-            "evidence": sum(a.evidence_score for a in scored_agents) / len(scored_agents),
-            "depth": sum(a.depth_score for a in scored_agents) / len(scored_agents),
-            "thesis": sum(a.thesis_score for a in scored_agents) / len(scored_agents),
+            "checklist": sum(a.checklist_score for a in agents) / len(agents),
+            "tool_breadth": sum(a.tool_breadth_score for a in agents) / len(agents),
+            "evidence": sum(a.evidence_score for a in agents) / len(agents),
+            "depth": sum(a.depth_score for a in agents) / len(agents),
+            "thesis": sum(a.thesis_score for a in agents) / len(agents),
         }
         dim_maxes = {"checklist": 30, "tool_breadth": 20, "evidence": 20, "depth": 20, "thesis": 10}
         dim_pcts = {d: (dim_avgs[d] / dim_maxes[d] * 100) for d in dim_avgs}
