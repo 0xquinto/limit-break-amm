@@ -84,182 +84,38 @@ Before reporting completion, you MUST have attempted at least one exploit per ca
 4. **Permit mutation**: replay signature with mutated unsigned fields (feeOnTop, recipient) → check if funds redirect to attacker
 5. **Storage-slot collision**: deploy facet that writes to another facet's storage slot → corrupt accounting → drain via corrupted state
 
-### Flash Loan Primitives
+### Your Output Paths
 
-You always have access to unlimited capital for one transaction via flash loans. Use this Forge pattern:
+- Draft sidecar: `docs/targets/full-system/artifacts/findings-{{AGENT_NAME}}-draft.json`
+- Gate command: `.venv/bin/python3 docs/orchestrator/sidecar_gate.py docs/targets/full-system/artifacts/findings-{{AGENT_NAME}}-draft.json`
+- Final sidecar (written by gate on accept): `docs/targets/full-system/artifacts/findings-{{AGENT_NAME}}.json`
 
-```solidity
-function test_exploit() public {
-    // 1. Flash loan setup
-    uint256 borrowed = 1_000_000e18;
-    deal(address(token), address(this), borrowed);
+DO NOT write directly to the final findings JSON — the gate is the only path to the final sidecar. If you skip the gate, your work will not be scored.
 
-    // 2. Attack sequence
-    // ... your exploit steps ...
+### Reference Files (read when you reach the relevant phase)
 
-    // 3. Profit check
-    uint256 profit = token.balanceOf(address(this)) - borrowed;
-    assertGt(profit, 0, "Attack must be profitable");
-}
-```
+Your reference directory contains detailed schemas and scaffolds. Read them at the right time, not now:
+- `docs/orchestrator/templates/_shared/references/output-schema.md` — sidecar JSON schema, gate validation instructions, test_file format rules. **Read in Phase D** before writing your sidecar.
+- `docs/orchestrator/templates/_shared/references/fp-gate-and-scoring.md` — FP 5-gate check + confidence score deduction rubric. **Read in Phase D** before finalizing findings.
+- `docs/orchestrator/templates/_shared/references/exploit-scaffolds.md` — flash loan Forge pattern + reusable exploit harness imports. **Read in Phase E** when writing exploit tests.
 
-### Reusable Exploit Harnesses
+Tool invocation scripts (use instead of reconstructing commands from memory):
+- `docs/orchestrator/templates/_shared/scripts/run-slither.sh <repo-path>` — Slither with build-info fix
+- `docs/orchestrator/templates/_shared/scripts/run-halmos.sh <repo-path> <contract-name>` — Halmos symbolic execution
+- `docs/orchestrator/templates/_shared/scripts/run-aderyn.sh <repo-path>` — Aderyn static analysis
+- `docs/orchestrator/templates/_shared/scripts/run-medusa.sh <repo-path> <contract-name>` — Medusa fuzzer
+- `docs/orchestrator/templates/_shared/scripts/forge-fuzz-template.t.sol` — fuzz test scaffold (cat, adapt, run)
 
-Import these base contracts in your exploit tests:
+### Cross-Agent Coordination (MCP tools)
 
-- `docs/orchestrator/harnesses/FlashLoanAttacker.sol` — extend, override `_exploit()`, call `_runFlashLoanExploit()`
-- `docs/orchestrator/harnesses/MaliciousToken.sol` — fee-on-transfer, reentrancy hooks, false returns
-- `docs/orchestrator/harnesses/MaliciousHook.sol` — configurable hook that logs calls, returns arbitrary data, or reverts
-- `docs/orchestrator/harnesses/MaliciousHandler.sol` — handler that skips transfers, steals funds, or reenters
-
-```solidity
-import "../../docs/orchestrator/harnesses/FlashLoanAttacker.sol";
-
-contract TestExploit is FlashLoanAttacker {
-    function _exploit(uint256 borrowed) internal override {
-        // Your attack sequence here
-    }
-
-    function test_exploit() public {
-        uint256 profit = _runFlashLoanExploit(address(token), 1_000_000e18);
-        _assertProfitable(profit);
-    }
-}
-```
-
-### Communication
-
-Write your top 3 theft theses to `claims.jsonl` (one JSON line per claim):
-```json
-{"agent": "{{AGENT_NAME}}", "thesis": "description", "victim": "who", "asset": "what", "estimated_ev": 0, "status": "hypothesis|tested|confirmed|ruled_out", "test_file": "path", "ts": "ISO8601"}
-```
-
-### False Positive Gate (MANDATORY per finding)
-
-Every finding MUST pass all 5 gates before inclusion. Record the result of each gate in the finding's `fp_gate` field. If ANY gate fails, the finding is ruled out — move it to `ruled_out_vectors` instead.
-
-1. **location_exists** — Does the function/variable/line you reference actually exist in the code? Verify with `Read` or `Grep`.
-2. **entry_reachable** — Can an attacker actually reach this code path? Check all modifiers, access control, `msg.sender` checks.
-3. **no_existing_guard** — Is there already a `require`, reentrancy lock, allowance check, or other guard blocking this? If yes, the finding is invalid.
-4. **concrete_attack_path** — Can you trace: caller → function call → state change → loss/impact? If the path is theoretical, it's not a finding.
-5. **poc_compiles** — Does your Forge test compile and demonstrate the issue? `forge build` must succeed.
-
-```json
-"fp_gate": {
-  "location_exists": true,
-  "entry_reachable": true,
-  "no_existing_guard": true,
-  "concrete_attack_path": true,
-  "poc_compiles": true
-}
-```
-
-If you cannot pass all 5 gates, the finding is NOT confirmed. Move it to `ruled_out_vectors` with the failing gate as the reason.
-
-### Confidence Scoring (MANDATORY per finding)
-
-Every finding starts at **confidence_score: 100**. Apply these deductions:
-
-| Condition | Deduction |
-|-----------|-----------|
-| Requires privileged caller (owner, admin) | -25 |
-| Attack path is partial (missing one step) | -20 |
-| Impact is self-contained (attacker only hurts themselves) | -15 |
-| Requires specific token/pool configuration | -10 |
-| No Forge PoC (only code-analysis reasoning) | -10 |
-
-Record the final score and deductions list:
-```json
-"confidence_score": 75,
-"confidence_deductions": ["-25: requires admin caller"]
-```
-
-Findings below 50 are likely false positives — reconsider before including.
-
-### Sidecar Schema
-
-Write your JSON sidecar as a DRAFT first, then validate it through the gate:
-
-1. Write to: `docs/targets/full-system/artifacts/findings-{{AGENT_NAME}}-draft.json`
-2. Validate: `.venv/bin/python3 docs/orchestrator/sidecar_gate.py docs/targets/full-system/artifacts/findings-{{AGENT_NAME}}-draft.json`
-3. If ACCEPTED — done. The gate promotes it to the final path.
-4. If REJECTED — read the error output, fix the gaps, rewrite the draft, and retry.
-
-DO NOT write directly to `findings-{{AGENT_NAME}}.json` — the gate is the only path to the final sidecar. If you skip the gate, your work will not be scored.
-
-Sidecar schema:
-```json
-{
-  "agent_name": "{{AGENT_NAME}}",
-  "agent_role": "{{AGENT_ROLE}}",
-  "wave": {{WAVE_NUMBER}},
-  "findings": [
-    {
-      "id": "{{PREFIX}}-NNN",
-      "title": "one-line theft thesis",
-      "severity": "critical",
-      "confidence_score": 100,
-      "confidence_deductions": [],
-      "status": "confirmed",
-      "category": "price-manipulation",
-      "description": "one-line theft thesis",
-      "impact": "who loses what + estimated USD or token amount",
-      "proof_sketch": "Forge test path or reasoning chain",
-      "victim": "who loses what",
-      "extractable_value": "estimated USD or token amount",
-      "attack_sequence": ["step1", "step2", "step3"],
-      "test_file": "path to Forge test",
-      "test_passes": true,
-      "prerequisites": ["flash loan", "specific token pair", "etc"],
-      "repos": ["repo-name"],
-      "contracts": ["Contract.sol"],
-      "functions": ["function()"],
-      "lines": {"Contract.sol": [123, 456]},
-      "keywords": ["flash-loan", "price-manipulation"],
-      "fp_gate": {
-        "location_exists": true,
-        "entry_reachable": true,
-        "no_existing_guard": true,
-        "concrete_attack_path": true,
-        "poc_compiles": true
-      }
-    }
-  ],
-  "ruled_out_vectors": [
-    {
-      "vector": "description",
-      "why_ruled_out": "reason — must reference a test file or concrete code evidence",
-      "test_file": "path to Forge test that proves the guard holds",
-      "repos": ["repo-name"],
-      "contracts": ["Contract.sol"],
-      "functions": ["function()"],
-      "keywords": ["keyword1", "keyword2"]
-    }
-  ],
-  "theft_theses": [
-    {
-      "thesis": "description",
-      "victim": "who",
-      "asset": "what",
-      "estimated_ev": 0,
-      "status": "hypothesis|tested|confirmed|ruled_out"
-    }
-  ],
-  "metadata": {
-    "num_turns": 0, "tool_uses": 0, "files_read": 0,
-    "tools_run": {},
-    "theses_tested": 0, "theses_confirmed": 0, "theses_ruled_out": 0,
-    "triage_log": {"skip": 0, "borderline": 0, "survive": 0}
-  }
-}
-```
-
-**test_file format rule**: `"N/A"` is NOT acceptable as a test_file value. Use one of:
-- **Test file path**: `"lbamm-core/test/audit/AuditStateDesync.t.sol"` — for Forge/Halmos/Medusa tests you wrote
-- **Code citation**: `"code-analysis: AMMModule.sol:2144-2180"` — for vectors ruled out by code path analysis (cite specific lines)
-- **Not applicable**: `"not-applicable: [reason]"` — only if the vector genuinely cannot be tested
-
-`"code-analysis:"` citations receive PARTIAL credit only (50%). To get FULL credit, write a Forge test file. Even a simple `assertEq` test that demonstrates the vector was investigated counts as full credit. Prioritize writing tests over citing code.
+Your validated findings are automatically shared with other agents via the `audit-gate` MCP server.
+- Call `complete_checklist_item` after each checklist item (Phase A-E) — logs structured progress
+- Call `validate_finding` to submit findings through the gate (auto-broadcasts to other agents on success)
+- Call `report_progress` after each phase to update your progress
+- Call `report_completion` when you finish all work (no wave_number arg needed — auto-detected)
+- Every 30 turns, call `get_shared_claims` to check other agents' findings:
+  - If overlap with yours → deprioritize (avoid duplicate work)
+  - If compounds with yours → prioritize composability testing
 
 ### Mandatory Tool Checklist (your sidecar is INVALID until ALL items have a logged result)
 

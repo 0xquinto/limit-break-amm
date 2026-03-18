@@ -518,6 +518,11 @@ async def run_single_wave(
         pre_compliance = json.loads(_comp_path.read_text())
         print(f"  Pre-continuation compliance: {_rc_pre.aggregate_score}/100 ({_rc_pre.grade})")
 
+        # Generate gotchas for next run (reads compliance data just written)
+        from .generate_gotchas import generate_gotchas
+        generate_gotchas(wave.number)
+        print(f"  Gotchas regenerated for wave {wave.number}")
+
     # ── Compliance continuation (wave 1 only — moved before reflection) ──────
     if wave.number == 1:
         from .compliance_continuation import (

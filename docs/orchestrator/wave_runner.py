@@ -165,8 +165,13 @@ After spawning, say "All {len(wave.agents)} agents spawned. Monitoring."
 
 You will automatically receive new turns as agents complete.
 The system injects completion notifications into your context.
-Wait for ALL {len(wave.agents)} agents to finish.
-Track how many have completed. If any agent fails, log it but continue waiting.
+Wait for ALL {len(wave.agents)} agents to finish. Track how many have completed.
+If any agent fails, log it but continue waiting.
+
+For supplementary progress visibility, you can check for completion.json files:
+- Use Glob("docs/targets/full-system/artifacts/wave{wave.number}-*/completion.json")
+- Log: "N/{len(wave.agents)} agents have reported completion"
+Note: Not all agents may write completion.json — rely on auto-started turns as the primary signal.
 
 You can use SendMessage to relay important cross-cutting discoveries between agents.
 
@@ -207,6 +212,17 @@ async def run_wave(
     if not skip_archive:
         from .run_manager import archive_wave
         archive_wave(wave.number)
+
+    # 1b. Set wave number for MCP audit-gate server (read by mcp_audit_gate.py)
+    os.environ["AUDIT_WAVE_NUMBER"] = str(wave.number)
+
+    # 1c. Clean up MCP shared state from previous run — but NOT during continuation
+    # runs (skip_archive=True), which need to preserve claims from the primary wave.
+    if not skip_archive:
+        mcp_state = ARTIFACTS_DIR / ".mcp-state"
+        if mcp_state.exists():
+            import shutil
+            shutil.rmtree(mcp_state)
 
     # 2. Write prompts to disk (after archive, so they don't get archived)
     print(f"  Writing {len(prompts)} prompts to disk...")

@@ -194,10 +194,17 @@ def render_prompt(agent: AgentConfig, wave: WaveConfig, prior_synthesis: str | N
     if specific_path.exists():
         template = specific_path.read_text()
     else:
-        template_path = Path(__file__).parent / "templates" / f"{agent.template}.md"
-        if not template_path.exists():
-            raise FileNotFoundError(f"No template found: {template_path} or {specific_path}")
-        template = template_path.read_text()
+        # Folder structure first (prompt.md inside folder), flat file fallback
+        folder_path = TEMPLATES_DIR / agent.template / "prompt.md"
+        flat_path = TEMPLATES_DIR / f"{agent.template}.md"
+        if folder_path.exists():
+            template = folder_path.read_text()
+        elif flat_path.exists():
+            template = flat_path.read_text()
+        else:
+            raise FileNotFoundError(
+                f"No template found: {folder_path} or {flat_path} or {specific_path}"
+            )
 
     # Build scope description
     scope_lines = []
@@ -214,8 +221,18 @@ def render_prompt(agent: AgentConfig, wave: WaveConfig, prior_synthesis: str | N
             if artifact.exists():
                 phase0_refs.append(str(artifact.relative_to(ARTIFACTS_DIR.parent.parent.parent)))
 
-    # Replace template variables
+    # Inject file-based blocks FIRST so their contents get variable-replaced below
     prompt = template
+    if "{{PREAMBLE}}" in prompt:
+        prompt = prompt.replace("{{PREAMBLE}}", _load_preamble())
+    if "{{CHECKLIST}}" in prompt:
+        prompt = prompt.replace("{{CHECKLIST}}", _load_checklist(agent.name))
+    if "{{GOTCHAS}}" in prompt:
+        gotchas_path = TEMPLATES_DIR / agent.template / "gotchas.md"
+        gotchas = gotchas_path.read_text() if gotchas_path.exists() else ""
+        prompt = prompt.replace("{{GOTCHAS}}", gotchas)
+
+    # Replace template variables (runs on full prompt including injected blocks)
     prompt = prompt.replace("{{AGENT_NAME}}", agent.name)
     prompt = prompt.replace("{{AGENT_ROLE}}", agent.role)
     prompt = prompt.replace("{{WAVE_NUMBER}}", str(wave.number))
@@ -225,14 +242,10 @@ def render_prompt(agent: AgentConfig, wave: WaveConfig, prior_synthesis: str | N
     prompt = prompt.replace("{{OUTPUT_FILE}}", f"{output_dir}/report.md")
     prompt = prompt.replace("{{FINDINGS_JSON}}", f"{output_dir}/findings.json")
 
-    # Black hat template placeholders
-    if "{{PREAMBLE}}" in prompt:
-        prompt = prompt.replace("{{PREAMBLE}}", _load_preamble())
+    # PREFIX needs special computation
     if "{{PREFIX}}" in prompt:
         prefix = agent.name.split("-")[0].upper() if "-" in agent.name else agent.name[:4].upper()
         prompt = prompt.replace("{{PREFIX}}", prefix)
-    if "{{CHECKLIST}}" in prompt:
-        prompt = prompt.replace("{{CHECKLIST}}", _load_checklist(agent.name))
     if "{{LEADS}}" in prompt:
         leads = agent.extra_context.get("leads", "No leads provided.")
         prompt = prompt.replace("{{LEADS}}", leads)
