@@ -86,11 +86,27 @@ def _score_checklist(sidecar: dict, agent_name: str, num_repos: int) -> tuple[fl
     expected_total = phase_a + phase_b + expected_c + PHASE_D_ITEMS
 
     # Parse structured checklist report if available
-    checklist_str = meta.get("checklist_items_completed", "")
+    checklist_raw = meta.get("checklist_items_completed", "")
     reported = 0
-    if checklist_str:
-        for match in re.finditer(r'(\d+)/(\d+)', str(checklist_str)):
+    if isinstance(checklist_raw, (int, float)):
+        # Agent wrote a bare number — treat as total completed items
+        reported = int(checklist_raw)
+    elif checklist_raw:
+        for match in re.finditer(r'(\d+)/(\d+)', str(checklist_raw)):
             reported += int(match.group(1))
+
+    # Try MCP progress.json as supplementary source (structured per-phase counts)
+    from .config import ARTIFACTS_DIR
+    progress_path = ARTIFACTS_DIR / f"wave1-{agent_name}" / "progress.json"
+    mcp_total = 0
+    if progress_path.exists():
+        try:
+            progress = json.loads(progress_path.read_text())
+            for phase_data in progress.values():
+                if isinstance(phase_data, dict):
+                    mcp_total += phase_data.get("completed", 0)
+        except (json.JSONDecodeError, OSError):
+            pass
 
     # Always compute inferred count from actual sidecar content
     tools = meta.get("tools_run", {})
@@ -99,8 +115,8 @@ def _score_checklist(sidecar: dict, agent_name: str, num_repos: int) -> tuple[fl
     inferred += len(sidecar.get("ruled_out_vectors", []))
     inferred += len(sidecar.get("findings", []))
 
-    # Use the higher of reported vs inferred — agents under-report but do the work
-    completed = max(reported, inferred)
+    # Use the highest of reported vs inferred vs MCP progress — agents under-report
+    completed = max(reported, inferred, mcp_total)
     source = "reported" if reported >= inferred else "inferred"
 
     if expected_total == 0:
@@ -366,6 +382,9 @@ def score_wave(wave_number: int = 1) -> RunCompliance:
     metrics = json.loads(metrics_path.read_text()) if metrics_path.exists() else {}
     agent_turns = {a["name"]: a.get("num_turns", 0) for a in metrics.get("agents", [])}
 
+    # Repos that are read-only dependencies — don't count for Phase A expected items
+    READ_ONLY_REPOS = {"secure-proxy"}
+
     # Score agents that produced sidecars
     sidecar_names = set()
     agents = []
@@ -373,7 +392,7 @@ def score_wave(wave_number: int = 1) -> RunCompliance:
         name = sc.get("agent_name", sc.get("agent", "unknown"))
         sidecar_names.add(name)
         agent_cfg = next((a for a in wave.agents if a.name == name), None)
-        num_repos = len(agent_cfg.scope) if agent_cfg else 5
+        num_repos = len([r for r in agent_cfg.scope if r not in READ_ONLY_REPOS]) if agent_cfg else 5
         turns = agent_turns.get(name, 0)
         agents.append(score_agent(sc, name, num_repos, turns))
 

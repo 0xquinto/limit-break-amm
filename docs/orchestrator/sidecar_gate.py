@@ -18,6 +18,7 @@ REQUIRED_TOOLS = {"slither", "aderyn", "forge", "halmos", "medusa"}
 REQUIRED_PHASE_B = {"audit-context-building", "entry-point-analyzer"}
 MIN_VECTORS = 8
 MIN_EVIDENCE_PCT = 0.40  # 40% of vectors must have test_file
+MIN_CHECKLIST_PCT = 0.80  # 80% of self-reported checklist items must be completed
 
 
 def validate(sidecar: dict) -> list[str]:
@@ -119,6 +120,22 @@ def validate(sidecar: dict) -> list[str]:
         errors.append(
             "INCOMPLETE TRIAGE LOG: triage_log must have skip, borderline, and survive counts."
         )
+
+    # Checklist completion check — parse N/M fractions from checklist_items_completed
+    import re
+    checklist_str = str(meta.get("checklist_items_completed", ""))
+    fractions = re.findall(r'(\d+)/(\d+)', checklist_str)
+    if fractions:
+        num_sum = sum(int(n) for n, _ in fractions)
+        den_sum = sum(int(d) for _, d in fractions)
+        if den_sum > 0:
+            checklist_pct = num_sum / den_sum
+            if checklist_pct < MIN_CHECKLIST_PCT:
+                errors.append(
+                    f"LOW CHECKLIST COMPLETION: {num_sum}/{den_sum} "
+                    f"({checklist_pct:.0%}) completed (minimum {MIN_CHECKLIST_PCT:.0%}). "
+                    f"Work through remaining Phase A-E items before submitting."
+                )
 
     # Confidence scoring check on findings
     for i, f in enumerate(findings):
