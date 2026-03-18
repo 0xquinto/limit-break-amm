@@ -237,7 +237,7 @@ def _score_depth(sidecar: dict, num_turns: int) -> tuple[float, dict]:
     meta = sidecar.get("metadata", {})
 
     # Turns (0-6): 0 turns = 0, 100+ turns = 6
-    turns = num_turns or meta.get("num_turns", 0)
+    turns = num_turns or meta.get("num_turns") or meta.get("turns", 0)
     turns_score = min(6.0, turns / 100 * 6)
 
     # Files read (0-6): 0 files = 0, 30+ files = 6
@@ -343,7 +343,8 @@ def score_agent(sidecar: dict, agent_name: str, num_repos: int, num_turns: int =
         return c
 
     # Stale agent detection: no num_turns in sidecar metadata means primary agent never ran
-    sidecar_turns = meta.get("num_turns")
+    # Tolerate "turns" as variant of "num_turns" (agents use both)
+    sidecar_turns = meta.get("num_turns") or meta.get("turns")
     if sidecar_turns is None or sidecar_turns == 0:
         c.total = 0.0
         c.grade = "F"
