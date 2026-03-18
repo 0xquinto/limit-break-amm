@@ -90,14 +90,11 @@ def _score_checklist(sidecar: dict, agent_name: str, num_repos: int) -> tuple[fl
     phase_b = PHASE_B_BASE + (1 if agent_name in PHASE_B4_AGENTS else 0)
     expected_total = phase_a + phase_b + expected_c + PHASE_D_ITEMS
 
-    # Parse structured checklist report if available
+    # Parse structured checklist report — must be per-phase string (gate enforces format)
     checklist_raw = meta.get("checklist_items_completed", "")
     reported = 0
-    if isinstance(checklist_raw, (int, float)):
-        # Agent wrote a bare number — treat as total completed items
-        reported = int(checklist_raw)
-    elif checklist_raw:
-        for match in re.finditer(r'(\d+)/(\d+)', str(checklist_raw)):
+    if isinstance(checklist_raw, str) and checklist_raw:
+        for match in re.finditer(r'(\d+)/(\d+)', checklist_raw):
             reported += int(match.group(1))
 
     # Try MCP progress.json as supplementary source (structured per-phase counts)
@@ -242,14 +239,11 @@ def _score_depth(sidecar: dict, num_turns: int) -> tuple[float, dict]:
     meta = sidecar.get("metadata", {})
 
     # Turns (0-6): 0 turns = 0, 100+ turns = 6
-    turns = num_turns or meta.get("num_turns") or meta.get("turns", 0)
+    turns = num_turns or meta.get("num_turns", 0)
     turns_score = min(6.0, turns / 100 * 6)
 
-    # Files read (0-6): 0 files = 0, 30+ files = 6
-    # Fallback: agents with many turns must have read files — infer floor from turns
+    # Files read (0-6): 0 files = 0, 30+ files = 6 (gate enforces field exists)
     files_read = meta.get("files_read", 0)
-    if not files_read and turns >= 50:
-        files_read = min(30, int(turns * 0.3))
     files_score = min(6.0, files_read / 30 * 6)
 
     # Forge tests (0-8): count from tools_run.forge or from ruled_out test_file count
@@ -259,11 +253,10 @@ def _score_depth(sidecar: dict, num_turns: int) -> tuple[float, dict]:
             forge_info = v
             break
 
-    # Try to extract test count from forge note (tolerate "details" as variant of "note")
+    # Extract test count from forge note (gate enforces "note" key and "N tests total" format)
     forge_tests = 0
-    note = (forge_info.get("note", "") or forge_info.get("details", "")) if isinstance(forge_info, dict) else ""
-    # Look for "N tests" pattern — tolerate "total", "passing", or bare "N tests"
-    test_count_match = re.search(r'(\d+)\s+tests?\s+(?:total|pass)', note) or re.search(r'(\d+)\s+tests?', note)
+    note = forge_info.get("note", "") if isinstance(forge_info, dict) else ""
+    test_count_match = re.search(r'(\d+)\s+tests?\s+total', note)
     if test_count_match:
         forge_tests = int(test_count_match.group(1))
     else:
@@ -310,10 +303,9 @@ def _score_thesis(sidecar: dict) -> tuple[float, dict]:
         score = round(has_theses_pts + progress_pts, 1)
         return score, {"theses": total, "progressed": tested + confirmed + ruled_out, "source": "metadata"}
 
-    # Count thesis progression (tolerate "verdict" as variant of "status")
-    PROGRESSED_STATUSES = {"tested", "confirmed", "ruled_out", "disproven", "rejected"}
-    progressed = sum(1 for t in theses
-                     if (t.get("status") or t.get("verdict", "")) in PROGRESSED_STATUSES)
+    # Count thesis progression — gate enforces "status" field with canonical values
+    PROGRESSED_STATUSES = {"tested", "confirmed", "ruled_out"}
+    progressed = sum(1 for t in theses if t.get("status") in PROGRESSED_STATUSES)
     has_theses_pts = 2.0
     progress_pts = min(8.0, progressed / max(len(theses), 1) * 8)
 
@@ -321,7 +313,7 @@ def _score_thesis(sidecar: dict) -> tuple[float, dict]:
     details = {
         "theses": len(theses),
         "progressed": progressed,
-        "statuses": {s: sum(1 for t in theses if (t.get("status") or t.get("verdict", "")) == s)
+        "statuses": {s: sum(1 for t in theses if t.get("status") == s)
                      for s in ("hypothesis", "tested", "confirmed", "ruled_out")},
     }
     return score, details
@@ -353,8 +345,7 @@ def score_agent(sidecar: dict, agent_name: str, num_repos: int, num_turns: int =
         return c
 
     # Stale agent detection: no num_turns in sidecar metadata means primary agent never ran
-    # Tolerate "turns" as variant of "num_turns" (agents use both)
-    sidecar_turns = meta.get("num_turns") or meta.get("turns")
+    sidecar_turns = meta.get("num_turns")
     if sidecar_turns is None or sidecar_turns == 0:
         c.total = 0.0
         c.grade = "F"

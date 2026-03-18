@@ -29,6 +29,78 @@ def validate(sidecar: dict) -> list[str]:
     meta = sidecar.get("metadata", {})
     tools_run = meta.get("tools_run", {})
 
+    # ── Schema conformance checks (canonical field names/formats) ────────
+    # These reject sidecars that use wrong field names so agents learn
+    # the correct schema instead of the scorer silently tolerating variants.
+
+    # metadata.num_turns must exist (not "turns")
+    if "num_turns" not in meta:
+        if "turns" in meta:
+            errors.append(
+                'WRONG FIELD NAME: metadata uses "turns" — rename to "num_turns".'
+            )
+        else:
+            errors.append(
+                'MISSING FIELD: metadata.num_turns is required. '
+                'Report how many turns you used as an integer.'
+            )
+
+    # metadata.files_read must exist
+    if "files_read" not in meta:
+        errors.append(
+            'MISSING FIELD: metadata.files_read is required. '
+            'Report how many files you read as an integer.'
+        )
+
+    # metadata.checklist_items_completed must be a per-phase string with N/M fractions
+    import re
+    checklist_raw = meta.get("checklist_items_completed", "")
+    if isinstance(checklist_raw, (int, float)):
+        errors.append(
+            'WRONG FORMAT: metadata.checklist_items_completed must be a string like '
+            '"A: 20/20, B: 4/4, C: 25/25, D: 4/4, E: 10/10" — not a bare number. '
+            'Report per-phase counts.'
+        )
+    elif checklist_raw and not re.search(r'[A-E]:\s*\d+/\d+', str(checklist_raw)):
+        errors.append(
+            'WRONG FORMAT: metadata.checklist_items_completed must contain per-phase '
+            'counts like "A: 20/20, B: 4/4, C: 25/25, D: 4/4". Got: '
+            f'"{str(checklist_raw)[:60]}"'
+        )
+
+    # tools_run.forge must use "note" key (not "details")
+    for k, v in tools_run.items():
+        if "forge" in k.lower() and isinstance(v, dict):
+            if "details" in v and "note" not in v:
+                errors.append(
+                    f'WRONG FIELD NAME: tools_run.{k} uses "details" — rename to "note". '
+                    'Format: "N tests total. File: path/to/test.sol"'
+                )
+            elif "note" in v:
+                note = v["note"]
+                if not re.search(r'\d+\s+tests?\s+total', note):
+                    errors.append(
+                        f'WRONG FORMAT: tools_run.{k}.note must contain "N tests total". '
+                        f'Got: "{str(note)[:60]}"'
+                    )
+            break
+
+    # theft_theses[].status must exist (not "verdict") and use canonical values
+    VALID_THESIS_STATUSES = {"hypothesis", "tested", "confirmed", "ruled_out"}
+    for i, t in enumerate(sidecar.get("theft_theses", [])):
+        if "verdict" in t and "status" not in t:
+            errors.append(
+                f'THESIS #{i+1}: uses "verdict" — rename to "status". '
+                f'Valid values: {sorted(VALID_THESIS_STATUSES)}'
+            )
+        elif "status" in t and t["status"] not in VALID_THESIS_STATUSES:
+            errors.append(
+                f'THESIS #{i+1}: invalid status "{t["status"]}". '
+                f'Valid values: {sorted(VALID_THESIS_STATUSES)}'
+            )
+
+    # ── Threshold checks ─────────────────────────────────────────────────
+
     # Tool breadth check (fuzzy match like compliance.py)
     tools_found = set()
     for tool in REQUIRED_TOOLS:
@@ -101,7 +173,7 @@ def validate(sidecar: dict) -> list[str]:
             )
 
     # Minimum turns check — agents must not declare completion too early
-    num_turns = meta.get("num_turns") or meta.get("turns", 0)
+    num_turns = meta.get("num_turns", 0)
     if isinstance(num_turns, (int, float)) and num_turns < MIN_TURNS:
         errors.append(
             f"TOO FEW TURNS: {num_turns} (minimum {MIN_TURNS}). "
