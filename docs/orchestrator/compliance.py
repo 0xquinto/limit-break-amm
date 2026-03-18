@@ -75,13 +75,18 @@ def _score_checklist(sidecar: dict, agent_name: str, num_repos: int) -> tuple[fl
     """Dimension 1: Checklist completion (0-30 pts).
 
     Parses metadata.checklist_items_completed or counts actual work done.
-    Expected items = Phase A (5 x repos) + Phase B (5) + Phase C (per archetype) + Phase D (4).
+    Expected items = Phase A (per tool type, not per-repo) + Phase B + Phase C + Phase D.
+
+    Phase A counting: agents count by tool type (e.g., "ran slither" = 1 item),
+    not per-repo (e.g., "ran slither on 5 repos" = 5 items). The expected formula
+    matches the agent counting convention: A_BASE items + optional A5.
     """
     meta = sidecar.get("metadata", {})
     expected_c = CHECKLIST_EXPECTED.get(agent_name, 0)
-    phase_a = PHASE_A_BASE_PER_REPO * num_repos
+    # Phase A: count by tool type, not per-repo (agents count this way)
+    phase_a = PHASE_A_BASE_PER_REPO  # 4 base tool types (A1-A4)
     if agent_name in PHASE_A5_AGENTS:
-        phase_a += num_repos  # A5 adds 1 item per repo
+        phase_a += 1  # A5 (storage layout)
     phase_b = PHASE_B_BASE + (1 if agent_name in PHASE_B4_AGENTS else 0)
     expected_total = phase_a + phase_b + expected_c + PHASE_D_ITEMS
 
@@ -117,7 +122,7 @@ def _score_checklist(sidecar: dict, agent_name: str, num_repos: int) -> tuple[fl
 
     # Use the highest of reported vs inferred vs MCP progress — agents under-report
     completed = max(reported, inferred, mcp_total)
-    source = "reported" if reported >= inferred else "inferred"
+    source = "reported" if reported >= max(inferred, mcp_total) else ("mcp" if mcp_total >= inferred else "inferred")
 
     if expected_total == 0:
         pct = 0.0
@@ -241,7 +246,10 @@ def _score_depth(sidecar: dict, num_turns: int) -> tuple[float, dict]:
     turns_score = min(6.0, turns / 100 * 6)
 
     # Files read (0-6): 0 files = 0, 30+ files = 6
+    # Fallback: agents with many turns must have read files — infer floor from turns
     files_read = meta.get("files_read", 0)
+    if not files_read and turns >= 50:
+        files_read = min(30, int(turns * 0.3))
     files_score = min(6.0, files_read / 30 * 6)
 
     # Forge tests (0-8): count from tools_run.forge or from ruled_out test_file count
