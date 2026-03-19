@@ -8,9 +8,9 @@
 
 ## High-Value Abstractions (ordered by priority)
 
-### 1. Better Embeddings — Richer Phase 0 Attack Surface Representations
+### 1. Richer Phase 0 Attack Surface Representations
 
-> **Insight**: The 2026 paper "Retrieval or Representation?" (arXiv:2603.04238) shows that many RAG improvements actually come from better *representations* of the knowledge, not better retrieval strategies. Applied to our context: instead of retrieving knowledge about OTHER codebases (RAG), we should compute richer representations of THIS codebase.
+> **Rationale**: Our agents spend significant turns discovering structural information that could be pre-computed. RAG (retrieving knowledge about OTHER codebases) was rejected because our bottleneck is verification, not discovery. The higher-leverage investment is computing richer representations of THIS codebase — giving agents a pre-built attack surface map instead of raw tool output.
 
 Our agents spend significant turns discovering structural information that could be pre-computed. The current Phase 0 gives them raw tool output (Slither detectors, Aderyn findings, storage layout, entry points, call graphs). These are *data dumps*, not *attack-oriented representations*.
 
@@ -106,7 +106,7 @@ Plamen bundles 3 RAG MCP servers (unified-vuln-db, solodit-scraper, defihacklabs
 
 3. **The bottleneck is verification, not discovery** — our agents already know DeFi exploit patterns (flash loans, reentrancy, price manipulation). They're in the preamble. The 0-findings problem is "agents can't prove the exploit works in THIS specific code." RAG doesn't help. Forge tests do.
 
-4. **"Retrieval or Representation?" insight** — the 2026 paper (arXiv:2603.04238) shows many RAG improvements are actually from better representations, not better retrieval. Our "representation" equivalent is Phase 0 artifacts. Enriching those (better embeddings) beats adding retrieval (RAG).
+4. **Better representations > more retrieval** — investing in richer Phase 0 artifacts (attack surface maps computed from THIS codebase) is higher leverage than retrieving patterns from other codebases.
 
 5. **Context budget math** — 30K prompt + RAG results = less room for actual code analysis. Our agents' best work happens deep in the code, not reading about how Euler was hacked in 2023.
 
