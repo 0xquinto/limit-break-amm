@@ -70,8 +70,8 @@ DO NOT write directly to the final findings JSON — the gate is the only path t
 ### Reference Files (read when you reach the relevant phase)
 
 Your reference directory contains detailed schemas and scaffolds. Read them at the right time, not now:
-- `docs/orchestrator/templates/_shared/references/output-schema.md` — sidecar JSON schema, gate validation instructions, test_file format rules. **Read in Phase D** before writing your sidecar.
-- `docs/orchestrator/templates/_shared/references/fp-gate-and-scoring.md` — FP 5-gate check + confidence score deduction rubric. **Read in Phase D** before finalizing findings.
+- `docs/orchestrator/templates/_shared/references/output-schema.md` — sidecar JSON schema, gate validation instructions, test_file format rules. **Read before writing your sidecar** (after Phase D/E work is done).
+- `docs/orchestrator/templates/_shared/references/fp-gate-and-scoring.md` — FP 5-gate check + confidence score deduction rubric. **Read before finalizing findings** (after Phase D/E work is done).
 - `docs/orchestrator/templates/_shared/references/exploit-scaffolds.md` — flash loan Forge pattern + reusable exploit harness imports. **Read in Phase E** when writing exploit tests.
 
 Tool invocation scripts (use instead of reconstructing commands from memory):
@@ -170,7 +170,7 @@ Set `"ran": false` with a `"reason"` field for any tool you could not run. Do NO
 - D: count mandatory attack probes attempted with Forge tests (always "D: 5/5")
 - E: count Target Map hypotheses with Forge tests (e.g., "E: 5/5")
 
-Example: `"checklist_items_completed": "A: 25/25, B: 3/5, C: 18/20, D: 4/4, E: 5/5"`
+Example: `"checklist_items_completed": "A: 4/4, B: 3/5, C: 18/20, D: 5/5, E: 5/5"`
 
 ### Pre-Completion Gate (MUST verify before writing final findings.json)
 
