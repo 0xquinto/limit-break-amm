@@ -76,11 +76,8 @@ def _score_checklist(sidecar: dict, agent_name: str, num_repos: int) -> tuple[fl
     """Dimension 1: Checklist completion (0-30 pts).
 
     Parses metadata.checklist_items_completed or counts actual work done.
-    Expected items = Phase A (per tool type, not per-repo) + Phase B + Phase C + Phase D.
-
-    Phase A counting: agents count by tool type (e.g., "ran slither" = 1 item),
-    not per-repo (e.g., "ran slither on 5 repos" = 5 items). The expected formula
-    matches the agent counting convention: A_BASE items + optional A5.
+    Expected items = Phase A (per tool type) + Phase B + Phase C (includes exploit probes).
+    Phase D (hypothesis-driven) is variable and not counted in expected total.
     """
     meta = sidecar.get("metadata", {})
     expected_c = CHECKLIST_EXPECTED.get(agent_name, 0)

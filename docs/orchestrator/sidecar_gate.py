@@ -232,7 +232,7 @@ def validate(sidecar: dict) -> list[str]:
                 errors.append(
                     f"LOW CHECKLIST COMPLETION: {num_sum}/{den_sum} "
                     f"({checklist_pct:.0%}) completed (minimum {MIN_CHECKLIST_PCT:.0%}). "
-                    f"Work through remaining Phase A-E items before submitting."
+                    f"Work through remaining Phase A-D items before submitting."
                 )
 
     # Confidence scoring check on findings
