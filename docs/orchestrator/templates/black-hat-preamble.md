@@ -49,34 +49,9 @@ Rank every hypothesis by: `extractable_value / attacker_capital / dependency_cou
 
 **Depth floor (MANDATORY SELF-CHECK)**: Before writing your final findings.json, count your Phase C items. If you have NOT completed every item in your checklist, you are NOT done. Go back and work through the remaining items. You have 200 turns — use them. Agents that complete fewer than 60% of their Phase C items will be flagged as non-compliant and their results discarded.
 
-### Known Vulnerability Patterns (MANDATORY CHECKPOINT — must appear in sidecar)
-
-Previous audits found these 4 bug classes. You MUST investigate ALL 4 and write a `ruled_out_vectors` entry for each in your findings.json — even if you rule them out. This is a hard checkpoint: your sidecar is INVALID without all 4 entries.
-
-For each pattern below, you MUST:
-1. Read the specific functions listed
-2. Write a `ruled_out_vectors` entry with the EXACT `contracts`, `keywords`, and `functions` fields shown
-3. Include your verdict and evidence
-
-**Pattern KV-1 — Zero-price bypass**:
-- Investigate: `SqrtPriceCalculator.computeRatioX96()` returns 0 on overflow. `CLOBTransferHandler._enforceTokenHooks()` checks for zero but `AMMStandardHook.validateHandlerOrder()` does not.
-- Required sidecar fields: `"contracts": ["AMMStandardHook.sol", "CLOBTransferHandler.sol", "SqrtPriceCalculator.sol"]`, `"keywords": ["sqrtPriceX96", "zero", "bypass", "overflow", "pricing-bounds", "computeRatioX96", "validateHandlerOrder"]`, `"functions": ["_enforceTokenHooks", "validateHandlerOrder", "computeRatioX96"]`
-
-**Pattern KV-2 — Direct handler call**:
-- Investigate: Calling `CLOBTransferHandler.executeSwap()` directly (not via AMM hooks) may bypass pricing enforcement in `beforeSwap`/`afterSwap`.
-- Required sidecar fields: `"contracts": ["CLOBTransferHandler.sol", "AMMStandardHook.sol"]`, `"keywords": ["pricing", "bypass", "direct", "handler", "direct-swap", "pricing-bounds", "flag-dependency"]`, `"functions": ["executeSwap", "beforeSwap", "afterSwap"]`
-
-**Pattern KV-3 — Settings sync gap**:
-- Investigate: `CLOBTransferHandler.setTokenSettings()` may leave stale `memSettings` in `CreatorHookSettingsRegistry`. Check if the `initialized` field can desync.
-- Required sidecar fields: `"contracts": ["CLOBTransferHandler.sol", "CreatorHookSettingsRegistry.sol"]`, `"keywords": ["setTokenSettings", "sync", "stale", "initialized", "memSettings", "gas-waste"]`, `"functions": ["setTokenSettings"]`
-
-**Pattern KV-4 — Transient storage leak**:
-- Investigate: `AMMStandardHook.beforeSwap()` writes to `DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT` but the slot may not be cleared on all paths, leaving stale data for the next swap. Check `AMMHooksTransferHandler` paths.
-- Required sidecar fields: `"contracts": ["AMMHooksTransferHandler.sol", "AMMStandardHook.sol"]`, `"keywords": ["transient", "tstore", "clear", "direct", "swap", "transient-storage", "stale-read", "direct-swap", "DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT"]`, `"functions": ["beforeSwap"]`
-
 ### Mandatory Attack Probes (MUST attempt before completion)
 
-Before reporting completion, you MUST have attempted at least one exploit per category:
+Before reporting completion, you MUST have attempted at least one exploit per category. Write a Forge test for each — even a failing test that proves the guard holds counts as evidence.
 
 1. **Dust-loop extraction**: run 100+ tiny swaps → measure if pool leaks value to attacker each iteration → compound
 2. **Forged hook caller**: call hook directly with fake pool identity (not via AMM) → check if credited without legitimate swap
@@ -152,9 +127,9 @@ Read `docs/framework/amm-invariant-catalog.md` FIRST. Then execute every item in
 
 {{CHECKLIST}}
 
-**Phase D: Known Patterns**
+**Phase D: Mandatory Attack Probes**
 
-Investigate ALL 4 known vulnerability patterns (KV-1 through KV-4) listed above. Write a `ruled_out_vectors` entry for each with the EXACT required fields.
+Attempt ALL 5 mandatory attack probes listed above (dust-loop, forged hook caller, transient-slot theft, permit mutation, storage-slot collision). Write a Forge test for each. Log results as findings (if exploitable) or `ruled_out_vectors` (if guarded).
 
 **Phase E: Hypothesis-Driven Exploits**
 
@@ -166,7 +141,7 @@ Your sidecar's `metadata` field MUST contain ALL of these keys with real values.
 
 ```json
 {
-  "checklist_items_completed": "A: N/N, B: N/N, C: N/N, D: 4/4, E: N/N",
+  "checklist_items_completed": "A: N/N, B: N/N, C: N/N, D: 5/5, E: N/N",
   "tools_run": {
     "slither": {"ran": true, "repos": ["..."], "note": "..."},
     "aderyn": {"ran": true, "repos": ["..."], "note": "..."},
@@ -189,10 +164,10 @@ Your sidecar's `metadata` field MUST contain ALL of these keys with real values.
 Set `"ran": false` with a `"reason"` field for any tool you could not run. Do NOT omit tools — every tool must be reported.
 
 **How to count checklist_items_completed**: Count the items you actually attempted in each phase:
-- A: count repos where you ran Slither + Aderyn (e.g., 5 repos × 5 tools = "A: 25/25")
+- A: count A1-A5 tool types you invoked (e.g., "A: 4/4" or "A: 5/5" if you ran A5)
 - B: count B1-B5 items you invoked (e.g., "B: 3/5")
 - C: count C-items from YOUR section where you wrote a test OR ran a tool (e.g., "C: 18/20")
-- D: count KV patterns investigated with sidecar entries (always "D: 4/4")
+- D: count mandatory attack probes attempted with Forge tests (always "D: 5/5")
 - E: count Target Map hypotheses with Forge tests (e.g., "E: 5/5")
 
 Example: `"checklist_items_completed": "A: 25/25, B: 3/5, C: 18/20, D: 4/4, E: 5/5"`
@@ -200,14 +175,14 @@ Example: `"checklist_items_completed": "A: 25/25, B: 3/5, C: 18/20, D: 4/4, E: 5
 ### Pre-Completion Gate (MUST verify before writing final findings.json)
 
 Count your completed items. Your sidecar MUST report in `metadata.checklist_items_completed`:
-- [ ] Phase A: 5 items per repo (A1-A5). Total = 5 × repos_in_scope.
+- [ ] Phase A: 4-5 tool types (A1-A4, plus A5 if applicable).
 - [ ] Phase B: 3-5 items (B1-B5 depending on archetype).
 - [ ] Phase C: ALL items in YOUR section:
   - C-MATH: 25/25
   - C-STATE: 20/20
   - C-AUTH: 19/19
   - C-BOUNDARY: 18/18
-- [ ] Phase D: 4/4 known patterns with exact sidecar fields.
+- [ ] Phase D: 5/5 mandatory attack probes with Forge tests.
 - [ ] Phase E: Every Target Map hypothesis has a Forge test.
 
 If a tool errors or a test can't compile, log the error — that still counts as "completed" (attempted). Only "not attempted" is invalid.

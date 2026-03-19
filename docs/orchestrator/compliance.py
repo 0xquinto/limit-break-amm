@@ -33,7 +33,7 @@ PHASE_A5_AGENTS = {"cross-boundary", "state-desync"}
 PHASE_B_BASE = 3
 PHASE_B4_AGENTS = {"precision-sniper", "math-deep-diver", "price-distorter"}
 
-PHASE_D_ITEMS = 4
+PHASE_D_ITEMS = 5  # 5 mandatory attack probes (dust-loop, forged hook, transient, permit, storage)
 
 # Required tools (every agent must attempt these)
 REQUIRED_TOOLS = {"slither", "aderyn", "forge", "halmos", "medusa",
