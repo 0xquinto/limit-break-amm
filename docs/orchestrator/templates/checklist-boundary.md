@@ -29,3 +29,9 @@
 *Medusa:*
 - C17. Medusa on AMMStandardHook: `cd lbamm-hooks-and-handlers && /opt/homebrew/bin/medusa fuzz --target-contracts AMMStandardHook --test-limit 100000 2>&1 | tail -40`
 - C18. Medusa on SingleProviderPoolType: `cd lbamm-pool-type-single-provider && /opt/homebrew/bin/medusa fuzz --target-contracts SingleProviderPoolType --test-limit 100000 2>&1 | tail -40`
+
+*Exploit-grounded probes (from real-world losses):*
+- C19. **Hook/pool accounting desync — Bunni pattern ($8.3M)**: `AMMStandardHook` wraps pool types. After `beforeSwap`/`afterSwap` callback sequences with a revert in between, does the hook's internal accounting (fees, balances) desync from the actual pool type balances? Write Forge test with a hook that reverts in `afterSwap` — does `beforeSwap`'s state change persist?
+- C20. **Diamond selector collision — research**: Use `mcp__slither__list_functions` across AMMModule, ModuleAdmin, ModuleFeeCollection, ModuleLiquidity and all pool types. Extract 4-byte selectors. Check for ANY collision. Also: can a malicious pool type address (with 6 leading zero bytes) register a function whose selector collides with an admin function?
+- C21. **Transient storage cross-path — ChainSecurity research**: `AMMStandardHook.beforeSwap()` writes to transient slot. Can a DIFFERENT code path (addLiquidity, removeLiquidity, collectFees) read that slot and misinterpret it? Check ALL tload calls — do they only read slots written by the SAME operation type?
+- C22. **Hook return value manipulation — Uni V4 vectors**: Deploy mock hook that returns manipulated values from `beforeSwap` (altered swap amount, fee override). Does `AMMModule` or `AMMStandardHook` validate the return? Can a hook inflate fees to extract value from every swap?

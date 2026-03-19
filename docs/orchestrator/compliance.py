@@ -13,16 +13,17 @@ from .config import RESULTS_DIR
 
 
 # Agent name → checklist section (matches prompt_renderer._CHECKLIST_MAP)
+# Counts include original C-items + exploit-grounded probes
 CHECKLIST_EXPECTED: dict[str, int] = {
-    "precision-sniper": 25,
-    "math-deep-diver": 25,
-    "price-distorter": 25,
-    "state-desync": 20,
-    "composability-exploiter": 20,
-    "insolvency-engineer": 20,
-    "auth-forger": 19,
-    "cross-boundary": 18,
-    "extension-hijacker": 18,
+    "precision-sniper": 29,     # 25 original + 4 probes
+    "math-deep-diver": 29,      # 25 original + 4 probes
+    "price-distorter": 29,      # 25 original + 4 probes
+    "state-desync": 25,         # 20 original + 5 probes
+    "composability-exploiter": 25,  # 20 original + 5 probes
+    "insolvency-engineer": 25,  # 20 original + 5 probes
+    "auth-forger": 22,          # 19 original + 3 probes
+    "cross-boundary": 22,       # 18 original + 4 probes
+    "extension-hijacker": 22,   # 18 original + 4 probes
 }
 
 # Phase A: 4 base items per repo (A1-A4). A5 (storage layout) only for specific agents.
@@ -33,7 +34,7 @@ PHASE_A5_AGENTS = {"cross-boundary", "state-desync"}
 PHASE_B_BASE = 3
 PHASE_B4_AGENTS = {"precision-sniper", "math-deep-diver", "price-distorter"}
 
-PHASE_D_ITEMS = 5  # 5 mandatory attack probes (dust-loop, forged hook, transient, permit, storage)
+PHASE_D_ITEMS = 0  # Phase D (hypothesis-driven) is variable — not counted in expected total
 
 # Required tools (every agent must attempt these)
 REQUIRED_TOOLS = {"slither", "aderyn", "forge", "halmos", "medusa",

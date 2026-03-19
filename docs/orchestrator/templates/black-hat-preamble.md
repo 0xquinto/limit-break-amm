@@ -49,21 +49,9 @@ Rank every hypothesis by: `extractable_value / attacker_capital / dependency_cou
 
 **Depth floor (MANDATORY SELF-CHECK)**: Before writing your final findings.json, count your Phase C items. If you have NOT completed every item in your checklist, you are NOT done. Go back and work through the remaining items. You have 200 turns — use them. Agents that complete fewer than 60% of their Phase C items will be flagged as non-compliant and their results discarded.
 
-### Mandatory Attack Probes (MUST attempt before completion)
+### Exploit-Grounded Attack Probes (in your Phase C checklist)
 
-Before reporting completion, you MUST have attempted at least one exploit per category. Write a Forge test for each — even a failing test that proves the guard holds counts as evidence.
-
-Each probe is grounded in real-world exploits that drained $550M+ from production protocols with similar architectures.
-
-1. **Precision extraction** (Cetus $223M, Balancer $128M): Target the math libraries. Check if `SqrtPriceCalculator.computeRatioX96()` can overflow to 0 on crafted tick input. Check if division in `FixedHelper._calculateAmountOut()`, `DynamicPoolType.swapByInput()`, and `withdrawLiquidity()` rounds in the WRONG direction (user-favorable instead of protocol-favorable). A single wrong-direction rounding = dust-loop drain via 100+ tiny swaps.
-
-2. **Callback state corruption** (Bunni $8.3M, Curve $73M, read-only reentrancy $86M): During `_finalizeSwapCollectFundsAndDisburse()`, pool state is updated across multiple cross-contract calls. Check if a token transfer callback (ERC-777, hooks) can fire mid-finalization and re-enter to read partially-updated reserves via `getReserves()` or `getSqrtPriceX96()`. Check if `beforeSwap` and `afterSwap` see consistent state when a callback fires between them.
-
-3. **Transient storage manipulation** (SIR $355K, ChainSecurity research): `AMMStandardHook.beforeSwap()` writes to `DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT` and `AMMHooksTransferHandler` reads it. Check if a callback between tstore and tload can overwrite the slot. Check if transient slots are cleared on ALL code paths (including reverts and early returns). Check if a second swap in the same transaction reads a stale slot from the first swap.
-
-4. **Unsigned field exploitation** (EIP-712 replay patterns): `PermitTransferHandler` uses `SWAP_TYPEHASH` where `feeOnTop` is NOT signed. Write a test: take a valid permit signature, set `feeOnTop` to 99% of the swap amount, execute. Does the user receive near-zero tokens while fees go to the attacker? Also test: can the same signature be replayed on a different chain (check domain separator includes chainId)?
-
-5. **Cross-component composition** (Cork $12M, SwapNet $13.4M): Two independently safe components interact unsafely. Check: can a state change in a handler create a precondition that a hook trusts but shouldn't? Can `swapExtraData` (user-supplied 32 bytes) alter the swap path to redirect output? Can a pool type return a fee amount or price that the core module trusts without bounds checking? Test the boundary between EVERY pair: core↔poolType, core↔handler, handler↔hook, hook↔poolType.
+Your Phase C checklist includes exploit-grounded probes — attack patterns from real-world exploits ($550M+ cumulative losses) mapped to specific Limit Break code. These are marked with exploit names (Cetus, Balancer, Bunni, Cork, etc.) in your checklist. Treat them the same as other C-items: write a Forge test, log as finding or ruled_out.
 
 ### Your Output Paths
 
@@ -76,9 +64,9 @@ DO NOT write directly to the final findings JSON — the gate is the only path t
 ### Reference Files (read when you reach the relevant phase)
 
 Your reference directory contains detailed schemas and scaffolds. Read them at the right time, not now:
-- `docs/orchestrator/templates/_shared/references/output-schema.md` — sidecar JSON schema, gate validation instructions, test_file format rules. **Read before writing your sidecar** (after Phase D/E work is done).
-- `docs/orchestrator/templates/_shared/references/fp-gate-and-scoring.md` — FP 5-gate check + confidence score deduction rubric. **Read before finalizing findings** (after Phase D/E work is done).
-- `docs/orchestrator/templates/_shared/references/exploit-scaffolds.md` — flash loan Forge pattern + reusable exploit harness imports. **Read in Phase E** when writing exploit tests.
+- `docs/orchestrator/templates/_shared/references/output-schema.md` — sidecar JSON schema, gate validation instructions, test_file format rules. **Read before writing your sidecar** (after Phase C/D work is done).
+- `docs/orchestrator/templates/_shared/references/fp-gate-and-scoring.md` — FP 5-gate check + confidence score deduction rubric. **Read before finalizing findings** (after Phase C/D work is done).
+- `docs/orchestrator/templates/_shared/references/exploit-scaffolds.md` — flash loan Forge pattern + reusable exploit harness imports. **Read in Phase D** when writing exploit tests.
 
 Tool invocation scripts (use instead of reconstructing commands from memory):
 - `docs/orchestrator/templates/_shared/scripts/run-slither.sh <repo-path>` — Slither with build-info fix
@@ -133,11 +121,7 @@ Read `docs/framework/amm-invariant-catalog.md` FIRST. Then execute every item in
 
 {{CHECKLIST}}
 
-**Phase D: Mandatory Attack Probes**
-
-Attempt ALL 5 mandatory attack probes listed above (precision extraction, callback state corruption, transient storage manipulation, unsigned field exploitation, cross-component composition). Write a Forge test for each. Log results as findings (if exploitable) or `ruled_out_vectors` (if guarded).
-
-**Phase E: Hypothesis-Driven Exploits**
+**Phase D: Hypothesis-Driven Exploits**
 
 For every hypothesis in your Target Map: write a Forge test that attempts to exploit it. Tests that PASS (proving the guard holds) are valuable — log them as ruled-out with test_file.
 
@@ -147,7 +131,7 @@ Your sidecar's `metadata` field MUST contain ALL of these keys with real values.
 
 ```json
 {
-  "checklist_items_completed": "A: N/N, B: N/N, C: N/N, D: 5/5, E: N/N",
+  "checklist_items_completed": "A: N/N, B: N/N, C: N/N, D: N/N",
   "tools_run": {
     "slither": {"ran": true, "repos": ["..."], "note": "..."},
     "aderyn": {"ran": true, "repos": ["..."], "note": "..."},
@@ -172,23 +156,21 @@ Set `"ran": false` with a `"reason"` field for any tool you could not run. Do NO
 **How to count checklist_items_completed**: Count the items you actually attempted in each phase:
 - A: count A1-A5 tool types you invoked (e.g., "A: 4/4" or "A: 5/5" if you ran A5)
 - B: count B1-B5 items you invoked (e.g., "B: 3/5")
-- C: count C-items from YOUR section where you wrote a test OR ran a tool (e.g., "C: 18/20")
-- D: count mandatory attack probes attempted with Forge tests (always "D: 5/5")
-- E: count Target Map hypotheses with Forge tests (e.g., "E: 5/5")
+- C: count C-items from YOUR section where you wrote a test OR ran a tool — includes exploit-grounded probes (e.g., "C: 25/29")
+- D: count Target Map hypotheses with Forge tests (e.g., "D: 5/5")
 
-Example: `"checklist_items_completed": "A: 4/4, B: 3/5, C: 18/20, D: 5/5, E: 5/5"`
+Example: `"checklist_items_completed": "A: 4/4, B: 3/5, C: 25/29, D: 5/5"`
 
 ### Pre-Completion Gate (MUST verify before writing final findings.json)
 
 Count your completed items. Your sidecar MUST report in `metadata.checklist_items_completed`:
 - [ ] Phase A: 4-5 tool types (A1-A4, plus A5 if applicable).
 - [ ] Phase B: 3-5 items (B1-B5 depending on archetype).
-- [ ] Phase C: ALL items in YOUR section:
-  - C-MATH: 25/25
-  - C-STATE: 20/20
-  - C-AUTH: 19/19
-  - C-BOUNDARY: 18/18
-- [ ] Phase D: 5/5 mandatory attack probes with Forge tests.
-- [ ] Phase E: Every Target Map hypothesis has a Forge test.
+- [ ] Phase C: ALL items in YOUR section (includes exploit-grounded probes):
+  - C-MATH: 29/29
+  - C-STATE: 25/25
+  - C-AUTH: 22/22
+  - C-BOUNDARY: 22/22
+- [ ] Phase D: Every Target Map hypothesis has a Forge test.
 
 If a tool errors or a test can't compile, log the error — that still counts as "completed" (attempted). Only "not attempted" is invalid.

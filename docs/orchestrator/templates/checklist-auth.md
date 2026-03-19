@@ -30,3 +30,8 @@
 *Medusa fuzz campaigns:*
 - C18. Medusa on CLOBTransferHandler: `cd lbamm-hooks-and-handlers && /opt/homebrew/bin/medusa fuzz --target-contracts CLOBTransferHandler --test-limit 100000 2>&1 | tail -40`
 - C19. Medusa on PermitTransferHandler: `cd lbamm-hooks-and-handlers && /opt/homebrew/bin/medusa fuzz --target-contracts PermitTransferHandler --test-limit 100000 2>&1 | tail -40`
+
+*Exploit-grounded probes (from real-world losses):*
+- C20. **Unsigned field exploitation — EIP-712 patterns**: `feeOnTop` is NOT signed in `SWAP_TYPEHASH`. Write Forge test: take valid permit signature, set `feeOnTop` to 99% of swap amount, execute. Does user receive near-zero tokens? What's the maximum `feeOnTop` the protocol allows?
+- C21. **Cross-chain permit replay**: Check if domain separator includes `chainId`. Sign permit on chainId=1, replay on chainId=137. Does it succeed? Also test: universal domain separator in PermitC — can signatures be replayed across chains?
+- C22. **Arbitrary calldata — SwapNet pattern ($13.4M)**: `swapExtraData` accepts user-supplied 32 bytes. Can crafted `swapExtraData` alter the swap path, redirect output, or change the pool type behavior? Test with: all zeros, all 0xFF, address-shaped data, function selector-shaped data.

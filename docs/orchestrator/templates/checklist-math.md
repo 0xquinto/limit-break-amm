@@ -30,3 +30,9 @@
 - C23. `INV-SW02 No Profitable Round-Trip` — Forge stateful test: random swap A→B then B→A on each pool type, assert A_final <= A_initial. Run with `--fuzz-runs 10000`
 - C24. `INV-SW03 Rounding Favors Protocol` — Forge: 1000 sequential 1-wei swaps on each pool type, assert pool balance never decreases. Run with `--fuzz-runs 5000`
 - C25. `INV-E01 Fee Monotonicity` — Forge: snapshot feeGrowthGlobal before/after 100 random swaps on DynamicPoolType, assert monotonically non-decreasing (accounting for uint256 wrapping)
+
+*Exploit-grounded probes (from real-world losses):*
+- C26. **Precision extraction — Cetus pattern ($223M)**: Craft `tick_index` inputs to `SqrtPriceCalculator.computeRatioX96()` that cause overflow → near-zero price. Follow the value through `DynamicPoolType.swapByInput()` — if price is near-zero, can attacker add minimal liquidity and withdraw massive amounts?
+- C27. **Rounding direction — Balancer pattern ($128M)**: Check EVERY division in `FixedHelper._calculateAmountOut()`, `_calculateAmountIn()`, `withdrawLiquidity()`, `addLiquidity()`. Are they rounded against the user (protocol-favorable)? A single wrong-direction rounding = dust-loop drain. Write Forge test: 1000 sequential 1-wei operations, measure if pool balance decreases.
+- C28. **First depositor inflation — ERC-4626 pattern ($240K)**: On `SingleProviderPoolType` and `DynamicPoolType`: first LP deposits 1 wei, then donates large amount directly to contract. Second LP deposits — do they get 0 shares due to rounding? Write Forge test with the exact sequence.
+- C29. **Hook price manipulation — Balancer rate provider ($128M)**: Deploy mock hook that returns extreme price (0, type(uint256).max, or 1 wei) to `SingleProviderPoolType`. Does the pool type bounds-check the hook's return value? What happens to swap calculations with price=0?

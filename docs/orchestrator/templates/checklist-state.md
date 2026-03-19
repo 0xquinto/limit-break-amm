@@ -29,3 +29,10 @@
 
 *Medusa fuzz campaign:*
 - C20. Medusa on AMMModule: `cd lbamm-core && /opt/homebrew/bin/medusa fuzz --target-contracts AMMModule --test-limit 100000 2>&1 | tail -40`
+
+*Exploit-grounded probes (from real-world losses):*
+- C21. **Callback state corruption — Bunni/Curve pattern ($8.3M + $73M)**: During `_finalizeSwapCollectFundsAndDisburse()`, deploy MaliciousToken (ERC-777 callback) that re-enters to call `getReserves()` or `getSqrtPriceX96()` mid-finalization. Are the returned values consistent? Does `beforeSwap` and `afterSwap` see the same state when a callback fires between them?
+- C22. **Read-only reentrancy ($86M cumulative)**: During a swap, re-enter via token transfer callback and call a VIEW function on the pool. Does the view return partially-updated state (stale reserves, wrong price)? Write Forge test: swap → callback → read reserves → verify consistency.
+- C23. **Transient storage — SIR pattern ($355K)**: Two swaps in same transaction. First swap writes to `DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT`. Does the second swap read the first swap's stale value? Also: does a revert in the first swap leave the transient slot dirty for the second?
+- C24. **Cross-component composition — Cork pattern ($12M)**: Can a state change in `CLOBTransferHandler.setTokenSettings()` create a precondition that `AMMStandardHook.afterSwap()` trusts but shouldn't? Write test: change settings mid-transaction, then swap — does the hook use stale or fresh settings?
+- C25. **Fee-on-transfer token — PancakeSwap pattern**: Deploy fee-on-transfer token. `addLiquidity` with 1000 tokens (contract receives 990 after fee). Does pool type credit 1000 or 990? If 1000 → phantom liquidity that can be drained on `removeLiquidity`.
