@@ -90,6 +90,8 @@ Your validated findings are automatically shared with other agents via the `audi
 
 This is your COMPLETE workload. Execute every numbered item. Log every result. You are NOT done until every item below has an outcome in your sidecar.
 
+**MCP timeout policy**: If an MCP tool call (Slither, audit-gate) hangs for >60 seconds, skip it and fall back to manual analysis (Read + Grep on the code directly). Log `"ran": false, "reason": "timeout"` in tools_run. Do NOT block your entire run waiting for a stuck MCP server.
+
 **Phase A: Static Analysis (run on EVERY repo in your scope)**
 
 For each repo in your scope, run ALL of:

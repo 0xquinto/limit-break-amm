@@ -591,6 +591,13 @@ async def run_single_wave(
                   f"<= prev_best={prev_best} → DISCARD")
         log_experiment(exp_result)
 
+    # ── Blind spot scanner (after synthesis, before wave 2 gate) ────────────
+    blind_spot_report: dict = {}
+    if wave.number == 1:
+        from .blind_spot_scanner import scan_blind_spots
+        blind_spot_report = scan_blind_spots(wave.number)
+        print(f"\n  Blind spot scan: {blind_spot_report['summary']}")
+
     print(f"\nWave {wave.number} complete.")
     print(f"  Total tokens: {sum(r.total_tokens for r in results):,}")
     print(f"  Synthesis: {ARTIFACTS_DIR / f'wave{wave.number}-synthesis.md'}")
@@ -609,6 +616,11 @@ async def run_single_wave(
                 synthesis_json_path = ARTIFACTS_DIR / "wave1-synthesis.json"
                 if synthesis_json_path.exists():
                     synthesis_json = json.loads(synthesis_json_path.read_text())
+                    # Inject blind spot leads into synthesis for wave 2 agents
+                    if blind_spot_report.get("blind_spots"):
+                        from .blind_spot_scanner import blind_spots_as_leads
+                        synthesis_json["blind_spot_leads"] = blind_spots_as_leads(blind_spot_report)
+                        print(f"  Injected {len(blind_spot_report['blind_spots'])} blind spot leads into wave 2 context")
                     from .wave_runner import populate_wave2_agents
                     wave2 = populate_wave2_agents(WAVES[1], synthesis_json)
                     if wave2.agents:
