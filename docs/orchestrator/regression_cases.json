@@ -1,87 +1,137 @@
 [
   {
-    "id": "REG-001",
-    "source": "v1-audit",
-    "title": "sqrtPriceX96==0 bypass",
-    "contracts": ["CLOBTransferHandler.sol", "AMMStandardHook.sol", "SqrtPriceCalculator.sol"],
-    "functions": ["_enforceTokenHooks", "validateHandlerOrder", "computeRatioX96"],
-    "category": "input-validation",
-    "keywords": ["sqrtPriceX96", "zero", "bypass", "price", "overflow", "pricing-bounds", "computeRatioX96", "validateHandlerOrder"],
-    "repo": "lbamm-hooks-and-handlers"
-  },
-  {
-    "id": "REG-002",
-    "source": "v1-audit",
-    "title": "Pricing bypass via direct handler call",
-    "contracts": ["CLOBTransferHandler.sol", "AMMStandardHook.sol"],
-    "functions": ["executeSwap", "beforeSwap", "afterSwap"],
-    "category": "access-control",
-    "keywords": ["pricing", "bypass", "direct", "handler", "direct-swap", "pricing-bounds", "flag-dependency"],
-    "repo": "lbamm-hooks-and-handlers"
-  },
-  {
-    "id": "REG-003",
-    "source": "v1-audit",
-    "title": "setTokenSettings sync gap",
-    "contracts": ["CLOBTransferHandler.sol", "CreatorHookSettingsRegistry.sol"],
-    "functions": ["setTokenSettings"],
-    "category": "state-sync",
-    "keywords": ["setTokenSettings", "sync", "stale", "initialized", "memSettings", "gas-waste"],
-    "repo": "lbamm-hooks-and-handlers"
-  },
-  {
-    "id": "REG-004",
-    "source": "v2-audit",
-    "title": "Transient storage not cleared for direct swap input",
-    "contracts": ["AMMHooksTransferHandler.sol", "AMMStandardHook.sol"],
-    "functions": ["beforeSwap"],
-    "category": "transient-storage",
-    "keywords": ["transient", "tstore", "clear", "direct", "swap", "transient-storage", "stale-read", "direct-swap", "DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT"],
-    "repo": "lbamm-hooks-and-handlers"
-  },
-  {
-    "id": "REG-005",
-    "source": "probe-coverage",
-    "title": "Precision extraction probe (rounding/overflow in math)",
-    "contracts": ["SqrtPriceCalculator.sol", "FixedHelper.sol", "DynamicPoolType.sol"],
-    "functions": ["computeRatioX96", "_calculateAmountOut", "swapByInput", "withdrawLiquidity"],
+    "id": "EXP-01",
+    "source": "cetus-2025-05",
+    "title": "Precision overflow in sqrt price calculation (Cetus $223M)",
+    "contracts": ["SqrtPriceCalculator.sol", "DynamicPoolType.sol"],
+    "functions": ["computeRatioX96", "swapByInput", "swapByOutput"],
     "category": "precision",
-    "keywords": ["rounding", "overflow", "precision", "dust", "wei", "division", "computeRatioX96", "calculateAmountOut"]
+    "keywords": ["overflow", "sqrtPrice", "computeRatioX96", "precision", "zero", "near-zero", "tick", "Q64.96"]
   },
   {
-    "id": "REG-006",
-    "source": "probe-coverage",
-    "title": "Callback state corruption probe (reentrancy during finalization)",
-    "contracts": ["AMMModule.sol", "AMMStandardHook.sol"],
-    "functions": ["_finalizeSwapCollectFundsAndDisburse", "beforeSwap", "afterSwap"],
-    "category": "reentrancy",
-    "keywords": ["callback", "reentrancy", "reenter", "finalize", "mid-update", "stale", "reserves", "state corruption"]
+    "id": "EXP-02",
+    "source": "balancer-2025-11",
+    "title": "Rounding direction error in token calculations (Balancer $128M)",
+    "contracts": ["FixedHelper.sol", "DynamicPoolType.sol", "SingleProviderHelper.sol"],
+    "functions": ["_calculateAmountOut", "_calculateAmountIn", "withdrawLiquidity", "addLiquidity"],
+    "category": "precision",
+    "keywords": ["rounding", "direction", "division", "wei", "dust", "round", "favor", "protocol"]
   },
   {
-    "id": "REG-007",
-    "source": "probe-coverage",
-    "title": "Transient storage manipulation probe",
+    "id": "EXP-03",
+    "source": "bunni-2025-09",
+    "title": "Hook/pool accounting desync (Bunni $8.3M)",
+    "contracts": ["AMMStandardHook.sol", "DynamicPoolType.sol", "FixedHelper.sol"],
+    "functions": ["beforeSwap", "afterSwap", "validateHandlerOrder"],
+    "category": "state-desync",
+    "keywords": ["desync", "accounting", "hook", "pool", "balance", "mismatch", "revert", "partial"]
+  },
+  {
+    "id": "EXP-04",
+    "source": "sir-2025-03",
+    "title": "Transient storage overwrite via callback (SIR $355K)",
     "contracts": ["AMMStandardHook.sol", "AMMHooksTransferHandler.sol"],
     "functions": ["beforeSwap"],
     "category": "transient-storage",
-    "keywords": ["transient", "tstore", "tload", "overwrite", "stale", "slot", "DIRECT_SWAP"]
+    "keywords": ["transient", "tstore", "tload", "overwrite", "callback", "DIRECT_SWAP", "slot", "stale"]
   },
   {
-    "id": "REG-008",
-    "source": "probe-coverage",
-    "title": "Unsigned field exploitation probe (permit feeOnTop)",
+    "id": "EXP-05",
+    "source": "eip712-patterns",
+    "title": "Unsigned permit field exploitation (feeOnTop not signed)",
     "contracts": ["PermitTransferHandler.sol"],
     "functions": ["executeSwap"],
     "category": "signature",
-    "keywords": ["permit", "feeOnTop", "unsigned", "signature", "replay", "mutation", "EIP-712", "SWAP_TYPEHASH"]
+    "keywords": ["feeOnTop", "unsigned", "permit", "signature", "SWAP_TYPEHASH", "EIP-712", "mutation"]
   },
   {
-    "id": "REG-009",
-    "source": "probe-coverage",
-    "title": "Cross-component composition probe",
-    "contracts": ["AMMModule.sol", "AMMStandardHook.sol", "CLOBTransferHandler.sol"],
+    "id": "EXP-06",
+    "source": "chainsecurity-2023-11",
+    "title": "Transient storage reentrancy guard bypass (ChainSecurity)",
+    "contracts": ["AMMModule.sol", "AMMStandardHook.sol"],
+    "functions": ["beforeSwap", "afterSwap"],
+    "category": "reentrancy",
+    "keywords": ["transient", "reentrancy", "guard", "tstore", "lock", "bypass", "gas", "100"]
+  },
+  {
+    "id": "EXP-07",
+    "source": "univ4-hooks-2026",
+    "title": "Hook return value manipulation (Uniswap V4 research)",
+    "contracts": ["AMMStandardHook.sol", "AMMModule.sol"],
+    "functions": ["beforeSwap", "afterSwap", "validateAddLiquidity", "validateRemoveLiquidity"],
+    "category": "hook-manipulation",
+    "keywords": ["hook", "return", "manipulate", "callback", "fee", "override", "beforeSwap", "afterSwap"]
+  },
+  {
+    "id": "EXP-08",
+    "source": "cork-2025-05",
+    "title": "Cross-component trust composition exploit (Cork $12M)",
+    "contracts": ["AMMModule.sol", "CLOBTransferHandler.sol", "AMMStandardHook.sol"],
     "functions": ["_finalizeSwapCollectFundsAndDisburse", "executeSwap", "beforeSwap", "afterSwap"],
     "category": "composition",
-    "keywords": ["composition", "cross-component", "boundary", "trust", "handler", "hook", "swapExtraData", "fee", "bounds"]
+    "keywords": ["composition", "trust", "boundary", "component", "handler", "hook", "precondition", "independent"]
+  },
+  {
+    "id": "EXP-09",
+    "source": "readonly-reentrancy-2026",
+    "title": "Read-only reentrancy during mid-finalization ($86M cumulative)",
+    "contracts": ["AMMModule.sol"],
+    "functions": ["_finalizeSwapCollectFundsAndDisburse", "getReserves", "getSqrtPriceX96"],
+    "category": "reentrancy",
+    "keywords": ["read-only", "reentrancy", "view", "reserves", "getReserves", "mid-update", "callback", "partially"]
+  },
+  {
+    "id": "EXP-10",
+    "source": "pancakeswap-2025-08",
+    "title": "Fee-on-transfer token accounting mismatch (PancakeSwap)",
+    "contracts": ["AMMModule.sol", "DynamicPoolType.sol", "FixedHelper.sol"],
+    "functions": ["addLiquidity", "swapByInput"],
+    "category": "token-handling",
+    "keywords": ["fee-on-transfer", "balanceOf", "phantom", "received", "actual", "amount", "credit"]
+  },
+  {
+    "id": "EXP-11",
+    "source": "erc4626-2026-03",
+    "title": "First depositor share inflation (ERC-4626 $240K)",
+    "contracts": ["SingleProviderPoolType.sol", "DynamicPoolType.sol"],
+    "functions": ["addLiquidity", "removeLiquidity"],
+    "category": "initialization",
+    "keywords": ["first", "depositor", "inflation", "share", "donation", "1 wei", "zero", "initialization", "mint"]
+  },
+  {
+    "id": "EXP-12",
+    "source": "curve-2023-07",
+    "title": "Reentrancy during state update + external call (Curve $73M)",
+    "contracts": ["AMMModule.sol", "AMMStandardHook.sol"],
+    "functions": ["_finalizeSwapCollectFundsAndDisburse", "removeLiquidity"],
+    "category": "reentrancy",
+    "keywords": ["reentrancy", "reenter", "external", "callback", "state", "update", "transfer", "finalize"]
+  },
+  {
+    "id": "EXP-13",
+    "source": "swapnet-2026-01",
+    "title": "User-supplied calldata injection (SwapNet $13.4M)",
+    "contracts": ["AMMModule.sol"],
+    "functions": ["multiSwap", "singleSwap"],
+    "category": "input-validation",
+    "keywords": ["swapExtraData", "calldata", "arbitrary", "redirect", "bytes", "user-supplied", "malformed"]
+  },
+  {
+    "id": "EXP-14",
+    "source": "diamond-research-2025",
+    "title": "Diamond proxy selector collision across facets",
+    "contracts": ["AMMModule.sol", "ModuleAdmin.sol", "ModuleFeeCollection.sol", "ModuleLiquidity.sol"],
+    "functions": [],
+    "category": "proxy",
+    "keywords": ["selector", "collision", "facet", "diamond", "4-byte", "proxy", "delegatecall", "storage"]
+  },
+  {
+    "id": "EXP-15",
+    "source": "balancer-rate-2025-11",
+    "title": "Hook-based price manipulation via extreme return values (Balancer $128M)",
+    "contracts": ["SingleProviderPoolType.sol", "AMMStandardHook.sol"],
+    "functions": ["getTokenPrice", "beforeSwap"],
+    "category": "price-manipulation",
+    "keywords": ["price", "extreme", "bounds", "hook", "return", "max", "zero", "rate", "manipulation"]
   }
 ]
