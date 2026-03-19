@@ -33,6 +33,25 @@ def validate(sidecar: dict) -> list[str]:
     # These reject sidecars that use wrong field names so agents learn
     # the correct schema instead of the scorer silently tolerating variants.
 
+    # Top-level agent_name must exist (not "agent", "agent_id", etc.)
+    if "agent_name" not in sidecar:
+        variants = [k for k in ("agent", "agent_id", "name") if k in sidecar]
+        if variants:
+            errors.append(
+                f'WRONG FIELD NAME: top-level uses "{variants[0]}" — rename to "agent_name".'
+            )
+        else:
+            errors.append(
+                'MISSING FIELD: top-level "agent_name" is required.'
+            )
+
+    # metadata must exist as a dict
+    if "metadata" not in sidecar or not isinstance(sidecar.get("metadata"), dict):
+        errors.append(
+            'MISSING FIELD: "metadata" dict is required at top level. '
+            'Must contain num_turns, files_read, tools_run, checklist_items_completed, triage_log.'
+        )
+
     # metadata.num_turns must exist (not "turns")
     if "num_turns" not in meta:
         if "turns" in meta:
