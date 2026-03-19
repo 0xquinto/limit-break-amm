@@ -53,11 +53,17 @@ Rank every hypothesis by: `extractable_value / attacker_capital / dependency_cou
 
 Before reporting completion, you MUST have attempted at least one exploit per category. Write a Forge test for each — even a failing test that proves the guard holds counts as evidence.
 
-1. **Dust-loop extraction**: run 100+ tiny swaps → measure if pool leaks value to attacker each iteration → compound
-2. **Forged hook caller**: call hook directly with fake pool identity (not via AMM) → check if credited without legitimate swap
-3. **Transient-slot theft**: write to transient slot in path A → trigger path B that reads the stale slot → extract from the price/balance difference
-4. **Permit mutation**: replay signature with mutated unsigned fields (feeOnTop, recipient) → check if funds redirect to attacker
-5. **Storage-slot collision**: deploy facet that writes to another facet's storage slot → corrupt accounting → drain via corrupted state
+Each probe is grounded in real-world exploits that drained $550M+ from production protocols with similar architectures.
+
+1. **Precision extraction** (Cetus $223M, Balancer $128M): Target the math libraries. Check if `SqrtPriceCalculator.computeRatioX96()` can overflow to 0 on crafted tick input. Check if division in `FixedHelper._calculateAmountOut()`, `DynamicPoolType.swapByInput()`, and `withdrawLiquidity()` rounds in the WRONG direction (user-favorable instead of protocol-favorable). A single wrong-direction rounding = dust-loop drain via 100+ tiny swaps.
+
+2. **Callback state corruption** (Bunni $8.3M, Curve $73M, read-only reentrancy $86M): During `_finalizeSwapCollectFundsAndDisburse()`, pool state is updated across multiple cross-contract calls. Check if a token transfer callback (ERC-777, hooks) can fire mid-finalization and re-enter to read partially-updated reserves via `getReserves()` or `getSqrtPriceX96()`. Check if `beforeSwap` and `afterSwap` see consistent state when a callback fires between them.
+
+3. **Transient storage manipulation** (SIR $355K, ChainSecurity research): `AMMStandardHook.beforeSwap()` writes to `DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT` and `AMMHooksTransferHandler` reads it. Check if a callback between tstore and tload can overwrite the slot. Check if transient slots are cleared on ALL code paths (including reverts and early returns). Check if a second swap in the same transaction reads a stale slot from the first swap.
+
+4. **Unsigned field exploitation** (EIP-712 replay patterns): `PermitTransferHandler` uses `SWAP_TYPEHASH` where `feeOnTop` is NOT signed. Write a test: take a valid permit signature, set `feeOnTop` to 99% of the swap amount, execute. Does the user receive near-zero tokens while fees go to the attacker? Also test: can the same signature be replayed on a different chain (check domain separator includes chainId)?
+
+5. **Cross-component composition** (Cork $12M, SwapNet $13.4M): Two independently safe components interact unsafely. Check: can a state change in a handler create a precondition that a hook trusts but shouldn't? Can `swapExtraData` (user-supplied 32 bytes) alter the swap path to redirect output? Can a pool type return a fee amount or price that the core module trusts without bounds checking? Test the boundary between EVERY pair: core↔poolType, core↔handler, handler↔hook, hook↔poolType.
 
 ### Your Output Paths
 
@@ -129,7 +135,7 @@ Read `docs/framework/amm-invariant-catalog.md` FIRST. Then execute every item in
 
 **Phase D: Mandatory Attack Probes**
 
-Attempt ALL 5 mandatory attack probes listed above (dust-loop, forged hook caller, transient-slot theft, permit mutation, storage-slot collision). Write a Forge test for each. Log results as findings (if exploitable) or `ruled_out_vectors` (if guarded).
+Attempt ALL 5 mandatory attack probes listed above (precision extraction, callback state corruption, transient storage manipulation, unsigned field exploitation, cross-component composition). Write a Forge test for each. Log results as findings (if exploitable) or `ruled_out_vectors` (if guarded).
 
 **Phase E: Hypothesis-Driven Exploits**
 

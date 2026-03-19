@@ -38,5 +38,50 @@
     "category": "transient-storage",
     "keywords": ["transient", "tstore", "clear", "direct", "swap", "transient-storage", "stale-read", "direct-swap", "DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT"],
     "repo": "lbamm-hooks-and-handlers"
+  },
+  {
+    "id": "REG-005",
+    "source": "probe-coverage",
+    "title": "Precision extraction probe (rounding/overflow in math)",
+    "contracts": ["SqrtPriceCalculator.sol", "FixedHelper.sol", "DynamicPoolType.sol"],
+    "functions": ["computeRatioX96", "_calculateAmountOut", "swapByInput", "withdrawLiquidity"],
+    "category": "precision",
+    "keywords": ["rounding", "overflow", "precision", "dust", "wei", "division", "computeRatioX96", "calculateAmountOut"]
+  },
+  {
+    "id": "REG-006",
+    "source": "probe-coverage",
+    "title": "Callback state corruption probe (reentrancy during finalization)",
+    "contracts": ["AMMModule.sol", "AMMStandardHook.sol"],
+    "functions": ["_finalizeSwapCollectFundsAndDisburse", "beforeSwap", "afterSwap"],
+    "category": "reentrancy",
+    "keywords": ["callback", "reentrancy", "reenter", "finalize", "mid-update", "stale", "reserves", "state corruption"]
+  },
+  {
+    "id": "REG-007",
+    "source": "probe-coverage",
+    "title": "Transient storage manipulation probe",
+    "contracts": ["AMMStandardHook.sol", "AMMHooksTransferHandler.sol"],
+    "functions": ["beforeSwap"],
+    "category": "transient-storage",
+    "keywords": ["transient", "tstore", "tload", "overwrite", "stale", "slot", "DIRECT_SWAP"]
+  },
+  {
+    "id": "REG-008",
+    "source": "probe-coverage",
+    "title": "Unsigned field exploitation probe (permit feeOnTop)",
+    "contracts": ["PermitTransferHandler.sol"],
+    "functions": ["executeSwap"],
+    "category": "signature",
+    "keywords": ["permit", "feeOnTop", "unsigned", "signature", "replay", "mutation", "EIP-712", "SWAP_TYPEHASH"]
+  },
+  {
+    "id": "REG-009",
+    "source": "probe-coverage",
+    "title": "Cross-component composition probe",
+    "contracts": ["AMMModule.sol", "AMMStandardHook.sol", "CLOBTransferHandler.sol"],
+    "functions": ["_finalizeSwapCollectFundsAndDisburse", "executeSwap", "beforeSwap", "afterSwap"],
+    "category": "composition",
+    "keywords": ["composition", "cross-component", "boundary", "trust", "handler", "hook", "swapExtraData", "fee", "bounds"]
   }
 ]
