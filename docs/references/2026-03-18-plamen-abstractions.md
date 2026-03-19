@@ -94,21 +94,37 @@ Plamen's agents skip timed-out MCP providers and fall back to code analysis. Our
 
 ---
 
-## Rejected: Vulnerability RAG
+## Vulnerability Context: Curated vs RAG
 
-Plamen bundles 3 RAG MCP servers (unified-vuln-db, solodit-scraper, defihacklabs-rag) for retrieving real-world exploit patterns.
+Two approaches to giving agents real-world exploit knowledge. Not mutually exclusive — each fits a different use case.
 
-**Why rejected for our use case:**
+### Our approach: Curated exploit context (for this contest)
 
-1. **Context pollution** — RAG results from different protocols eat tokens without adding value for THIS codebase. Agents get 50 Solodit findings about "reentrancy" when they need to verify one specific code path.
+15 hand-picked real-world exploits mapped to specific Limit Break AMM attack surfaces. Each entry has "check THIS function in THIS contract" specificity that generic retrieval can't produce.
 
-2. **False confidence from pattern matching** — agent finds a Solodit entry about "sqrtPrice overflow" in a Uniswap fork, assumes it applies here, writes a finding without verifying. This is exactly how we got 8 rejected submissions.
+See: `docs/references/2026-03-18-curated-exploit-context.md`
 
-3. **The bottleneck is verification, not discovery** — our agents already know DeFi exploit patterns (flash loans, reentrancy, price manipulation). They're in the preamble. The 0-findings problem is "agents can't prove the exploit works in THIS specific code." RAG doesn't help. Forge tests do.
+**Pros**: High signal, zero noise, architecture-specific mappings, no infrastructure needed.
+**Cons**: Doesn't scale — someone has to curate for each new target.
+**Status**: A/B test planned — inject into one agent, compare finding rate vs agents without it.
 
-4. **Better representations > more retrieval** — investing in richer Phase 0 artifacts (attack surface maps computed from THIS codebase) is higher leverage than retrieving patterns from other codebases.
+### Plamen's approach: RAG over vulnerability databases (for general use)
 
-5. **Context budget math** — 30K prompt + RAG results = less room for actual code analysis. Our agents' best work happens deep in the code, not reading about how Euler was hacked in 2023.
+3 MCP servers (unified-vuln-db, solodit-scraper, defihacklabs-rag) that agents query at runtime. Works for any target protocol without manual curation.
+
+**Pros**: Scales across protocols automatically, always up-to-date, agents can query on-demand.
+**Cons**: Noisy results risk context pollution, agents may pattern-match without verifying, eats context budget.
+
+### When to use which
+
+| Situation | Approach |
+|-----------|----------|
+| Single-target contest (Limit Break) | **Curated** — worth the manual effort for high-specificity mappings |
+| General-purpose audit tool | **RAG** — can't hand-curate for every new protocol |
+| Repeat audits of same protocol | **Curated** — accumulate mappings across runs |
+| First look at unknown protocol | **RAG** — no prior knowledge to curate from |
+
+If we generalize this framework beyond Limit Break, RAG becomes necessary. For this contest, curated context is the higher-leverage investment.
 
 ---
 
@@ -116,7 +132,6 @@ Plamen bundles 3 RAG MCP servers (unified-vuln-db, solodit-scraper, defihacklabs
 
 | Plamen Feature | Reason to Skip |
 |---------------|----------------|
-| Vulnerability RAG | Context pollution, false confidence, wrong bottleneck (see above) |
 | 15-95 agents across 8 phases | Our 9-agent, 2-wave model is more cost-efficient (~$56/run vs ~$500+) |
 | General-purpose multi-chain support | We're targeting one specific codebase. Specialization > generalization |
 | Rich TUI/CLI wrapper | Nice but not impactful for finding bugs |
@@ -135,7 +150,7 @@ Plamen bundles 3 RAG MCP servers (unified-vuln-db, solodit-scraper, defihacklabs
 | Enforcement | Thorough mode completeness rules | Sidecar gate + compliance scorer + gotchas loop |
 | Satisficing fix | Strict completeness rules in prompt | Gate rejection + compliance continuation + gotchas feedback |
 | Tool integration | 6 bundled MCP servers (RAG focus) | Slither MCP + CLI tools (Aderyn, Halmos, Medusa, Quimera) |
-| Vulnerability context | RAG over Solodit/DeFiHackLabs/Immunefi | Pre-computed Phase 0 artifacts + known patterns (KV-1–4) |
+| Vulnerability context | RAG over Solodit/DeFiHackLabs/Immunefi | Curated exploit context (15 patterns) + Phase 0 artifacts |
 | Cost per run | ~$100-500 (mode dependent) | ~$56 |
 | Scoring | None (report-based output) | 5-dimension compliance benchmark (0-100) |
 
