@@ -8,15 +8,49 @@
 
 ## High-Value Abstractions (ordered by priority)
 
-### 1. Vulnerability RAG (MCP servers for exploit databases)
+### 1. Better Embeddings — Richer Phase 0 Attack Surface Representations
 
-Plamen bundles 3 RAG servers: `unified-vuln-db` (Solodit + DeFiHackLabs + Immunefi), `solodit-scraper` (live search), `defihacklabs-rag`. Agents query real-world exploit patterns before reasoning from scratch.
+> **Insight**: The 2026 paper "Retrieval or Representation?" (arXiv:2603.04238) shows that many RAG improvements actually come from better *representations* of the knowledge, not better retrieval strategies. Applied to our context: instead of retrieving knowledge about OTHER codebases (RAG), we should compute richer representations of THIS codebase.
 
-**Value for us**: Our agents reason from first principles about whether a pattern is exploitable. A RAG-backed MCP server would let them search "has sqrtPriceX96 overflow been exploited before?" and get concrete examples with PoC code. This directly addresses the 0-findings problem — agents would recognize exploitable patterns faster.
+Our agents spend significant turns discovering structural information that could be pre-computed. The current Phase 0 gives them raw tool output (Slither detectors, Aderyn findings, storage layout, entry points, call graphs). These are *data dumps*, not *attack-oriented representations*.
 
-**Abstraction**: Add a `vuln-db` MCP server to our `.mcp.json` that indexes Solodit findings + DeFiHackLabs exploits. Agents query it in Phase B before writing hypotheses.
+**What agents waste turns discovering:**
+- Cross-contract call chains ("addLiquidity() → poolType.calculateLiquidity() → hook.afterAddLiquidity()")
+- Trust assumptions ("handler.executeSwap() assumes msg.sender is the AMM core")
+- Where invariants are enforced vs where they could be violated
+- Token flow paths through swap/liquidity/fee operations
 
-**Effort**: Medium — need to build/adapt the MCP server + index the databases. Could fork Plamen's `unified-vuln-db` as starting point.
+**Proposed Phase 0 enrichments** (pre-computable with existing tools):
+
+#### 1a. Trust Boundary Map
+For every external/public function, pre-compute: "Function X in contract A assumes Y. If called without Y holding, consequence Z."
+
+Computable from: Slither MCP `analyze_modifiers` + `get_function_callers` + manual annotation of the 6 key trust boundaries (diamond proxy, pool type interface, handler interface, hook callbacks, PermitC delegation, transient storage handoffs).
+
+**Why highest leverage**: Every exploitable bug involves violating a trust assumption. Pre-computing boundaries means agents focus on "how to violate this" rather than "what assumptions exist."
+
+#### 1b. Invariant Anchors
+For each of the 20 invariants in `amm-invariant-catalog.md`, map to specific code locations: where it's enforced (require statements, guards) and where it could be violated (state mutations, external calls).
+
+Computable from: Grep for invariant-related variables + Slither `get_function_source` for guard locations.
+
+**Why high leverage**: Turns abstract invariants into concrete attack checklists. "INV-SW01 is enforced by require at AMMModule.sol:2144. What if this require can be bypassed?" is more actionable than "test swap conservation."
+
+#### 1c. Value Flow Paths
+For each token movement pattern (swap, add/remove liquidity, fee collection), pre-compute the exact sequence of balance changes with contract:function:line references.
+
+Computable from: Slither `export_call_graph` filtered to transfer/balanceOf calls + manual annotation of the 4 settlement paths.
+
+**Why valuable**: Agents don't spend turns tracing "where does the token go after the swap?" — they already know and can focus on "where does value leak?"
+
+#### 1d. State Mutation Graph
+For each state variable, all functions that write to it and all functions that read it, cross-referenced with access control.
+
+Computable from: Slither `analyze_state_variables` + `get_function_callers`/`get_function_callees`.
+
+**Why valuable**: Immediately shows which state variables are writable from external calls and which readers trust those values without re-validation.
+
+**Effort**: Medium — new Phase 0 scripts using existing Slither MCP tools. Output as structured markdown files agents read in Phase B.
 
 ### 2. Blind Spot Scanner (depth loop with targeted reruns)
 
@@ -60,10 +94,29 @@ Plamen's agents skip timed-out MCP providers and fall back to code analysis. Our
 
 ---
 
+## Rejected: Vulnerability RAG
+
+Plamen bundles 3 RAG MCP servers (unified-vuln-db, solodit-scraper, defihacklabs-rag) for retrieving real-world exploit patterns.
+
+**Why rejected for our use case:**
+
+1. **Context pollution** — RAG results from different protocols eat tokens without adding value for THIS codebase. Agents get 50 Solodit findings about "reentrancy" when they need to verify one specific code path.
+
+2. **False confidence from pattern matching** — agent finds a Solodit entry about "sqrtPrice overflow" in a Uniswap fork, assumes it applies here, writes a finding without verifying. This is exactly how we got 8 rejected submissions.
+
+3. **The bottleneck is verification, not discovery** — our agents already know DeFi exploit patterns (flash loans, reentrancy, price manipulation). They're in the preamble. The 0-findings problem is "agents can't prove the exploit works in THIS specific code." RAG doesn't help. Forge tests do.
+
+4. **"Retrieval or Representation?" insight** — the 2026 paper (arXiv:2603.04238) shows many RAG improvements are actually from better representations, not better retrieval. Our "representation" equivalent is Phase 0 artifacts. Enriching those (better embeddings) beats adding retrieval (RAG).
+
+5. **Context budget math** — 30K prompt + RAG results = less room for actual code analysis. Our agents' best work happens deep in the code, not reading about how Euler was hacked in 2023.
+
+---
+
 ## What NOT to Adopt
 
 | Plamen Feature | Reason to Skip |
 |---------------|----------------|
+| Vulnerability RAG | Context pollution, false confidence, wrong bottleneck (see above) |
 | 15-95 agents across 8 phases | Our 9-agent, 2-wave model is more cost-efficient (~$56/run vs ~$500+) |
 | General-purpose multi-chain support | We're targeting one specific codebase. Specialization > generalization |
 | Rich TUI/CLI wrapper | Nice but not impactful for finding bugs |
@@ -82,7 +135,7 @@ Plamen's agents skip timed-out MCP providers and fall back to code analysis. Our
 | Enforcement | Thorough mode completeness rules | Sidecar gate + compliance scorer + gotchas loop |
 | Satisficing fix | Strict completeness rules in prompt | Gate rejection + compliance continuation + gotchas feedback |
 | Tool integration | 6 bundled MCP servers (RAG focus) | Slither MCP + CLI tools (Aderyn, Halmos, Medusa, Quimera) |
-| Vulnerability context | RAG over Solodit/DeFiHackLabs/Immunefi | Manual known patterns (KV-1 through KV-4) |
+| Vulnerability context | RAG over Solodit/DeFiHackLabs/Immunefi | Pre-computed Phase 0 artifacts + known patterns (KV-1–4) |
 | Cost per run | ~$100-500 (mode dependent) | ~$56 |
 | Scoring | None (report-based output) | 5-dimension compliance benchmark (0-100) |
 
