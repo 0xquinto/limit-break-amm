@@ -621,7 +621,7 @@ After Pass 3 completes and passes the gate, `playbook.py` transforms its output 
 4. Validates via `validate_hypothesis_lines()` and `validate_hypothesis_substance()` — same as Pass 1 output
 
 **`playbook_update.lessons` → `lessons.jsonl`**: For each lesson string, the orchestrator:
-1. Applies quality gating: must come from Pass 3 output scoring > 60, must match `\w+\.sol(:\d+)?`, must pass staleness check
+1. Applies quality gating: must come from Pass 3 output scoring > 60, must match `\w+\.sol:\d+` (file:line mandatory — file-only references are too generic), must pass staleness check
 2. Appends `source_run`, `citation_count: 0`, `last_cited_run: null` (extension fields, defaulted)
 3. Checks 30-entry cap; prunes if needed
 
@@ -864,11 +864,13 @@ Baseline `tested.jsonl` record (core schema):
 {
   "id": "H-R01-CP-001",
   "run": 1,
+  "timestamp": "2026-03-20T14:30:00Z",
   "tested_by": ["precision-sniper"],
   "result": "guarded",
   "depth": "thorough",
   "counter_evidence": "require(height <= MAX_HEIGHT) at FixedHelper.sol:1670",
-  "test_file": "test/AuditPrecision.t.sol"
+  "test_file": "test/AuditPrecision.t.sol",
+  "notes": "Agent wrote a comprehensive test covering 5 input ranges"
 }
 ```
 
@@ -966,7 +968,7 @@ This reframes checklist items as named **exploration strategies** — the contin
 | File | Status | Change |
 |------|--------|--------|
 | `run_audit.py` | modify | Add Pass 1 before `run_wave()`, Pass 3 after continuation merging |
-| `schema.py` | modify | Add `hypothesis_results: list[dict] = field(default_factory=list)` to `AgentOutput`; add `pre_filter` as known optional field; coerce non-standard field names. `hypothesis_results` is only validated as non-empty by the sidecar gate when hypotheses were injected (i.e., `extra_context["HYPOTHESES"]` was non-empty). Agents without hypotheses may have an empty list. |
+| `schema.py` | modify | Add `hypothesis_results: list[dict] = field(default_factory=list)` to `AgentOutput`; add `pre_filter` as known optional field; add `source_hypothesis: str = ""` to `Finding` (populated by Pass 2 agents when a finding was driven by a Pass 1 hypothesis — used by Pass 3 `finding_verdicts` write-path to link finding kills back to `tested.jsonl`); coerce non-standard field names. `hypothesis_results` is only validated as non-empty by the sidecar gate when hypotheses were injected (i.e., `extra_context["HYPOTHESES"]` was non-empty). Agents without hypotheses may have an empty list. |
 | `sidecar_gate.py` | modify | Add `hypothesis_results` validation: non-empty array, diversity check, `test_file` on tested entries |
 | Archetype `prompt.md` files | modify | Add `{{HYPOTHESES}}` placeholder (rendered by existing `extra_context` mechanism) |
 | `config.py` | modify | Add Pass 1 agent definitions (6 boundary agents) |
@@ -1059,7 +1061,7 @@ Gates **B** (theoretical), **C** (intentional design), and **E** (admin trust) r
 }
 ```
 
-Flagged findings are **not deleted** — they flow to Pass 3 with the annotation. Pass 3 agents fast-track flagged findings (confirm kill in 1 sentence or override with evidence). This preserves the audit trail and prevents the pre-filter from accidentally killing a true positive.
+When `status` is `"passed"`, `gate` and `reason` are `null`. Flagged findings are **not deleted** — they flow to Pass 3 with the annotation. Pass 3 agents fast-track flagged findings (confirm kill in 1 sentence or override with evidence). This preserves the audit trail and prevents the pre-filter from accidentally killing a true positive.
 
 **Updated pipeline**:
 ```
@@ -1073,6 +1075,8 @@ Flagged findings are **not deleted** — they flow to Pass 3 with the annotation
 11. blind spot scanner
 12. wave 2 gate
 ```
+
+**Note**: Findings produced by the compliance continuation pass (steps 7-8) do not go through the kill gate at step 5.5. This is acceptable: continuation findings are produced to fill specific gaps (checklist items, depth, tool breadth), not speculative sweeps, so they are less likely to be generic or speculative. Pass 3 still applies the full 8-gate rubric to all findings regardless of `pre_filter` presence.
 
 **Implementation**: Pure Python, no LLM cost. The blocklist is a `GENERIC_PATTERNS: list[re.Pattern]` constant in `kill_gate.py`. The scope check reads `config.py:REPOS`. The known-issue match uses `difflib.SequenceMatcher` with a 0.7 threshold against entries parsed from `docs/audit_memory/false-positives.md` and gotchas files.
 
@@ -1200,7 +1204,7 @@ the invariant between A and B can be violated. What mutation path breaks it?"
 }
 ```
 
-When masking code is absent: `"masking_code": null`. When the hypothesis is a mechanism hypothesis (from Steps 2a-2g): both `coupled_pair` and `masking_code` are absent (omitted, not null).
+When masking code is absent: `"masking_code": null`. When the hypothesis is a mechanism hypothesis (from Steps 2a-2g): both `coupled_pair` and `masking_code` may be omitted (coerced to `null` by `schema.py`).
 
 **Routing**: State coupling hypotheses route preferentially to state-desync, insolvency-engineer, and composability-exploiter via the existing boundary→agent routing table.
 
