@@ -97,32 +97,124 @@ Each Pass 1 agent receives:
 }
 ```
 
+### Pass 1 Prompt Outline
+
+Each boundary agent receives a prompt structured as:
+
+```markdown
+# Knowledge Generation: {boundary_name}
+
+## Your task
+Read the source code for the contracts at this trust boundary. For each
+external/public function, determine: what assumptions does it make about
+its caller, its inputs, and the state? How could each assumption be violated?
+
+Do NOT report generic patterns. Every hypothesis must cite exact line numbers
+and exact conditions. If you cannot identify the specific line where the
+vulnerability would occur, you do not have a hypothesis.
+
+## Contracts to read
+{list of contract file paths — injected by orchestrator}
+
+## Focus areas
+For each function at this boundary, analyze:
+1. Every multiplication/division: can the intermediate result overflow/underflow?
+   What input range triggers it? (cite the exact line)
+2. Every external call: what state is read/written before vs after the call?
+   Can a callback observe inconsistent state? (cite both lines)
+3. Every trust assumption: does this function validate its caller? Does it
+   validate return values from the other side of the boundary? (cite the guard
+   or the absence of a guard)
+
+## Curated exploit patterns for this boundary
+{filtered subset of curated-exploit-context.md — only patterns relevant to this boundary}
+
+## Prior playbook entries (if any)
+{playbook entries for this boundary from previous runs}
+
+## Output format
+Write hypotheses-{boundary}.json with the schema specified below.
+Every hypothesis MUST include: exact line numbers, exact overflow/underflow
+conditions or exact state inconsistency, a concrete attack sequence, and
+a copy-pasteable Forge test skeleton.
+```
+
+The orchestrator pre-excerpts the relevant functions from each contract (using Slither `list_functions` + `get_function_source`) rather than injecting entire files. This controls the token budget to ~15-20K input tokens per boundary agent.
+
+### Hypothesis-to-Agent Routing
+
+Exhaustive mapping from 6 boundaries to 9 wave 1 agents:
+
+| Boundary | Primary agents | Secondary agents |
+|----------|---------------|-----------------|
+| Core ↔ Pool Type | precision-sniper, math-deep-diver, price-distorter | insolvency-engineer |
+| Core ↔ Handler | auth-forger | state-desync, composability-exploiter |
+| Handler ↔ Hook | state-desync, composability-exploiter | cross-boundary |
+| Hook ↔ Registry | extension-hijacker | state-desync |
+| Diamond Proxy | cross-boundary, extension-hijacker | — |
+| Transient Storage | state-desync | cross-boundary, composability-exploiter |
+
+Primary agents receive ALL hypotheses for that boundary. Secondary agents receive only hypotheses flagged as cross-cutting. Hypotheses are injected via `agent.extra_context["HYPOTHESES"]` (uses existing `prompt_renderer.py` mechanism — no code change needed).
+
+### Line Number Validation
+
+The orchestrator validates Pass 1 hypotheses before injection into Pass 2:
+
+```python
+def validate_hypothesis_lines(hypothesis: dict, repo_root: Path) -> list[str]:
+    """Verify that cited line numbers exist and contain relevant code."""
+    errors = []
+    for contract, lines in hypothesis.get("lines", {}).items():
+        # Find the contract file
+        matches = list(repo_root.rglob(contract))
+        if not matches:
+            errors.append(f"Contract {contract} not found")
+            continue
+        source = matches[0].read_text().splitlines()
+        for line_num in lines:
+            if line_num > len(source):
+                errors.append(f"{contract}:{line_num} — line does not exist (file has {len(source)} lines)")
+            else:
+                line_content = source[line_num - 1].strip()
+                if not line_content or line_content.startswith("//") or line_content.startswith("*"):
+                    errors.append(f"{contract}:{line_num} — line is a comment or blank: '{line_content[:60]}'")
+    return errors
+```
+
+Hypotheses with validation errors are flagged (not discarded) — the error is appended to the hypothesis so Pass 2 agents know the line reference may be imprecise.
+
 ### Pass 1 Compliance Scoring (0-100)
 
 4 dimensions, each scored from the hypotheses output:
 
-**Specificity (0-30)**:
-- Each hypothesis must reference exact line numbers (not just function names)
-- Each hypothesis must describe the exact state transition that enables the exploit
-- Each hypothesis must name the specific input values or ranges that trigger it
-- Scoring: count hypotheses meeting all 3 criteria / total hypotheses × 30
+Scoring is split into **automated** (deterministic, computed by `knowledge_compliance.py`) and **quality** (assessed by Pass 3 in the next stage). The gate uses only automated scores.
 
-**Testability (0-25)**:
-- Each hypothesis must include a `suggested_test` with concrete Forge test code
-- The test must be specific enough that a Pass 2 agent can copy-paste and adapt it
-- Scoring: count hypotheses with actionable test suggestions / total × 25
+**Automated dimensions (scored deterministically):**
+
+**Line Validity (0-25)**:
+- Each hypothesis must reference line numbers that pass `validate_hypothesis_lines()`
+- Scoring: hypotheses_with_valid_lines / total_hypotheses × 25
+- Minimum: 3 hypotheses required (prevents gaming with 1 perfect hypothesis)
+
+**Test Presence (0-25)**:
+- Each hypothesis must have a `suggested_test` field containing Solidity code (not empty, not prose)
+- The test must reference at least one function from `functions` field
+- Scoring: hypotheses_with_valid_test / total_hypotheses × 25
 
 **Coverage (0-25)**:
-- All external/public functions at the boundary must be analyzed
-- All curated exploit patterns relevant to the boundary must be addressed
+- Functions analyzed vs total functions at boundary (denominator from Slither `list_functions` filtered to external/public at the boundary contracts)
+- Curated patterns addressed vs relevant patterns for this boundary
 - Scoring: (functions_analyzed / total_functions × 12.5) + (patterns_addressed / relevant_patterns × 12.5)
 
-**Grounding (0-20)**:
-- Each hypothesis must be tied to a real exploit pattern from the curated context OR to a specific code observation (not generic pattern matching)
-- Hypotheses invented without code evidence or exploit grounding score 0
-- Scoring: count grounded hypotheses / total × 20
+**Grounding (0-25)**:
+- Each hypothesis must have a `grounded_in` field referencing an EXP-XX pattern OR containing "code-observation:" with a specific line reference
+- Scoring: grounded_hypotheses / total_hypotheses × 25
 
-**Gate**: Pass 1 hypotheses with aggregate score < 60 are discarded. Agents are re-prompted with specific feedback about which dimension failed.
+**Quality dimensions (assessed by Pass 3, not used for gating):**
+- Mechanism depth: does the hypothesis describe the exact state transition? (Pass 3 evaluates)
+- Test actionability: can a Pass 2 agent actually use the suggested test? (Pass 3 evaluates)
+
+**Gate**: Pass 1 hypotheses with automated score < 60 are discarded. Agent is re-prompted once with specific feedback. If still < 60 after retry, the boundary's hypotheses are dropped and Pass 2 runs without them (graceful degradation).
 
 ---
 
@@ -274,12 +366,36 @@ docs/orchestrator/playbook/
 - New hypotheses from Pass 3 → added to next run's Pass 1 input
 - Lessons → accumulated in playbook.md, injected into all passes
 
+### Staleness management
+
+Hypotheses are version-stamped with the git commit hash at generation time. Before each run, the playbook loader checks whether referenced lines still contain the same code:
+
+```python
+def check_staleness(hypothesis: dict, repo_root: Path) -> str:
+    """Returns 'current', 'stale', or 'unknown'."""
+    for contract, lines in hypothesis.get("lines", {}).items():
+        matches = list(repo_root.rglob(contract))
+        if not matches:
+            return "stale"  # contract renamed or deleted
+        current_source = matches[0].read_text().splitlines()
+        for line_num in lines:
+            if line_num > len(current_source):
+                return "stale"
+    return "current"
+```
+
+Stale hypotheses are excluded from Pass 1 input and Pass 2 injection. They remain in `hypotheses.jsonl` for history but are not re-tested.
+
+### Contradiction resolution
+
+When multiple runs produce conflicting status for the same hypothesis, the most recent Pass 3 assessment wins. The playbook reader sorts entries by timestamp and takes the last status for each hypothesis ID.
+
 ### Quality gating
 
 Lessons only persist when:
-- They come from Pass 3 output that scored > 60 on compliance
+- They come from Pass 3 output that scored > 60 on automated compliance
 - They reference specific code (not generic advice)
-- They haven't been contradicted by a subsequent run
+- They pass staleness check against current codebase
 
 ---
 
@@ -298,9 +414,29 @@ Lessons only persist when:
 
 ### What changes
 
+### Pipeline insertion points
+
+Pass 3 must run AFTER compliance continuation merging (line 557 in `run_audit.py`) so it reads the complete merged sidecars, not partial pre-continuation data. The full pipeline order becomes:
+
+```
+1. Pass 1: knowledge generation (before render_wave_prompts)
+2. render_wave_prompts (inject hypotheses via extra_context)
+3. run_wave (Pass 2 — existing wave 1)
+4. collect_artifacts + validate_sidecars + regression
+5. compliance scoring (pre-continuation)
+6. compliance continuation (if needed)
+7. merge continuation sidecars
+8. Pass 3: knowledge extraction (reads merged sidecars + source code)
+9. reflection + experiment logging
+10. blind spot scanner
+11. wave 2 gate
+```
+
+If Pass 3 is too slow or context overflows, it can be split into 3 agents by checklist group: one for C-MATH agents (3 agents), one for C-STATE agents (3 agents), one for C-AUTH + C-BOUNDARY agents (3 agents). Each reads only its group's sidecars + tests. The spec starts with a single agent and splits if needed.
+
 | Component | Change |
 |-----------|--------|
-| `run_audit.py` | Add Pass 1 before `run_wave()`, Pass 3 after compliance scoring |
+| `run_audit.py` | Add Pass 1 before `run_wave()`, Pass 3 after continuation merging |
 | `prompt_renderer.py` | Add `{{HYPOTHESES}}` template variable injection |
 | Archetype `prompt.md` files | Add `{{HYPOTHESES}}` placeholder |
 | `config.py` | Add Pass 1 agent definitions (6 boundary agents) |
