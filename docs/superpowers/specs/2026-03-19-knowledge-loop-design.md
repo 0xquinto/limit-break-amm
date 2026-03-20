@@ -1,4 +1,4 @@
-# Knowledge Loop — Two-Pass Architecture with Substantive Compliance
+# Knowledge Loop — Three-Pass Architecture with Substantive Compliance
 
 > **Problem**: 12+ runs, 96.7% compliance score, 0 findings. Agents are thorough (run tools, complete checklists, write tests) but don't find exploitable bugs. ReEVMBench proves the gap is knowledge, not execution: human hints turn 62.5% exploit success into 95.8%.
 >
@@ -8,6 +8,25 @@
 > - ReEVMBench (BlockSec, Mar 2026): "Agents are blind, not dumb. The gap is knowledge."
 > - autocontext (GreyHaven AI): Recursive self-improving loop with persistent playbook.
 > - Curated exploit context: `docs/references/2026-03-18-curated-exploit-context.md`
+> - Research synthesis (100+ papers, Mar 2026): `docs/references/2026-03-20-knowledge-loop-research-synthesis.md`
+>
+> **Key research citations** (integrated into spec body):
+> - VulnSage (arXiv 2503.17885): Think & Verify structured reasoning, +21pp accuracy
+> - LogiSec (LADC 2025): Reductio ad absurdum for SAST triage, 36% FP reduction
+> - LLMxCPG (USENIX Security 2025): CPG-guided code slicing, 67-91% input reduction
+> - PropertyGPT (NDSS 2025, Distinguished): RAG for formal property generation, 12 zero-days
+> - Prompt to Pwn (arXiv 2508.01371): Locality bias as #1 cross-contract failure mode
+> - PoCo (arXiv 2511.02780): Agentic Forge exploit loop with bounded retries
+> - SAMULE (arXiv 2509.20562): Multi-level reflection (finding + step + strategy)
+> - EchoFuzz (ICSE 2026): LLM ↔ fuzzer iterative feedback loop
+> - LLMLOOP (ICSME 2025): Bounded iteration (3-5 loops) outperforms unbounded
+> - Strategy-Guided Exploration (Google, arXiv 2603.02045): Incentivize underexplored strategies
+> - MAST (NeurIPS 2025, arXiv 2503.13657): 14 failure modes for multi-agent systems
+> - "Can LLM Agents Really Debate?" (arXiv 2511.07784): Debate limits, echo chamber effects
+> - Citation-Grounded Code Comprehension (arXiv 2512.12117): Interval-arithmetic citation verification
+> - Contextual Experience Replay (ACL 2025): Full trajectory replay for cross-run learning
+> - Preference-Aware Memory (arXiv 2510.09720): Utility-weighted lesson retention
+> - Instruct-of-Reflection (NAACL 2025): Dynamic meta-instructions for targeted re-prompting
 
 ---
 
@@ -27,7 +46,7 @@ Pass 2 (Exploit Construction) — existing wave 1
   │
   ▼
 Pass 3 (Knowledge Extraction)
-  │  Opus agent reads agent work + actual code
+  │  3 Opus agents (by checklist group) read agent work + actual code
   │  Output: substantive feedback, new hypotheses, hypothesis tracking
   │  Scored by: Pass 3 compliance (depth, actionability, tracking, discovery)
   │
@@ -63,7 +82,7 @@ One Opus agent per trust boundary. 6 boundaries in the Limit Break AMM:
 ### Agent Input
 
 Each Pass 1 agent receives:
-- The actual source code for its assigned contracts (via Read/Grep)
+- Pre-excerpted call trees for boundary functions (injected by orchestrator via Slither — see below). Agents may also use Read/Grep for additional exploration beyond the excerpts.
 - The relevant curated exploit patterns from `curated-exploit-context.md`
 - Prior run's playbook entries for this boundary (if any)
 - Prior run's ruled-out vectors and Forge tests relevant to this boundary
@@ -77,11 +96,11 @@ Each Pass 1 agent receives:
   "agent": "knowledge-gen-core-pooltype",
   "hypotheses": [
     {
-      "id": "H-CP-001",
+      "id": "H-R01-CP-001",
       "mechanism": "The multiplication at FixedHelper.sol:1672 can overflow when height > 2^128. The intermediate uint256 result is not checked before the downcast at line 1675. If it overflows to 0, the subsequent division at line 1678 returns type(uint256).max, crediting the swapper with more tokens than the pool holds.",
-      "contracts": ["FixedHelper.sol"],
+      "contracts": ["lbamm-pool-type-fixed/src/FixedHelper.sol"],
       "functions": ["_splitAmountsAndFeesByHeight"],
-      "lines": {"FixedHelper.sol": [1672, 1675, 1678]},
+      "lines": {"lbamm-pool-type-fixed/src/FixedHelper.sol": [1672, 1675, 1678]},
       "attack_sequence": [
         "1. Create pool with height near uint128 max",
         "2. Swap with amount that causes multiplication overflow at line 1672",
@@ -90,12 +109,42 @@ Each Pass 1 agent receives:
       ],
       "suggested_test": "function test_H_CP_001() public { /* create pool with height = type(uint128).max - 1, swap 1 wei, check output > pool reserves */ }",
       "grounded_in": "EXP-01 (Cetus $223M) + EXP-02 (Balancer $128M)",
-      "confidence": "medium",
-      "prior_status": "untested"
+      "confidence": "medium"
     }
   ]
 }
 ```
+
+The orchestrator appends two fields post-agent-output — agents do not produce these:
+- `line_hashes`: via `compute_line_hashes()` for staleness detection
+- `prior_result`: the hypothesis's last known `result` from `tested.jsonl` (for re-injected hypotheses from the playbook). Value is one of `confirmed`, `guarded`, `dismissed`, `untested`, or `null` for new hypotheses with no prior history.
+
+Example `line_hashes`:
+```json
+"line_hashes": {"lbamm-pool-type-fixed/src/FixedHelper.sol": {"1672": "a3f8c1d2e4b5...", "1675": "7e9f0a1b2c3d...", "1678": "d4e5f6a7b8c9..."}}
+```
+Keys are stringified line numbers (JSON object keys must be strings, unlike the integer arrays in `lines`); values are sha256 prefix (16 hex chars) of the stripped line content.
+
+### Hypothesis ID Scheme
+
+IDs are namespaced by run number and boundary abbreviation: `H-R{run}-{boundary}-{seq}`.
+
+| Boundary | Abbreviation |
+|----------|-------------|
+| Core ↔ Pool Type | CP |
+| Core ↔ Handler | CH |
+| Handler ↔ Hook | HH |
+| Hook ↔ Registry | HR |
+| Diamond Proxy | DP |
+| Transient Storage | TS |
+
+Example: `H-R03-CP-012` = run 3, Core↔PoolType boundary, hypothesis 12. New hypotheses discovered by Pass 3 use `H-R{run}-NEW-{seq}`. Run number is a monotonic counter stored in `playbook/metadata.json` (independent of experiment numbering in `experiments.tsv`), incremented by the orchestrator at the start of each knowledge loop invocation. The agent only controls the sequence number.
+
+**Cross-run lineage**: When an untested or shallowly-dismissed hypothesis is re-injected into a later run's Pass 1, the refined version gets a new run-scoped ID but carries a `parent_id` linking to its predecessor:
+```json
+{"id": "H-R03-CP-005", "parent_id": "H-R01-CP-001", ...}
+```
+The playbook reader follows `parent_id` chains to build a full lineage per hypothesis. Contradiction resolution and accumulation rules operate on the lineage (all IDs that share a root), not individual IDs. A hypothesis with no `parent_id` is a root.
 
 ### Pass 1 Prompt Outline
 
@@ -116,15 +165,35 @@ vulnerability would occur, you do not have a hypothesis.
 ## Contracts to read
 {list of contract file paths — injected by orchestrator}
 
-## Focus areas
-For each function at this boundary, analyze:
-1. Every multiplication/division: can the intermediate result overflow/underflow?
-   What input range triggers it? (cite the exact line)
-2. Every external call: what state is read/written before vs after the call?
-   Can a callback observe inconsistent state? (cite both lines)
-3. Every trust assumption: does this function validate its caller? Does it
-   validate return values from the other side of the boundary? (cite the guard
-   or the absence of a guard)
+## Reasoning protocol (Think & Verify — mandatory for every function)
+For each external/public function at this boundary, follow these 4 steps IN ORDER.
+Do not skip steps. Do not combine steps. [VulnSage: structured reasoning +21pp accuracy]
+
+### Step 1: Summarize behavior
+State what the function does in one sentence. Identify its inputs, outputs,
+and state it reads/writes.
+
+### Step 2: Identify assumptions
+List every assumption the function makes about its caller, inputs, and state:
+- Every multiplication/division: what input range causes overflow/underflow?
+  (cite the exact line)
+- Every external call: what state is read/written before vs after?
+  Can a callback observe inconsistent state? (cite both lines)
+- Every trust assumption: does it validate its caller? Does it validate
+  return values from the other side of the boundary? (cite the guard
+  or the absence of a guard)
+
+### Step 3: Construct violation scenario
+For each assumption, describe the EXACT conditions under which it breaks.
+If you cannot specify concrete input values or state conditions, you do
+not have a hypothesis — move on.
+
+### Step 4: Verify by writing a test skeleton
+Write a Forge test skeleton that would demonstrate the violation. If you
+cannot write a compilable test skeleton, your hypothesis is too vague.
+
+## Boundary-specific focus
+{boundary_focus — injected per boundary from BOUNDARY_FOCUS_MAP}
 
 ## Curated exploit patterns for this boundary
 {filtered subset of curated-exploit-context.md — only patterns relevant to this boundary}
@@ -139,22 +208,39 @@ conditions or exact state inconsistency, a concrete attack sequence, and
 a copy-pasteable Forge test skeleton.
 ```
 
-The orchestrator pre-excerpts the relevant functions from each contract (using Slither `list_functions` + `get_function_source`) rather than injecting entire files. This controls the token budget to ~15-20K input tokens per boundary agent.
+The orchestrator pre-excerpts call trees (depth 1 — the function plus its direct callees) from each contract using Slither `get_function_callees` + `get_function_source`. This preserves inter-function context that single-function excerpts lose, while controlling the token budget to ~15-25K input tokens per boundary agent.
+
+**Slither fallback**: If Slither MCP fails for a boundary (timeout, cross-repo resolution error), the orchestrator falls back to injecting raw file paths only (no call tree excerpts). The prompt is adjusted to instruct the agent to read the files directly via Read/Grep. This degrades hypothesis quality (agents must discover call relationships themselves) but doesn't block the run.
+
+**Boundary-specific focus areas** (injected via `BOUNDARY_FOCUS_MAP` in `knowledge_gen.py`):
+
+| Boundary | Extra focus areas |
+|----------|------------------|
+| Core ↔ Pool Type | Rounding direction in fee/price math, unchecked blocks, downcast truncation, **token-AMM composability: how do fee-on-transfer, rebasing, or hooked tokens interact with pool math?** [CPMM-Exploiter], **precision loss: for every mul/div, compute max rounding error in wei and assess exploitability across many operations** |
+| Core ↔ Handler | Settlement conservation (tokens in = tokens out + fees), caller validation, return value trust, **token-AMM composability: do non-standard token behaviors break settlement accounting?** [CPMM-Exploiter] |
+| Handler ↔ Hook | Callback ordering (before/after), state read before call vs state written in callback, reentrancy guards |
+| Hook ↔ Registry | Cache consistency (when are settings cached vs re-read?), initialization race conditions, settings update atomicity |
+| Diamond Proxy | **Interface collisions across facets** (higher risk than storage collisions per "Dark Side of Upgrades" — 83K contracts analyzed), **malicious upgrade paths**, delegatecall context preservation, selector collisions |
+| Transient Storage | Slot lifecycle (set/read/clear within same tx), cross-operation leaks (slot set in op A read in op B), missing clears on revert paths |
 
 ### Hypothesis-to-Agent Routing
 
 Exhaustive mapping from 6 boundaries to 9 wave 1 agents:
 
-| Boundary | Primary agents | Secondary agents |
-|----------|---------------|-----------------|
-| Core ↔ Pool Type | precision-sniper, math-deep-diver, price-distorter | insolvency-engineer |
-| Core ↔ Handler | auth-forger | state-desync, composability-exploiter |
-| Handler ↔ Hook | state-desync, composability-exploiter | cross-boundary |
-| Hook ↔ Registry | extension-hijacker | state-desync |
-| Diamond Proxy | cross-boundary, extension-hijacker | — |
-| Transient Storage | state-desync | cross-boundary, composability-exploiter |
+| Boundary | Receiving agents |
+|----------|-----------------|
+| Core ↔ Pool Type | precision-sniper, math-deep-diver, price-distorter, insolvency-engineer |
+| Core ↔ Handler | auth-forger, state-desync, composability-exploiter |
+| Handler ↔ Hook | state-desync, composability-exploiter, cross-boundary |
+| Hook ↔ Registry | extension-hijacker, state-desync |
+| Diamond Proxy | cross-boundary, extension-hijacker |
+| Transient Storage | state-desync, cross-boundary, composability-exploiter |
 
-Primary agents receive ALL hypotheses for that boundary. Secondary agents receive only hypotheses flagged as cross-cutting. Hypotheses are injected via `agent.extra_context["HYPOTHESES"]` (uses existing `prompt_renderer.py` mechanism — no code change needed).
+**Deduplication**: After collecting all 6 boundary outputs, `knowledge_gen.py` deduplicates hypotheses that share >50% of their `lines` references AND identical `functions` entries. The duplicate with the lower automated compliance score is dropped; ties broken by keeping the one with a more specific `mechanism` (longer text). This prevents Pass 2 agents mapped to multiple boundaries from receiving near-identical hypotheses about the same code.
+
+**Volume cap**: Each Pass 2 agent receives at most `MAX_HYPOTHESES_PER_AGENT = 15` hypotheses, sorted by priority: (1) `confirmed` from prior runs, (2) `untested` or `shallow`-dismissed from prior runs, (3) new hypotheses from this run's Pass 1. Within each tier, sort by confidence descending. When an agent maps to multiple boundaries and the total exceeds the cap, lower-priority hypotheses are dropped with a summary line injected into the prompt ("N additional lower-priority hypotheses omitted — see playbook for full list").
+
+Hypotheses are injected via `agent.extra_context["HYPOTHESES"]`, which `prompt_renderer.py` already handles — it replaces any `{{KEY}}` placeholder in the template with the corresponding `extra_context` value (lines 262-265). No `prompt_renderer.py` code change needed; only the archetype `prompt.md` files need a `{{HYPOTHESES}}` placeholder added.
 
 ### Line Number Validation
 
@@ -162,59 +248,122 @@ The orchestrator validates Pass 1 hypotheses before injection into Pass 2:
 
 ```python
 def validate_hypothesis_lines(hypothesis: dict, repo_root: Path) -> list[str]:
-    """Verify that cited line numbers exist and contain relevant code."""
+    """Verify that cited line numbers exist and contain relevant code.
+
+    Contract paths must be repo-qualified (e.g., 'lbamm-core/src/AMMModule.sol')
+    to avoid ambiguity when multiple sibling repos contain same-named files.
+    """
     errors = []
     for contract, lines in hypothesis.get("lines", {}).items():
-        # Find the contract file
-        matches = list(repo_root.rglob(contract))
-        if not matches:
-            errors.append(f"Contract {contract} not found")
+        # Contract paths are repo-qualified; resolve directly
+        contract_path = repo_root / contract
+        if not contract_path.exists():
+            errors.append(f"Contract {contract} not found at {contract_path}")
             continue
-        source = matches[0].read_text().splitlines()
+        source = contract_path.read_text().splitlines()
         for line_num in lines:
             if line_num > len(source):
                 errors.append(f"{contract}:{line_num} — line does not exist (file has {len(source)} lines)")
             else:
                 line_content = source[line_num - 1].strip()
-                if not line_content or line_content.startswith("//") or line_content.startswith("*"):
-                    errors.append(f"{contract}:{line_num} — line is a comment or blank: '{line_content[:60]}'")
+                if not line_content:
+                    errors.append(f"{contract}:{line_num} — line is blank")
+                elif not re.search(r'[;{}()=+\-*/]|function |require|if |return |emit[; ]', line_content):
+                    errors.append(f"{contract}:{line_num} — line appears to be a comment, not code: '{line_content[:60]}'")
+    return errors
+
+
+def validate_hypothesis_substance(hypothesis: dict) -> list[str]:
+    """Lightweight substance check — mechanism text must reference its own fields.
+
+    Catches copy-paste or templated hypotheses where the mechanism description
+    doesn't actually relate to the cited functions/lines.
+    """
+    errors = []
+    mechanism = hypothesis.get("mechanism", "")
+    functions = hypothesis.get("functions", [])
+    # mechanism must mention at least one function from the functions field
+    if functions and not any(fn in mechanism for fn in functions):
+        errors.append(f"mechanism text does not reference any of its cited functions: {functions}")
+    # mechanism must mention at least one line number from the lines field
+    all_lines = [str(ln) for lns in hypothesis.get("lines", {}).values() for ln in lns]
+    if all_lines and not any(ln in mechanism for ln in all_lines):
+        errors.append(f"mechanism text does not reference any of its cited line numbers")
     return errors
 ```
 
-Hypotheses with validation errors are flagged (not discarded) — the error is appended to the hypothesis so Pass 2 agents know the line reference may be imprecise.
+Hypotheses with validation errors (line or substance) are flagged (not discarded) — the error is appended to the hypothesis so Pass 2 agents know the line reference or mechanism may be imprecise.
+
+> **Phase D hardening note**: `validate_hypothesis_substance()` is intentionally lightweight — it catches copy-paste errors but is trivially satisfiable by mentioning the function name and a line number in passing. Phase D should add a semantic coherence check: the mechanism text must describe a *causal chain* from the cited function through the cited lines to an exploitable outcome. This likely requires an LLM-based evaluator (cheap — Haiku, ~$0.01/hypothesis) rather than regex.
 
 ### Pass 1 Compliance Scoring (0-100)
 
-4 dimensions, each scored from the hypotheses output:
+5 dimensions, each scored from the hypotheses output:
 
 Scoring is split into **automated** (deterministic, computed by `knowledge_compliance.py`) and **quality** (assessed by Pass 3 in the next stage). The gate uses only automated scores.
 
 **Automated dimensions (scored deterministically):**
 
-**Line Validity (0-25)**:
+**Line Validity (0-20)**:
 - Each hypothesis must reference line numbers that pass `validate_hypothesis_lines()`
-- Scoring: hypotheses_with_valid_lines / total_hypotheses × 25
+- Scoring: hypotheses_with_valid_lines / total_hypotheses × 20
 - Minimum: 3 hypotheses required (prevents gaming with 1 perfect hypothesis)
+
+**Substance (0-10)**:
+- Each hypothesis must pass `validate_hypothesis_substance()` — mechanism text references its own functions and line numbers
+- Scoring: hypotheses_passing_substance / total_hypotheses × 10
 
 **Test Presence (0-25)**:
 - Each hypothesis must have a `suggested_test` field containing Solidity code (not empty, not prose)
 - The test must reference at least one function from `functions` field
 - Scoring: hypotheses_with_valid_test / total_hypotheses × 25
 
-**Coverage (0-25)**:
+**Coverage (0-20)**:
 - Functions analyzed vs total functions at boundary (denominator from Slither `list_functions` filtered to external/public at the boundary contracts)
 - Curated patterns addressed vs relevant patterns for this boundary
-- Scoring: (functions_analyzed / total_functions × 12.5) + (patterns_addressed / relevant_patterns × 12.5)
+- Scoring: (functions_analyzed / total_functions × 10) + (patterns_addressed / relevant_patterns × 10). If no curated patterns are relevant to this boundary, the patterns sub-score defaults to 10 (full credit)
+- **Diversity penalty** [GRPO]: if all hypotheses cite the same contract, or all reference the same ≤3 functions, apply a 20% penalty to the Coverage score. Prevents agents from producing N variations of the same hypothesis.
 
 **Grounding (0-25)**:
 - Each hypothesis must have a `grounded_in` field referencing an EXP-XX pattern OR containing "code-observation:" with a specific line reference
 - Scoring: grounded_hypotheses / total_hypotheses × 25
 
-**Quality dimensions (assessed by Pass 3, not used for gating):**
+**Quality dimensions (assessed by Pass 3, strictly informational):**
 - Mechanism depth: does the hypothesis describe the exact state transition? (Pass 3 evaluates)
 - Test actionability: can a Pass 2 agent actually use the suggested test? (Pass 3 evaluates)
 
+These assessments are logged for human review only. They do NOT feed back into any gating decision (neither Pass 1 gating nor playbook quality gating) to avoid circularity — Pass 3's own output is quality-scored, so its assessments of Pass 1 cannot also gate Pass 1.
+
 **Gate**: Pass 1 hypotheses with automated score < 60 are discarded. Agent is re-prompted once with specific feedback. If still < 60 after retry, the boundary's hypotheses are dropped and Pass 2 runs without them (graceful degradation).
+
+**Graceful degradation details**:
+- Each boundary failure is logged in `experiments.tsv` as `pass1_failures={boundary_list}`.
+- If fewer than 3/6 boundaries produce passing hypotheses, Pass 1 is considered failed for the run. Pass 2 still runs (without hypotheses) but the run is flagged as `pass1_failed=true` in experiment metadata.
+- Cost of failed boundaries: each retry costs ~$2-4 (single Opus agent). Worst case (all 6 fail + retry) adds ~$25-50 to the run cost. The cost estimate below accounts for this.
+
+### Research-Backed Extensions (Pass 1)
+
+These are optional upgrades to Pass 1 that can be enabled independently. Each has a fallback to the core behavior described above.
+
+**CPG-guided code slicing** [LLMxCPG, USENIX Security 2025]:
+
+Instead of depth-1 call trees, use Slither's data-flow analysis to extract minimal vulnerability-relevant slices per boundary function. LLMxCPG shows this reduces input by 67-91% while *improving* detection accuracy 15-40% F1 — the LLM sees only code that participates in data flows crossing the trust boundary, eliminating irrelevant helper functions.
+
+Implementation: `knowledge_gen.py` gains an optional `use_cpg_slicing: bool` flag (default `false`). When enabled, it calls Slither `export_call_graph` + `analyze_state_variables` to build a data-flow slice per boundary function, then extracts only the source lines involved. The slice is injected instead of the full call tree.
+
+Trigger condition: enable when Slither MCP reliably supports cross-repo analysis (currently patched but fragile).
+
+Fallback: current depth-1 call tree excerpts via `get_function_callees` + `get_function_source`.
+
+**RAG over curated exploit DB** [PropertyGPT, NDSS 2025 Distinguished Paper]:
+
+Instead of injecting the full filtered subset of `curated-exploit-context.md` per boundary, embed the 15 curated patterns into a vector store (e.g., ChromaDB or simple cosine similarity over OpenAI embeddings). For each boundary function's source code, retrieve the 2-3 most structurally similar exploit patterns. This produces targeted few-shot examples ("this code looks like the Cetus overflow pattern") rather than a dump of all possibly-relevant patterns.
+
+Implementation: `knowledge_gen.py` gains an optional `use_rag_exploits: bool` flag (default `false`). When enabled, it embeds curated patterns at startup (one-time, ~$0.10), then retrieves per-function matches before prompt construction. Retrieved patterns replace the `{filtered subset of curated-exploit-context.md}` section in the prompt.
+
+Trigger condition: enable after Phase A validates that curated context improves hypothesis quality at all.
+
+Fallback: current boundary-filtered injection of full curated context.
 
 ---
 
@@ -235,22 +384,68 @@ Each Pass 2 agent receives hypotheses filtered by scope:
 - auth-forger gets hypotheses from Core↔Handler boundary (permit-related)
 - etc.
 
-Injected via a new `{{HYPOTHESES}}` template variable, placed after `{{GOTCHAS}}` and before `{{PREAMBLE}}`.
+Injected via a new `{{HYPOTHESES}}` template variable, placed **after `{{PREAMBLE}}`** at the end of the prompt, just before the output format section. Hypotheses are the most important new input — placing them at the end avoids the "lost in the middle" attention degradation (Liu et al., 2023) where material in the center of long prompts receives measurably less model attention than material at the beginning or end.
+
+Each `{{HYPOTHESES}}` block includes a **cross-contract call map** preamble [Prompt to Pwn: locality bias is the #1 LLM failure mode for cross-contract vulns]. This is a compact 10-20 line listing of which functions in the agent's scope call into other repos (e.g., "AMMModule.swap() → DynamicPoolType.calculateSwap() → FixedHelper._splitAmounts()"). Generated by the orchestrator from Slither `get_function_callees`, it counteracts the documented tendency of LLMs to assume all relevant checks appear locally within the same contract.
+
+**Call map Slither fallback**: If Slither MCP fails for cross-repo call resolution, the orchestrator falls back to a grep-based heuristic: scan each boundary contract for `I{ContractName}(` patterns and external call syntax (`.functionName(`) to build an approximate call map. This is less precise (misses indirect calls, includes false positives from interfaces) but still provides the cross-contract context that counters locality bias. If grep also fails to produce meaningful results, the call map section is omitted entirely and the agent relies on its own exploration.
+
+### Bounded Forge retry protocol
+
+When a Pass 2 agent writes a Forge test that fails to compile or reverts unexpectedly, the agent must follow this protocol [PoCo, LLMLOOP]:
+
+1. Write test → compile
+2. If compile error: read error message, fix test, retry (up to 3 attempts)
+3. If revert: read revert reason, adjust inputs or expectations, retry (up to 3 attempts)
+4. If still failing after 3 retries: report with error detail in `hypothesis_results` — do NOT silently move on
+
+This is enforced via preamble instructions, not orchestrator machinery. The sidecar gate checks that `hypothesis_results` entries with `status: "tested"` include a `test_file` reference (the file was written, even if the test fails — the gate checks presence, not pass/fail).
 
 ### Pass 2 compliance unchanged
 
 The existing 5-dimension compliance scorer stays. No changes to how wave 1 agents are measured.
+
+### Sidecar gate enforcement
+
+When Pass 1 hypotheses were injected into a Pass 2 agent, the sidecar gate requires `hypothesis_results` as a non-empty array. Each entry must have `id`, `status`, and either `detail` or `reason`. Missing or empty `hypothesis_results` triggers a gate failure with re-prompt.
+
+**Status taxonomy** (two layers):
+
+| Layer | Field | Values | Set by |
+|-------|-------|--------|--------|
+| Action (Pass 2) | `status` | `tested`, `confirmed`, `not_tested` | Pass 2 agent sidecar |
+| Action (Pass 2) | `detail` | free text (explanation of what was found) | Pass 2 agent sidecar |
+| Assessment (Pass 3) | `result` | `confirmed`, `guarded`, `dismissed`, `untested` | Pass 3 extraction agent |
+| Assessment (Pass 3) | `depth` | `thorough`, `shallow`, `none` | Pass 3 extraction agent |
+
+Pass 2 reports what it *did* (`status`) and why (`detail`). Pass 3 assesses the *outcome* (`result`: was it actually guarded?) and *quality* (`depth`: was the investigation thorough or shallow?). The playbook stores all four: `status` for tracking coverage, `result` for knowledge accumulation and contradiction resolution, `depth` for identifying agents that need re-prompting.
+
+**Diversity check** [GRPO]: if all `hypothesis_results` entries have `status: "not_tested"` (agent ignored every hypothesis), flag and re-prompt with "you marked all hypotheses as not_tested — verify each was individually considered before dismissing." Uniform `tested` or `confirmed` is expected good behavior (diligent agent) and is NOT flagged. Mixed statuses with >5 entries where >80% are identical `not_tested` are also flagged.
+
+**Fallback**: Pass 3 independently infers hypothesis test status by cross-referencing agent Forge tests and ruled-out vectors against hypothesis IDs. This catches cases where agents partially filled `hypothesis_results` or omitted entries.
 
 ### Additional tracking
 
 Pass 2 agents must report in their sidecar which Pass 1 hypotheses they tested:
 ```json
 "hypothesis_results": [
-  {"id": "H-CP-001", "status": "tested", "result": "guarded — require at line 1670 prevents overflow", "test_file": "test/AuditPrecision.t.sol"},
-  {"id": "H-CP-003", "status": "confirmed", "result": "overflow possible with height > 2^127", "test_file": "test/AuditPrecision.t.sol"},
-  {"id": "H-CP-005", "status": "not_tested", "reason": "out of scope for this archetype"}
+  {"id": "H-R01-CP-001", "status": "tested", "detail": "guarded — require at line 1670 prevents overflow", "test_file": "test/AuditPrecision.t.sol"},
+  {"id": "H-R01-CP-003", "status": "confirmed", "detail": "overflow possible with height > 2^127", "test_file": "test/AuditPrecision.t.sol"},
+  {"id": "H-R01-CP-005", "status": "not_tested", "reason": "out of scope for this archetype"}
 ]
 ```
+
+### Research-Backed Extensions (Pass 2)
+
+**LLM ↔ fuzzer feedback loop** [EchoFuzz, ICSE 2026]:
+
+After Pass 2 agents run Medusa or Forge fuzz campaigns, pipe coverage reports back as "untouched branches" for the agent to generate targeted inputs. EchoFuzz shows that feeding fuzzing results back to an LLM for adaptive input generation significantly improves deep bug discovery.
+
+Implementation: `wave_runner.py` gains an optional post-fuzz step that parses Forge coverage JSON (`forge coverage --report json`), identifies functions/branches with 0% coverage in the agent's scope, and formats them as a structured prompt appendix: "These code paths were never executed by your tests: [list]. Generate inputs that exercise them." The agent receives this mid-run via a continuation prompt.
+
+Trigger condition: enable after Phase B, when the basic hypothesis loop is stable.
+
+Fallback: agents run fuzz campaigns independently without coverage feedback.
 
 ---
 
@@ -258,49 +453,92 @@ Pass 2 agents must report in their sidecar which Pass 1 hypotheses they tested:
 
 ### Purpose
 
-Read all Pass 2 agent work + actual source code. Produce:
-1. Substantive feedback (replaces compliance-only gotchas)
+Read all Pass 2 agent work + actual source code. The agent's default analytical stance is **refutation**: for every Pass 2 finding, actively try to DISPROVE it by identifying the specific guard/check that prevents exploitation [LogiSec, LADC 2025 — 36% FP reduction]. If refutation fails (no guard found), the finding is escalated. If a guard IS found, cite the exact line.
+
+Produce:
+1. Substantive feedback at three levels [SAMULE]:
+   - **Finding-level**: is this specific claim correct? (refutation-based)
+   - **Step-level**: where in the agent's reasoning chain did it go wrong? (e.g., "you tested the hook path but the vulnerability is on the direct swap path")
+   - **Strategy-level**: what general approach should the agent change? (e.g., "always test both code paths when a boundary has multiple entry points")
 2. New hypotheses discovered during the run
 3. Hypothesis tracking (which Pass 1 hypotheses were tested, dismissed, or ignored)
-4. Updated playbook entries
+4. Updated playbook entries (strategy-level feedback feeds directly into playbook lessons; step-level feedback feeds into gotchas)
 
 ### Agent Structure
 
-A single Opus agent. Receives:
-- All 9 agents' sidecars (findings, ruled-out vectors, hypothesis_results)
-- All Forge test files agents wrote
-- The actual source code for functions agents investigated
-- Pass 1 hypotheses (to track what was tested)
-- Prior playbook (to build on)
+3 Opus agents, split by checklist group to stay within context limits.
+
+**Token estimate**: Each Pass 2 agent sidecar is ~10-20K tokens (findings + ruled-out + tests). 9 agents × ~15K = ~135K tokens of sidecar data alone, plus source code excerpts (~30K), hypotheses (~10K), and playbook (~5K) = ~180K+ total. While Opus 4.6 supports 1M context, analysis quality degrades significantly with large input volumes — the agent must cross-reference code against claims, which requires sustained attention across the full input. The 3-agent split keeps each under ~70K input, producing deeper analysis per checklist group.
+
+| Pass 3 agent | Reads sidecars from | Checklist group |
+|-------------|--------------------|-----------------|
+| extract-math | precision-sniper, math-deep-diver, price-distorter | C-MATH |
+| extract-state | state-desync, composability-exploiter, insolvency-engineer | C-STATE |
+| extract-boundary | auth-forger, cross-boundary, extension-hijacker | C-AUTH + C-BOUNDARY |
+
+Each agent receives:
+- Its 3 agents' sidecars (findings, ruled-out vectors, hypothesis_results)
+- Forge test files those agents wrote
+- The actual source code for functions those agents investigated
+- Pass 1 hypotheses routed to those agents (to track what was tested)
+- Prior playbook (shared across all 3)
+
+**Output priority ordering** (if agent runs low on turns, produce outputs in this order):
+1. Hypothesis tracking — cheap, essential for loop closure
+2. Finding-level feedback — directly actionable corrections
+3. New hypotheses — discovered vulnerabilities Pass 1 missed
+4. Step-level feedback — reasoning chain corrections
+5. Strategy-level feedback + playbook lessons — highest value but lowest urgency
+
+The prompt instructs: "If you are running low on turns, prioritize items 1-3 above. Items 4-5 are valuable but not essential for this run — they will be generated in the next run if skipped."
+
+**Input truncation**: If a group's combined input exceeds 80K tokens, the orchestrator truncates in reverse priority: playbook lessons first (summarize to top 10), then ruled-out vectors (keep only those referencing Pass 1 hypothesis IDs), then Forge test files (keep only test function signatures, not full bodies). Sidecars, source code, and hypotheses are never truncated.
 
 ### Agent Output
 
-`knowledge-extraction.json`:
+Each agent writes `knowledge-extraction-{group}.json` (e.g., `knowledge-extraction-math.json`). The orchestrator (`knowledge_extract.py`) merges these into a combined `knowledge-extraction.json` by concatenating arrays and merging dictionaries. Merged output:
 ```json
 {
   "hypothesis_tracking": [
-    {"id": "H-CP-001", "tested_by": ["precision-sniper"], "result": "guarded", "depth": "thorough", "notes": "Agent wrote a comprehensive test covering 5 input ranges"},
-    {"id": "H-CP-003", "tested_by": [], "result": "untested", "depth": "none", "notes": "No agent investigated this despite being assigned to precision-sniper scope"},
-    {"id": "H-TS-002", "tested_by": ["state-desync"], "result": "dismissed", "depth": "shallow", "notes": "Agent wrote 'require prevents it' but the require is on a different code path — the direct swap path at line 234 has no require"}
+    {"id": "H-R01-CP-001", "tested_by": ["precision-sniper"], "result": "guarded", "depth": "thorough", "counter_evidence": "require(height <= MAX_HEIGHT) at FixedHelper.sol:1670", "notes": "Agent wrote a comprehensive test covering 5 input ranges"},
+    {"id": "H-R01-CP-003", "tested_by": [], "result": "untested", "depth": "none", "notes": "No agent investigated this despite being assigned to precision-sniper scope"},
+    {"id": "H-R01-TS-002", "tested_by": ["state-desync"], "result": "dismissed", "depth": "shallow", "notes": "Agent wrote 'require prevents it' but the require is on a different code path — the direct swap path at line 234 has no require"}
   ],
   "substantive_feedback": {
-    "precision-sniper": [
-      "Your test for H-CP-001 was thorough but tested the wrong function. The overflow is in _splitAmountsAndFeesByHeight, not _calculateSwapByInputFixed. The multiplication at line 1672 is unchecked.",
-      "You ruled out rounding direction in FixedHelper with 'assertEq(output, expected)' — but your expected value was computed with the same rounding. Test with 1-wei inputs where rounding determines whether output is 0 or 1."
-    ],
-    "state-desync": [
-      "You dismissed H-TS-002 citing a require statement, but that require is only on the hook path. The direct swap path through AMMHooksTransferHandler.executeSwap() at line 234 has no such guard. Re-test on the direct path."
-    ]
+    "precision-sniper": {
+      "finding_level": [
+        "Your test for H-R01-CP-001 was thorough but tested the wrong function. The overflow is in _splitAmountsAndFeesByHeight, not _calculateSwapByInputFixed. The multiplication at line 1672 is unchecked."
+      ],
+      "step_level": [
+        "You ruled out rounding direction in FixedHelper with 'assertEq(output, expected)' — but your expected value was computed with the same rounding. Test with 1-wei inputs where rounding determines whether output is 0 or 1."
+      ],
+      "strategy_level": [
+        "When computing expected values for math tests, always derive them independently (e.g., Python script or manual calculation) rather than using the contract's own logic."
+      ]
+    },
+    "state-desync": {
+      "finding_level": [
+        "You dismissed H-R01-TS-002 citing a require statement, but that require is only on the hook path. The direct swap path through AMMHooksTransferHandler.executeSwap() at line 234 has no such guard. Re-test on the direct path."
+      ],
+      "step_level": [],
+      "strategy_level": [
+        "The direct swap path (AMMHooksTransferHandler) has weaker guards than the hook path (AMMStandardHook). Always test BOTH paths for every boundary hypothesis."
+      ]
+    }
   },
   "new_hypotheses": [
     {
-      "id": "H-NEW-001",
+      "id": "H-R01-NEW-001",
+      "boundary": "handler-hook",
       "source": "discovered by composability-exploiter during C24 (Cork pattern)",
-      "mechanism": "When CLOBTransferHandler.setTokenSettings() is called in the same tx as a swap, the hook reads stale settings from the registry cache. The cache is populated in beforeSwap but setTokenSettings bypasses the cache update.",
-      "contracts": ["CLOBTransferHandler.sol", "CreatorHookSettingsRegistry.sol"],
-      "lines": {"CLOBTransferHandler.sol": [145, 178]},
-      "suggested_test": "...",
-      "carry_forward": true
+      "mechanism": "When CLOBTransferHandler.setTokenSettings() is called in the same tx as a swap, the hook reads stale settings from the registry cache at line 145. The cache is populated in beforeSwap but setTokenSettings bypasses the cache update at line 178.",
+      "contracts": ["lbamm-hooks-and-handlers/src/CLOBTransferHandler.sol", "lbamm-hooks-and-handlers/src/CreatorHookSettingsRegistry.sol"],
+      "functions": ["setTokenSettings", "beforeSwap"],
+      "lines": {"lbamm-hooks-and-handlers/src/CLOBTransferHandler.sol": [145, 178]},
+      "attack_sequence": ["1. Call setTokenSettings in the same tx as a swap", "2. Observe that beforeSwap reads stale cache", "3. Exploit stale settings for favorable swap terms"],
+      "suggested_test": "function test_H_NEW_001() public { /* set token settings + swap in same tx, verify hook reads stale cache */ }",
+      "grounded_in": "code-observation: CLOBTransferHandler.sol:145,178",
+      "confidence": "medium"
     }
   ],
   "playbook_update": {
@@ -318,17 +556,17 @@ A single Opus agent. Receives:
 
 4 dimensions:
 
-**Depth of Analysis (0-30)**:
-- Did it read actual Forge test code (not just ruled-out text)?
-- Did it cross-reference agent claims against the source code?
-- Did it identify at least one case where an agent's reasoning was wrong or shallow?
-- Scoring: evidence of code reading (10) + cross-referencing (10) + shallow-reasoning detection (10)
+**Depth of Analysis (0-30)** (automated via heuristics):
+- Did it read actual Forge test code? Heuristic: output contains `assertEq`, `assert`, `function test_` or references `.t.sol` files (10)
+- Did it cross-reference agent claims against source code? Heuristic: output contains repo-qualified `file:line` references that differ from those in the agent's sidecar (i.e., the extraction agent looked at code the original agent didn't cite) (10)
+- Did it identify at least one shallow dismissal? Heuristic: `hypothesis_tracking` array contains at least one entry with `depth: "shallow"` and a non-empty `notes` field citing a specific code path (10)
 
 **Actionability (0-25)**:
 - Is each feedback item specific enough that the next Pass 1 agent can act on it?
 - Does feedback include exact file:line references?
 - Does feedback include corrected test suggestions?
-- Scoring: count actionable items / total feedback items × 25
+- Does feedback span all three levels (finding, step, strategy)? [SAMULE]
+- Scoring: count actionable items / total feedback items × 25. Bonus: +3 if all three feedback levels are populated (capped at 25).
 
 **Hypothesis Tracking (0-25)**:
 - Did it track ALL Pass 1 hypotheses (tested, dismissed, ignored)?
@@ -343,6 +581,58 @@ A single Opus agent. Receives:
 
 **Gate**: Pass 3 output with aggregate score < 60 is flagged. The knowledge extraction is re-run with feedback about which dimension failed.
 
+### Orchestrator write-paths (Pass 3 → Playbook)
+
+After Pass 3 completes and passes the gate, `playbook.py` transforms its output into playbook records:
+
+**`hypothesis_tracking` → `tested.jsonl`**: For each entry in `hypothesis_tracking`, the orchestrator:
+1. Copies `id`, `result`, `depth`, `counter_evidence`, `notes` directly
+2. Copies `tested_by` directly
+3. Looks up `test_file` by joining `tested_by` agents against their Pass 2 `hypothesis_results` (matching on hypothesis `id`)
+4. Appends orchestrator metadata: `run` (from `metadata.json`), `timestamp` (current time)
+5. Optionally extracts `trajectory` from the agent's sidecar log (grep for hypothesis ID, capture surrounding context) — extension only
+
+**`new_hypotheses` → `hypotheses.jsonl`**: For each entry in `new_hypotheses`, the orchestrator:
+1. Copies all agent-produced fields (`id`, `boundary`, `mechanism`, `contracts`, `functions`, `lines`, `attack_sequence`, `suggested_test`, `grounded_in`, `confidence`)
+2. Appends orchestrator metadata: `run`, `timestamp`, `git_commit`, `parent_id` (null for new hypotheses)
+3. Computes and appends `line_hashes` via `compute_line_hashes()`
+4. Validates via `validate_hypothesis_lines()` and `validate_hypothesis_substance()` — same as Pass 1 output
+
+**`playbook_update.lessons` → `lessons.jsonl`**: For each lesson string, the orchestrator:
+1. Applies quality gating: must come from Pass 3 output scoring > 60, must match `\w+\.sol(:\d+)?`, must pass staleness check
+2. Appends `source_run`, `citation_count: 0`, `last_cited_run: null` (extension fields, defaulted)
+3. Checks 30-entry cap; prunes if needed
+
+**`playbook_update.tested_boundaries` / `untested_boundaries`**: Written to `playbook.md` (human-readable summary) for manual review. Not consumed by any automated pipeline.
+
+### Research-Backed Extensions (Pass 3)
+
+**Heterogeneous reasoning strategies** ["Can LLM Agents Really Debate?", arXiv 2511.07784]:
+
+Overrides the core default (refutation for all 3 agents). Instead of 3 identical Pass 3 agents with different input scopes, give each a different analytical stance to prevent echo chamber effects documented in the multi-agent debate literature:
+
+| Agent | Stance | Effect |
+|-------|--------|--------|
+| extract-math | Refutation (default) | Tries to disprove findings by finding guards |
+| extract-state | Confirmation | Actively tries to confirm findings — catches cases where refutation is too aggressive |
+| extract-boundary | Devil's advocate | Challenges both findings AND dismissals — maximizes coverage of edge cases |
+
+Implementation: `knowledge_extract.py` gains a `reasoning_stance` config per agent, injected into the prompt preamble. Each stance modifies the analytical instructions but not the output schema.
+
+Trigger condition: enable after Phase B validates that Pass 3 produces useful feedback at all.
+
+Fallback: all three agents use the refutation stance.
+
+**Citation interval verification** [Citation-Grounded Code Comprehension, arXiv 2512.12117 — 92% accuracy, 0 hallucination]:
+
+Extend `validate_hypothesis_lines` to support line RANGES `[file:start-end]` in addition to individual lines. Pass 3 agents must cite ranges that overlap with actual code chunks retrieved by the orchestrator. The orchestrator verifies overlap via interval arithmetic: `cited_range ∩ retrieved_range ≠ ∅`. Findings with non-overlapping citations are flagged as potentially hallucinated.
+
+Implementation: add `validate_citation_ranges()` to `knowledge_compliance.py`. Pass 3 output gains an optional `cited_ranges` field per feedback item. When present, the orchestrator verifies overlap.
+
+Trigger condition: enable when Pass 3 output is stable enough to enforce citation format.
+
+Fallback: current individual line number validation.
+
 ---
 
 ## Playbook (persistent across runs)
@@ -351,18 +641,58 @@ A single Opus agent. Receives:
 
 ```
 docs/orchestrator/playbook/
-  playbook.md          — human-readable accumulated knowledge
-  hypotheses.jsonl     — all hypotheses across all runs (append-only)
-  tested.jsonl         — hypothesis test results (append-only)
-  lessons.jsonl        — validated lessons (quality-gated)
+  metadata.json            — run counter, last-run timestamp (schema below)
+  playbook.md              — human-readable accumulated knowledge
+  hypotheses.jsonl         — active hypotheses across recent runs (append-only, pruned by retention policy)
+  hypotheses-archive.jsonl — hypotheses older than 5 runs, excluded from injection (append-only)
+  tested.jsonl             — hypothesis test results (append-only)
+  lessons.jsonl            — validated lessons (quality-gated, capped at 30)
 ```
+
+`metadata.json` schema:
+```json
+{
+  "run_counter": 3,
+  "last_run_timestamp": "2026-03-20T14:30:00Z",
+  "last_run_git_commit": "a1b2c3d"
+}
+```
+`run_counter` is monotonic (independent of `experiments.tsv`), incremented by the orchestrator at the start of each knowledge loop invocation. Used to generate hypothesis IDs (`H-R{run}-...`).
+
+### Record schema
+
+Each line in `hypotheses.jsonl` is a JSON object combining agent-produced fields with orchestrator-appended metadata:
+
+```json
+{
+  "id": "H-R01-CP-001",
+  "parent_id": null,
+  "run": 1,
+  "timestamp": "2026-03-20T14:30:00Z",
+  "git_commit": "a1b2c3d",
+  "boundary": "core-pooltype",
+  "mechanism": "...",
+  "contracts": ["lbamm-pool-type-fixed/src/FixedHelper.sol"],
+  "functions": ["_splitAmountsAndFeesByHeight"],
+  "lines": {"lbamm-pool-type-fixed/src/FixedHelper.sol": [1672, 1675, 1678]},
+  "line_hashes": {"lbamm-pool-type-fixed/src/FixedHelper.sol": {"1672": "a3f8c1d2...", ...}},
+  "attack_sequence": ["..."],
+  "suggested_test": "...",
+  "grounded_in": "EXP-01",
+  "confidence": "medium"
+}
+```
+
+Fields `id` through `git_commit` are set by the orchestrator. The rest are agent-produced. `parent_id` is null for root hypotheses, or references the predecessor ID for refined re-injections. Note: `prior_result` is NOT stored here — it is a transient annotation looked up from `tested.jsonl` at injection time (see Pass 1 Agent Input).
 
 ### Accumulation rules
 
-- Hypotheses that were **tested and confirmed** → high priority for next run's Pass 2
-- Hypotheses that were **tested and guarded** → deprioritized (don't re-test unless code changes)
-- Hypotheses that were **untested** → re-injected into next run's Pass 1 for refinement
-- Hypotheses that were **shallowly dismissed** → re-injected with the Pass 3 feedback attached
+The playbook uses the Pass 3 `result` field as the authoritative status for each hypothesis, superseding the Pass 2 `status` field. Pass 2's `status` tracks what the agent *did*; Pass 3's `result` tracks the *assessed outcome* after cross-referencing with source code.
+
+- Hypotheses with result **confirmed** (Pass 2 `status: confirmed`, Pass 3 verified) → high priority for next run's Pass 2
+- Hypotheses with result **guarded** (Pass 3 found a specific guard) → deprioritized (don't re-test unless code changes)
+- Hypotheses with result **untested** (no agent investigated) → re-injected into next run's Pass 1 for refinement
+- Hypotheses with result **dismissed** + depth **shallow** → re-injected with the Pass 3 feedback attached
 - New hypotheses from Pass 3 → added to next run's Pass 1 input
 - Lessons → accumulated in playbook.md, injected into all passes
 
@@ -371,31 +701,182 @@ docs/orchestrator/playbook/
 Hypotheses are version-stamped with the git commit hash at generation time. Before each run, the playbook loader checks whether referenced lines still contain the same code:
 
 ```python
-def check_staleness(hypothesis: dict, repo_root: Path) -> str:
-    """Returns 'current', 'stale', or 'unknown'."""
+def check_staleness(hypothesis: dict, repo_root: Path) -> tuple[str, dict[str, dict[int, int]]]:
+    """Returns (status, shifted_lines).
+
+    status: 'current', 'shifted', 'stale', or 'unknown'.
+    shifted_lines: {contract: {old_line: new_line}} — populated when code
+      has shifted (lines inserted/deleted above the reference). The caller
+      should patch the hypothesis's line numbers before injection.
+
+    When a hash mismatch occurs (line content changed), searches ±10 lines
+    for the original content before declaring stale. This handles the common
+    case where code is inserted above the referenced line, shifting line
+    numbers without changing the referenced code itself.
+    """
+    stored_hashes = hypothesis.get("line_hashes", {})
+    has_any_hash = any(stored_hashes.values())
+    shifted_lines: dict[str, dict[int, int]] = {}
+    any_shifted = False
     for contract, lines in hypothesis.get("lines", {}).items():
-        matches = list(repo_root.rglob(contract))
-        if not matches:
-            return "stale"  # contract renamed or deleted
-        current_source = matches[0].read_text().splitlines()
+        # Contract paths are repo-qualified; resolve directly
+        contract_path = repo_root / contract
+        if not contract_path.exists():
+            return "stale", {}  # contract renamed or deleted
+        current_source = contract_path.read_text().splitlines()
         for line_num in lines:
             if line_num > len(current_source):
-                return "stale"
-    return "current"
+                # Line beyond EOF — try fuzzy re-match if we have a hash
+                if contract in stored_hashes and str(line_num) in stored_hashes[contract]:
+                    match = _fuzzy_find_line(current_source, stored_hashes[contract][str(line_num)], line_num)
+                    if match:
+                        shifted_lines.setdefault(contract, {})[line_num] = match
+                        any_shifted = True
+                        continue
+                return "stale", {}
+            # Content comparison: if we have a stored hash, verify the code hasn't changed
+            if contract in stored_hashes and str(line_num) in stored_hashes[contract]:
+                current_hash = hashlib.sha256(current_source[line_num - 1].strip().encode()).hexdigest()[:16]
+                if current_hash != stored_hashes[contract][str(line_num)]:
+                    # Hash mismatch — search ±10 lines for the original content
+                    match = _fuzzy_find_line(current_source, stored_hashes[contract][str(line_num)], line_num)
+                    if match:
+                        shifted_lines.setdefault(contract, {})[line_num] = match
+                        any_shifted = True
+                    else:
+                        return "stale", {}
+    if not has_any_hash:
+        return "unknown", {}
+    return ("shifted" if any_shifted else "current"), shifted_lines
+
+
+def _fuzzy_find_line(source: list[str], expected_hash: str, original_line: int, window: int = 10) -> int | None:
+    """Search ±window lines around original_line for content matching expected_hash.
+
+    Returns the 1-indexed line number if found, None otherwise.
+    Searches outward from the original position to prefer the closest match.
+    """
+    for offset in range(1, window + 1):
+        for candidate in [original_line - 1 + offset, original_line - 1 - offset]:
+            if 0 <= candidate < len(source):
+                candidate_hash = hashlib.sha256(source[candidate].strip().encode()).hexdigest()[:16]
+                if candidate_hash == expected_hash:
+                    return candidate + 1  # 1-indexed
+    return None
 ```
 
-Stale hypotheses are excluded from Pass 1 input and Pass 2 injection. They remain in `hypotheses.jsonl` for history but are not re-tested.
+Staleness statuses are handled as follows:
+- `"current"` — injected normally
+- `"shifted"` — injected with **patched line numbers** from `shifted_lines`. The hypothesis's `lines` and `line_hashes` fields are updated in-place before injection, and a `"staleness": "shifted — line numbers auto-corrected"` annotation is added so agents know the references were adjusted. Original line numbers are preserved in a `"original_lines"` field for audit trail
+- `"stale"` — excluded from injection, moved to archive
+- `"unknown"` — injected with a warning annotation (`"staleness": "unknown — no line hashes, verify manually"`) so agents know the reference is unverified
+
+At hypothesis creation time, `knowledge_gen.py` stores `line_hashes` alongside `lines`:
+```python
+def compute_line_hashes(lines: dict[str, list[int]], repo_root: Path) -> dict[str, dict[str, str]]:
+    """Store sha256 prefix of each referenced line for staleness detection.
+
+    Contract keys must be repo-qualified paths (e.g., 'lbamm-core/src/AMMModule.sol').
+    """
+    hashes = {}
+    for contract, line_nums in lines.items():
+        contract_path = repo_root / contract
+        if not contract_path.exists():
+            continue
+        source = contract_path.read_text().splitlines()
+        hashes[contract] = {}
+        for ln in line_nums:
+            if ln <= len(source):
+                hashes[contract][str(ln)] = hashlib.sha256(source[ln - 1].strip().encode()).hexdigest()[:16]
+    return hashes
+```
+
+Stale hypotheses are excluded from Pass 1 input and Pass 2 injection. They remain in `hypotheses-archive.jsonl` for history but are not re-tested.
 
 ### Contradiction resolution
 
-When multiple runs produce conflicting status for the same hypothesis, the most recent Pass 3 assessment wins. The playbook reader sorts entries by timestamp and takes the last status for each hypothesis ID.
+When multiple runs produce conflicting `result` values for the same hypothesis. The ordering `untested → dismissed → guarded → confirmed` represents *increasing confidence of assessment* (not severity): untested = never looked; dismissed = looked, found nothing; guarded = looked, found a specific guard; confirmed = exploitable.
+
+- **Progressions** (movement rightward: untested → dismissed, dismissed → guarded, guarded → confirmed, etc.): most recent wins unconditionally. Each step represents deeper investigation.
+- **Regressions** (movement leftward: confirmed → guarded, confirmed → dismissed): the new entry must include a `counter_evidence` field citing a specific guard (file:line) or test result. Without counter-evidence, the `confirmed` result is preserved and the conflicting entry is logged as contested.
+- **Equal result**: most recent wins (updated notes/depth).
+
+The playbook reader sorts entries by timestamp and applies these rules per hypothesis lineage (all IDs sharing a root via `parent_id` chains — see Hypothesis ID Scheme above).
+
+### Retention policy
+
+To prevent unbounded playbook growth, the playbook loader prunes before each run:
+- **Active window**: hypotheses from the last 5 runs are always included.
+- **Permanent**: hypotheses with result `confirmed` are never pruned (regardless of age).
+- **Archived**: hypotheses older than 5 runs with result `guarded`, `dismissed`, or `untested` are moved to `hypotheses-archive.jsonl`. They remain available for manual review but are not injected into agents.
+- **Lessons**: capped at 30 entries. When exceeded, pruning order: (1) oldest non-code-referencing lessons first, (2) if all reference code, oldest overall.
 
 ### Quality gating
 
 Lessons only persist when:
 - They come from Pass 3 output that scored > 60 on automated compliance
-- They reference specific code (not generic advice)
+- They reference specific code with line numbers, not generic advice (heuristic: must match `\w+\.sol:\d+` at least once — the line number is mandatory; a lesson that only names a file without a line is too generic to be actionable)
 - They pass staleness check against current codebase
+
+### Research-Backed Extensions (Playbook)
+
+**Full trajectory storage** [Contextual Experience Replay, ACL 2025]:
+
+Instead of storing only the final `result` in `tested.jsonl`, also store the agent's reasoning chain for each hypothesis — what they tried, what failed, what they concluded. Next run's Pass 1 agents receive the trajectory so they understand WHY something was guarded and whether the reasoning was sound.
+
+Baseline `tested.jsonl` record (core schema):
+```json
+{
+  "id": "H-R01-CP-001",
+  "run": 1,
+  "tested_by": ["precision-sniper"],
+  "result": "guarded",
+  "depth": "thorough",
+  "counter_evidence": "require(height <= MAX_HEIGHT) at FixedHelper.sol:1670",
+  "test_file": "test/AuditPrecision.t.sol"
+}
+```
+
+With trajectory extension:
+```json
+{
+  "id": "H-R01-CP-001",
+  "run": 1,
+  "tested_by": ["precision-sniper"],
+  "result": "guarded",
+  "depth": "thorough",
+  "counter_evidence": "require(height <= MAX_HEIGHT) at FixedHelper.sol:1670",
+  "test_file": "test/AuditPrecision.t.sol",
+  "trajectory": "Wrote test with height=type(uint128).max. Test reverted at require(height <= MAX_HEIGHT) on line 1670. Tried bypassing via direct call to internal function — not accessible externally. Concluded: guarded."
+}
+```
+
+Implementation: `knowledge_extract.py` already reads agent sidecars. Add a step that extracts the reasoning chain for each hypothesis from the sidecar log (grep for hypothesis ID, capture surrounding context). `playbook.py` stores the `trajectory` field alongside existing fields.
+
+Trigger condition: enable after Phase B when Pass 3 extraction is working.
+
+Fallback: current status-only storage.
+
+**Utility-weighted lesson retention** [Preference-Aware Memory, arXiv 2510.09720]:
+
+Track which playbook lessons were actually cited by agents in subsequent runs (string-match lesson text against agent output). Lessons cited in runs that produced confirmed findings get elevated priority. Lessons never cited after 3 runs get deprioritized.
+
+Schema addition to `lessons.jsonl`:
+```json
+{
+  "lesson": "Always test both code paths when a boundary has multiple entry points.",
+  "source_run": 1,
+  "citation_count": 3,
+  "last_cited_run": 4,
+  "confirmed_correlation": true
+}
+```
+
+Implementation: after each run, `playbook.py` scans agent sidecars for substring matches against lesson text. Updates `citation_count` and `last_cited_run`. Pruning order becomes: (1) never-cited lessons after 3 runs, (2) oldest non-code-referencing, (3) oldest overall.
+
+Trigger condition: enable after Phase C when the playbook has accumulated enough lessons to need intelligent pruning.
+
+Fallback: current age-based pruning.
 
 ---
 
@@ -405,81 +886,103 @@ Lessons only persist when:
 
 - Wave 1 agent roster (9 archetypes)
 - Per-archetype checklists (C-MATH, C-STATE, C-AUTH, C-BOUNDARY)
-- Sidecar gate (schema enforcement, minimum thresholds)
+- Sidecar gate (schema enforcement, minimum thresholds — extended with `hypothesis_results` field when Pass 1 hypotheses were injected)
 - Process compliance scorer (5 dimensions: checklist, tools, evidence, depth, thesis)
 - Gotchas system (process feedback still generated)
 - Forward-looking regression (15 exploit-grounded cases)
 - Blind spot scanner
 - MCP audit-gate server
 
-### What changes
+### What changes — pipeline insertion points
 
-### Pipeline insertion points
-
-Pass 3 must run AFTER compliance continuation merging (line 557 in `run_audit.py`) so it reads the complete merged sidecars, not partial pre-continuation data. The full pipeline order becomes:
+Pass 3 must run AFTER `merge_continuation_sidecars()` in `run_audit.py` so it reads the complete merged sidecars, not partial pre-continuation data. The full pipeline order becomes:
 
 ```
 1. Pass 1: knowledge generation (before render_wave_prompts)
-2. render_wave_prompts (inject hypotheses via extra_context)
-3. run_wave (Pass 2 — existing wave 1)
-4. collect_artifacts + validate_sidecars + regression
-5. compliance scoring (pre-continuation)
-6. compliance continuation (if needed)
-7. merge continuation sidecars
-8. Pass 3: knowledge extraction (reads merged sidecars + source code)
-9. reflection + experiment logging
-10. blind spot scanner
-11. wave 2 gate
+2. Intra-run staleness check (see below)
+3. render_wave_prompts (inject hypotheses via extra_context)
+4. run_wave (Pass 2 — existing wave 1)
+5. collect_artifacts + validate_sidecars + regression
+6. compliance scoring (pre-continuation)
+7. compliance continuation (if needed, max 2 rounds — see below)
+8. merge continuation sidecars
+9. Pass 3: knowledge extraction (reads merged sidecars + source code)
+10. reflection + experiment logging
+11. blind spot scanner
+12. wave 2 gate
 ```
 
-If Pass 3 is too slow or context overflows, it can be split into 3 agents by checklist group: one for C-MATH agents (3 agents), one for C-STATE agents (3 agents), one for C-AUTH + C-BOUNDARY agents (3 agents). Each reads only its group's sidecars + tests. The spec starts with a single agent and splits if needed.
+**Intra-run staleness check** (step 2): Before rendering prompts, the orchestrator records `git rev-parse HEAD` for each target repo at Pass 1 start and checks it again before Pass 2 prompt rendering. If any repo HEAD has changed (e.g., upstream commit during the run), hypothesis line numbers may be invalid. The orchestrator logs a warning and re-runs `check_staleness()` on all Pass 1 hypotheses against the new HEAD, patching shifted lines and dropping stale ones. This is a safety net for long-running audits; in contest settings where the codebase is frozen it will be a no-op.
 
-| Component | Change |
-|-----------|--------|
-| `run_audit.py` | Add Pass 1 before `run_wave()`, Pass 3 after continuation merging |
-| `prompt_renderer.py` | Add `{{HYPOTHESES}}` template variable injection |
-| Archetype `prompt.md` files | Add `{{HYPOTHESES}}` placeholder |
-| `config.py` | Add Pass 1 agent definitions (6 boundary agents) |
-| New: `knowledge_gen.py` | Pass 1 orchestration — spawn boundary agents, collect hypotheses |
-| New: `knowledge_extract.py` | Pass 3 orchestration — spawn extraction agent, process output |
-| New: `knowledge_compliance.py` | Pass 1 + Pass 3 compliance scoring (4 dimensions each) |
-| New: `playbook.py` | Playbook read/write/accumulation logic |
-| New: `docs/orchestrator/playbook/` | Persistent knowledge store |
+Pass 3 uses 3 agents by default (see Agent Structure above). If context budget proves comfortable in practice (< 100K tokens per agent), they can be collapsed to a single agent for simpler orchestration.
 
-### New files
+### Compliance continuation policy
 
-| File | Purpose |
-|------|---------|
-| `knowledge_gen.py` | Pass 1: spawn 6 Opus boundary agents, collect hypotheses |
-| `knowledge_extract.py` | Pass 3: spawn 1 Opus extraction agent, process output |
-| `knowledge_compliance.py` | Compliance scoring for Pass 1 (specificity, testability, coverage, grounding) and Pass 3 (depth, actionability, tracking, discovery) |
-| `playbook.py` | Read/write/accumulate playbook entries across runs |
-| `templates/knowledge-gen-prompt.md` | Pass 1 agent template |
-| `templates/knowledge-extract-prompt.md` | Pass 3 agent template |
+The continuation pass is bounded at `MAX_CONTINUATION_ROUNDS = 2` [LLMLOOP: bounded iteration (3-5) outperforms unbounded; >5 causes oscillation]. After 2 continuation rounds, the result is accepted as-is regardless of score.
+
+**Dynamic re-prompt generation** [Instruct-of-Reflection, NAACL 2025]: when the continuation pass fires, it generates targeted feedback per failed dimension rather than generic "continue your work":
+
+- Checklist failure: "You scored {N}/30 on checklist because you skipped items {list}. Complete them." The specific uncompleted items are identified by cross-referencing MCP `complete_checklist_item` calls against the expected checklist [Strategy-Guided Exploration: incentivize underexplored strategies].
+- Depth failure: "You scored {N}/20 on depth because you wrote {M} Forge tests (minimum 3 expected). Write targeted tests for your top hypotheses."
+- Tool breadth failure: "You used {tools_used}. You must also use {missing_tools}."
+
+This reframes checklist items as named **exploration strategies** — the continuation pass specifically targets the least-explored strategies, not just "score higher."
+
+| File | Status | Change |
+|------|--------|--------|
+| `run_audit.py` | modify | Add Pass 1 before `run_wave()`, Pass 3 after continuation merging |
+| `schema.py` | modify | Add `hypothesis_results` field to `AgentOutput` dataclass; coerce non-standard field names |
+| `sidecar_gate.py` | modify | Add `hypothesis_results` validation: non-empty array, diversity check, `test_file` on tested entries |
+| Archetype `prompt.md` files | modify | Add `{{HYPOTHESES}}` placeholder (rendered by existing `extra_context` mechanism) |
+| `config.py` | modify | Add Pass 1 agent definitions (6 boundary agents) |
+| `knowledge_gen.py` | new | Pass 1: spawn 6 Opus boundary agents, collect + validate + deduplicate hypotheses, enforce `MAX_HYPOTHESES_PER_AGENT` volume cap, generate cross-contract call maps (with grep fallback). Optional: CPG slicing (`use_cpg_slicing`), RAG exploits (`use_rag_exploits`) |
+| `knowledge_extract.py` | new | Pass 3: spawn 3 Opus extraction agents (by checklist group), merge output. Optional: heterogeneous stances (`reasoning_stance` per agent) |
+| `knowledge_compliance.py` | new | Compliance scoring for Pass 1 (5 automated dimensions + diversity) and Pass 3 (4 dimensions). Optional: citation interval verification |
+| `playbook.py` | new | Playbook read/write/accumulation/retention/staleness logic (with fuzzy line re-matching via `_fuzzy_find_line`). Optional: trajectory storage, utility-weighted retention |
+| `compliance_continuation.py` | modify | Add `MAX_CONTINUATION_ROUNDS = 2`, dynamic re-prompt generation per failed dimension |
+| `templates/knowledge-gen-prompt.md` | new | Pass 1 agent prompt template (Think & Verify protocol) |
+| `templates/knowledge-extract-prompt.md` | new | Pass 3 agent prompt template (refutation stance + multi-level feedback) |
+| `docs/orchestrator/playbook/` | new | Persistent knowledge store (see Playbook section) |
 
 ---
 
 ## Cost Estimate
 
-| Pass | Agents | Model | Estimated cost |
-|------|--------|-------|---------------|
-| Pass 1 | 6 boundary agents | Opus | ~$15-25 |
-| Pass 2 | 9 archetype agents | Sonnet/Opus (existing) | ~$56 |
-| Pass 3 | 1 extraction agent | Opus | ~$5-10 |
-| **Total** | **16 agents** | | **~$80-90/run** |
+| Pass | Agents | Model | Estimated cost | With retries |
+|------|--------|-------|---------------|-------------|
+| Pass 1 | 6 boundary agents | Opus | ~$15-25 | ~$20-50 (if 2-3 boundaries retry) |
+| Pass 2 | 9 archetype agents | Sonnet/Opus (existing) | ~$58-62 | ~$60-68 |
+| Continuation | 0-9 agents (as needed) | Sonnet/Opus | ~$0-15 | ~$0-30 (max 2 rounds) |
+| Pass 3 | 3 extraction agents | Opus | ~$8-15 | ~$10-20 (if 1 agent retries) |
+| **Total** | **18+ agents** | | **~$82-115/run** | **~$90-165/run** |
 
-Up from ~$56/run. The ~$30 increase buys mechanism-level hypotheses and substantive knowledge extraction.
+Up from ~$56/run. Pass 2 cost increases ~$2-6 due to hypothesis injection expanding input tokens per agent. The ~$30-75 total increase buys mechanism-level hypotheses and substantive knowledge extraction. Worst-case retries (all 6 Pass 1 boundaries fail once + all 3 Pass 3 agents retry) would push to ~$150, but this scenario indicates systemic prompt issues that should be fixed rather than retried.
+
+**Hard cost cap**: `MAX_RUN_COST = 200` (USD). The orchestrator tracks cumulative API spend across all passes via SDK usage metadata. If cumulative cost exceeds the cap mid-run, the current pass completes but no further passes or retries are launched. The run terminates with a partial result and `cost_capped: true` in experiment metadata. This prevents runaway costs from compounding retries across Pass 1 + continuation + Pass 3.
 
 ---
 
 ## Implementation Order
 
-1. **Phase A**: Pass 1 only — knowledge generation + hypothesis injection into wave 1. Validate that mechanism-level hints improve agent behavior before building the full loop.
+1. **Phase A**: Pass 1 only — knowledge generation + hypothesis injection into wave 1. Includes `validate_hypothesis_lines()` and `validate_hypothesis_substance()` as lightweight gates (pure Python, no LLM cost) — without these, Phase A's A/B test would be polluted by garbage hypotheses. Also includes `MAX_CONTINUATION_ROUNDS = 2` and basic checklist-item-based re-prompting (using MCP `complete_checklist_item` data, not full compliance scoring).
 2. **Phase B**: Pass 3 — knowledge extraction after wave 1. Validate that substantive feedback is higher quality than compliance-only gotchas.
 3. **Phase C**: Playbook accumulation — wire Pass 3 output back into Pass 1 for the next run. Close the loop.
-4. **Phase D**: Knowledge compliance scoring — measure Pass 1 and Pass 3 quality. Gate low-quality output.
+4. **Phase D**: Full knowledge compliance scoring (Pass 1: 5 automated dimensions + diversity; Pass 3: 4 dimensions). Gate low-quality output. Dynamic re-prompt generation with per-dimension score feedback (depends on scoring being available). Research-backed extensions enabled as stable.
 
 Phase A is the minimum viable test of the ReEVMBench hypothesis ("hints turn 62.5% into 95.8%"). If it doesn't improve finding rate, we stop.
+
+**Phase A measurement**: Run 3 back-to-back experiments with the same prompt version and compliance gates:
+- **Treatment**: Pass 1 hypotheses injected (`pass1=true`)
+- **Control**: No hypotheses (`pass1=false`)
+- **Cost control**: No hypotheses, but equivalent raw code excerpts injected at the same token budget as the treatment's hypothesis section — isolates whether hypotheses *specifically* help, or whether any additional context helps
+
+Compare:
+- Number of confirmed findings (primary metric)
+- Hypothesis test coverage (what % of injected hypotheses were actually tested)
+- Hypothesis-sourced findings (did any confirmed finding trace back to a Pass 1 hypothesis)
+- Novel file:line references in Forge tests (do agents explore different code paths vs. control?)
+
+Threshold to proceed: at least 1 hypothesis with `result: confirmed` in treatment that has `result != confirmed` in both control arms. Secondary (sufficient alone if primary not met): hypothesis test coverage > 60% AND at least 2 hypotheses led to novel file:line references in Forge tests not present in either control arm.
 
 ---
 
@@ -497,3 +1000,13 @@ The knowledge loop has failed when:
 2. Pass 2 agents ignore the hypotheses and follow the checklist mechanically anyway
 3. Pass 3 produces the same quality of feedback as the compliance-only gotchas
 4. The playbook fills with generic lessons that don't reference specific code
+
+### Known failure modes [MAST, NeurIPS 2025]
+
+The MAST taxonomy identifies 14 failure modes for multi-agent systems. The 3 most relevant to the knowledge loop, and how the architecture addresses each:
+
+| MAST failure mode | Description | Mitigation in this architecture |
+|-------------------|-------------|-------------------------------|
+| Task verification gap | Agent declares done without running verification | Depth scoring (0-20) requires Forge tests; sidecar gate enforces `test_file` references |
+| Inter-agent misalignment | Agents produce contradictory claims without awareness | Pass 3 cross-references across agents; contradiction resolution in playbook |
+| Specification ambiguity | Agent interprets checklist item differently than intended | Dynamic re-prompt in continuation pass cites specific uncompleted items by name |
