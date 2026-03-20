@@ -129,14 +129,18 @@ Keys are stringified line numbers (JSON object keys must be strings, unlike the 
 
 IDs are namespaced by run number and boundary abbreviation: `H-R{run}-{boundary}-{seq}`.
 
-| Boundary | Abbreviation |
-|----------|-------------|
-| Core ↔ Pool Type | CP |
-| Core ↔ Handler | CH |
-| Handler ↔ Hook | HH |
-| Hook ↔ Registry | HR |
-| Diamond Proxy | DP |
-| Transient Storage | TS |
+| Boundary | Abbreviation | Slug (data field value) |
+|----------|-------------|------------------------|
+| Core ↔ Pool Type | CP | `core-pooltype` |
+| Core ↔ Handler | CH | `core-handler` |
+| Handler ↔ Hook | HH | `handler-hook` |
+| Hook ↔ Registry | HR | `hook-registry` |
+| Diamond Proxy | DP | `diamond-proxy` |
+| Transient Storage | TS | `transient-storage` |
+
+Abbreviations are used in hypothesis IDs (`H-R01-CP-001`). Slugs are used in data fields (`"boundary": "core-pooltype"`) and playbook keys (`"tested_boundaries": {"core-pooltype": 12}`). The mapping is defined in `knowledge_gen.py:BOUNDARY_SLUGS`.
+
+**Confidence enum**: `"low"`, `"medium"`, `"high"`. Used in priority sorting (line cap): `high` > `medium` > `low`. Agents set this based on their assessment of the hypothesis. `schema.py` coerces unknown values to `"medium"`.
 
 Example: `H-R03-CP-012` = run 3, Core↔PoolType boundary, hypothesis 12. New hypotheses discovered by Pass 3 use `H-R{run}-NEW-{seq}`. Run number is a monotonic counter stored in `playbook/metadata.json` (independent of experiment numbering in `experiments.tsv`), incremented by the orchestrator at the start of each knowledge loop invocation. The agent only controls the sequence number.
 
@@ -240,7 +244,7 @@ Exhaustive mapping from 6 boundaries to 9 wave 1 agents:
 
 **Volume cap**: Each Pass 2 agent receives at most `MAX_HYPOTHESES_PER_AGENT = 15` hypotheses, sorted by priority: (1) `confirmed` from prior runs, (2) `untested` or `shallow`-dismissed from prior runs, (3) new hypotheses from this run's Pass 1. Within each tier, sort by confidence descending. When an agent maps to multiple boundaries and the total exceeds the cap, lower-priority hypotheses are dropped with a summary line injected into the prompt ("N additional lower-priority hypotheses omitted — see playbook for full list").
 
-Hypotheses are injected via `agent.extra_context["HYPOTHESES"]`, which `prompt_renderer.py` already handles — it replaces any `{{KEY}}` placeholder in the template with the corresponding `extra_context` value (lines 262-265). No `prompt_renderer.py` code change needed; only the archetype `prompt.md` files need a `{{HYPOTHESES}}` placeholder added.
+Hypotheses are injected via `agent.extra_context["HYPOTHESES"]`, which `prompt_renderer.py:_render_single_agent_prompt()` already handles — it replaces any `{{KEY}}` placeholder in the template with the corresponding `extra_context` value. No `prompt_renderer.py` code change needed; only the archetype `prompt.md` files need a `{{HYPOTHESES}}` placeholder added.
 
 ### Line Number Validation
 
@@ -322,7 +326,7 @@ Scoring is split into **automated** (deterministic, computed by `knowledge_compl
 - Functions analyzed vs total functions at boundary (denominator from Slither `list_functions` filtered to external/public at the boundary contracts)
 - Curated patterns addressed vs relevant patterns for this boundary
 - Scoring: (functions_analyzed / total_functions × 10) + (patterns_addressed / relevant_patterns × 10). If no curated patterns are relevant to this boundary, the patterns sub-score defaults to 10 (full credit)
-- **Diversity penalty** [GRPO]: if all hypotheses cite the same contract, or all reference the same ≤3 functions, apply a 20% penalty to the Coverage score. Prevents agents from producing N variations of the same hypothesis.
+- **Diversity penalty** [GRPO]: if all hypotheses cite the same contract, or all reference the same ≤3 functions, multiply the Coverage score by 0.8 (i.e., `coverage_score * 0.8`). Prevents agents from producing N variations of the same hypothesis.
 
 **Grounding (0-25)**:
 - Each hypothesis must have a `grounded_in` field referencing an EXP-XX pattern OR containing "code-observation:" with a specific line reference
@@ -581,16 +585,15 @@ Each agent writes `knowledge-extraction-{group}.json` (e.g., `knowledge-extracti
 - Did it identify at least one shallow dismissal? Heuristic: `hypothesis_tracking` array contains at least one entry with `depth: "shallow"` and a non-empty `notes` field citing a specific code path (10)
 
 **Actionability (0-25)**:
-- Is each feedback item specific enough that the next Pass 1 agent can act on it?
-- Does feedback include exact file:line references?
-- Does feedback include corrected test suggestions?
+- Is each feedback item specific enough that the next Pass 1 agent can act on it? Heuristic: an "actionable" item must contain at least one `\w+\.sol:\d+` reference (file:line). Items without file:line are counted as non-actionable.
+- Does feedback include corrected test suggestions? Heuristic: contains `function test_` or `assertEq` or `assert`.
 - Does feedback span all three levels (finding, step, strategy)? [SAMULE]
-- Scoring: count actionable items / total feedback items × 25. Bonus: +3 if all three feedback levels are populated (capped at 25).
+- Scoring: actionable_items / total_feedback_items × 25. Bonus: +3 if all three feedback levels are populated (capped at 25).
 
 **Hypothesis Tracking (0-25)**:
 - Did it track ALL Pass 1 hypotheses (tested, dismissed, ignored)?
 - Did it correctly identify which agents were responsible?
-- Did it flag shallow dismissals with evidence?
+- Did it flag shallow dismissals with evidence? Heuristic: `depth: "shallow"` entry with `notes` containing a `\w+\.sol:\d+` reference (same regex as lesson quality gating).
 - Scoring: (hypotheses_tracked / total_hypotheses × 15) + (shallow_dismissals_identified × 2, up to 10)
 
 **Discovery (0-20)**:
@@ -612,7 +615,7 @@ After Pass 3 completes and passes the gate, `playbook.py` transforms its output 
 5. Optionally extracts `trajectory` from the agent's sidecar log (grep for hypothesis ID, capture surrounding context) — extension only
 
 **`new_hypotheses` → `hypotheses.jsonl`**: For each entry in `new_hypotheses`, the orchestrator:
-1. Copies all agent-produced fields (`id`, `boundary`, `mechanism`, `contracts`, `functions`, `lines`, `attack_sequence`, `suggested_test`, `grounded_in`, `confidence`, and optional: `category`, `source_category`, `coupled_pair`, `masking_code`)
+1. Copies all agent-produced fields (`id`, `boundary`, `mechanism`, `contracts`, `functions`, `lines`, `attack_sequence`, `suggested_test`, `grounded_in`, `confidence`, and optional: `source`, `category`, `source_category`, `coupled_pair`, `masking_code`)
 2. Appends orchestrator metadata: `run`, `timestamp`, `git_commit`, `parent_id` (null for new hypotheses)
 3. Computes and appends `line_hashes` via `compute_line_hashes()`
 4. Validates via `validate_hypothesis_lines()` and `validate_hypothesis_substance()` — same as Pass 1 output
@@ -621,6 +624,13 @@ After Pass 3 completes and passes the gate, `playbook.py` transforms its output 
 1. Applies quality gating: must come from Pass 3 output scoring > 60, must match `\w+\.sol(:\d+)?`, must pass staleness check
 2. Appends `source_run`, `citation_count: 0`, `last_cited_run: null` (extension fields, defaulted)
 3. Checks 30-entry cap; prunes if needed
+
+**`finding_verdicts` → `tested.jsonl` + finding annotations** (Phase B+): For each entry in `finding_verdicts`, the orchestrator:
+1. Annotates the finding in `findings-{agent}.json` with `pass3_verdict: "survived" | "killed"`, `killed_by: gate | null`, and `gate_verdicts: {...}`. Surviving findings flow to wave 2 gate and synthesis with `pass3_verified: true`.
+2. Links finding back to hypothesis: cross-references `finding_id` against the originating agent's `hypothesis_results` (matching on hypothesis ID in the finding's `source_hypothesis` field if present). When a link exists and the finding was killed by gate B with a guard citation, writes a `tested.jsonl` entry with `result: "guarded"` and `counter_evidence` set to the gate B evidence.
+3. If no hypothesis link exists (finding was agent-discovered, not hypothesis-driven), the verdict is stored only as a finding annotation — no `tested.jsonl` entry.
+
+`finding_id` must match the `id` field from the corresponding finding in `findings-{agent}.json`.
 
 **`playbook_update.tested_boundaries` / `untested_boundaries`**: Written to `playbook.md` (human-readable summary) for manual review. Not consumed by any automated pipeline.
 
@@ -956,7 +966,7 @@ This reframes checklist items as named **exploration strategies** — the contin
 | File | Status | Change |
 |------|--------|--------|
 | `run_audit.py` | modify | Add Pass 1 before `run_wave()`, Pass 3 after continuation merging |
-| `schema.py` | modify | Add `hypothesis_results` field to `AgentOutput` dataclass; coerce non-standard field names |
+| `schema.py` | modify | Add `hypothesis_results: list[dict] = field(default_factory=list)` to `AgentOutput`; add `pre_filter` as known optional field; coerce non-standard field names. `hypothesis_results` is only validated as non-empty by the sidecar gate when hypotheses were injected (i.e., `extra_context["HYPOTHESES"]` was non-empty). Agents without hypotheses may have an empty list. |
 | `sidecar_gate.py` | modify | Add `hypothesis_results` validation: non-empty array, diversity check, `test_file` on tested entries |
 | Archetype `prompt.md` files | modify | Add `{{HYPOTHESES}}` placeholder (rendered by existing `extra_context` mechanism) |
 | `config.py` | modify | Add Pass 1 agent definitions (6 boundary agents) |
@@ -964,7 +974,7 @@ This reframes checklist items as named **exploration strategies** — the contin
 | `knowledge_extract.py` | new | Pass 3: spawn 3 Opus extraction agents (by checklist group), merge output. Optional: heterogeneous stances (`reasoning_stance` per agent) |
 | `knowledge_compliance.py` | new | Compliance scoring for Pass 1 (5 automated dimensions + diversity) and Pass 3 (4 dimensions). Optional: citation interval verification |
 | `playbook.py` | new | Playbook read/write/accumulation/retention/staleness logic (with fuzzy line re-matching via `_fuzzy_find_line`). Optional: trajectory storage, utility-weighted retention |
-| `compliance_continuation.py` | modify | Add `MAX_CONTINUATION_ROUNDS = 2`, dynamic re-prompt generation per failed dimension |
+| `compliance_continuation.py` | modify | Add `MAX_CONTINUATION_ROUNDS = 2` constant. Wrap existing `identify_failing_agents` + `build_continuation_prompt` + `build_continuation_wave` in a retry loop (up to `MAX_CONTINUATION_ROUNDS`). Add `build_dimension_feedback(agent, scores) -> str` to generate per-dimension re-prompt text. Current code runs continuation exactly once; the loop re-runs `identify_failing_agents` after each round and exits early if no agents remain below threshold. |
 | `templates/knowledge-gen-prompt.md` | new | Pass 1 agent prompt template (Think & Verify protocol) |
 | `templates/knowledge-extract-prompt.md` | new | Pass 3 agent prompt template (refutation stance + multi-level feedback) |
 | `docs/orchestrator/playbook/` | new | Persistent knowledge store (see Playbook section) |
@@ -1033,8 +1043,8 @@ Scans every finding in `findings-{agent}.json` and applies 5 mechanical checks �
 | **A: Generic best practice** | Finding matches known generic pattern | Regex blocklist: `"use SafeERC20"`, `"add events"`, `"use two-step ownership"`, `"missing zero-address check"`, `"use Ownable2Step"`, `"add nonReentrant"`, `"use checks-effects-interactions"` (~20 patterns) |
 | **D: Speculative** | Finding lacks concrete exploit trace | Verify `attack_sequence` field exists AND contains ≥2 steps AND references a specific function name from `functions` field |
 | **F: Dust** | Finding describes negligible impact | Regex for `"dust"`, `"rounding error of .* wei"`, `"less than .* gas"`, `"negligible"`, `"< \$?1[^0-9]"` in impact/description fields |
-| **G: Out of context** | Finding references out-of-scope contracts | Check `contracts` field entries against scope list from `config.py:TARGET_REPOS` |
-| **H: Known issue** | Finding matches known gotcha or FP | Fuzzy match against `docs/audit_memory/known-fps.jsonl` + gotchas files |
+| **G: Out of context** | Finding references out-of-scope contracts | Check `contracts` field entries against scope list from `config.py:REPOS` |
+| **H: Known issue** | Finding matches known gotcha or FP | Fuzzy match against `docs/audit_memory/false-positives.md` + gotchas files |
 
 Gates **B** (theoretical), **C** (intentional design), and **E** (admin trust) require source code analysis and design understanding — reserved for Pass 3.
 
@@ -1064,7 +1074,9 @@ Flagged findings are **not deleted** — they flow to Pass 3 with the annotation
 12. wave 2 gate
 ```
 
-**Implementation**: Pure Python, no LLM cost. The blocklist is a `GENERIC_PATTERNS: list[re.Pattern]` constant in `kill_gate.py`. The scope check reads `config.py`. The known-issue match uses `difflib.SequenceMatcher` with a 0.7 threshold against gotchas entries.
+**Implementation**: Pure Python, no LLM cost. The blocklist is a `GENERIC_PATTERNS: list[re.Pattern]` constant in `kill_gate.py`. The scope check reads `config.py:REPOS`. The known-issue match uses `difflib.SequenceMatcher` with a 0.7 threshold against entries parsed from `docs/audit_memory/false-positives.md` and gotchas files.
+
+**Storage**: `kill_gate.py` reads each `findings-{agent}.json`, adds the `pre_filter` annotation to each finding object in-place, and writes the file back. This means Pass 3 agents see the annotations when they read sidecars from disk. No in-memory-only state.
 
 ---
 
@@ -1328,7 +1340,7 @@ Target 1-2 searches per finding.
 
 **Cost**: Solodit API is free (key grants access). ~30-50 searches per run at ~500 tokens each = ~15-25K tokens total. Negligible.
 
-**Graceful degradation**: If MCP server is not installed, agents simply lack the tool. No prompt error, no gate failure. Gate H falls back to local `known-fps.jsonl` + gotchas matching only. Prompt uses "optional, use when valuable" framing.
+**Graceful degradation**: If MCP server is not installed, agents simply lack the tool. No prompt error, no gate failure. Gate H falls back to local `false-positives.md` + gotchas matching only. Prompt uses "optional, use when valuable" framing.
 
 ---
 
