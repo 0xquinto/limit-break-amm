@@ -485,12 +485,13 @@ Each agent receives:
 
 **Output priority ordering** (if agent runs low on turns, produce outputs in this order):
 1. Hypothesis tracking — cheap, essential for loop closure
-2. Finding-level feedback — directly actionable corrections
-3. New hypotheses — discovered vulnerabilities Pass 1 missed
-4. Step-level feedback — reasoning chain corrections
-5. Strategy-level feedback + playbook lessons — highest value but lowest urgency
+2. Finding verdicts (8-gate refutation) — structured form of finding-level feedback, directly determines what survives (Phase B+)
+3. Finding-level feedback — directly actionable corrections (for findings without gate verdicts, or additional commentary beyond the verdict)
+4. New hypotheses — discovered vulnerabilities Pass 1 missed
+5. Step-level feedback — reasoning chain corrections
+6. Strategy-level feedback + playbook lessons — highest value but lowest urgency
 
-The prompt instructs: "If you are running low on turns, prioritize items 1-3 above. Items 4-5 are valuable but not essential for this run — they will be generated in the next run if skipped."
+The prompt instructs: "If you are running low on turns, prioritize items 1-4 above. Items 5-6 are valuable but not essential for this run — they will be generated in the next run if skipped."
 
 **Input truncation**: If a group's combined input exceeds 80K tokens, the orchestrator truncates in reverse priority: playbook lessons first (summarize to top 10), then ruled-out vectors (keep only those referencing Pass 1 hypothesis IDs), then Forge test files (keep only test function signatures, not full bodies). Sidecars, source code, and hypotheses are never truncated.
 
@@ -526,6 +527,24 @@ Each agent writes `knowledge-extraction-{group}.json` (e.g., `knowledge-extracti
       ]
     }
   },
+  "finding_verdicts": [
+    {
+      "finding_id": "precision-sniper-F001",
+      "agent": "precision-sniper",
+      "gate_verdicts": {
+        "A": {"verdict": "pass", "evidence": "specific exploit, not generic advice"},
+        "B": {"verdict": "kill", "evidence": "guard at FixedHelper.sol:1670 — require(height <= MAX_HEIGHT) prevents the overflow"},
+        "C": {"verdict": "pass", "evidence": ""},
+        "D": {"verdict": "pass", "evidence": ""},
+        "E": {"verdict": "pass", "evidence": ""},
+        "F": {"verdict": "pass", "evidence": ""},
+        "G": {"verdict": "pass", "evidence": ""},
+        "H": {"verdict": "pass", "evidence": ""}
+      },
+      "final_verdict": "killed",
+      "killed_by": "B"
+    }
+  ],
   "new_hypotheses": [
     {
       "id": "H-R01-NEW-001",
@@ -593,7 +612,7 @@ After Pass 3 completes and passes the gate, `playbook.py` transforms its output 
 5. Optionally extracts `trajectory` from the agent's sidecar log (grep for hypothesis ID, capture surrounding context) — extension only
 
 **`new_hypotheses` → `hypotheses.jsonl`**: For each entry in `new_hypotheses`, the orchestrator:
-1. Copies all agent-produced fields (`id`, `boundary`, `mechanism`, `contracts`, `functions`, `lines`, `attack_sequence`, `suggested_test`, `grounded_in`, `confidence`)
+1. Copies all agent-produced fields (`id`, `boundary`, `mechanism`, `contracts`, `functions`, `lines`, `attack_sequence`, `suggested_test`, `grounded_in`, `confidence`, and optional: `category`, `source_category`, `coupled_pair`, `masking_code`)
 2. Appends orchestrator metadata: `run`, `timestamp`, `git_commit`, `parent_id` (null for new hypotheses)
 3. Computes and appends `line_hashes` via `compute_line_hashes()`
 4. Validates via `validate_hypothesis_lines()` and `validate_hypothesis_substance()` — same as Pass 1 output
@@ -679,11 +698,17 @@ Each line in `hypotheses.jsonl` is a JSON object combining agent-produced fields
   "attack_sequence": ["..."],
   "suggested_test": "...",
   "grounded_in": "EXP-01",
-  "confidence": "medium"
+  "confidence": "medium",
+  "category": "state_coupling",
+  "source_category": "2b_ordering",
+  "coupled_pair": {"state_a": "...", "state_b": "...", "invariant": "...", "gap_function": "...", "gap_line": 0},
+  "masking_code": null
 }
 ```
 
 Fields `id` through `git_commit` are set by the orchestrator. The rest are agent-produced. `parent_id` is null for root hypotheses, or references the predecessor ID for refined re-injections. Note: `prior_result` is NOT stored here — it is a transient annotation looked up from `tested.jsonl` at injection time (see Pass 1 Agent Input).
+
+The fields `category`, `source_category`, `coupled_pair`, and `masking_code` are optional (added by Precision Engineering addendum). When absent, they are coerced to `null` by `schema.py`. `source_category` is informational only — records which Feynman questioning category (2a-2g) or Step 2.5 sourced the hypothesis. It is not consumed by any scoring or gating logic.
 
 ### Accumulation rules
 
@@ -986,6 +1011,359 @@ Threshold to proceed: at least 1 hypothesis with `result: confirmed` in treatmen
 
 ---
 
+## Addendum: Precision Engineering (5 techniques from AI Web3 Security landscape)
+
+> **Source research**: `docs/references/2026-03-20-ai-web3-security-landscape.md` — deep analysis of 20+ tools from the [pashov/ai-web3-security](https://github.com/pashov/ai-web3-security) catalog.
+>
+> **Key insight**: Krait's evolution (12% → 90% precision over 40 blind C4 contests) shows that **precision improvement via FP elimination always outperforms detection expansion**. The knowledge loop pushes detection. This addendum pushes precision. Both are needed.
+>
+> **Design principle**: Lightweight mechanical pre-filter catches obvious trash. Pass 3 Opus agents do the heavy lifting with full code context and a structured 8-gate rubric.
+
+---
+
+### Technique 1: Lightweight Kill Gate Pre-Filter
+
+**New file**: `kill_gate.py`
+**Pipeline position**: Step 5.5 (after `collect_artifacts`, before compliance scoring)
+
+Scans every finding in `findings-{agent}.json` and applies 5 mechanical checks — the cheapest Krait gates that work without code context:
+
+| Gate | Check | Implementation |
+|------|-------|----------------|
+| **A: Generic best practice** | Finding matches known generic pattern | Regex blocklist: `"use SafeERC20"`, `"add events"`, `"use two-step ownership"`, `"missing zero-address check"`, `"use Ownable2Step"`, `"add nonReentrant"`, `"use checks-effects-interactions"` (~20 patterns) |
+| **D: Speculative** | Finding lacks concrete exploit trace | Verify `attack_sequence` field exists AND contains ≥2 steps AND references a specific function name from `functions` field |
+| **F: Dust** | Finding describes negligible impact | Regex for `"dust"`, `"rounding error of .* wei"`, `"less than .* gas"`, `"negligible"`, `"< \$?1[^0-9]"` in impact/description fields |
+| **G: Out of context** | Finding references out-of-scope contracts | Check `contracts` field entries against scope list from `config.py:TARGET_REPOS` |
+| **H: Known issue** | Finding matches known gotcha or FP | Fuzzy match against `docs/audit_memory/known-fps.jsonl` + gotchas files |
+
+Gates **B** (theoretical), **C** (intentional design), and **E** (admin trust) require source code analysis and design understanding — reserved for Pass 3.
+
+**Output annotation** (per finding, non-destructive):
+```json
+{
+  "pre_filter": {
+    "status": "passed" | "flagged",
+    "gate": "A" | "D" | "F" | "G" | "H",
+    "reason": "matches generic pattern: 'use SafeERC20'"
+  }
+}
+```
+
+Flagged findings are **not deleted** — they flow to Pass 3 with the annotation. Pass 3 agents fast-track flagged findings (confirm kill in 1 sentence or override with evidence). This preserves the audit trail and prevents the pre-filter from accidentally killing a true positive.
+
+**Updated pipeline**:
+```
+5.  collect_artifacts + validate_sidecars + regression
+5.5 kill_gate pre-filter (NEW)
+6.  compliance scoring (pre-continuation)
+7.  compliance continuation (if needed, max 2 rounds)
+8.  merge continuation sidecars
+9.  Pass 3: knowledge extraction (reads pre_filter annotations)
+10. reflection + experiment logging
+11. blind spot scanner
+12. wave 2 gate
+```
+
+**Implementation**: Pure Python, no LLM cost. The blocklist is a `GENERIC_PATTERNS: list[re.Pattern]` constant in `kill_gate.py`. The scope check reads `config.py`. The known-issue match uses `difflib.SequenceMatcher` with a 0.7 threshold against gotchas entries.
+
+---
+
+### Technique 2: Feynman 7-Category Questioning in Pass 1
+
+**What changes**: Pass 1 Think & Verify Step 2 ("Identify assumptions") is replaced by 7 systematic question categories. The 4-step structure (Summarize → Identify → Construct → Test) is preserved — only Step 2's content changes.
+
+**Current Step 2** (3 bullets — math, external calls, trust):
+```markdown
+### Step 2: Identify assumptions
+- Every multiplication/division: what input range causes overflow/underflow?
+- Every external call: what state is read/written before vs after?
+- Every trust assumption: does it validate its caller? return values?
+```
+
+**New Step 2** (7 categories, covering all attack surfaces):
+```markdown
+### Step 2: Systematic assumption identification (7 categories)
+
+For each external/public function, work through ALL 7 categories in order.
+Do not skip categories. Record "no issue found" if clean — skipping
+silently means you didn't check.
+
+**2a. PURPOSE** — WHY does each state-writing line exist? What invariant
+does it protect? What breaks if this line is removed or bypassed?
+
+**2b. ORDERING** — Can operations be reordered to create inconsistent
+state? Is there a window between state write A and state write B where
+an external call or callback could observe partial state?
+
+**2c. CONSISTENCY** — Does funcA have a guard that funcB lacks? If 9 of
+10 functions check onlyOwner or validate an input, the 10th is the bug.
+(Semantic guard principle: "the contract is its own specification.")
+
+**2d. ASSUMPTIONS** — What is implicitly trusted about the caller, input
+values, current state, and block.timestamp? For each trust: what concrete
+input violates it?
+
+**2e. BOUNDARIES** — What happens on first call (empty state)? Last call
+(near-max values)? Double call (same tx)? Self-referential call (from=to)?
+
+**2f. RETURN VALUES** — Are any return values from external calls ignored
+or unchecked? What state persists on revert? Can a failed sub-call leave
+dirty state in the caller?
+
+**2g. CALL REORDER + MULTI-TX** — For every external call: swap it
+before/after state updates — does it still revert? What can a callback
+observe between the call and the next line? Across multiple txs: does
+calling this function with value X then value Y produce different results
+than Y then X? (path dependence)
+```
+
+**Why this supersedes the current 3 bullets**: The current Step 2 covers math (2d), external calls (2g), and trust (2d) — missing ordering (2b), guard consistency (2c), boundary conditions (2e), and return values (2f). These 4 gaps map to our weakest bug classes: state ordering → state-desync, guard consistency → auth-forger, boundaries → precision-sniper, return values → composability-exploiter.
+
+**Category 2c embeds the QuillShield semantic guard principle**: "the contract is its own specification." Mechanically discoverable — boundary agents can grep for modifier usage patterns across functions.
+
+**Hypothesis schema addition**: Optional `"source_category": "2c_consistency"` field records which Feynman category sourced the hypothesis. Steps 1, 3, 4 unchanged.
+
+---
+
+### Technique 3: Coupled State Dependency Maps in Pass 1
+
+**What changes**: New **Step 2.5** inserted between Step 2 (Feynman categories) and Step 3 (Construct violation scenario). Produces state-coupling hypotheses — a distinct class from mechanism hypotheses.
+
+**New Step 2.5**:
+```markdown
+### Step 2.5: Coupled state mapping
+
+For every state variable written by functions at this boundary, ask:
+"What other state variable MUST change when this one changes?"
+
+Build a coupling table:
+
+| State A | State B | Invariant | Functions that write A | Also write B? |
+|---------|---------|-----------|----------------------|---------------|
+
+Common coupling patterns:
+- per-user balance ↔ per-user accumulator/checkpoint/rewardDebt
+- numerator ↔ denominator (any ratio stored split)
+- position size ↔ position-derived values (health, shares, rewards)
+- total/aggregate ↔ sum of individual components
+- cached computation ↔ inputs it was derived from
+- any index/accumulator ↔ last-snapshot of that index per user
+
+For each row where "Also write B?" is NO → **state coupling hypothesis**.
+
+Then: **parallel path comparison**. Group functions with similar outcomes
+(withdraw vs liquidate, transfer vs burn, normal vs emergency). For each
+group: do ALL paths update the SAME coupled state? Any path that skips
+an update the others perform is a hypothesis.
+
+Then: **masking code scan**. Search for defensive patterns between
+coupled values:
+- `a > b ? a - b : 0` (ternary clamp)
+- `Math.min(a, b)` / `Math.max(a, b)` between values that should be equal
+- `try/catch` around operations between coupled state
+- `if (a >= b)` guards that silently skip instead of reverting
+
+Each masking pattern is a hypothesis: "This defensive code exists because
+the invariant between A and B can be violated. What mutation path breaks it?"
+```
+
+**New hypothesis fields** (optional, `null` for non-coupling hypotheses):
+
+```json
+{
+  "category": "state_coupling",
+  "coupled_pair": {
+    "state_a": "tokenBalance",
+    "state_b": "feeAccumulator",
+    "invariant": "feeAccumulator = sum(fees_collected)",
+    "gap_function": "executeSwap",
+    "gap_line": 234
+  },
+  "masking_code": {
+    "file": "lbamm-hooks-and-handlers/src/AMMStandardHook.sol",
+    "line": 312,
+    "pattern": "ternary_clamp",
+    "masks_invariant": "rewardDebt ≤ earned rewards for current stake"
+  }
+}
+```
+
+When masking code is absent: `"masking_code": null`. When the hypothesis is a mechanism hypothesis (from Steps 2a-2g): both `coupled_pair` and `masking_code` are absent (omitted, not null).
+
+**Routing**: State coupling hypotheses route preferentially to state-desync, insolvency-engineer, and composability-exploiter via the existing boundary→agent routing table.
+
+**Schema**: `schema.py` coerces missing `coupled_pair`/`masking_code` to `null`. No breaking change.
+
+---
+
+### Technique 4: 8-Gate Refutation Rubric in Pass 3
+
+**What changes**: Pass 3's generic refutation instruction is replaced with a structured 8-gate verification rubric. The lightweight pre-filter (Technique 1) handles gates A/D/F/G/H mechanically. Pass 3 handles **all 8 gates** with full code context, doing the heavy lifting on B/C/E.
+
+**Current instruction**:
+> The agent's default analytical stance is **refutation**: for every Pass 2 finding, actively try to DISPROVE it by identifying the specific guard/check that prevents exploitation.
+
+**New instruction** (added to `templates/knowledge-extract-prompt.md`):
+
+```markdown
+## Refutation protocol: 8-gate verification
+
+For every Pass 2 finding, apply ALL 8 gates in order. A finding must
+survive all 8 to reach the final report.
+
+### Gate A: Generic best practice
+Is this a generic recommendation rather than a specific exploit?
+→ KILL if yes.
+
+### Gate B: Theoretical / not exploitable (HEAVY — full code trace)
+Trace the full call chain from external entry point to the vulnerable
+line. If every path is guarded by a require/revert you can identify,
+and no path bypasses it → KILL. Cite the guard: file:line.
+
+### Gate C: Intentional design (HEAVY — code + docs context)
+Does the behavior match NatSpec, comments, or fork origin? If
+intentional → KILL. But ask: does the "intentional" design CREATE an
+exploitable condition? Intentional ≠ safe.
+
+### Gate D: Speculative
+Does the finding specify WHO does WHAT to steal HOW MUCH? If
+"could be an issue if..." without concrete action → KILL.
+
+### Gate E: Admin trust (HEAVY — access control analysis)
+Does the exploit require trusted admin action? → KILL, UNLESS:
+the action is irreversible AND destructive AND lacks a timelock.
+
+### Gate F: Dust
+Quantified impact < $100/tx? Rounding loss < gas cost? → KILL,
+UNLESS: dust accumulates unboundedly across txs.
+
+### Gate G: Out of context
+Assumes token behaviors or chain features not in actual deployment?
+→ KILL.
+
+### Gate H: Known issue
+Matches README known issues, prior audits, or gotchas? Search Solodit
+for the pattern — if rejected in 3+ similar protocols → KILL with
+citations.
+
+## Per-finding output
+
+For each finding, include in your output:
+  "gate_verdicts": {
+    "A": {"verdict": "pass"|"kill", "evidence": "..."},
+    "B": {"verdict": "pass"|"kill", "evidence": "guard at file:line"},
+    "C": {"verdict": "pass"|"kill", "evidence": "NatSpec at file:line"},
+    "D": {"verdict": "pass"|"kill", "evidence": "..."},
+    "E": {"verdict": "pass"|"kill", "evidence": "..."},
+    "F": {"verdict": "pass"|"kill", "evidence": "impact = N wei/tx"},
+    "G": {"verdict": "pass"|"kill", "evidence": "..."},
+    "H": {"verdict": "pass"|"kill", "evidence": "Solodit #..."}
+  },
+  "final_verdict": "survived"|"killed",
+  "killed_by": "B"|null
+```
+
+**Interaction with pre-filter**: Findings with `pre_filter.status: "flagged"` arrive with a preliminary gate verdict. Pass 3 agents fast-track: confirm kill in 1 sentence or override with evidence. Saves tokens for the heavy gates (B/C/E) on non-flagged findings.
+
+**Interaction with playbook**: Gate B kills with guard citations become `counter_evidence` in `tested.jsonl`. If the killed finding traces to a Pass 1 hypothesis, that hypothesis's `result` is set to `guarded` with the file:line. This compounds across runs — documented guards prevent hypothesis regeneration.
+
+**Pass 3 compliance scoring change**: The "Depth of Analysis (0-30)" dimension's third heuristic changes from "Did it identify at least one shallow dismissal?" to "Does output contain `gate_verdicts` with at least one gate B or C verdict citing a specific file:line?" (10 points). Gate B/C verdicts are a more rigorous version of the same signal.
+
+---
+
+### Technique 5: Claudit MCP (Solodit Search) Integration
+
+**Prerequisite** (one-time setup, not orchestrator code):
+```bash
+claude mcp add --scope user --transport stdio solodit \
+  --env SOLODIT_API_KEY=sk_... \
+  -- npx -y @marchev/claudit@latest
+```
+
+MCP servers propagate automatically to spawned agents via `setting_sources=["user","project","local"]` in `ClaudeAgentOptions` (already configured).
+
+**Pass 1 usage — hypothesis grounding**:
+
+Add to `templates/knowledge-gen-prompt.md`:
+```markdown
+## Solodit search (optional, use when valuable)
+
+You have access to `search_findings` (Solodit MCP) — 20,000+ real audit
+findings. Use it to:
+
+1. **Ground hypotheses**: After identifying a vulnerability, search for
+   the same pattern in comparable protocols. Confirmed findings with the
+   same root cause elevate confidence. Cite in `grounded_in`:
+   "Solodit #12345 — same accumulator desync in Aave v3 fork".
+
+2. **Avoid known FPs**: Before finalizing, search for the pattern. If
+   reported and rejected in 3+ protocols → lower confidence or drop.
+
+Target 2-5 searches per boundary, not 20.
+
+Useful queries:
+- search_findings(keywords="accumulator desync", severity=["HIGH"], sort_by="Quality")
+- search_findings(keywords="fee-on-transfer", tags=["ERC20"], sort_by="Rarity")
+- search_findings(keywords="transient storage", protocol="AMM")
+```
+
+**Pass 3 usage — Gate H and finding confirmation**:
+
+Add to `templates/knowledge-extract-prompt.md`:
+```markdown
+## Solodit search for Gate H and confirmation
+
+For **Gate H**: search Solodit for the finding's root cause pattern.
+Accepted findings in comparable protocols STRENGTHEN the finding
+(confirmation with precedent). Rejected in 3+ protocols → cite
+rejections as kill evidence.
+
+For **survived findings**: search for similar accepted findings to
+provide supporting precedent in `gate_verdicts.H.evidence`.
+
+Target 1-2 searches per finding.
+```
+
+**Impact on `grounded_in` schema**: No change — field already accepts freeform strings. Solodit references use convention `"Solodit #{id} — {description}"`.
+
+**Cost**: Solodit API is free (key grants access). ~30-50 searches per run at ~500 tokens each = ~15-25K tokens total. Negligible.
+
+**Graceful degradation**: If MCP server is not installed, agents simply lack the tool. No prompt error, no gate failure. Gate H falls back to local `known-fps.jsonl` + gotchas matching only. Prompt uses "optional, use when valuable" framing.
+
+---
+
+### Implementation Changes Summary
+
+| Technique | Spec section modified | Files affected |
+|-----------|----------------------|----------------|
+| Kill gate pre-filter | Pipeline (new step 5.5) | `kill_gate.py` (new), `run_audit.py`, `schema.py` (add `pre_filter` to known fields) |
+| Feynman 7 categories | Pass 1 prompt outline, Step 2 | `templates/knowledge-gen-prompt.md` |
+| Coupled state maps | Pass 1 prompt outline, new Step 2.5 | `templates/knowledge-gen-prompt.md`, `schema.py` |
+| 8-gate refutation rubric | Pass 3 purpose + output | `templates/knowledge-extract-prompt.md`, `knowledge_compliance.py` |
+| Claudit MCP | Pass 1 + Pass 3 prompts | `templates/knowledge-gen-prompt.md`, `templates/knowledge-extract-prompt.md` |
+
+**Net new files**: `kill_gate.py` only. Everything else is prompt/schema changes to existing or planned modules.
+
+**Net new cost per run**: ~$0 (kill gate is Python, Claudit API is free, prompt changes add ~5-10K tokens across agents ≈ $0.50).
+
+### Phasing
+
+Techniques land in the phase where their dependencies exist:
+
+| Technique | Phase | Rationale |
+|-----------|-------|-----------|
+| 1. Kill gate pre-filter | **A** | Pure Python, no Pass 3 dependency. Annotations are standalone value even without Pass 3 (pre-filter trash before synthesis). Pass 3 fast-tracking interaction activates in Phase B. |
+| 2. Feynman 7 categories | **A** | Modifies Pass 1 prompt only. |
+| 3. Coupled state maps | **A** | Modifies Pass 1 prompt only. |
+| 4. 8-gate refutation rubric | **B** | Modifies Pass 3 prompt — Pass 3 doesn't exist until Phase B. The compliance scoring change (Depth heuristic) takes effect in Phase D when Pass 3 scoring is implemented. |
+| 5. Claudit MCP | **A** (Pass 1), **B** (Pass 3) | Pass 1 usage (hypothesis grounding) is Phase A. Pass 3 usage (Gate H evidence) activates in Phase B with the rubric. |
+
+**Phase A measures** (Techniques 1+2+3+5-Pass1): hypothesis quality (Feynman + coupled state + Solodit grounding) and finding pre-filter rate (kill gate annotations on wave 1 findings).
+
+**Phase B measures** (Technique 4+5-Pass3): finding precision after full 8-gate refutation, gate verdict distribution, kill rate vs true positive preservation.
+
+---
+
 ## Success Criteria
 
 The knowledge loop is working when:
@@ -994,12 +1372,16 @@ The knowledge loop is working when:
 3. Pass 3 identifies at least one case per run where an agent's reasoning was demonstrably shallow
 4. The playbook grows with validated, specific knowledge (not generic lessons)
 5. Subsequent runs show measurable improvement in hypothesis quality (playbook compounding)
+6. **Kill gates eliminate ≥50% of findings without killing any true positives** (tracked via `pre_filter` + `gate_verdicts` annotations)
+7. **At least one hypothesis per run is grounded via Solodit precedent** (Claudit search produced a relevant match that influenced confidence)
 
 The knowledge loop has failed when:
 1. Pass 1 produces generic hypotheses ("check for overflow") despite having the actual code
 2. Pass 2 agents ignore the hypotheses and follow the checklist mechanically anyway
 3. Pass 3 produces the same quality of feedback as the compliance-only gotchas
 4. The playbook fills with generic lessons that don't reference specific code
+5. **Kill gates kill >20% true positives** (gates too aggressive — loosen thresholds)
+6. **Kill gates eliminate <20% of findings** (gates too permissive — tighten patterns)
 
 ### Known failure modes [MAST, NeurIPS 2025]
 
