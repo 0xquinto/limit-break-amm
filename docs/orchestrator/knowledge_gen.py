@@ -1,7 +1,7 @@
 """Pass 1 knowledge generation: spawn boundary agents, validate, deduplicate, route.
 
 Pure functions for hypothesis deduplication, routing, volume capping, formatting,
-curated pattern loading, and prompt building. Async orchestration lives in Task 11.
+curated pattern loading, and prompt building. Async orchestration via run_pass1().
 """
 
 from __future__ import annotations
@@ -9,16 +9,19 @@ from __future__ import annotations
 import json
 import logging
 import re
-import subprocess
+import shutil
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
+
+import anyio
 
 from .config import (
     BOUNDARY_CONTRACTS, BOUNDARY_ROUTING, BOUNDARY_PATTERN_MAP,
     BOUNDARY_NAMES, BOUNDARY_FOCUS_MAP, BOUNDARY_ABBREVIATIONS,
     BOUNDARY_SLUGS, STATE_COUPLING_EXTRA_AGENTS,
     MAX_HYPOTHESES_PER_AGENT, TEMPLATES_DIR, ARTIFACTS_DIR,
-    PROJECT_ROOT,
+    PROJECT_ROOT, AgentConfig, WaveConfig, REPOS,
 )
 
 logger = logging.getLogger(__name__)
@@ -533,3 +536,360 @@ def _build_grep_call_map(
         return ""
 
     return "Cross-boundary interface calls found:\n" + "\n".join(matches)
+
+
+# ── Pass1Result ─────────────────────────────────────────────────────────────
+
+@dataclass
+class Pass1Result:
+    """Result from Pass 1 knowledge generation."""
+    agent_hypotheses: dict[str, list[dict]]  # {agent_name: [routed_hypotheses]}
+    agent_call_maps: dict[str, str]          # {agent_name: call_map_text}
+    pass1_failed: bool = False               # True if <3/6 boundaries passed
+    pass1_failures: list[str] = field(default_factory=list)
+    hypothesis_count: int = 0                # total hypotheses injected
+
+
+# ── Slither Call Tree Extraction ────────────────────────────────────────────
+
+async def _extract_call_trees(
+    boundary_slug: str, repo_root: Path,
+) -> tuple[str, int]:
+    """Extract function summaries from Slither CLI for boundary contracts.
+
+    Uses async subprocess to avoid blocking the event loop. Returns
+    (call_trees_text, total_public_function_count). On failure returns ("", 0).
+    """
+    slither_bin = shutil.which("slither")
+    if slither_bin is None:
+        return ("", 0)
+
+    contracts = BOUNDARY_CONTRACTS.get(boundary_slug, [])
+    if not contracts:
+        return ("", 0)
+
+    # Unique repos for this boundary
+    unique_repos: set[str] = set()
+    for contract_path in contracts:
+        repo_name = contract_path.split("/")[0]
+        unique_repos.add(repo_name)
+
+    all_output: list[str] = []
+    total_functions = 0
+
+    for repo_name in sorted(unique_repos):
+        repo_path = repo_root / repo_name
+        if not repo_path.exists():
+            continue
+
+        try:
+            result = await anyio.run_process(
+                [slither_bin, ".", "--print", "function-summary", "--json", "-"],
+                cwd=repo_path,
+                check=False,
+            )
+            stdout = result.stdout.decode("utf-8", errors="replace") if result.stdout else ""
+
+            if result.returncode != 0:
+                logger.warning("Slither failed for %s (exit %d)", repo_name, result.returncode)
+                continue
+
+            # Parse JSON output for function summaries
+            try:
+                data = json.loads(stdout)
+                printers = data.get("results", {}).get("printers", [])
+                for printer in printers:
+                    for element in printer.get("elements", []):
+                        name = element.get("name", {})
+                        if isinstance(name, dict):
+                            func_name = name.get("name", "")
+                        else:
+                            func_name = str(name)
+                        visibility = element.get("type_specific_fields", {}).get("visibility", "")
+                        if visibility in ("public", "external"):
+                            total_functions += 1
+                            all_output.append(f"  {repo_name}: {func_name} ({visibility})")
+            except json.JSONDecodeError:
+                # Fall back to text output
+                for line in stdout.splitlines():
+                    line = line.strip()
+                    if line and ("public" in line.lower() or "external" in line.lower()):
+                        total_functions += 1
+                        all_output.append(f"  {repo_name}: {line[:100]}")
+
+        except (TimeoutError, OSError) as e:
+            logger.warning("Slither subprocess failed for %s: %s", repo_name, e)
+            continue
+
+    if not all_output:
+        return ("", 0)
+
+    header = f"Function summary for {boundary_slug} ({total_functions} public/external functions):\n"
+    return (header + "\n".join(all_output), total_functions)
+
+
+# ── Main Orchestration ──────────────────────────────────────────────────────
+
+async def run_pass1(
+    repo_root: Path,
+    boundaries: list[str] | None = None,
+) -> Pass1Result:
+    """Run Pass 1: spawn 6 boundary agents, collect and validate hypotheses.
+
+    Steps:
+    1. Increment run counter
+    2. Load prior playbook + ruled-out vectors per boundary
+    3. Extract call trees concurrently
+    4. Build prompts and spawn agents via wave_runner
+    5. Read output, validate, score
+    6. Gate retry for failing boundaries
+    7. Persist to playbook, deduplicate, route, cap
+    """
+    from .playbook import (
+        increment_run_counter, get_run_counter, append_hypotheses,
+        load_hypotheses, load_lessons, compute_line_hashes,
+    )
+    from .knowledge_compliance import (
+        validate_hypothesis_lines, validate_hypothesis_substance,
+        coerce_optional_fields, score_pass1_boundary, generate_gate_feedback,
+    )
+    from .wave_runner import run_wave
+
+    # 1. Increment run counter
+    run_counter = increment_run_counter()
+    print(f"  Pass 1 run #{run_counter}")
+
+    # Determine boundaries to process
+    all_slugs = list(BOUNDARY_SLUGS.values())
+    target_slugs = boundaries if boundaries else all_slugs
+
+    # 2. Load prior playbook + ruled-out vectors per boundary
+    prior_playbook: dict[str, str] = {}
+    prior_ruled_out: dict[str, str] = {}
+    for slug in target_slugs:
+        prior_hyps = load_hypotheses(boundary=slug, repo_root=repo_root)
+        prior_lessons = load_lessons()
+        parts = []
+        if prior_hyps:
+            parts.append(f"Prior hypotheses ({len(prior_hyps)}):")
+            for h in prior_hyps[:10]:  # cap display at 10
+                parts.append(f"  - [{h.get('id', '?')}] {h.get('mechanism', '')[:100]}")
+                pr = h.get("prior_result")
+                if pr:
+                    parts.append(f"    Prior result: {pr}")
+        if prior_lessons:
+            parts.append(f"\nLessons ({len(prior_lessons)}):")
+            for l in prior_lessons[:5]:
+                parts.append(f"  - {l.get('lesson', '')[:100]}")
+        prior_playbook[slug] = "\n".join(parts) if parts else ""
+        prior_ruled_out[slug] = _load_prior_ruled_out(slug, ARTIFACTS_DIR)
+
+    # 3. Extract call trees concurrently
+    call_tree_results: dict[str, tuple[str, int]] = {}
+    call_maps: dict[str, str] = {}
+
+    async with anyio.create_task_group() as tg:
+        async def _extract_and_store(slug: str) -> None:
+            result = await _extract_call_trees(slug, repo_root)
+            call_tree_results[slug] = result
+            call_maps[slug] = _build_grep_call_map(slug, repo_root)
+
+        for slug in target_slugs:
+            tg.start_soon(_extract_and_store, slug)
+
+    # 4. Build prompts and wave config
+    prompts: dict[str, str] = {}
+    agents: list[AgentConfig] = []
+
+    for slug in target_slugs:
+        call_trees_text, _ = call_tree_results.get(slug, ("", 0))
+        curated = _load_curated_patterns(slug)
+        output_dir = str(ARTIFACTS_DIR / f"pass1-{slug}")
+        # Create output directory
+        (ARTIFACTS_DIR / f"pass1-{slug}").mkdir(parents=True, exist_ok=True)
+
+        prompt = _build_pass1_prompt(
+            slug, repo_root, call_trees_text, curated,
+            prior_playbook.get(slug, ""), prior_ruled_out.get(slug, ""),
+            output_dir,
+        )
+
+        agent_name = f"knowledge-gen-{slug}"
+        prompts[agent_name] = prompt
+        agents.append(AgentConfig(
+            name=agent_name,
+            role="black-hat",
+            template="knowledge-gen-prompt",
+            scope=BOUNDARY_CONTRACTS.get(slug, []),
+            profile="max_reasoning",
+            max_turns=75,
+        ))
+
+    wave = WaveConfig(number=0, name="pass1-knowledge-gen", agents=agents)
+    print(f"  Spawning {len(agents)} boundary agents...")
+    await run_wave(wave, prompts, skip_archive=True, skip_artifact_collection=True)
+
+    # 5. Read output, validate, score
+    boundary_hypotheses: dict[str, list[dict]] = {}
+    boundary_scores: dict[str, float] = {}
+
+    for slug in target_slugs:
+        output_path = ARTIFACTS_DIR / f"pass1-{slug}" / f"hypotheses-{slug}.json"
+        if not output_path.exists():
+            print(f"  WARNING: No output from knowledge-gen-{slug}")
+            boundary_hypotheses[slug] = []
+            boundary_scores[slug] = 0.0
+            continue
+
+        try:
+            data = json.loads(output_path.read_text())
+            hyps = data.get("hypotheses", [])
+        except (json.JSONDecodeError, OSError) as e:
+            print(f"  WARNING: Failed to parse output from {slug}: {e}")
+            boundary_hypotheses[slug] = []
+            boundary_scores[slug] = 0.0
+            continue
+
+        # Validate each hypothesis (flag, don't discard)
+        for h in hyps:
+            line_errors = validate_hypothesis_lines(h, repo_root)
+            substance_errors = validate_hypothesis_substance(h)
+            if line_errors:
+                h["_validation_errors"] = line_errors
+            if substance_errors:
+                h.setdefault("_validation_errors", []).extend(substance_errors)
+            # Coerce optional fields
+            coerce_optional_fields(h)
+            # Set boundary
+            h["boundary"] = slug
+
+        # Score
+        _, total_funcs = call_tree_results.get(slug, ("", 0))
+        relevant_patterns = BOUNDARY_PATTERN_MAP.get(slug, [])
+        scores = score_pass1_boundary(hyps, slug, repo_root, total_funcs, relevant_patterns)
+        boundary_hypotheses[slug] = hyps
+        boundary_scores[slug] = scores["total"]
+        print(f"  {slug}: {len(hyps)} hypotheses, score={scores['total']:.1f}/100")
+
+    # 6. Gate retry for boundaries below 60
+    failing_slugs = [s for s in target_slugs if boundary_scores.get(s, 0) < 60]
+    if failing_slugs:
+        print(f"  Gate: {len(failing_slugs)} boundaries below 60, retrying...")
+        retry_agents = []
+        retry_prompts: dict[str, str] = {}
+        for slug in failing_slugs:
+            call_trees_text, _ = call_tree_results.get(slug, ("", 0))
+            curated = _load_curated_patterns(slug)
+            output_dir = str(ARTIFACTS_DIR / f"pass1-{slug}")
+
+            original_prompt = _build_pass1_prompt(
+                slug, repo_root, call_trees_text, curated,
+                prior_playbook.get(slug, ""), prior_ruled_out.get(slug, ""),
+                output_dir,
+            )
+
+            # Append gate feedback
+            scores = score_pass1_boundary(
+                boundary_hypotheses[slug], slug, repo_root,
+                call_tree_results.get(slug, ("", 0))[1],
+                BOUNDARY_PATTERN_MAP.get(slug, []),
+            )
+            feedback = generate_gate_feedback(scores)
+            retry_prompt = original_prompt + f"\n\n## Gate Feedback\n\n{feedback}\n"
+
+            agent_name = f"knowledge-gen-{slug}-retry"
+            retry_prompts[agent_name] = retry_prompt
+            retry_agents.append(AgentConfig(
+                name=agent_name,
+                role="black-hat",
+                template="knowledge-gen-prompt",
+                scope=BOUNDARY_CONTRACTS.get(slug, []),
+                profile="max_reasoning",
+                max_turns=75,
+            ))
+
+        retry_wave = WaveConfig(number=0, name="pass1-retry", agents=retry_agents)
+        await run_wave(retry_wave, retry_prompts, skip_archive=True, skip_artifact_collection=True)
+
+        # Re-read and re-score retried boundaries
+        for slug in failing_slugs:
+            output_path = ARTIFACTS_DIR / f"pass1-{slug}" / f"hypotheses-{slug}.json"
+            if not output_path.exists():
+                continue
+            try:
+                data = json.loads(output_path.read_text())
+                hyps = data.get("hypotheses", [])
+            except (json.JSONDecodeError, OSError):
+                continue
+            for h in hyps:
+                coerce_optional_fields(h)
+                h["boundary"] = slug
+            _, total_funcs = call_tree_results.get(slug, ("", 0))
+            scores = score_pass1_boundary(hyps, slug, repo_root, total_funcs,
+                                          BOUNDARY_PATTERN_MAP.get(slug, []))
+            boundary_hypotheses[slug] = hyps
+            boundary_scores[slug] = scores["total"]
+            print(f"  {slug} retry: {len(hyps)} hypotheses, score={scores['total']:.1f}/100")
+
+    # 7. Check pass1_failed threshold
+    passing_slugs = [s for s in target_slugs if boundary_scores.get(s, 0) >= 60]
+    failed_slugs = [s for s in target_slugs if boundary_scores.get(s, 0) < 60]
+    pass1_failed = len(passing_slugs) < 3 and len(target_slugs) >= 6
+
+    if pass1_failed:
+        print(f"  Pass 1 FAILED: only {len(passing_slugs)}/{len(target_slugs)} boundaries passed")
+
+    # 8. Compute line hashes and persist to playbook
+    all_passing_hyps: list[dict] = []
+    for slug in passing_slugs:
+        hyps = boundary_hypotheses.get(slug, [])
+        abbrev = BOUNDARY_ABBREVIATIONS.get(slug, slug[:2].upper())
+        for seq, h in enumerate(hyps, 1):
+            # Assign orchestrator metadata
+            h["id"] = f"H-R{run_counter}-{abbrev}-{seq:02d}"
+            h["run"] = run_counter
+            h["timestamp"] = datetime.now(timezone.utc).isoformat()
+            # Compute line hashes for staleness detection
+            if h.get("lines"):
+                h["line_hashes"] = compute_line_hashes(h["lines"], repo_root)
+            all_passing_hyps.append(h)
+
+    if all_passing_hyps:
+        append_hypotheses(all_passing_hyps)
+        print(f"  Persisted {len(all_passing_hyps)} hypotheses to playbook")
+
+    # 9. Deduplicate across all boundaries
+    deduped = deduplicate_hypotheses(all_passing_hyps, boundary_scores)
+    print(f"  Deduplication: {len(all_passing_hyps)} → {len(deduped)} hypotheses")
+
+    # 10. Route to Pass 2 agents with volume cap
+    routed = route_hypotheses(deduped)
+    agent_hypotheses: dict[str, list[dict]] = {}
+    total_injected = 0
+    for agent_name, hyps in routed.items():
+        capped = apply_volume_cap(hyps)
+        agent_hypotheses[agent_name] = capped
+        total_injected += len(capped)
+        print(f"  {agent_name}: {len(capped)} hypotheses (from {len(hyps)})")
+
+    # 11. Build agent_call_maps — merge call maps from all routed boundaries
+    agent_call_maps: dict[str, str] = {}
+    for agent_name, hyps in agent_hypotheses.items():
+        # Collect unique boundary slugs for this agent's hypotheses
+        agent_boundaries = set(h.get("boundary", "") for h in hyps)
+        merged_lines: list[str] = []
+        for slug in sorted(agent_boundaries):
+            cm = call_maps.get(slug, "")
+            if cm:
+                for line in cm.splitlines():
+                    if line not in merged_lines:
+                        merged_lines.append(line)
+        agent_call_maps[agent_name] = "\n".join(merged_lines)
+
+    return Pass1Result(
+        agent_hypotheses=agent_hypotheses,
+        agent_call_maps=agent_call_maps,
+        pass1_failed=pass1_failed,
+        pass1_failures=failed_slugs,
+        hypothesis_count=total_injected,
+    )
