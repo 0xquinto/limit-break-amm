@@ -15,6 +15,9 @@ from .prompt_renderer import _load_checklist
 # Agents below this score get a continuation pass
 CONTINUATION_THRESHOLD = 60.0
 
+# Maximum number of continuation rounds per agent
+MAX_CONTINUATION_ROUNDS = 2
+
 
 def identify_failing_agents(wave_number: int = 1) -> list[tuple[AgentCompliance, dict]]:
     """Identify agents below compliance threshold with their gap details.
@@ -61,6 +64,61 @@ def _identify_gaps(agent: AgentCompliance) -> dict:
         gaps["forge_tests"] = f"Only {dp.get('forge_tests', 0)} forge tests written"
 
     return gaps
+
+
+def build_dimension_feedback(agent: AgentCompliance, gaps: dict) -> str:
+    """Generate per-dimension re-prompt text identifying the weakest dimension.
+
+    Produces targeted feedback strings that tell the agent exactly what to fix.
+    Returns empty string if no actionable gaps exist.
+    """
+    lines: list[str] = []
+
+    # Checklist feedback
+    if "checklist" in gaps:
+        ck = agent.details.get("checklist", {})
+        completed = ck.get("completed", 0)
+        expected = ck.get("expected", 0)
+        score = agent.checklist_score
+        lines.append(
+            f"You scored {score}/30 on checklist because you completed "
+            f"{completed}/{expected} items. Complete the remaining items."
+        )
+
+    # Depth / forge tests feedback
+    if "forge_tests" in gaps:
+        dp = agent.details.get("depth", {})
+        forge_tests = dp.get("forge_tests", 0)
+        score = agent.depth_score
+        lines.append(
+            f"You scored {score}/20 on depth because you wrote "
+            f"{forge_tests} Forge tests (minimum 3 expected). "
+            f"Write targeted tests for your top hypotheses."
+        )
+
+    # Tool breadth feedback
+    if "tools_missing" in gaps:
+        missing_tools = gaps["tools_missing"]
+        tb = agent.details.get("tool_breadth", {})
+        used = tb.get("required_used", [])
+        score = agent.tool_breadth_score
+        lines.append(
+            f"You scored {score}/20 on tool breadth. "
+            f"You used {', '.join(used) if used else 'no required tools'}. "
+            f"You must also use {', '.join(missing_tools)}."
+        )
+
+    # Evidence feedback
+    if "evidence" in gaps:
+        ev = agent.details.get("evidence", {})
+        score = agent.evidence_score
+        evidence_pct = ev.get("evidence_pct", 0)
+        lines.append(
+            f"You scored {score}/20 on evidence ({evidence_pct}% of vectors "
+            f"have test files). Write Forge tests or add code-analysis citations."
+        )
+
+    return "\n".join(lines)
 
 
 def build_continuation_prompt(

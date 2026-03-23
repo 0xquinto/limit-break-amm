@@ -270,6 +270,80 @@ def validate(sidecar: dict) -> list[str]:
     return errors
 
 
+# ── Hypothesis result validation ──────────────────────────────────────────────
+
+VALID_HYPOTHESIS_STATUSES = {"tested", "confirmed", "not_tested"}
+
+
+def validate_hypothesis_results(sidecar: dict, had_hypotheses: bool) -> list[str]:
+    """Validate hypothesis_results field when agent received hypotheses.
+
+    Returns list of warnings/errors. Called from run_audit.py with the
+    had_hypotheses flag tracked via agents_with_hypotheses set.
+    """
+    if not had_hypotheses:
+        return []
+
+    issues: list[str] = []
+    results = sidecar.get("hypothesis_results")
+
+    # Must be present and non-empty
+    if not results or not isinstance(results, list) or len(results) == 0:
+        issues.append(
+            "MISSING HYPOTHESIS RESULTS: agent received hypotheses but "
+            "hypothesis_results is absent or empty. Report status for every "
+            "injected hypothesis."
+        )
+        return issues  # Can't check entries if list is missing/empty
+
+    # Per-entry validation
+    for i, entry in enumerate(results):
+        prefix = f"HYPOTHESIS #{i+1}"
+
+        # id check
+        if not isinstance(entry.get("id"), str) or not entry["id"]:
+            issues.append(f"{prefix}: missing or empty 'id' (must be a string).")
+
+        # status check
+        status = entry.get("status")
+        if status not in VALID_HYPOTHESIS_STATUSES:
+            issues.append(
+                f"{prefix}: invalid status '{status}'. "
+                f"Valid values: {sorted(VALID_HYPOTHESIS_STATUSES)}"
+            )
+
+        # detail/reason check
+        if not entry.get("detail") and not entry.get("reason"):
+            issues.append(
+                f"{prefix}: must include 'detail' or 'reason' explaining the outcome."
+            )
+
+        # test_file required for tested/confirmed
+        if status in ("tested", "confirmed"):
+            tf = entry.get("test_file")
+            if not isinstance(tf, str) or not tf:
+                issues.append(
+                    f"{prefix}: status is '{status}' but missing 'test_file'. "
+                    "Provide the Forge test file path."
+                )
+
+    # Diversity check: all not_tested is a warning
+    statuses = [e.get("status") for e in results]
+    not_tested_count = statuses.count("not_tested")
+    if not_tested_count == len(results):
+        issues.append(
+            "WARNING: all hypothesis_results have status 'not_tested'. "
+            "You should test at least some injected hypotheses."
+        )
+    elif len(results) > 5 and not_tested_count / len(results) > 0.80:
+        issues.append(
+            f"WARNING: {not_tested_count}/{len(results)} hypothesis_results "
+            f"are 'not_tested' (>{80}%). Test more hypotheses."
+        )
+
+    return issues
+
+
 def main():
     if len(sys.argv) < 2:
         print("Usage: python3 sidecar_gate.py <draft-path>", file=sys.stderr)
