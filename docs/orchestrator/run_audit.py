@@ -15,7 +15,7 @@ import sys
 import anyio
 from pathlib import Path
 
-from .config import WAVES, ARTIFACTS_DIR, RESULTS_DIR, ARCHIVE_DIR, MEMORY_DIR
+from .config import WAVES, ARTIFACTS_DIR, RESULTS_DIR, ARCHIVE_DIR, MEMORY_DIR, PROJECT_ROOT, REPOS, BOUNDARY_SLUGS
 from .prompt_renderer import render_wave_prompts, get_orchestrator_lessons
 from .synthesizer import generate_synthesis, read_synthesis, collect_json_sidecars
 from .wave_runner import run_wave, collect_artifacts, AgentResult
@@ -466,6 +466,52 @@ async def run_single_wave(
     if wave.number > 1 and prior_synthesis is None:
         print(f"  WARNING: No synthesis from wave {wave.number - 1} found.")
 
+    # ── Step 1: Knowledge generation (Pass 1) ─────────────────────────────────
+    pass1_result = None
+    agents_with_hypotheses: set[str] = set()
+    if wave.number == 1:
+        from .knowledge_gen import run_pass1, format_hypotheses_block, Pass1Result
+        try:
+            pass1_result = await run_pass1(PROJECT_ROOT)
+        except Exception as e:
+            print(f"  Pass 1 CRASHED: {e}")
+            print(f"  Continuing wave 1 without hypotheses (graceful degradation)")
+            pass1_result = None
+        if pass1_result and pass1_result.pass1_failed:
+            print(f"  Pass 1 FAILED: {len(pass1_result.pass1_failures)}/6 boundaries failed gate")
+            print(f"    Failed: {', '.join(pass1_result.pass1_failures)}")
+        # Inject hypotheses + call maps into each agent's extra_context
+        if pass1_result:
+            for agent in wave.agents:
+                agent_hyps = pass1_result.agent_hypotheses.get(agent.name, [])
+                call_map = pass1_result.agent_call_maps.get(agent.name, "")
+                if agent_hyps:
+                    agent.extra_context["HYPOTHESES"] = format_hypotheses_block(agent_hyps, call_map=call_map)
+                    agents_with_hypotheses.add(agent.name)
+                else:
+                    agent.extra_context["HYPOTHESES"] = ""
+
+    # Ensure HYPOTHESES placeholder is always set (empty if not wave 1)
+    for agent in wave.agents:
+        if "HYPOTHESES" not in agent.extra_context:
+            agent.extra_context["HYPOTHESES"] = ""
+
+    # Cost tracking (Phase A: observability only)
+    if wave.number == 1 and pass1_result:
+        estimated_pass1_cost = len(BOUNDARY_SLUGS) * 4  # rough $/agent
+        print(f"  Estimated Pass 1 cost: ~${estimated_pass1_cost}")
+
+    # ── Step 2: Intra-run staleness check (safety net for long runs) ─────────
+    if wave.number == 1 and pass1_result and pass1_result.agent_hypotheses:
+        import subprocess
+        for repo_name in REPOS:
+            repo_path = REPOS[repo_name]["path"]
+            head = subprocess.run(
+                ["git", "rev-parse", "HEAD"], cwd=repo_path,
+                capture_output=True, text=True,
+            ).stdout.strip()
+            print(f"  {repo_name} HEAD: {head[:8]}")
+
     # Render prompts (includes scoped memory injection — scaffold §7a)
     print(f"\nRendering spawn prompts...")
     prompts = render_wave_prompts(wave, prior_synthesis)
@@ -484,8 +530,32 @@ async def run_single_wave(
     # Validate JSON sidecars
     validate_sidecars(wave)
 
+    # Validate hypothesis_results for agents that received hypotheses
+    if wave.number == 1 and agents_with_hypotheses:
+        from .sidecar_gate import validate_hypothesis_results
+        for agent in wave.agents:
+            had = agent.name in agents_with_hypotheses
+            dir_path = ARTIFACTS_DIR / f"wave{wave.number}-{agent.name}" / "findings.json"
+            flat_path = ARTIFACTS_DIR / f"findings-{agent.name}.json"
+            sidecar_path = dir_path if dir_path.exists() else flat_path
+            if sidecar_path.exists():
+                sidecar = json.loads(sidecar_path.read_text())
+                warnings = validate_hypothesis_results(sidecar, had)
+                for w in warnings:
+                    print(f"  {agent.name}: {w}")
+
     # Run regression check (cumulative across all waves)
     run_regression_check(wave.number)
+
+    # ── Step 5.5: Kill gate pre-filter (annotates findings in-place on disk) ──
+    if wave.number == 1:
+        from .kill_gate import run_kill_gate_wave
+        kill_gate_results = run_kill_gate_wave(wave.number)
+        total_flagged = sum(kill_gate_results.values())
+        print(f"\n  Kill gate: {total_flagged} findings flagged across {len(kill_gate_results)} agents")
+        for agent_name, count in kill_gate_results.items():
+            if count > 0:
+                print(f"    {agent_name}: {count} flagged")
 
     # NOOP pre-filter: check findings against known FPs before synthesis (scaffold §7d)
     all_findings = extract_findings_from_artifacts(artifacts)
@@ -523,40 +593,51 @@ async def run_single_wave(
         generate_gotchas(wave.number)
         print(f"  Gotchas regenerated for wave {wave.number}")
 
-    # ── Compliance continuation (wave 1 only — moved before reflection) ──────
+    # ── Compliance continuation (wave 1 only — bounded retry loop) ──────────
     if wave.number == 1:
         from .compliance_continuation import (
             identify_failing_agents, build_continuation_prompt,
             build_continuation_wave, merge_continuation_sidecars,
+            build_dimension_feedback, MAX_CONTINUATION_ROUNDS,
             CONTINUATION_THRESHOLD,
         )
-        failing = identify_failing_agents(wave.number)
-        if failing:
+        for cont_round in range(MAX_CONTINUATION_ROUNDS):
+            failing = identify_failing_agents(wave.number)
+            if not failing:
+                print(f"  Round {cont_round}: all agents above threshold")
+                break
+
             print(f"\n{'='*60}")
-            print(f"COMPLIANCE CONTINUATION — {len(failing)} agents below {CONTINUATION_THRESHOLD}")
+            print(f"COMPLIANCE CONTINUATION round {cont_round + 1}/{MAX_CONTINUATION_ROUNDS} — "
+                  f"{len(failing)} agents below {CONTINUATION_THRESHOLD}")
             print(f"{'='*60}")
             for ac, gaps in failing:
                 print(f"  {ac.name}: {ac.total}/100 ({ac.grade}) — gaps: {list(gaps.keys())}")
 
-            # Build continuation prompts
             cont_wave = build_continuation_wave(failing, wave)
             cont_prompts = {}
             for (ac, gaps), cont_agent in zip(failing, cont_wave.agents):
                 orig_agent = next((a for a in wave.agents if a.name == ac.name), None)
                 scope = orig_agent.scope if orig_agent else []
-                cont_prompts[cont_agent.name] = build_continuation_prompt(
-                    ac.name, wave.number, gaps, scope,
-                )
+                feedback = build_dimension_feedback(ac, gaps)
+                prompt = build_continuation_prompt(ac.name, wave.number, gaps, scope)
+                prompt += f"\n\n## Dimension Feedback\n\n{feedback}\n"
+                # Re-inject hypotheses if the original agent had them
+                if pass1_result and ac.name in agents_with_hypotheses:
+                    from .knowledge_gen import format_hypotheses_block as _fmt_hyp
+                    agent_hyps = pass1_result.agent_hypotheses.get(ac.name, [])
+                    call_map = pass1_result.agent_call_maps.get(ac.name, "")
+                    if agent_hyps:
+                        prompt += f"\n\n{_fmt_hyp(agent_hyps, call_map=call_map)}\n"
+                cont_prompts[cont_agent.name] = prompt
 
-            # Run continuation agents (skip_archive=True so originals survive for merge)
             print(f"\nSpawning {len(cont_wave.agents)} continuation agents...")
             await run_wave(cont_wave, cont_prompts, skip_archive=True)
-
-            # Merge continuation sidecars into originals
-            merged = merge_continuation_sidecars(wave.number)
-            print(f"\n  Merged {merged} continuation sidecars")
+            merge_continuation_sidecars(wave.number)
         else:
-            print(f"\n  All agents above compliance threshold ({CONTINUATION_THRESHOLD}) — no continuation needed.")
+            failing = identify_failing_agents(wave.number)
+            if not failing:
+                print(f"\n  All agents above compliance threshold ({CONTINUATION_THRESHOLD}).")
 
     # ── Deterministic reflection (always runs — wave 1 only) ─────────────────
     reflection: dict = {}
