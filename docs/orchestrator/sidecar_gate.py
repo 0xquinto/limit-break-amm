@@ -272,7 +272,7 @@ def validate(sidecar: dict) -> list[str]:
 
 # ── Hypothesis result validation ──────────────────────────────────────────────
 
-VALID_HYPOTHESIS_STATUSES = {"tested", "confirmed", "not_tested"}
+VALID_HYPOTHESIS_STATUSES = {"tested", "confirmed", "not_tested", "dismissed"}
 
 
 def validate_hypothesis_results(sidecar: dict, had_hypotheses: bool) -> list[str]:
@@ -327,18 +327,18 @@ def validate_hypothesis_results(sidecar: dict, had_hypotheses: bool) -> list[str
                     "Provide the Forge test file path."
                 )
 
-    # Diversity check: all not_tested is a warning
+    # Diversity check: all not_tested/dismissed is a warning
     statuses = [e.get("status") for e in results]
-    not_tested_count = statuses.count("not_tested")
-    if not_tested_count == len(results):
+    passive_count = statuses.count("not_tested") + statuses.count("dismissed")
+    if passive_count == len(results):
         issues.append(
-            "WARNING: all hypothesis_results have status 'not_tested'. "
+            "WARNING: all hypothesis_results have status 'not_tested' or 'dismissed'. "
             "You should test at least some injected hypotheses."
         )
-    elif len(results) > 5 and not_tested_count / len(results) > 0.80:
+    elif len(results) > 5 and passive_count / len(results) > 0.80:
         issues.append(
-            f"WARNING: {not_tested_count}/{len(results)} hypothesis_results "
-            f"are 'not_tested' (>{80}%). Test more hypotheses."
+            f"WARNING: {passive_count}/{len(results)} hypothesis_results "
+            f"are 'not_tested'/'dismissed' (>{80}%). Test more hypotheses."
         )
 
     return issues

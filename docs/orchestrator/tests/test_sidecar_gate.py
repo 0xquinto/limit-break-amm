@@ -45,12 +45,13 @@ def test_validate_empty_hypothesis_results():
 
 
 def test_validate_valid_mixed_results():
-    """3 entries with tested/confirmed/not_tested -> no errors."""
+    """4 entries with tested/confirmed/not_tested/dismissed -> no errors."""
     sidecar = {
         "hypothesis_results": [
             _make_entry("H-001", "tested", test_file="test/Test.sol"),
             _make_entry("H-002", "confirmed", test_file="test/Confirm.sol"),
             _make_entry("H-003", "not_tested", detail="Out of scope for this agent"),
+            _make_entry("H-004", "dismissed", detail="Investigated, guard exists at line 42"),
         ]
     }
     errors = validate_hypothesis_results(sidecar, had_hypotheses=True)
