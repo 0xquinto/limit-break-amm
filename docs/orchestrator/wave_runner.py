@@ -193,6 +193,7 @@ async def run_wave(
     wave: WaveConfig,
     prompts: dict[str, str],
     skip_archive: bool = False,
+    skip_artifact_collection: bool = False,
 ) -> list[AgentResult]:
     """Run all agents in a wave as an Agent Team via ClaudeSDKClient.
 
@@ -205,6 +206,9 @@ async def run_wave(
     Args:
         skip_archive: If True, skip archive_wave() before spawning. Used for
             continuation waves that write -cont.json files alongside originals.
+        skip_artifact_collection: If True, return an empty list instead of
+            collecting disk artifacts into AgentResult objects. Used by
+            knowledge-gen passes whose output is consumed differently.
     """
 
     # 1. Archive existing wave artifacts before writing anything new
@@ -362,6 +366,8 @@ async def run_wave(
 
     # 5. Build results from disk artifacts
     elapsed_ms = int((time.monotonic() - start_time) * 1000)
+    if skip_artifact_collection:
+        return []
     results = _build_results_from_disk(wave, elapsed_ms, wave_complete)
 
     # 6. Log any agents that didn't produce artifacts

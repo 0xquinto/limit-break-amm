@@ -54,6 +54,8 @@ class Finding:
     test_file: str = ""                  # path to Forge test
     test_passes: bool = False            # whether the test demonstrates the exploit
     prerequisites: list[str] = field(default_factory=list)  # required conditions
+    source_hypothesis: str = ""
+    pre_filter: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -76,6 +78,7 @@ class AgentOutput:
     hot_spots: list[HotSpot] = field(default_factory=list)
     ruled_out_vectors: list[Finding] = field(default_factory=list)  # status=ruled_out
     theft_theses: list[dict] = field(default_factory=list)  # black hat theft hypotheses
+    hypothesis_results: list[dict] = field(default_factory=list)
     metadata: dict = field(default_factory=dict)  # turns, tokens, duration, etc.
 
 

@@ -211,3 +211,86 @@ WAVES_BLACK_HAT = [WAVE_BH1, WAVE_BH2]
 
 # Active wave configuration — switch between models here
 WAVES = WAVES_BLACK_HAT
+
+MAX_HYPOTHESES_PER_AGENT = 15
+MAX_RUN_COST = 200  # USD hard cap
+
+BOUNDARY_SLUGS = {
+    "Core ↔ Pool Type": "core-pooltype",
+    "Core ↔ Handler": "core-handler",
+    "Handler ↔ Hook": "handler-hook",
+    "Hook ↔ Registry": "hook-registry",
+    "Diamond Proxy": "diamond-proxy",
+    "Transient Storage": "transient-storage",
+}
+
+BOUNDARY_ABBREVIATIONS = {
+    "core-pooltype": "CP", "core-handler": "CH", "handler-hook": "HH",
+    "hook-registry": "HR", "diamond-proxy": "DP", "transient-storage": "TS",
+}
+
+# Reverse mapping: slug → human-readable name
+BOUNDARY_NAMES = {v: k for k, v in BOUNDARY_SLUGS.items()}
+
+BOUNDARY_CONTRACTS = {
+    "core-pooltype": [
+        "lbamm-core/src/modules/AMMModule.sol",
+        "amm-pool-type-dynamic/src/DynamicPoolType.sol",
+        "lbamm-pool-type-fixed/src/FixedPoolType.sol",
+        "lbamm-pool-type-fixed/src/libraries/FixedHelper.sol",
+        "lbamm-pool-type-single-provider/src/SingleProviderPoolType.sol",
+    ],
+    "core-handler": [
+        "lbamm-core/src/modules/AMMModule.sol",
+        "lbamm-hooks-and-handlers/src/handlers/clob/CLOBTransferHandler.sol",
+        "lbamm-hooks-and-handlers/src/handlers/permit/PermitTransferHandler.sol",
+        "lbamm-hooks-and-handlers/src/hooks/AMMStandardHook.sol",
+    ],
+    "handler-hook": [
+        "lbamm-hooks-and-handlers/src/handlers/clob/CLOBTransferHandler.sol",
+        "lbamm-hooks-and-handlers/src/hooks/AMMStandardHook.sol",
+    ],
+    "hook-registry": [
+        "lbamm-hooks-and-handlers/src/hooks/AMMStandardHook.sol",
+        "lbamm-hooks-and-handlers/src/hooks/CreatorHookSettingsRegistry.sol",
+    ],
+    "diamond-proxy": [
+        "lbamm-core/src/modules/AMMModule.sol",
+        "lbamm-core/src/modules/ModuleAdmin.sol",
+        "lbamm-core/src/modules/ModuleFeeCollection.sol",
+        "lbamm-core/src/modules/ModuleLiquidity.sol",
+    ],
+    "transient-storage": [
+        "lbamm-hooks-and-handlers/src/hooks/AMMStandardHook.sol",
+        "lbamm-hooks-and-handlers/src/handlers/clob/CLOBTransferHandler.sol",
+    ],
+}
+
+BOUNDARY_ROUTING = {
+    "core-pooltype": ["precision-sniper", "math-deep-diver", "price-distorter", "insolvency-engineer"],
+    "core-handler": ["auth-forger", "state-desync", "composability-exploiter"],
+    "handler-hook": ["state-desync", "composability-exploiter", "cross-boundary"],
+    "hook-registry": ["extension-hijacker", "state-desync"],
+    "diamond-proxy": ["cross-boundary", "extension-hijacker"],
+    "transient-storage": ["state-desync", "cross-boundary", "composability-exploiter"],
+}
+
+STATE_COUPLING_EXTRA_AGENTS = ["state-desync", "insolvency-engineer", "composability-exploiter"]
+
+BOUNDARY_FOCUS_MAP = {
+    "core-pooltype": "Rounding direction in fee/price math, unchecked blocks, downcast truncation, token-AMM composability (fee-on-transfer, rebasing, hooked tokens), precision loss (for every mul/div, compute max rounding error in wei and assess exploitability across many operations).",
+    "core-handler": "Settlement conservation (tokens in = tokens out + fees), caller validation, return value trust, token-AMM composability (non-standard token behaviors breaking settlement accounting).",
+    "handler-hook": "Callback ordering (before/after), state read before call vs state written in callback, reentrancy guards.",
+    "hook-registry": "Cache consistency (when are settings cached vs re-read?), initialization race conditions, settings update atomicity.",
+    "diamond-proxy": "Interface collisions across facets (higher risk than storage collisions — 83K contracts analyzed), malicious upgrade paths, delegatecall context preservation, selector collisions.",
+    "transient-storage": "Slot lifecycle (set/read/clear within same tx), cross-operation leaks (slot set in op A read in op B), missing clears on revert paths.",
+}
+
+BOUNDARY_PATTERN_MAP = {
+    "core-pooltype": ["EXP-01", "EXP-02", "EXP-03", "EXP-07", "EXP-09", "EXP-10", "EXP-11", "EXP-15"],
+    "core-handler": ["EXP-05", "EXP-08", "EXP-09", "EXP-10", "EXP-12", "EXP-13"],
+    "handler-hook": ["EXP-03", "EXP-04", "EXP-06", "EXP-07", "EXP-08", "EXP-12", "EXP-15"],
+    "hook-registry": [],
+    "diamond-proxy": ["EXP-09", "EXP-13", "EXP-14"],
+    "transient-storage": ["EXP-04", "EXP-06"],
+}
