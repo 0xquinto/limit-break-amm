@@ -620,14 +620,17 @@ async def _extract_call_trees(
             continue
 
         try:
+            # --ignore-compile: required for cross-repo setup (forge build-info has dupes)
+            # rc=255 is NORMAL for Slither (means detectors found results, not an error)
             result = await anyio.run_process(
-                [slither_bin, ".", "--print", "function-summary", "--json", "-"],
+                [slither_bin, ".", "--print", "function-summary",
+                 "--json", "-", "--ignore-compile"],
                 cwd=repo_path,
                 check=False,
             )
             stdout = result.stdout.decode("utf-8", errors="replace") if result.stdout else ""
 
-            if result.returncode != 0:
+            if result.returncode not in (0, 255):
                 logger.warning("Slither failed for %s (exit %d)", repo_name, result.returncode)
                 continue
 
