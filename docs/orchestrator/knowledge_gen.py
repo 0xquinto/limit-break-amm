@@ -630,32 +630,47 @@ async def _extract_call_trees(
             )
             stdout = result.stdout.decode("utf-8", errors="replace") if result.stdout else ""
 
-            if result.returncode not in (0, 255):
-                logger.warning("Slither failed for %s (exit %d)", repo_name, result.returncode)
+            # Slither exit codes: 0=clean, 1=detectors found issues, 255=compilation/config error
+            # All are valid if JSON is produced — only skip on truly broken runs (no stdout)
+            if not stdout.strip():
+                logger.warning("Slither produced no output for %s (exit %d)", repo_name, result.returncode)
                 continue
 
             # Parse JSON output for function summaries
+            # Slither --print function-summary --json outputs pretty_table elements:
+            # each element.name = {name: "ContractName", content: {rows: [[func, vis, ...]]}}
             try:
                 data = json.loads(stdout)
                 printers = data.get("results", {}).get("printers", [])
                 for printer in printers:
                     for element in printer.get("elements", []):
-                        name = element.get("name", {})
-                        if isinstance(name, dict):
-                            func_name = name.get("name", "")
-                        else:
-                            func_name = str(name)
-                        visibility = element.get("type_specific_fields", {}).get("visibility", "")
-                        if visibility in ("public", "external"):
-                            total_functions += 1
-                            all_output.append(f"  {repo_name}: {func_name} ({visibility})")
+                        name_obj = element.get("name", {})
+                        if not isinstance(name_obj, dict):
+                            continue
+                        contract_name = name_obj.get("name", "")
+                        content = name_obj.get("content", {})
+                        fields = content.get("fields_names", [])
+                        rows = content.get("rows", [])
+                        # Find visibility column index
+                        vis_idx = None
+                        for idx, f in enumerate(fields):
+                            if f.lower() == "visibility":
+                                vis_idx = idx
+                                break
+                        if vis_idx is None:
+                            continue
+                        for row in rows:
+                            if vis_idx < len(row):
+                                vis = row[vis_idx].strip().lower() if isinstance(row[vis_idx], str) else ""
+                                if vis in ("public", "external"):
+                                    # Function name is row label (first element before fields)
+                                    func_name = row[0] if row else ""
+                                    # Row format: [func_name(params), modifiers, visibility, ...]
+                                    # Actually the row key is the function signature
+                                    total_functions += 1
+                                    all_output.append(f"  {repo_name}.{contract_name}: {func_name} ({vis})")
             except json.JSONDecodeError:
-                # Fall back to text output
-                for line in stdout.splitlines():
-                    line = line.strip()
-                    if line and ("public" in line.lower() or "external" in line.lower()):
-                        total_functions += 1
-                        all_output.append(f"  {repo_name}: {line[:100]}")
+                logger.warning("Slither JSON parse failed for %s, skipping", repo_name)
 
         except (TimeoutError, OSError) as e:
             logger.warning("Slither subprocess failed for %s: %s", repo_name, e)
