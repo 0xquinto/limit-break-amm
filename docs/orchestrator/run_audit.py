@@ -426,6 +426,7 @@ async def run_single_wave(
     force: bool = False,
     experiment: bool = False,
     description: str = "",
+    pass1_mode: str = "hypotheses",
 ) -> None:
     """Run a single wave (useful for incremental execution).
 
@@ -434,6 +435,7 @@ async def run_single_wave(
         force: If True, overwrite existing synthesis without archiving.
         experiment: If True, compute audit_score and log to experiments.tsv.
         description: Experiment description (what changed).
+        pass1_mode: "hypotheses" (treatment), "none" (control), "cost-control" (raw code).
     """
     wave = WAVES[wave_number - 1]
 
@@ -469,7 +471,7 @@ async def run_single_wave(
     # ── Step 1: Knowledge generation (Pass 1) ─────────────────────────────────
     pass1_result = None
     agents_with_hypotheses: set[str] = set()
-    if wave.number == 1:
+    if wave.number == 1 and pass1_mode == "hypotheses":
         from .knowledge_gen import run_pass1, format_hypotheses_block, Pass1Result
         try:
             pass1_result = await run_pass1(PROJECT_ROOT)
@@ -490,6 +492,21 @@ async def run_single_wave(
                     agents_with_hypotheses.add(agent.name)
                 else:
                     agent.extra_context["HYPOTHESES"] = ""
+    elif wave.number == 1 and pass1_mode == "cost-control":
+        from .knowledge_gen import build_cost_control_context
+        from .config import BOUNDARY_ROUTING as _BR
+        print(f"  Cost-control arm: injecting raw source context (no hypotheses)")
+        for agent in wave.agents:
+            # Collect all boundary slugs that route to this agent
+            agent_boundaries = [slug for slug, agents_list in _BR.items() if agent.name in agents_list]
+            context_parts = []
+            for slug in agent_boundaries:
+                ctx = build_cost_control_context(slug, PROJECT_ROOT)
+                if ctx:
+                    context_parts.append(ctx)
+            agent.extra_context["HYPOTHESES"] = "\n\n".join(context_parts) if context_parts else ""
+    elif wave.number == 1 and pass1_mode == "none":
+        print(f"  Control arm: no Pass 1, no hypotheses injected")
 
     # Ensure HYPOTHESES placeholder is always set (empty if not wave 1)
     for agent in wave.agents:
@@ -661,6 +678,12 @@ async def run_single_wave(
         # Phase 2: attach new_findings_count from reflection report
         if reflection.get("phase") == "phase2":
             exp_result.new_findings_count = len(reflection.get("new_findings", []))
+        # A/B test metadata
+        exp_result.pass1_mode = pass1_mode
+        if pass1_result:
+            exp_result.pass1_failed = pass1_result.pass1_failed
+            exp_result.pass1_failures = ",".join(pass1_result.pass1_failures)
+            exp_result.hypothesis_count = pass1_result.hypothesis_count
         prev_best = best_score()
         if exp_result.compliance_score > prev_best:
             exp_result.status = "keep"
@@ -749,6 +772,9 @@ def main():
                         help="Score this run and log to experiments.tsv (autoresearch model)")
     parser.add_argument("--description", type=str, default="",
                         help="Experiment description (what changed)")
+    parser.add_argument("--pass1-mode", type=str, choices=["hypotheses", "none", "cost-control"],
+                        default="hypotheses",
+                        help="Pass 1 mode: hypotheses (treatment), none (control), cost-control (raw code)")
     # Human triage commands (interactive — must NOT be run inside anyio context)
     parser.add_argument("--triage-finding", type=str, metavar="FINDING_ID",
                         help="Triage a finding by ID (use with --verdict real|fp)")
@@ -801,6 +827,7 @@ def main():
                 run_single_wave, args.wave, args.force,
                 getattr(args, 'experiment', False),
                 getattr(args, 'description', ''),
+                getattr(args, 'pass1_mode', 'hypotheses'),
             )
     else:
         anyio.run(run_full_audit, args.fresh)

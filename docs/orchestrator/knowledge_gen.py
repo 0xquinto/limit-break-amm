@@ -538,6 +538,43 @@ def _build_grep_call_map(
     return "Cross-boundary interface calls found:\n" + "\n".join(matches)
 
 
+# ── Cost-Control Context (A/B test arm) ─────────────────────────────────────
+
+def build_cost_control_context(
+    boundary_slug: str, repo_root: Path, target_tokens: int = 3000,
+) -> str:
+    """Build raw source excerpts at the same token budget as hypothesis injection.
+
+    Used for the cost-control arm of the A/B test to isolate whether
+    hypotheses specifically help, or whether any additional context helps.
+    """
+    contracts = BOUNDARY_CONTRACTS.get(boundary_slug, [])
+    if not contracts:
+        return ""
+
+    max_chars = target_tokens * 4  # rough 4 chars/token estimate
+    parts = ["Additional source context for your analysis:\n"]
+    chars_used = len(parts[0])
+
+    for contract_path in contracts:
+        full_path = repo_root / contract_path
+        if not full_path.exists():
+            continue
+        try:
+            content = full_path.read_text()
+        except OSError:
+            continue
+        header = f"\n--- {contract_path} ---\n"
+        remaining = max_chars - chars_used - len(header)
+        if remaining <= 0:
+            break
+        excerpt = content[:remaining]
+        parts.append(header + excerpt)
+        chars_used += len(header) + len(excerpt)
+
+    return "".join(parts)
+
+
 # ── Pass1Result ─────────────────────────────────────────────────────────────
 
 @dataclass

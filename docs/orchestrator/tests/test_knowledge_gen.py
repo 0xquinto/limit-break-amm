@@ -555,3 +555,64 @@ def test_load_prior_ruled_out_no_prior_artifacts(tmp_path):
         tmp_path / "nonexistent-dir",
     )
     assert result == ""
+
+
+# ── Cost-Control Context ────────────────────────────────────────────────────
+
+def test_build_cost_control_context_truncates(tmp_path, monkeypatch):
+    """Boundary with large contracts → output length ≤ target_tokens * 4 chars."""
+    import docs.orchestrator.knowledge_gen as knowledge_gen
+    from docs.orchestrator.knowledge_gen import build_cost_control_context
+
+    # Write a large mock contract
+    repo = tmp_path / "lbamm-core" / "src" / "modules"
+    repo.mkdir(parents=True)
+    (repo / "AMMModule.sol").write_text("x" * 50000)
+
+    monkeypatch.setattr(
+        knowledge_gen,
+        "BOUNDARY_CONTRACTS",
+        {"core-pooltype": ["lbamm-core/src/modules/AMMModule.sol"]},
+    )
+
+    result = build_cost_control_context("core-pooltype", tmp_path, target_tokens=3000)
+    assert len(result) <= 3000 * 4 + 200  # small margin for header
+
+
+def test_build_cost_control_context_header(tmp_path, monkeypatch):
+    """Output starts with expected header."""
+    import docs.orchestrator.knowledge_gen as knowledge_gen
+    from docs.orchestrator.knowledge_gen import build_cost_control_context
+
+    repo = tmp_path / "lbamm-core" / "src" / "modules"
+    repo.mkdir(parents=True)
+    (repo / "AMMModule.sol").write_text("pragma solidity;")
+
+    monkeypatch.setattr(
+        knowledge_gen,
+        "BOUNDARY_CONTRACTS",
+        {"core-pooltype": ["lbamm-core/src/modules/AMMModule.sol"]},
+    )
+
+    result = build_cost_control_context("core-pooltype", tmp_path)
+    assert result.startswith("Additional source context for your analysis:")
+
+
+def test_build_cost_control_context_no_hypothesis_format(tmp_path, monkeypatch):
+    """Output does NOT contain hypothesis XML tags."""
+    import docs.orchestrator.knowledge_gen as knowledge_gen
+    from docs.orchestrator.knowledge_gen import build_cost_control_context
+
+    repo = tmp_path / "lbamm-core" / "src" / "modules"
+    repo.mkdir(parents=True)
+    (repo / "AMMModule.sol").write_text("pragma solidity;")
+
+    monkeypatch.setattr(
+        knowledge_gen,
+        "BOUNDARY_CONTRACTS",
+        {"core-pooltype": ["lbamm-core/src/modules/AMMModule.sol"]},
+    )
+
+    result = build_cost_control_context("core-pooltype", tmp_path)
+    assert "<hypotheses>" not in result
+    assert "Hypothesis Testing Protocol" not in result

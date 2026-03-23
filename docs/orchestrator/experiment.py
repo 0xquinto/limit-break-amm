@@ -32,6 +32,10 @@ class ExperimentResult:
     status: str                        # "keep" | "discard" | "crash"
     description: str                   # what changed in this experiment
     new_findings_count: Optional[int] = field(default=None)  # Phase 2 only: novel findings this run
+    pass1_mode: str = "none"                       # "hypotheses" | "none" | "cost-control"
+    pass1_failed: bool = False                     # True if <3/6 boundaries passed
+    pass1_failures: str = ""                       # comma-separated boundary slugs that failed gate
+    hypothesis_count: int = 0                      # total hypotheses injected across all agents
 
 
 # --- Scoring ---
@@ -132,7 +136,7 @@ def _git_short_hash() -> str:
 # --- TSV Logger ---
 
 EXPERIMENTS_TSV = Path(__file__).parent.parent / "targets" / "full-system" / "experiments.tsv"
-TSV_HEADER = "run_id\tcommit\tcompliance_score\tgrade\tweakest_dim\tregression\tfindings\tvectors\twall_time_s\tstatus\tdescription\tnew_findings_count\n"
+TSV_HEADER = "run_id\tcommit\tcompliance_score\tgrade\tweakest_dim\tregression\tfindings\tvectors\twall_time_s\tstatus\tdescription\tnew_findings_count\tpass1_mode\tpass1_failed\tpass1_failures\thypothesis_count\n"
 
 
 def log_experiment(result: ExperimentResult) -> None:
@@ -145,7 +149,9 @@ def log_experiment(result: ExperimentResult) -> None:
         f"{result.run_id}\t{result.commit}\t{result.compliance_score}\t"
         f"{result.grade}\t{result.weakest_dim}\t{result.regression}\t"
         f"{result.findings}\t{result.vectors}\t{result.wall_time_s}\t"
-        f"{result.status}\t{result.description}\t{nfc}\n"
+        f"{result.status}\t{result.description}\t{nfc}\t"
+        f"{result.pass1_mode}\t{result.pass1_failed}\t"
+        f"{result.pass1_failures}\t{result.hypothesis_count}\n"
     )
     with open(EXPERIMENTS_TSV, "a") as f:
         f.write(row)
@@ -167,6 +173,11 @@ def read_experiments() -> list[ExperimentResult]:
             score = float(row.get("compliance_score", row.get("audit_score", "0")))
             nfc_raw = row.get("new_findings_count", "")
             nfc: Optional[int] = int(nfc_raw) if nfc_raw.strip() else None
+            # Handle new columns gracefully for old rows
+            p1_failed_raw = row.get("pass1_failed", "False")
+            p1_failed = p1_failed_raw.lower() == "true" if p1_failed_raw else False
+            hc_raw = row.get("hypothesis_count", "0")
+            hc = int(hc_raw) if hc_raw.strip() else 0
             results.append(ExperimentResult(
                 run_id=row["run_id"],
                 commit=row["commit"],
@@ -180,6 +191,10 @@ def read_experiments() -> list[ExperimentResult]:
                 status=row["status"],
                 description=row["description"],
                 new_findings_count=nfc,
+                pass1_mode=row.get("pass1_mode", "none"),
+                pass1_failed=p1_failed,
+                pass1_failures=row.get("pass1_failures", ""),
+                hypothesis_count=hc,
             ))
     return results
 
