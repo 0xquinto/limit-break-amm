@@ -48,6 +48,8 @@ Then read `docs/CODEBASE_MAP.md` for architecture context.
 ## Phase 0 Artifacts
 {{PHASE0_ARTIFACTS}}
 
+{{HYPOTHESES}}
+
 ## Scope
 - **All repos**: Read access to all 6 repos (you follow the money, not module boundaries)
 - **Primary targets**: lbamm-hooks-and-handlers

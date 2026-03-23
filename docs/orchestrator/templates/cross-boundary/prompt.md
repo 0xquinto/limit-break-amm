@@ -54,6 +54,8 @@ Then read `docs/CODEBASE_MAP.md` for architecture context.
 ## Phase 0 Artifacts
 {{PHASE0_ARTIFACTS}}
 
+{{HYPOTHESES}}
+
 ## Scope
 - **All repos**: This archetype REQUIRES reading across all 6 repos — you follow the data, not module boundaries
 - **Primary focus**: Interface files (ILimitBreakAMMPoolType, ILimitBreakAMMTransferHandler, ILimitBreakAMMTokenHook) and their implementations

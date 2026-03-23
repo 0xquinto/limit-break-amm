@@ -57,6 +57,8 @@ Then read `docs/CODEBASE_MAP.md` for architecture context.
 ## Phase 0 Artifacts
 {{PHASE0_ARTIFACTS}}
 
+{{HYPOTHESES}}
+
 ## Scope
 - **Primary targets**: lbamm-pool-type-fixed (FixedHelper.sol), amm-pool-type-dynamic (math libs), lbamm-core (FeeHelper)
 - **All repos**: Read access to all 6 repos for cross-reference
