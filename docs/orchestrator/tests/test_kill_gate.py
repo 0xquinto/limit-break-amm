@@ -319,3 +319,58 @@ def test_load_known_gotchas_concatenates(tmp_path, monkeypatch):
     assert len(gotchas) == 2
     assert "Gotcha A" in gotchas[0]
     assert "Gotcha B" in gotchas[1]
+
+
+# ── Gate E: Exploitation evidence on vectors ─────────────────────────────────
+
+def test_gate_e_no_test_file():
+    """ruled_out vector without test_file → flagged, gate 'E'."""
+    from docs.orchestrator.kill_gate import check_gate_e
+    vector = {"title": "Reentrancy in swap", "test_file": ""}
+    flagged, reason = check_gate_e(vector)
+    assert flagged
+    assert "test" in reason.lower()
+
+
+def test_gate_e_with_test_file():
+    """ruled_out vector with test_file → passes."""
+    from docs.orchestrator.kill_gate import check_gate_e
+    vector = {"title": "Reentrancy in swap", "test_file": "test/AuditReentrancy.t.sol"}
+    flagged, reason = check_gate_e(vector)
+    assert not flagged
+
+
+def test_gate_e_code_analysis_accepted():
+    """ruled_out vector with code-analysis: citation → passes (evidence accepted)."""
+    from docs.orchestrator.kill_gate import check_gate_e
+    vector = {"title": "X", "test_file": "code-analysis: AMMModule.sol:2144 — require() guards path"}
+    flagged, reason = check_gate_e(vector)
+    assert not flagged
+
+
+def test_gate_e_not_applicable_accepted():
+    """ruled_out vector with not-applicable → passes."""
+    from docs.orchestrator.kill_gate import check_gate_e
+    vector = {"title": "X", "test_file": "not-applicable: informational"}
+    flagged, reason = check_gate_e(vector)
+    assert not flagged
+
+
+def test_annotate_vectors_file(tmp_path):
+    """Write findings JSON with vectors, run annotate, read back annotations."""
+    from docs.orchestrator.kill_gate import annotate_vectors_file
+    findings = {
+        "agent_name": "test",
+        "findings": [],
+        "ruled_out_vectors": [
+            {"title": "X", "test_file": "test/T.sol"},
+            {"title": "Y", "test_file": ""},
+        ],
+    }
+    fp = tmp_path / "findings-test.json"
+    fp.write_text(json.dumps(findings))
+    flagged = annotate_vectors_file(fp)
+    assert flagged == 1
+    data = json.loads(fp.read_text())
+    assert data["ruled_out_vectors"][0]["evidence_gate"]["status"] == "passed"
+    assert data["ruled_out_vectors"][1]["evidence_gate"]["status"] == "flagged"

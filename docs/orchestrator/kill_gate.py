@@ -187,6 +187,47 @@ def run_kill_gate(
 
 
 # ---------------------------------------------------------------------------
+# Gate E: Exploitation evidence on ruled-out vectors
+# ---------------------------------------------------------------------------
+
+def check_gate_e(vector: dict) -> tuple[bool, str]:
+    """Gate E: exploitation evidence — ruled-out vector must have test_file.
+
+    Exemptions: 'code-analysis:' and 'not-applicable' prefixes are accepted
+    as lightweight evidence. Everything else must be a real file path.
+    """
+    tf = vector.get("test_file", "")
+    if not tf:
+        return True, "Missing test_file — write a Forge test proving this vector is not exploitable"
+    if tf.startswith("code-analysis:") or tf.startswith("not-applicable"):
+        return False, ""
+    if tf == "N/A":
+        return True, "test_file is 'N/A' — write a real Forge test or use 'code-analysis:' citation"
+    return False, ""
+
+
+def annotate_vectors_file(findings_path: Path) -> int:
+    """Run gate E on ruled_out_vectors in a findings file. Returns flagged count."""
+    try:
+        data = json.loads(findings_path.read_text())
+    except (json.JSONDecodeError, OSError):
+        return 0
+
+    vectors = data.get("ruled_out_vectors", [])
+    flagged = 0
+    for vec in vectors:
+        gate_flagged, reason = check_gate_e(vec)
+        if gate_flagged:
+            vec["evidence_gate"] = {"status": "flagged", "gate": "E", "reason": reason}
+            flagged += 1
+        else:
+            vec.setdefault("evidence_gate", {"status": "passed", "gate": None, "reason": None})
+
+    findings_path.write_text(json.dumps(data, indent=2))
+    return flagged
+
+
+# ---------------------------------------------------------------------------
 # Data loaders
 # ---------------------------------------------------------------------------
 
