@@ -2108,7 +2108,7 @@ feat(kill_gate,fp-gate): replace FP gate with Pashov v2 4-gate validation sequen
 
 **Files:**
 - Modify: `docs/orchestrator/schema.py`
-- Modify: `docs/orchestrator/synthesizer.py`
+- Modify: `docs/orchestrator/knowledge_gen.py` (`promote_leads` implementation)
 - Modify: `docs/orchestrator/templates/black-hat-preamble.md`
 - Modify: `docs/orchestrator/tests/test_knowledge_gen.py`
 
@@ -2416,7 +2416,7 @@ Task 15 (update pashov ref) ──────────┘  (reference files 
 ```
 
 **Parallelizable groups:**
-- **Group A** (Tasks 1-4): Independent, parallelize freely
+- **Group A** (Tasks 1-4): Independent, parallelize freely. **Note**: Task 3 modifies `knowledge_gen.py` (`_HYPOTHESIS_TESTING_PROTOCOL`), and Group B tasks 7/9 also modify `knowledge_gen.py` (different functions). Safe to parallelize as worktree agents; must merge sequentially if working on the same branch.
 - **Group B** (Tasks 7, 9): Independent, parallelize freely — different functions in knowledge_gen.py
 - **Group B2** (Task 10): Depends on Task 7 — both modify `run_pass1` and `format_hypotheses_block`. Task 10 Step 4 inserts after `evolve_hypotheses` (Task 7 Step 3). Must sequence Task 7 → Task 10.
 - **Group C** (Task 8): Depends on Task 5 for pipeline wiring
@@ -2425,32 +2425,3 @@ Task 15 (update pashov ref) ──────────┘  (reference files 
 - **Group F** (Tasks 13, 15): Independent, parallelize freely — Task 13 modifies kill_gate/schema, Task 15 updates reference files
 - **Group G** (Task 14): Depends on Task 13 (uses demotion rules from 4-gate validation)
 - **Sequential**: Task 5 → Task 6 (after Groups A+B+B2), then Groups C+D+E+F+G
-
-```
-Task 1 (sidecar gate E)   ─┐
-                            ├──→ Task 5 (pipeline wiring) ──→ Task 6 (E2E verify)
-Task 2 (kill gate E)       ─┤          ↑
-                            │          │
-Task 3 (refutation prompt)  ─┤         │
-                            │          │
-Task 4 (playbook failures)  ─┘         │
-                                       │
-Task 7 (hypothesis evolution) ──→ Task 10 (complexity router) ──┤  (Task 10 depends on Task 7: shared run_pass1 + format_hypotheses_block)
-                                       │
-Task 8 (critic agent) ────────────────┤  (run_audit.py, depends on Task 5)
-                                       │
-Task 9 (Elo ranking) ─────────────────┤  (knowledge_gen, independent of 1-4)
-                                       │
-Task 11 (formal contract) ────────────┤  (knowledge_gen + preamble, depends on Task 3 for protocol)
-                                       │
-Task 12 (SMART goals) ────────────────┘  (sidecar_gate + run_audit, depends on Task 1 for gate E)
-```
-
-**Parallelizable groups:**
-- **Group A** (Tasks 1-4): Independent, parallelize freely
-- **Group B** (Tasks 7, 9): Independent, parallelize freely — different functions in knowledge_gen.py
-- **Group B2** (Task 10): Depends on Task 7 — both modify `run_pass1` and `format_hypotheses_block`. Task 10 Step 4 inserts after `evolve_hypotheses` (Task 7 Step 3). Must sequence Task 7 → Task 10.
-- **Group C** (Task 8): Depends on Task 5 for pipeline wiring
-- **Group D** (Task 11): Depends on Task 3 (extends the protocol it defines)
-- **Group E** (Task 12): Depends on Task 1 (extends gate E validation)
-- **Sequential**: Task 5 → Task 6 (after Groups A+B+B2), then Groups C+D+E

@@ -85,11 +85,11 @@ Each Pass 1 agent receives:
 - Pre-excerpted call trees for boundary functions (injected by orchestrator via Slither — see below). Agents may also use Read/Grep for additional exploration beyond the excerpts.
 - The relevant curated exploit patterns from `curated-exploit-context.md`
 - Prior run's playbook entries for this boundary (if any)
-- Prior run's ruled-out vectors and Forge tests relevant to this boundary
+- Prior run's ruled-out vectors and Forge tests relevant to this boundary (filtered by matching the ruled-out vector's `contracts` field against the boundary's contract list — a vector is relevant if any of its contracts appear in the boundary's scope)
 
 ### Agent Output
 
-`hypotheses-{boundary}.json`:
+`hypotheses-{boundary_slug}.json` (e.g., `hypotheses-core-pooltype.json` — uses the slug from the Hypothesis ID Scheme table):
 ```json
 {
   "boundary": "core-pooltype",
@@ -140,7 +140,7 @@ IDs are namespaced by run number and boundary abbreviation: `H-R{run}-{boundary}
 
 Abbreviations are used in hypothesis IDs (`H-R01-CP-001`). Slugs are used in data fields (`"boundary": "core-pooltype"`) and playbook keys (`"tested_boundaries": {"core-pooltype": 12}`). The mapping is defined in `knowledge_gen.py:BOUNDARY_SLUGS`.
 
-**Confidence enum**: `"low"`, `"medium"`, `"high"`. Used in priority sorting (line cap): `high` > `medium` > `low`. Agents set this based on their assessment of the hypothesis. `schema.py` coerces unknown values to `"medium"`.
+**Confidence enum**: `"low"`, `"medium"`, `"high"`. Used in priority sorting (line cap): `high` > `medium` > `low`. Agents set this based on their assessment of the hypothesis. Validated by `knowledge_gen.py` (separate from `schema.py`'s finding-level confidence coercion); unknown values coerced to `"medium"` with a warning logged.
 
 Example: `H-R03-CP-012` = run 3, Core↔PoolType boundary, hypothesis 12. New hypotheses discovered by Pass 3 use `H-R{run}-NEW-{seq}`. Run number is a monotonic counter stored in `playbook/metadata.json` (independent of experiment numbering in `experiments.tsv`), incremented by the orchestrator at the start of each knowledge loop invocation. The agent only controls the sequence number.
 
@@ -177,15 +177,10 @@ Do not skip steps. Do not combine steps. [VulnSage: structured reasoning +21pp a
 State what the function does in one sentence. Identify its inputs, outputs,
 and state it reads/writes.
 
-### Step 2: Identify assumptions
-List every assumption the function makes about its caller, inputs, and state:
-- Every multiplication/division: what input range causes overflow/underflow?
-  (cite the exact line)
-- Every external call: what state is read/written before vs after?
-  Can a callback observe inconsistent state? (cite both lines)
-- Every trust assumption: does it validate its caller? Does it validate
-  return values from the other side of the boundary? (cite the guard
-  or the absence of a guard)
+### Step 2: Systematic assumption identification (7 categories)
+[Replaced by Feynman 7-category questioning — see Addendum Technique 2
+for the canonical Step 2. Also includes Step 2.5 (coupled state mapping)
+from Addendum Technique 3, inserted between Step 2 and Step 3.]
 
 ### Step 3: Construct violation scenario
 For each assumption, describe the EXACT conditions under which it breaks.
@@ -240,9 +235,9 @@ Exhaustive mapping from 6 boundaries to 9 wave 1 agents:
 | Diamond Proxy | cross-boundary, extension-hijacker |
 | Transient Storage | state-desync, cross-boundary, composability-exploiter |
 
-**Deduplication**: After collecting all 6 boundary outputs, `knowledge_gen.py` deduplicates hypotheses that share >50% Jaccard similarity of their `lines` references (|A ∩ B| / |A ∪ B| > 0.5) AND identical `functions` entries. The duplicate with the lower automated compliance score is dropped; ties broken by keeping the one with a more specific `mechanism` (longer text). This prevents Pass 2 agents mapped to multiple boundaries from receiving near-identical hypotheses about the same code.
+**Deduplication**: After collecting all 6 boundary outputs and scoring each boundary's hypotheses (Pass 1 compliance scoring runs per-boundary first), `knowledge_gen.py` deduplicates hypotheses that share >50% Jaccard similarity of their `lines` references AND identical `functions` entries. Jaccard similarity is computed over the flattened set of `(contract, line_num)` tuples from both hypotheses: |A ∩ B| / |A ∪ B| > 0.5. The duplicate with the lower automated compliance score is dropped; ties broken by keeping the one with a more specific `mechanism` (longer text). This prevents Pass 2 agents mapped to multiple boundaries from receiving near-identical hypotheses about the same code.
 
-**Volume cap**: Each Pass 2 agent receives at most `MAX_HYPOTHESES_PER_AGENT = 15` hypotheses, sorted by priority: (1) `confirmed` from prior runs, (2) `untested` or `shallow`-dismissed from prior runs, (3) new hypotheses from this run's Pass 1. Within each tier, sort by confidence descending. When an agent maps to multiple boundaries and the total exceeds the cap, lower-priority hypotheses are dropped with a summary line injected into the prompt ("N additional lower-priority hypotheses omitted — see playbook for full list").
+**Volume cap**: Each Pass 2 agent receives at most `MAX_HYPOTHESES_PER_AGENT = 15` hypotheses, sorted by priority: (1) `confirmed` from prior runs, (2) `untested` or `shallow`-dismissed from prior runs, (3) `guarded` hypotheses re-entering after code changes (rare — only when staleness check detected code changed at the guarded line), (4) new hypotheses from this run's Pass 1. Within each tier, sort by confidence descending. When an agent maps to multiple boundaries and the total exceeds the cap, lower-priority hypotheses are dropped with a summary line injected into the prompt ("N additional lower-priority hypotheses omitted — see playbook for full list").
 
 Hypotheses are injected via `agent.extra_context["HYPOTHESES"]`, which `prompt_renderer.py:_render_single_agent_prompt()` already handles — it replaces any `{{KEY}}` placeholder in the template with the corresponding `extra_context` value. No `prompt_renderer.py` code change needed; only the archetype `prompt.md` files need a `{{HYPOTHESES}}` placeholder added.
 
@@ -311,25 +306,25 @@ Scoring is split into **automated** (deterministic, computed by `knowledge_compl
 **Line Validity (0-20)**:
 - Each hypothesis must reference line numbers that pass `validate_hypothesis_lines()`
 - Scoring: hypotheses_with_valid_lines / total_hypotheses × 20
-- Minimum: 3 hypotheses required (prevents gaming with 1 perfect hypothesis)
+- Minimum: 3 hypotheses required (prevents gaming with 1 perfect hypothesis). If fewer than 3 hypotheses are produced, the boundary scores 0 on Line Validity and auto-fails the < 60 gate.
 
 **Substance (0-10)**:
 - Each hypothesis must pass `validate_hypothesis_substance()` — mechanism text references its own functions and line numbers
 - Scoring: hypotheses_passing_substance / total_hypotheses × 10
 
 **Test Presence (0-25)**:
-- Each hypothesis must have a `suggested_test` field containing Solidity code (not empty, not prose)
-- The test must reference at least one function from `functions` field
+- Each hypothesis must have a `suggested_test` field containing Solidity code (not empty, not prose). Heuristic: must contain `function ` AND at least one of `{`, `assert`, `vm.` (Forge cheatcode prefix). Pure prose descriptions fail.
+- The test must reference at least one function from `functions` field (substring match of any `functions` entry against `suggested_test` text)
 - Scoring: hypotheses_with_valid_test / total_hypotheses × 25
 
 **Coverage (0-20)**:
-- Functions analyzed vs total functions at boundary (denominator from Slither `list_functions` filtered to external/public at the boundary contracts)
+- Functions analyzed vs total functions at boundary. `functions_analyzed` = count of unique function names appearing in the `functions` field across all hypotheses for this boundary. Denominator from Slither `list_functions` filtered to external/public at the boundary contracts.
 - Curated patterns addressed vs relevant patterns for this boundary
-- Scoring: (functions_analyzed / total_functions × 10) + (patterns_addressed / relevant_patterns × 10). If no curated patterns are relevant to this boundary, the patterns sub-score defaults to 10 (full credit)
-- **Diversity penalty** [GRPO]: if all hypotheses cite the same contract, or all reference the same ≤3 functions, multiply the Coverage score by 0.8 (i.e., `coverage_score * 0.8`). Prevents agents from producing N variations of the same hypothesis.
+- Scoring: (functions_analyzed / total_functions × 10) + (patterns_addressed / relevant_patterns × 10). `patterns_addressed` = count of distinct curated pattern IDs (EXP-XX) or curated pattern numbers ("Pattern N") appearing in `grounded_in` fields across the boundary's hypotheses. `relevant_patterns` = curated patterns mapped to this boundary by `knowledge_gen.py:BOUNDARY_PATTERN_MAP`. If no curated patterns are relevant to this boundary, the patterns sub-score defaults to 10 (full credit)
+- **Diversity penalty** [GRPO]: if `len(hypotheses) > 5` AND all hypotheses cite the same contract, or all reference the same ≤3 functions, multiply the Coverage score by 0.8 (i.e., `coverage_score * 0.8`). Prevents agents from producing N variations of the same hypothesis. The threshold of >5 avoids penalizing narrow-boundary agents (e.g., Hook↔Registry with one dominant contract) that legitimately produce a small focused set.
 
 **Grounding (0-25)**:
-- Each hypothesis must have a `grounded_in` field referencing an EXP-XX pattern OR containing "code-observation:" with a specific line reference
+- Each hypothesis must have a `grounded_in` field matching one of: (a) an EXP-XX pattern ID (from `regression_cases.json`), (b) a curated pattern reference ("Pattern N" or matching a curated-exploit-context.md heading), (c) "code-observation:" with a specific line reference, or (d) a Solodit finding ("Solodit #" prefix)
 - Scoring: grounded_hypotheses / total_hypotheses × 25
 
 **Quality dimensions (assessed by Pass 3, strictly informational):**
@@ -338,7 +333,7 @@ Scoring is split into **automated** (deterministic, computed by `knowledge_compl
 
 These assessments are logged for human review only. They do NOT feed back into any gating decision (neither Pass 1 gating nor playbook quality gating) to avoid circularity — Pass 3's own output is quality-scored, so its assessments of Pass 1 cannot also gate Pass 1.
 
-**Gate**: Pass 1 hypotheses with automated score < 60 are discarded. Agent is re-prompted once with specific feedback. If still < 60 after retry, the boundary's hypotheses are dropped and Pass 2 runs without them (graceful degradation).
+**Gate**: Pass 1 hypotheses with automated score < 60 are discarded. Agent is re-prompted once with per-dimension feedback identifying the weakest dimension (e.g., "Line Validity scored 8/20 — 3 of 5 hypotheses reference non-existent lines. Verify line numbers against the source before resubmitting." or "Coverage scored 4/20 — all hypotheses target the same function. Analyze at least 3 distinct external functions at this boundary."). If still < 60 after retry, the boundary's hypotheses are dropped and Pass 2 runs without them (graceful degradation).
 
 **Graceful degradation details**:
 - Each boundary failure is logged in `experiments.tsv` as `pass1_failures={boundary_list}`.
@@ -388,7 +383,7 @@ Each Pass 2 agent receives hypotheses filtered by scope:
 - auth-forger gets hypotheses from Core↔Handler boundary (permit-related)
 - etc.
 
-Injected via a new `{{HYPOTHESES}}` template variable, placed **after `{{PREAMBLE}}`** at the end of the prompt, just before the output format section. Hypotheses are the most important new input — placing them at the end avoids the "lost in the middle" attention degradation (Liu et al., 2023) where material in the center of long prompts receives measurably less model attention than material at the beginning or end.
+Injected via a new `{{HYPOTHESES}}` template variable, placed **after `{{PREAMBLE}}`** near the end of the prompt, just before the output format section. Hypotheses are the most important new input — placing them near the end avoids the "lost in the middle" attention degradation (Liu et al., 2023) where material in the center of long prompts receives measurably less model attention than material at the beginning or end.
 
 **Sanitization**: Before injection, `knowledge_gen.py` sanitizes hypothesis text to prevent confused-agent interference: (1) strip markdown headers (`# `, `## `, `### `) from `mechanism` and `suggested_test` fields, (2) strip template-variable-like patterns (`{{...}}`) to prevent double-substitution, (3) wrap the entire injected block in `<hypotheses>...</hypotheses>` XML tags to clearly delimit agent-generated content from orchestrator instructions.
 
@@ -405,7 +400,7 @@ When a Pass 2 agent writes a Forge test that fails to compile or reverts unexpec
 3. If revert: read revert reason, adjust inputs or expectations, retry (up to 3 attempts)
 4. If still failing after 3 retries: report with error detail in `hypothesis_results` — do NOT silently move on
 
-This is enforced via preamble instructions, not orchestrator machinery. The sidecar gate checks that `hypothesis_results` entries with `status: "tested"` include a `test_file` reference (the file was written, even if the test fails — the gate checks presence, not pass/fail).
+This is enforced via preamble instructions, not orchestrator machinery. The sidecar gate checks that `hypothesis_results` entries with `status: "tested"` or `"confirmed"` include a `test_file` reference (the file was written, even if the test fails — the gate checks presence, not pass/fail).
 
 ### Pass 2 compliance unchanged
 
@@ -440,6 +435,8 @@ Pass 2 agents must report in their sidecar which Pass 1 hypotheses they tested:
   {"id": "H-R01-CP-005", "status": "not_tested", "reason": "out of scope for this archetype"}
 ]
 ```
+
+When a finding was directly driven by a Pass 1 hypothesis, the agent must include `"source_hypothesis": "H-R01-CP-003"` in the finding object. This links findings to hypotheses for Pass 3's `finding_verdicts` write-path (see Orchestrator write-paths section).
 
 ### Research-Backed Extensions (Pass 2)
 
@@ -629,8 +626,8 @@ After Pass 3 completes and passes the gate, `playbook.py` transforms its output 
 
 **`finding_verdicts` → `tested.jsonl` + finding annotations** (Phase B+): For each entry in `finding_verdicts`, the orchestrator:
 1. Annotates the finding in `findings-{agent}.json` with `pass3_verdict: "survived" | "killed"`, `killed_by: gate | null`, and `gate_verdicts: {...}`. Surviving findings flow to wave 2 gate and synthesis with `pass3_verified: true`.
-2. Links finding back to hypothesis: cross-references `finding_id` against the originating agent's `hypothesis_results` (matching on hypothesis ID in the finding's `source_hypothesis` field if present). When a link exists and the finding was killed by gate B with a guard citation, writes a `tested.jsonl` entry with `result: "guarded"` and `counter_evidence` set to the gate B evidence.
-3. If no hypothesis link exists (finding was agent-discovered, not hypothesis-driven), the verdict is stored only as a finding annotation — no `tested.jsonl` entry.
+2. Links finding back to hypothesis via the finding's `source_hypothesis` field (set by Pass 2 agents — see Additional Tracking section). If `source_hypothesis` is present, looks up that hypothesis ID in `tested.jsonl`. When the finding was killed by gate B with a guard citation, writes/updates the `tested.jsonl` entry for that hypothesis with `result: "guarded"` and `counter_evidence` set to the gate B evidence.
+3. If the finding has no `source_hypothesis` field (agent-discovered, not hypothesis-driven), the verdict is stored only as a finding annotation — no `tested.jsonl` entry.
 
 `finding_id` must match the `id` field from the corresponding finding in `findings-{agent}.json`.
 
@@ -713,14 +710,14 @@ Each line in `hypotheses.jsonl` is a JSON object combining agent-produced fields
   "confidence": "medium",
   "category": "state_coupling",
   "source_category": "2b_ordering",
-  "coupled_pair": {"state_a": "...", "state_b": "...", "invariant": "...", "gap_function": "...", "gap_line": 0},
+  "coupled_pair": {"state_a": "...", "state_b": "...", "invariant": "...", "gap_contract": "...", "gap_function": "...", "gap_line": 0},
   "masking_code": null
 }
 ```
 
 Fields `id` through `git_commit` are set by the orchestrator. The rest are agent-produced. `parent_id` is null for root hypotheses, or references the predecessor ID for refined re-injections. Note: `prior_result` is NOT stored here — it is a transient annotation looked up from `tested.jsonl` at injection time (see Pass 1 Agent Input).
 
-The fields `category`, `source_category`, `coupled_pair`, and `masking_code` are optional (added by Precision Engineering addendum). When absent, they are coerced to `null` by `schema.py`. `source_category` is informational only — records which Feynman questioning category (2a-2g) or Step 2.5 sourced the hypothesis. It is not consumed by any scoring or gating logic.
+The fields `category`, `source_category`, `coupled_pair`, and `masking_code` are optional (added by Precision Engineering addendum). When absent, they are coerced to `null` by `knowledge_gen.py` (for Pass 1 output) or `playbook.py` (when reading playbook records). `source_category` is informational only — records which Feynman questioning category (2a-2g) or Step 2.5 sourced the hypothesis. It is not consumed by any scoring or gating logic.
 
 ### Accumulation rules
 
@@ -770,7 +767,7 @@ def check_staleness(hypothesis: dict, repo_root: Path) -> tuple[str, dict[str, d
                         shifted_lines.setdefault(contract, {})[line_num] = match
                         any_shifted = True
                         continue
-                return "stale", {}
+                return "stale", {}  # early return is intentional — a hypothesis is a causal chain across its cited lines; partial staleness breaks the chain
             # Content comparison: if we have a stored hash, verify the code hasn't changed
             if contract in stored_hashes and str(line_num) in stored_hashes[contract]:
                 current_hash = hashlib.sha256(current_source[line_num - 1].strip().encode()).hexdigest()[:16]
@@ -832,7 +829,7 @@ Stale hypotheses are excluded from Pass 1 input and Pass 2 injection. They remai
 
 ### Contradiction resolution
 
-When multiple runs produce conflicting `result` values for the same hypothesis. The ordering `untested → dismissed → guarded → confirmed` represents *increasing confidence of assessment* (not severity): untested = never looked; dismissed = looked, found nothing; guarded = looked, found a specific guard; confirmed = exploitable.
+When multiple runs produce conflicting `result` values for the same hypothesis, the following rules apply. The ordering `untested → dismissed → guarded → confirmed` represents *increasing confidence of assessment* (not severity): untested = never looked; dismissed = looked, found nothing; guarded = looked, found a specific guard; confirmed = exploitable.
 
 - **Progressions** (movement rightward: untested → dismissed, dismissed → guarded, guarded → confirmed, etc.): most recent wins unconditionally. Each step represents deeper investigation.
 - **Regressions** (movement leftward: confirmed → guarded, confirmed → dismissed): the new entry must include a `counter_evidence` field citing a specific guard (file:line) or test result. Without counter-evidence, the `confirmed` result is preserved and the conflicting entry is logged as contested.
@@ -937,15 +934,16 @@ Fallback: current age-based pruning.
 Pass 3 must run AFTER `merge_continuation_sidecars()` in `run_audit.py` so it reads the complete merged sidecars, not partial pre-continuation data. The full pipeline order becomes:
 
 ```
-1. Pass 1: knowledge generation (before render_wave_prompts)
-2. Intra-run staleness check (see below)
-3. render_wave_prompts (inject hypotheses via extra_context)
-4. run_wave (Pass 2 — existing wave 1)
-5. collect_artifacts + validate_sidecars + regression
-6. compliance scoring (pre-continuation)
-7. compliance continuation (if needed, max 2 rounds — see below)
-8. merge continuation sidecars
-9. Pass 3: knowledge extraction (reads merged sidecars + source code)
+1.  Pass 1: knowledge generation (before render_wave_prompts)
+2.  Intra-run staleness check (see below)
+3.  render_wave_prompts (inject hypotheses via extra_context)
+4.  run_wave (Pass 2 — existing wave 1)
+5.  collect_artifacts + validate_sidecars + regression
+5.5 kill_gate pre-filter (see Addendum Technique 1)
+6.  compliance scoring (pre-continuation)
+7.  compliance continuation (if needed, max 2 rounds — see below)
+8.  merge continuation sidecars
+9.  Pass 3: knowledge extraction (reads merged sidecars + pre_filter annotations)
 10. reflection + experiment logging
 11. blind spot scanner
 12. wave 2 gate
@@ -970,7 +968,7 @@ This reframes checklist items as named **exploration strategies** — the contin
 | File | Status | Change |
 |------|--------|--------|
 | `run_audit.py` | modify | Add Pass 1 before `run_wave()`, Pass 3 after continuation merging |
-| `schema.py` | modify | Add `hypothesis_results: list[dict] = field(default_factory=list)` to `AgentOutput`; add `pre_filter` as known optional field; add `source_hypothesis: str = ""` to `Finding` (populated by Pass 2 agents when a finding was driven by a Pass 1 hypothesis — used by Pass 3 `finding_verdicts` write-path to link finding kills back to `tested.jsonl`); coerce non-standard field names. `hypothesis_results` is only validated as non-empty by the sidecar gate when hypotheses were injected (i.e., `extra_context["HYPOTHESES"]` was non-empty). Agents without hypotheses may have an empty list. |
+| `schema.py` | modify | Add `hypothesis_results: list[dict] = field(default_factory=list)` to `AgentOutput`; add `pre_filter: dict = field(default_factory=dict)` to `Finding` (populated post-validation by `kill_gate.py`); add `source_hypothesis: str = ""` to `Finding` (populated by Pass 2 agents when a finding was driven by a Pass 1 hypothesis — used by Pass 3 `finding_verdicts` write-path to link finding kills back to `tested.jsonl`); coerce non-standard field names. `hypothesis_results` is only validated as non-empty by the sidecar gate when hypotheses were injected (i.e., `extra_context["HYPOTHESES"]` was non-empty). Agents without hypotheses may have an empty list. |
 | `sidecar_gate.py` | modify | Add `hypothesis_results` validation: non-empty array, diversity check, `test_file` on tested entries |
 | Archetype `prompt.md` files | modify | Add `{{HYPOTHESES}}` placeholder (rendered by existing `extra_context` mechanism) |
 | `config.py` | modify | Add Pass 1 agent definitions (6 boundary agents) |
@@ -1013,13 +1011,14 @@ Phase A is the minimum viable test of the ReEVMBench hypothesis ("hints turn 62.
 **Phase A measurement**: Run 3 back-to-back experiments with the same prompt version and compliance gates:
 - **Treatment**: Pass 1 hypotheses injected (`pass1=true`)
 - **Control**: No hypotheses (`pass1=false`)
-- **Cost control**: No hypotheses, but equivalent raw code excerpts injected at the same token budget as the treatment's hypothesis section — isolates whether hypotheses *specifically* help, or whether any additional context helps
+- **Cost control**: No hypotheses, but equivalent raw code excerpts injected at the same token budget as the treatment's hypothesis section — isolates whether hypotheses *specifically* help, or whether any additional context helps. Constructed by taking raw source from the same boundary contracts, truncated to match the treatment's hypothesis section token count, injected as `{{HYPOTHESES}}` with header "Additional source context for your analysis:". No mechanism descriptions, test skeletons, or attack sequences — just code.
 
-Compare:
-- Number of confirmed findings (primary metric)
-- Hypothesis test coverage (what % of injected hypotheses were actually tested)
-- Hypothesis-sourced findings (did any confirmed finding trace back to a Pass 1 hypothesis)
-- Novel file:line references in Forge tests (do agents explore different code paths vs. control?)
+Compare (metrics marked [T] are treatment-only; [all] are measured across all 3 arms):
+- [all] Number of confirmed findings (primary metric)
+- [T] Hypothesis test coverage (what % of injected hypotheses were actually tested)
+- [T] Hypothesis-sourced findings (did any confirmed finding trace back to a Pass 1 hypothesis)
+- [all] Novel file:line references in Forge tests (do agents explore different code paths vs. control?)
+- [all] Kill gate pre-filter rate (% of findings flagged by gates A/D/F/G/H) and false-kill rate (flagged findings later confirmed as true positives)
 
 Threshold to proceed: at least 1 hypothesis with `result: confirmed` in treatment that has `result != confirmed` in both control arms. Secondary (sufficient alone if primary not met): hypothesis test coverage > 60% AND at least 2 hypotheses led to novel file:line references in Forge tests not present in either control arm.
 
@@ -1194,6 +1193,7 @@ the invariant between A and B can be violated. What mutation path breaks it?"
     "state_a": "tokenBalance",
     "state_b": "feeAccumulator",
     "invariant": "feeAccumulator = sum(fees_collected)",
+    "gap_contract": "lbamm-hooks-and-handlers/src/AMMHooksTransferHandler.sol",
     "gap_function": "executeSwap",
     "gap_line": 234
   },
@@ -1206,11 +1206,11 @@ the invariant between A and B can be violated. What mutation path breaks it?"
 }
 ```
 
-When masking code is absent: `"masking_code": null`. When the hypothesis is a mechanism hypothesis (from Steps 2a-2g): both `coupled_pair` and `masking_code` may be omitted (coerced to `null` by `schema.py`).
+When masking code is absent: `"masking_code": null`. When the hypothesis is a mechanism hypothesis (from Steps 2a-2g): both `coupled_pair` and `masking_code` may be omitted (coerced to `null` by `knowledge_gen.py`).
 
-**Routing**: State coupling hypotheses route preferentially to state-desync, insolvency-engineer, and composability-exploiter via the existing boundary→agent routing table.
+**Routing**: State coupling hypotheses use the standard boundary→agent routing table, plus an additional routing rule: if `category == "state_coupling"`, the hypothesis is also routed to state-desync, insolvency-engineer, and composability-exploiter regardless of boundary. This supplements (does not replace) the standard routing, ensuring state coupling experts always see coupling hypotheses even when they originate from boundaries like Diamond Proxy that don't normally route to them.
 
-**Schema**: `schema.py` coerces missing `coupled_pair`/`masking_code` to `null`. No breaking change.
+**Schema**: `knowledge_gen.py` coerces missing `coupled_pair`/`masking_code` to `null` during hypothesis validation. No breaking change.
 
 ---
 
