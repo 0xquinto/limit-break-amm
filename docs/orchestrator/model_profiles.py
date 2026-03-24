@@ -59,6 +59,15 @@ PROFILES: dict[str, ModelProfile] = {
         temperature=1.0,
         description="Fast — team lead coordination, simple routing",
     ),
+    "fast_reasoning": ModelProfile(
+        model="claude-sonnet-4-6",
+        effort="high",
+        extended_thinking=True,
+        thinking_budget_tokens=32000,
+        max_tokens=16384,
+        temperature=1.0,
+        description="Fast reasoning — simple hypothesis verification, lower cost",
+    ),
 }
 
 # --- End update section ---

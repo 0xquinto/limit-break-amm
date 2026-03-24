@@ -263,6 +263,51 @@ def apply_volume_cap(
     return sorted_hyps[:max_per_agent]
 
 
+# ── Complexity Classification (Resource-Aware Routing) ───────────────────────
+
+def classify_hypothesis_complexity(h: dict) -> str:
+    """Classify hypothesis as simple/medium/complex based on scope.
+
+    Based on Resource-Aware Optimization (Ch. 16, Agentic Design Patterns):
+    route simple tasks to cheap models, complex to expensive ones.
+
+    Criteria:
+    - simple: 1 contract, 1 function, no coupled_pair, mechanism < 150 chars
+    - complex: 3+ contracts OR has coupled_pair OR mechanism > 300 chars
+    - medium: everything else
+    """
+    num_contracts = len(h.get("lines", {}))
+    num_functions = len(h.get("functions", []))
+    has_coupling = h.get("coupled_pair") is not None
+    mechanism_len = len(h.get("mechanism", ""))
+
+    if num_contracts >= 3 or has_coupling or mechanism_len > 300:
+        return "complex"
+    if num_contracts <= 1 and num_functions <= 1 and mechanism_len < 150:
+        return "simple"
+    return "medium"
+
+
+_COMPLEXITY_PROFILE_MAP = {
+    "simple": "fast_reasoning",
+    "medium": "deep_reasoning",
+    "complex": "max_reasoning",
+}
+
+
+def route_by_complexity(hypotheses: list[dict]) -> list[dict]:
+    """Annotate each hypothesis with a target profile based on complexity.
+
+    Wave 1 agents can use this to adjust their investigation depth:
+    simple hypotheses get quick verification, complex ones get deep analysis.
+    """
+    for h in hypotheses:
+        complexity = classify_hypothesis_complexity(h)
+        h["_complexity"] = complexity
+        h["_target_profile"] = _COMPLEXITY_PROFILE_MAP[complexity]
+    return hypotheses
+
+
 # ── Sanitization ─────────────────────────────────────────────────────────────
 
 def _sanitize_hypothesis_text(text: str) -> str:
@@ -380,6 +425,9 @@ def format_hypotheses_block(
 
         parts.append(f"### {i}. [{hyp_id}] (confidence: {confidence}, prior: {prior})")
         parts.append(f"**Mechanism**: {mechanism}")
+        complexity = h.get("_complexity", "")
+        if complexity:
+            parts.append(f"**Complexity**: {complexity} (target: {h.get('_target_profile', 'default')})")
         if lines_str:
             parts.append(f"**Lines**:{lines_str}")
         if grounded:
@@ -1177,6 +1225,14 @@ async def run_pass1(
     evolved_count = sum(1 for h in deduped if h.get("evolved_by") or h.get("evolution_prompt"))
     if evolved_count:
         print(f"  Evolution: {evolved_count} hypotheses strengthened")
+
+    # 9c. Classify complexity for resource-aware routing
+    deduped = route_by_complexity(deduped)
+    complexity_counts: dict[str, int] = {}
+    for h in deduped:
+        c = h.get("_complexity", "unknown")
+        complexity_counts[c] = complexity_counts.get(c, 0) + 1
+    print(f"  Complexity: {complexity_counts}")
 
     # 10. Route to Pass 2 agents with volume cap
     routed = route_hypotheses(deduped)

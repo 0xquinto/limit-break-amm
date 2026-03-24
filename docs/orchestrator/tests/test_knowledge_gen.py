@@ -618,6 +618,65 @@ def test_build_cost_control_context_no_hypothesis_format(tmp_path, monkeypatch):
     assert "Hypothesis Testing Protocol" not in result
 
 
+# ── Complexity Classification ────────────────────────────────────────────────
+
+def test_classify_hypothesis_complexity_simple():
+    """Hypothesis referencing a single contract + single function → 'simple'."""
+    from docs.orchestrator.knowledge_gen import classify_hypothesis_complexity
+    h = _make_hypothesis(
+        lines={"lbamm-core/src/modules/AMMModule.sol": [42]},
+        functions=["setValue"],
+        mechanism="Missing zero-address check in setValue",
+    )
+    assert classify_hypothesis_complexity(h) == "simple"
+
+
+def test_classify_hypothesis_complexity_complex():
+    """Hypothesis crossing 3+ contracts with coupled_pair → 'complex'."""
+    from docs.orchestrator.knowledge_gen import classify_hypothesis_complexity
+    h = _make_hypothesis(
+        lines={
+            "lbamm-core/src/modules/AMMModule.sol": [42, 100],
+            "lbamm-hooks-and-handlers/src/hooks/AMMStandardHook.sol": [200],
+            "amm-pool-type-dynamic/src/DynamicPoolType.sol": [300],
+        },
+        functions=["swap", "beforeSwap", "calculateOutput"],
+        mechanism="Cross-contract state desync between AMMModule fee accumulator and DynamicPoolType price calculation via hook callback reordering",
+    )
+    h["coupled_pair"] = {"state_a": "feeAccumulator", "state_b": "sqrtPrice"}
+    assert classify_hypothesis_complexity(h) == "complex"
+
+
+def test_classify_hypothesis_complexity_medium():
+    """Hypothesis with 2 contracts but no coupled_pair → 'medium'."""
+    from docs.orchestrator.knowledge_gen import classify_hypothesis_complexity
+    h = _make_hypothesis(
+        lines={
+            "lbamm-core/src/modules/AMMModule.sol": [42],
+            "lbamm-hooks-and-handlers/src/hooks/AMMStandardHook.sol": [200],
+        },
+        functions=["swap", "beforeSwap"],
+    )
+    assert classify_hypothesis_complexity(h) == "medium"
+
+
+def test_route_by_complexity_assigns_profiles():
+    """Simple → fast_reasoning profile, complex → max_reasoning profile."""
+    from docs.orchestrator.knowledge_gen import route_by_complexity
+    hyps = [
+        _make_hypothesis(mechanism="Missing zero-address check"),
+        _make_hypothesis(
+            lines={"A.sol": [1], "B.sol": [2], "C.sol": [3]},
+            functions=["a", "b", "c"],
+            mechanism="Cross-contract coupled state with callback reordering",
+        ),
+    ]
+    hyps[1]["coupled_pair"] = {"state_a": "x", "state_b": "y"}
+    routed = route_by_complexity(hyps)
+    assert routed[0]["_target_profile"] == "fast_reasoning"
+    assert routed[1]["_target_profile"] == "max_reasoning"
+
+
 # ── Elo Ranking ─────────────────────────────────────────────────────────────
 
 def test_elo_rank_prefers_grounded_over_ungrounded():
