@@ -574,6 +574,48 @@ async def run_single_wave(
             if count > 0:
                 print(f"    {agent_name}: {count} flagged")
 
+    # ── Step 5.6: Evidence gate on ruled-out vectors ──
+    if wave.number == 1:
+        from .kill_gate import annotate_vectors_file
+        total_evidence_flagged = 0
+        for fp in list(ARTIFACTS_DIR.glob("findings-*.json")) + list(ARTIFACTS_DIR.glob("wave1-*/findings.json")):
+            flagged = annotate_vectors_file(fp)
+            total_evidence_flagged += flagged
+        if total_evidence_flagged:
+            print(f"  Evidence gate: {total_evidence_flagged} ruled-out vectors lack test evidence")
+
+    # Extract failure classifications from hypothesis_results into playbook
+    if wave.number == 1 and agents_with_hypotheses:
+        from .playbook import append_failure_classifications
+        failure_entries = []
+        for agent in wave.agents:
+            if agent.name not in agents_with_hypotheses:
+                continue
+            dir_path = ARTIFACTS_DIR / f"wave{wave.number}-{agent.name}" / "findings.json"
+            flat_path = ARTIFACTS_DIR / f"findings-{agent.name}.json"
+            sidecar_path = dir_path if dir_path.exists() else flat_path
+            if not sidecar_path.exists():
+                continue
+            try:
+                sidecar = json.loads(sidecar_path.read_text())
+            except (json.JSONDecodeError, OSError):
+                continue
+            for hr in sidecar.get("hypothesis_results", []):
+                if hr.get("failure_class") in ("tactical", "strategic"):
+                    from .playbook import get_run_counter
+                    failure_entries.append({
+                        "hypothesis_id": hr.get("id", ""),
+                        "failure_class": hr["failure_class"],
+                        "detail": hr.get("detail", ""),
+                        "agent": agent.name,
+                        "run": get_run_counter(),
+                    })
+        if failure_entries:
+            append_failure_classifications(failure_entries)
+            tactical = sum(1 for e in failure_entries if e["failure_class"] == "tactical")
+            strategic = len(failure_entries) - tactical
+            print(f"  Failure classifications: {tactical} tactical, {strategic} strategic → playbook")
+
     # NOOP pre-filter: check findings against known FPs before synthesis (scaffold §7d)
     all_findings = extract_findings_from_artifacts(artifacts)
     if all_findings:

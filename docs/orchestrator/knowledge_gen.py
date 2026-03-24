@@ -769,6 +769,14 @@ async def run_pass1(
             parts.append(f"\nLessons ({len(prior_lessons)}):")
             for l in prior_lessons[:5]:
                 parts.append(f"  - {l.get('lesson', '')[:100]}")
+        from .playbook import load_failure_patterns
+        tactical_failures = load_failure_patterns(failure_class="tactical")
+        if tactical_failures:
+            parts.append(f"\nTactical failures from prior runs ({len(tactical_failures)}):")
+            parts.append("These hypotheses were dismissed due to TEST CODE issues, not because the hypothesis was wrong.")
+            parts.append("Consider regenerating stronger versions of these:")
+            for tf in tactical_failures[:5]:
+                parts.append(f"  - {tf.get('hypothesis_id', '?')}: {tf.get('detail', '')[:100]}")
         prior_playbook[slug] = "\n".join(parts) if parts else ""
         prior_ruled_out[slug] = _load_prior_ruled_out(slug, ARTIFACTS_DIR)
 
