@@ -1573,13 +1573,11 @@ Task 3 (refutation prompt)  ─┤         │
                             │          │
 Task 4 (playbook failures)  ─┘         │
                                        │
-Task 7 (hypothesis evolution) ─────────┤  (knowledge_gen, independent of 1-4)
+Task 7 (hypothesis evolution) ──→ Task 10 (complexity router) ──┤  (Task 10 depends on Task 7: shared run_pass1 + format_hypotheses_block)
                                        │
 Task 8 (critic agent) ────────────────┤  (run_audit.py, depends on Task 5)
                                        │
 Task 9 (Elo ranking) ─────────────────┤  (knowledge_gen, independent of 1-4)
-                                       │
-Task 10 (complexity router) ──────────┤  (knowledge_gen + config, independent of 1-4)
                                        │
 Task 11 (formal contract) ────────────┤  (knowledge_gen + preamble, depends on Task 3 for protocol)
                                        │
@@ -1588,8 +1586,9 @@ Task 12 (SMART goals) ────────────────┘  (side
 
 **Parallelizable groups:**
 - **Group A** (Tasks 1-4): Independent, parallelize freely
-- **Group B** (Tasks 7, 9, 10): Independent, parallelize freely — different functions in knowledge_gen.py
+- **Group B** (Tasks 7, 9): Independent, parallelize freely — different functions in knowledge_gen.py
+- **Group B2** (Task 10): Depends on Task 7 — both modify `run_pass1` and `format_hypotheses_block`. Task 10 Step 4 inserts after `evolve_hypotheses` (Task 7 Step 3). Must sequence Task 7 → Task 10.
 - **Group C** (Task 8): Depends on Task 5 for pipeline wiring
 - **Group D** (Task 11): Depends on Task 3 (extends the protocol it defines)
 - **Group E** (Task 12): Depends on Task 1 (extends gate E validation)
-- **Sequential**: Task 5 → Task 6 (after Groups A+B), then Groups C+D+E
+- **Sequential**: Task 5 → Task 6 (after Groups A+B+B2), then Groups C+D+E
