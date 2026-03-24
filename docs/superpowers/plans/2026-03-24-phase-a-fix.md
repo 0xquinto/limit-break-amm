@@ -604,9 +604,9 @@ test: verify Phase A-fix end-to-end — exploitation gate, refutation, failure c
 
 ---
 
-## Task 7: Hypothesis Evolution Agent (Co-Scientist Pattern)
+## Task 7: LLM-Powered Hypothesis Evolution (Co-Scientist Pattern)
 
-**Source:** Google Co-Scientist (Ch. 21, Agentic Design Patterns) — Evolution agent that continuously refines top-ranked hypotheses. Currently our hypotheses are generated once in Pass 1 and injected as-is. An evolution step between Pass 1 output and wave 1 injection strengthens weak hypotheses.
+**Source:** Google Co-Scientist (Ch. 21, Agentic Design Patterns) — Evolution agent that continuously refines top-ranked hypotheses. Currently our hypotheses are generated once in Pass 1 and injected as-is. This upgrade spawns a real Sonnet agent to rewrite each weak hypothesis with concrete input values and precise mechanism descriptions (~$5 for 5 hypotheses).
 
 **Files:**
 - Modify: `docs/orchestrator/knowledge_gen.py`
@@ -617,105 +617,226 @@ test: verify Phase A-fix end-to-end — exploitation gate, refutation, failure c
 Add to `tests/test_knowledge_gen.py`:
 
 ```python
-def test_evolve_hypotheses_strengthens_low_confidence(tmp_path):
-    """Low-confidence hypotheses get strengthened mechanism text."""
-    from docs.orchestrator.knowledge_gen import evolve_hypotheses
+def test_build_evolution_prompt_includes_mechanism():
+    """Evolution prompt contains the original mechanism for refinement."""
+    from docs.orchestrator.knowledge_gen import build_evolution_prompt
+    h = _make_hypothesis(confidence="low", mechanism="maybe overflow somewhere")
+    prompt = build_evolution_prompt(h)
+    assert "maybe overflow somewhere" in prompt
+    assert "strengthen" in prompt.lower() or "rewrite" in prompt.lower()
+
+
+def test_build_evolution_prompt_includes_lines():
+    """Evolution prompt references the specific source lines."""
+    from docs.orchestrator.knowledge_gen import build_evolution_prompt
+    h = _make_hypothesis(
+        confidence="low",
+        lines={"lbamm-core/src/modules/AMMModule.sol": [42, 100]},
+    )
+    prompt = build_evolution_prompt(h)
+    assert "AMMModule.sol" in prompt
+    assert "42" in prompt
+
+
+def test_select_hypotheses_for_evolution():
+    """Selects low/medium confidence, skips high and confirmed."""
+    from docs.orchestrator.knowledge_gen import select_hypotheses_for_evolution
     hyps = [
-        _make_hypothesis(confidence="low", mechanism="maybe overflow somewhere"),
-        _make_hypothesis(confidence="high", mechanism="In DynamicPoolType.sol:342, unchecked division rounds fee to 0"),
+        _make_hypothesis(confidence="low", mechanism="weak"),
+        _make_hypothesis(confidence="high", mechanism="strong"),
+        _make_hypothesis(confidence="medium", mechanism="medium"),
     ]
-    evolved = evolve_hypotheses(hyps, max_evolve=5)
-    # High-confidence hypotheses pass through unchanged
-    assert evolved[1]["mechanism"] == hyps[1]["mechanism"]
-    # Low-confidence get an evolution prompt appended
-    assert "EVOLUTION NOTE" in evolved[0].get("evolution_prompt", "")
+    hyps[0]["prior_result"] = None
+    hyps[1]["prior_result"] = None
+    hyps[2]["prior_result"] = "confirmed"
+    selected = select_hypotheses_for_evolution(hyps, max_evolve=5)
+    assert len(selected) == 1  # only the low-confidence, non-confirmed one
+    assert selected[0]["mechanism"] == "weak"
 
 
-def test_evolve_hypotheses_caps_at_max():
-    """Only evolve up to max_evolve hypotheses."""
-    from docs.orchestrator.knowledge_gen import evolve_hypotheses
-    hyps = [_make_hypothesis(confidence="low") for _ in range(10)]
-    evolved = evolve_hypotheses(hyps, max_evolve=3)
-    evolved_count = sum(1 for h in evolved if h.get("evolution_prompt"))
-    assert evolved_count <= 3
-
-
-def test_evolve_hypotheses_skips_confirmed():
-    """Confirmed prior_result hypotheses are not evolved (already validated)."""
-    from docs.orchestrator.knowledge_gen import evolve_hypotheses
-    hyps = [_make_hypothesis(confidence="low", prior_result="confirmed")]
-    evolved = evolve_hypotheses(hyps, max_evolve=5)
-    assert not evolved[0].get("evolution_prompt")
+def test_merge_evolved_hypothesis():
+    """Evolved hypothesis replaces mechanism and adds evolved_by field."""
+    from docs.orchestrator.knowledge_gen import merge_evolved_hypothesis
+    original = _make_hypothesis(confidence="low", mechanism="vague overflow")
+    evolved_text = "In AMMModule.sol:2144, the fee calculation uses unchecked{amount / totalLiquidity} which rounds to 0 when amount < totalLiquidity, allowing free swaps of up to 1e15 wei (~$0.001 per swap, compounding to ~$50 over 50000 swaps)."
+    merged = merge_evolved_hypothesis(original, evolved_text)
+    assert merged["mechanism"] == evolved_text
+    assert merged["evolved_by"] == "sonnet"
+    assert merged["original_mechanism"] == "vague overflow"
 ```
 
 Run: `.venv/bin/python -m pytest docs/orchestrator/tests/test_knowledge_gen.py -v -k evolve`
 Expected: FAIL
 
-- [ ] **Step 2: Implement evolve_hypotheses**
+- [ ] **Step 2: Implement evolution helper functions (pure, testable)**
 
 Add to `knowledge_gen.py`:
 
 ```python
-def evolve_hypotheses(
+def build_evolution_prompt(hypothesis: dict) -> str:
+    """Build a prompt for Sonnet to rewrite a weak hypothesis into a precise one.
+
+    The prompt includes the original mechanism, referenced lines, functions,
+    and asks for: exact input values, precise code path, economic impact estimate.
+    """
+    mechanism = hypothesis.get("mechanism", "")
+    functions = hypothesis.get("functions", [])
+    lines = hypothesis.get("lines", {})
+    grounded = hypothesis.get("grounded_in", "")
+
+    lines_block = ""
+    for contract, lns in lines.items():
+        lines_block += f"\n  - {contract}: lines {', '.join(str(l) for l in lns)}"
+
+    return f"""You are a smart contract security researcher. Rewrite this weak vulnerability hypothesis into a precise, testable one.
+
+ORIGINAL HYPOTHESIS (confidence: {hypothesis.get('confidence', 'unknown')}):
+{mechanism}
+
+REFERENCED CODE:{lines_block}
+FUNCTIONS: {', '.join(functions)}
+GROUNDED IN: {grounded or 'ungrounded'}
+
+REWRITE REQUIREMENTS:
+1. Read the referenced lines mentally and describe the EXACT code behavior
+2. Identify SPECIFIC input values that would trigger the issue (e.g., "amount = type(uint256).max - 1")
+3. Trace the EXACT execution path: caller → function → state change → impact
+4. Calculate economic impact: how much can an attacker extract per transaction?
+5. If the original mechanism is wrong, describe what the code ACTUALLY does and what vulnerability (if any) exists at those lines
+
+OUTPUT: Write ONLY the improved mechanism description (2-4 sentences). No preamble, no markdown headers."""
+
+
+def select_hypotheses_for_evolution(
     hypotheses: list[dict], max_evolve: int = 5,
 ) -> list[dict]:
-    """Strengthen weak hypotheses with evolution prompts.
+    """Select hypotheses that need LLM-powered evolution.
 
-    Identifies low-confidence, non-confirmed hypotheses and appends an
-    evolution_prompt field that instructs the wave 1 agent to refine the
-    mechanism before testing. High-confidence and confirmed hypotheses
-    pass through unchanged.
-
-    Based on Google Co-Scientist's Evolution agent pattern: continuously
-    refine top-ranked hypotheses by simplifying concepts, synthesizing
-    ideas, and exploring unconventional reasoning.
+    Criteria: low or medium confidence, not confirmed, not high confidence.
+    Returns up to max_evolve hypotheses sorted by confidence (lowest first).
     """
-    evolved_count = 0
+    candidates = []
     for h in hypotheses:
-        # Skip already-confirmed or high-confidence
         if h.get("prior_result") == "confirmed":
             continue
         if h.get("confidence") == "high":
             continue
-        if evolved_count >= max_evolve:
-            break
+        candidates.append(h)
 
-        mechanism = h.get("mechanism", "")
-        functions = h.get("functions", [])
-        lines = h.get("lines", {})
+    # Sort: low confidence first (most need for evolution)
+    conf_order = {"low": 0, "medium": 1, "unknown": 1}
+    candidates.sort(key=lambda h: conf_order.get(h.get("confidence", "unknown"), 1))
+    return candidates[:max_evolve]
 
-        # Build evolution prompt
-        lines_summary = ", ".join(
-            f"{c}:{','.join(str(l) for l in lns)}"
-            for c, lns in lines.items()
+
+def merge_evolved_hypothesis(original: dict, evolved_text: str) -> dict:
+    """Merge an evolved mechanism back into the hypothesis dict."""
+    original["original_mechanism"] = original.get("mechanism", "")
+    original["mechanism"] = evolved_text.strip()
+    original["evolved_by"] = "sonnet"
+    return original
+```
+
+- [ ] **Step 3: Implement async evolve_hypotheses_llm**
+
+Add to `knowledge_gen.py`:
+
+```python
+async def evolve_hypotheses_llm(
+    hypotheses: list[dict],
+    repo_root: Path,
+    max_evolve: int = 5,
+) -> list[dict]:
+    """Spawn Sonnet agents to rewrite weak hypotheses into precise ones.
+
+    Uses ClaudeSDKClient for quick one-shot queries (~$1/hypothesis).
+    Falls back to prompt-only evolution if SDK unavailable.
+
+    Based on Google Co-Scientist's Evolution agent: refine top-ranked
+    hypotheses by simplifying, synthesizing, and exploring unconventional reasoning.
+    """
+    candidates = select_hypotheses_for_evolution(hypotheses, max_evolve)
+    if not candidates:
+        return hypotheses
+
+    print(f"  Evolving {len(candidates)} weak hypotheses via Sonnet...")
+
+    try:
+        from claude_agent_sdk import ClaudeAgentOptions, ClaudeSDKClient, ResultMessage
+        import os
+        os.environ.pop("CLAUDECODE", None)
+
+        options = ClaudeAgentOptions(
+            cwd=str(repo_root),
+            model="sonnet",
+            max_turns=3,
+            permission_mode="bypassPermissions",
         )
-        h["evolution_prompt"] = (
-            f"EVOLUTION NOTE: This hypothesis has {h.get('confidence', 'unknown')} confidence. "
-            f"Before testing, strengthen it by: "
-            f"(1) Reading {lines_summary} and verifying the mechanism is precisely described, "
-            f"(2) Identifying the EXACT input values that would trigger the issue, "
-            f"(3) Calculating the economic impact in USD terms. "
-            f"If after reading the code you find the mechanism is wrong, update your understanding "
-            f"and test the CORRECTED mechanism — do not dismiss based on the original description."
-        )
-        evolved_count += 1
+
+        for h in candidates:
+            prompt = build_evolution_prompt(h)
+            try:
+                output_parts: list[str] = []
+                async with ClaudeSDKClient(options) as client:
+                    await client.query(prompt)
+                    async for message in client.receive_messages():
+                        if hasattr(message, 'content'):
+                            for block in message.content:
+                                if hasattr(block, 'text'):
+                                    output_parts.append(block.text)
+                        if isinstance(message, ResultMessage):
+                            break
+
+                evolved_text = "\n".join(output_parts).strip()
+                if evolved_text and len(evolved_text) > 50:
+                    merge_evolved_hypothesis(h, evolved_text)
+                    print(f"    Evolved {h.get('id', '?')}: {evolved_text[:80]}...")
+                else:
+                    # Fallback: add evolution note as prompt hint
+                    h["evolution_prompt"] = (
+                        f"EVOLUTION NOTE: This hypothesis has {h.get('confidence', 'unknown')} confidence. "
+                        f"Before testing, read the cited lines carefully and identify EXACT input values "
+                        f"that would trigger the issue. Calculate economic impact in USD."
+                    )
+            except Exception as e:
+                print(f"    Evolution failed for {h.get('id', '?')}: {e}")
+                h["evolution_prompt"] = (
+                    f"EVOLUTION NOTE: Strengthen this {h.get('confidence', 'unknown')}-confidence hypothesis "
+                    f"before testing. Identify exact input values and economic impact."
+                )
+
+    except ImportError:
+        # SDK not available — use prompt-only fallback for all candidates
+        print(f"  SDK unavailable — using prompt-only evolution for {len(candidates)} hypotheses")
+        for h in candidates:
+            lines_summary = ", ".join(
+                f"{c}:{','.join(str(l) for l in lns)}"
+                for c, lns in h.get("lines", {}).items()
+            )
+            h["evolution_prompt"] = (
+                f"EVOLUTION NOTE: This hypothesis has {h.get('confidence', 'unknown')} confidence. "
+                f"Before testing, strengthen it by: "
+                f"(1) Reading {lines_summary} and verifying the mechanism, "
+                f"(2) Identifying EXACT input values that trigger the issue, "
+                f"(3) Calculating economic impact in USD."
+            )
 
     return hypotheses
 ```
 
-- [ ] **Step 3: Wire evolution into run_pass1 after deduplication**
+- [ ] **Step 4: Wire evolution into run_pass1 after deduplication**
 
 In `knowledge_gen.py:run_pass1()`, after `deduped = deduplicate_hypotheses(...)` and before `routed = route_hypotheses(deduped)`, add:
 
 ```python
-    # Evolve weak hypotheses (Co-Scientist pattern)
-    deduped = evolve_hypotheses(deduped, max_evolve=5)
-    evolved_count = sum(1 for h in deduped if h.get("evolution_prompt"))
+    # Evolve weak hypotheses via LLM (Co-Scientist pattern, ~$1/hypothesis)
+    deduped = await evolve_hypotheses_llm(deduped, repo_root, max_evolve=5)
+    evolved_count = sum(1 for h in deduped if h.get("evolved_by") or h.get("evolution_prompt"))
     if evolved_count:
-        print(f"  Evolution: {evolved_count} low-confidence hypotheses strengthened")
+        print(f"  Evolution: {evolved_count} hypotheses strengthened")
 ```
 
-- [ ] **Step 4: Update format_hypotheses_block to include evolution prompts**
+- [ ] **Step 5: Update format_hypotheses_block to include evolution prompts**
 
 In the `format_hypotheses_block` function, after the `suggested_test` block and before `parts.append("")`, add:
 
@@ -723,29 +844,31 @@ In the `format_hypotheses_block` function, after the `suggested_test` block and 
         evolution = h.get("evolution_prompt", "")
         if evolution:
             parts.append(f"**{evolution}**")
+        if h.get("evolved_by"):
+            parts.append(f"*(Mechanism refined by {h['evolved_by']} — original: \"{h.get('original_mechanism', '')[:80]}...\")*")
 ```
 
 Run: `.venv/bin/python -m pytest docs/orchestrator/tests/test_knowledge_gen.py -v -k evolve`
-Expected: PASS
+Expected: PASS (pure function tests pass; async function tested separately)
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```
-feat(knowledge_gen): add hypothesis evolution step for low-confidence hypotheses
+feat(knowledge_gen): add LLM-powered hypothesis evolution via Sonnet (~$5 for 5 hypotheses)
 ```
 
 ---
 
-## Task 8: Post-Hoc Critic Agent (Producer-Critic Pattern)
+## Task 8: LLM-Powered Critic Agent (Producer-Critic Pattern)
 
-**Source:** Ch. 4 Reflection (Agentic Design Patterns) — separate Critic agent evaluates Producer output. Ch. 21 Agent Laboratory — tripartite judgment with 3 independent reviewers. Our agents currently produce AND self-evaluate (single-agent reflection), which is why they dismiss hypotheses easily.
+**Source:** Ch. 4 Reflection (Agentic Design Patterns) — separate Critic agent evaluates Producer output. Ch. 21 Agent Laboratory — tripartite judgment. **Upgrade from original plan:** Instead of just scoring dismissal quality, the critic actually RE-INVESTIGATES weak dismissals by spawning a Sonnet agent that reads the cited code and attempts the exploit path independently (~$10 for 5 weak dismissals).
 
 **Files:**
 - Create: `docs/orchestrator/critic.py`
 - Create: `docs/orchestrator/tests/test_critic.py`
 - Modify: `docs/orchestrator/run_audit.py`
 
-- [ ] **Step 1: Write failing tests for critic scoring**
+- [ ] **Step 1: Write failing tests for critic scoring (pure functions)**
 
 Write `tests/test_critic.py`:
 
@@ -758,7 +881,7 @@ def test_score_dismissal_quality_weak():
         "detail": "Looks safe",
     }
     score = score_dismissal_quality(entry)
-    assert score < 30  # weak dismissal
+    assert score < 30
 
 
 def test_score_dismissal_quality_strong():
@@ -772,7 +895,7 @@ def test_score_dismissal_quality_strong():
         "detail": "require(_amount > 0) at AMMModule.sol:2144 blocks zero-amount path",
     }
     score = score_dismissal_quality(entry)
-    assert score >= 70  # strong dismissal
+    assert score >= 70
 
 
 def test_score_dismissal_quality_tested_auto_pass():
@@ -805,25 +928,43 @@ def test_build_critic_feedback():
     feedback = build_critic_feedback(weak)
     assert "H-001" in feedback
     assert "test" in feedback.lower() or "forge" in feedback.lower()
+
+
+def test_build_reinvestigation_prompt():
+    """Reinvestigation prompt contains hypothesis details and instructions."""
+    from docs.orchestrator.critic import build_reinvestigation_prompt
+    weak = [
+        {"id": "H-001", "status": "dismissed", "detail": "safe",
+         "mechanism": "Overflow in fee calculation at AMMModule.sol:2144"},
+    ]
+    prompt = build_reinvestigation_prompt(weak, agent_name="precision-sniper")
+    assert "H-001" in prompt
+    assert "AMMModule.sol:2144" in prompt or "fee calculation" in prompt
+    assert "forge" in prompt.lower() or "test" in prompt.lower()
 ```
 
 Run: `.venv/bin/python -m pytest docs/orchestrator/tests/test_critic.py -v`
 Expected: FAIL
 
-- [ ] **Step 2: Implement critic.py**
+- [ ] **Step 2: Implement critic.py with scoring + reinvestigation**
 
 Write `docs/orchestrator/critic.py`:
 
 ```python
 """Post-hoc critic for hypothesis dismissal quality.
 
-Scores each dismissed hypothesis_results entry on evidence quality.
-Identifies weak dismissals that need re-investigation.
+Two-tier approach:
+1. Pure scoring: rate each dismissal on evidence quality (fast, no LLM cost)
+2. LLM reinvestigation: spawn Sonnet agent to independently attempt the exploit
+   path for weak dismissals (~$2/hypothesis)
+
 Based on Producer-Critic pattern (Ch. 4, Agentic Design Patterns)
 and Tripartite Judgment (Ch. 21, Agent Laboratory).
 """
 
+import json
 import re
+from pathlib import Path
 
 
 def score_dismissal_quality(entry: dict) -> int:
@@ -845,7 +986,6 @@ def score_dismissal_quality(entry: dict) -> int:
     if status == "not_tested":
         return 50
 
-    # Score dismissed entries
     score = 0
     if entry.get("test_file"):
         score += 30
@@ -876,10 +1016,7 @@ def identify_weak_dismissals(
 
 
 def build_critic_feedback(weak_dismissals: list[dict]) -> str:
-    """Build feedback text for weak dismissals to inject into continuation prompts.
-
-    For each weak dismissal, tells the agent exactly what evidence is missing.
-    """
+    """Build feedback text for weak dismissals to inject into continuation prompts."""
     if not weak_dismissals:
         return ""
 
@@ -904,19 +1041,166 @@ def build_critic_feedback(weak_dismissals: list[dict]) -> str:
         lines.append("")
 
     return "\n".join(lines)
+
+
+def build_reinvestigation_prompt(
+    weak_dismissals: list[dict], agent_name: str,
+) -> str:
+    """Build a prompt for a Sonnet critic agent to independently re-investigate.
+
+    The critic reads the cited code, attempts the exploit path, and writes
+    a Forge test. It has NO knowledge of the original agent's dismissal
+    reasoning — it investigates fresh.
+    """
+    hyp_blocks = []
+    for entry in weak_dismissals:
+        hid = entry.get("id", "?")
+        mechanism = entry.get("mechanism", entry.get("detail", ""))
+        lines = entry.get("lines", {})
+        functions = entry.get("functions", [])
+
+        lines_str = ""
+        if isinstance(lines, dict):
+            for contract, lns in lines.items():
+                lines_str += f"\n  - {contract}: lines {', '.join(str(l) for l in lns)}"
+
+        hyp_blocks.append(
+            f"### {hid}\n"
+            f"Mechanism: {mechanism}\n"
+            f"Functions: {', '.join(functions) if functions else 'unknown'}\n"
+            f"Lines:{lines_str or ' unknown'}\n"
+        )
+
+    hypotheses_text = "\n".join(hyp_blocks)
+
+    return f"""You are an independent security critic re-investigating hypotheses that were dismissed by agent "{agent_name}".
+
+Your job: attempt to EXPLOIT each hypothesis below. You have NO knowledge of why it was dismissed — investigate from scratch.
+
+For EACH hypothesis:
+1. Read the cited source code lines using Read tool
+2. Determine if the vulnerability mechanism is plausible
+3. If plausible: write a Forge test that demonstrates the exploit
+4. If not plausible: explain EXACTLY which guard prevents it (cite file:line)
+
+## Hypotheses to Re-Investigate
+
+{hypotheses_text}
+
+## Output
+
+Write your findings as JSON to stdout:
+```json
+{{
+  "reinvestigations": [
+    {{
+      "id": "H-...",
+      "verdict": "confirmed|plausible|blocked",
+      "guard_location": "Contract.sol:NNN",
+      "test_file": "path/to/test.sol",
+      "detail": "..."
+    }}
+  ]
+}}
+```
+
+Be aggressive — assume the original dismissal was wrong and try hard to make the exploit work.
+"""
+
+
+async def run_critic_reinvestigation(
+    weak_by_agent: dict[str, list[dict]],
+    repo_root: Path,
+    max_reinvestigate: int = 5,
+) -> dict[str, list[dict]]:
+    """Spawn Sonnet critic agents to re-investigate weak dismissals.
+
+    One critic agent per original agent (up to max_reinvestigate total hypotheses).
+    Returns {agent_name: [reinvestigation_results]}.
+
+    Cost: ~$2/hypothesis investigated.
+    """
+    results: dict[str, list[dict]] = {}
+    total = sum(len(v) for v in weak_by_agent.values())
+    if total == 0:
+        return results
+
+    # Cap total reinvestigations
+    budget_remaining = max_reinvestigate
+
+    try:
+        from claude_agent_sdk import ClaudeAgentOptions, ClaudeSDKClient, ResultMessage, AssistantMessage, TextBlock
+        import os
+        os.environ.pop("CLAUDECODE", None)
+
+        options = ClaudeAgentOptions(
+            cwd=str(repo_root),
+            model="sonnet",
+            max_turns=20,
+            permission_mode="bypassPermissions",
+            setting_sources=["user", "project", "local"],
+        )
+
+        for agent_name, weak_list in weak_by_agent.items():
+            if budget_remaining <= 0:
+                break
+
+            # Cap per-agent reinvestigations
+            to_investigate = weak_list[:budget_remaining]
+            budget_remaining -= len(to_investigate)
+
+            prompt = build_reinvestigation_prompt(to_investigate, agent_name)
+            print(f"  Critic: re-investigating {len(to_investigate)} dismissals from {agent_name}...")
+
+            try:
+                output_parts: list[str] = []
+                async with ClaudeSDKClient(options) as client:
+                    await client.query(prompt)
+                    async for message in client.receive_messages():
+                        if isinstance(message, AssistantMessage):
+                            for block in message.content:
+                                if isinstance(block, TextBlock):
+                                    output_parts.append(block.text)
+                        elif isinstance(message, ResultMessage):
+                            break
+
+                full_text = "\n".join(output_parts)
+                # Parse JSON from output
+                json_start = full_text.find("{")
+                json_end = full_text.rfind("}") + 1
+                if json_start >= 0 and json_end > json_start:
+                    try:
+                        parsed = json.loads(full_text[json_start:json_end])
+                        results[agent_name] = parsed.get("reinvestigations", [])
+                        for r in results[agent_name]:
+                            verdict = r.get("verdict", "?")
+                            print(f"    {r.get('id', '?')}: {verdict}")
+                    except json.JSONDecodeError:
+                        print(f"    Failed to parse critic output for {agent_name}")
+                        results[agent_name] = []
+
+            except Exception as e:
+                print(f"    Critic failed for {agent_name}: {e}")
+                results[agent_name] = []
+
+    except ImportError:
+        print("  SDK unavailable — skipping critic reinvestigation")
+
+    return results
 ```
 
 Run: `.venv/bin/python -m pytest docs/orchestrator/tests/test_critic.py -v`
-Expected: PASS
+Expected: PASS (pure function tests pass; async tested separately)
 
-- [ ] **Step 3: Wire critic into run_audit.py after hypothesis_results validation**
+- [ ] **Step 3: Wire critic into run_audit.py — scoring + LLM reinvestigation**
 
 In `run_audit.py`, after the hypothesis_results validation block (search for `validate_hypothesis_results`), add:
 
 ```python
-    # Post-hoc critic: identify weak dismissals for continuation feedback
+    # Post-hoc critic: score dismissals, then re-investigate weak ones via LLM
     if wave.number == 1 and agents_with_hypotheses:
-        from .critic import identify_weak_dismissals, build_critic_feedback
+        from .critic import identify_weak_dismissals, build_critic_feedback, run_critic_reinvestigation
+        weak_by_agent: dict[str, list[dict]] = {}
         total_weak = 0
         for agent in wave.agents:
             if agent.name not in agents_with_hypotheses:
@@ -934,11 +1218,25 @@ In `run_audit.py`, after the hypothesis_results validation block (search for `va
             weak = identify_weak_dismissals(hr)
             if weak:
                 total_weak += len(weak)
-                # Store feedback for continuation pass injection
+                # Enrich weak dismissals with hypothesis details for reinvestigation
+                hyp_map = {h.get("id"): h for h in (pass1_result.agent_hypotheses.get(agent.name, []) if pass1_result else [])}
+                for w in weak:
+                    orig_hyp = hyp_map.get(w.get("id"), {})
+                    w["mechanism"] = orig_hyp.get("mechanism", w.get("detail", ""))
+                    w["lines"] = orig_hyp.get("lines", {})
+                    w["functions"] = orig_hyp.get("functions", [])
+                weak_by_agent[agent.name] = weak
                 agent.extra_context["_critic_feedback"] = build_critic_feedback(weak)
                 print(f"  {agent.name}: {len(weak)} weak dismissals flagged by critic")
+
         if total_weak:
-            print(f"  Critic: {total_weak} total weak dismissals across all agents")
+            print(f"  Critic: {total_weak} total weak dismissals — spawning reinvestigation agents...")
+            reinvestigations = await run_critic_reinvestigation(weak_by_agent, PROJECT_ROOT, max_reinvestigate=5)
+            # Log results and escalate any confirmed/plausible findings
+            for agent_name, results in reinvestigations.items():
+                for r in results:
+                    if r.get("verdict") in ("confirmed", "plausible"):
+                        print(f"    ESCALATION: {r.get('id', '?')} — critic found {r['verdict']} exploit path")
 ```
 
 Then in the bounded continuation loop (search for `build_continuation_prompt`), inject critic feedback:
@@ -958,7 +1256,7 @@ Expected: All tests pass
 - [ ] **Step 5: Commit**
 
 ```
-feat(critic): add post-hoc dismissal quality scorer and weak dismissal feedback
+feat(critic): add LLM-powered reinvestigation of weak dismissals (~$10 for 5 hypotheses)
 ```
 
 ---
