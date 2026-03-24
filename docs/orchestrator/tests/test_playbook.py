@@ -494,3 +494,45 @@ def test_load_lessons_empty(tmp_path):
     playbook_dir = _setup_playbook_dir(tmp_path)
     loaded = load_lessons(playbook_dir)
     assert loaded == []
+
+
+# ── Failure Classification CRUD ──────────────────────────────────────────────
+
+def test_append_failure_classifications(tmp_path):
+    """Write failure classifications, read them back."""
+    from docs.orchestrator.playbook import append_failure_classifications, load_failure_patterns
+
+    playbook_dir = _setup_playbook_dir(tmp_path)
+    entries = [
+        {"hypothesis_id": "H-R1-CP-01", "failure_class": "tactical",
+         "detail": "Compilation error — wrong import path", "run": 1},
+        {"hypothesis_id": "H-R1-CP-02", "failure_class": "strategic",
+         "detail": "require() at AMMModule.sol:2144 blocks the path", "run": 1},
+    ]
+    append_failure_classifications(entries, playbook_dir)
+    loaded = load_failure_patterns(playbook_dir=playbook_dir)
+    assert len(loaded) == 2
+    assert loaded[0]["failure_class"] == "tactical"
+
+
+def test_load_failure_patterns_tactical_only(tmp_path):
+    """Filter to tactical failures only."""
+    from docs.orchestrator.playbook import append_failure_classifications, load_failure_patterns
+
+    playbook_dir = _setup_playbook_dir(tmp_path)
+    entries = [
+        {"hypothesis_id": "H-R1-CP-01", "failure_class": "tactical", "detail": "x", "run": 1},
+        {"hypothesis_id": "H-R1-CP-02", "failure_class": "strategic", "detail": "y", "run": 1},
+    ]
+    append_failure_classifications(entries, playbook_dir)
+    tactical = load_failure_patterns(failure_class="tactical", playbook_dir=playbook_dir)
+    assert len(tactical) == 1
+    assert tactical[0]["hypothesis_id"] == "H-R1-CP-01"
+
+
+def test_load_failure_patterns_empty(tmp_path):
+    """No failure_classifications.jsonl → empty list."""
+    from docs.orchestrator.playbook import load_failure_patterns
+
+    playbook_dir = _setup_playbook_dir(tmp_path)
+    assert load_failure_patterns(playbook_dir=playbook_dir) == []

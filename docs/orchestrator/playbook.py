@@ -468,3 +468,39 @@ def load_lessons(playbook_dir: Path | None = None) -> list[dict]:
                 except json.JSONDecodeError:
                     continue
     return entries
+
+
+# ── Failure Classification CRUD ──────────────────────────────────────────────
+
+def append_failure_classifications(
+    entries: list[dict], playbook_dir: Path | None = None,
+) -> None:
+    """Append failure classification entries to failure_classifications.jsonl."""
+    pd = playbook_dir or PLAYBOOK_DIR
+    path = pd / "failure_classifications.jsonl"
+    with open(path, "a") as f:
+        for e in entries:
+            f.write(json.dumps(e) + "\n")
+
+
+def load_failure_patterns(
+    failure_class: str | None = None, playbook_dir: Path | None = None,
+) -> list[dict]:
+    """Read failure classifications, optionally filtered by class."""
+    pd = playbook_dir or PLAYBOOK_DIR
+    path = pd / "failure_classifications.jsonl"
+    if not path.exists():
+        return []
+
+    entries = []
+    with open(path) as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                try:
+                    entry = json.loads(line)
+                    if failure_class is None or entry.get("failure_class") == failure_class:
+                        entries.append(entry)
+                except json.JSONDecodeError:
+                    continue
+    return entries
