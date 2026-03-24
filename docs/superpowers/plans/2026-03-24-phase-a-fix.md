@@ -1126,26 +1126,470 @@ feat(knowledge_gen): add Elo-based quality ranking for hypothesis prioritization
 
 ---
 
+## Task 10: Resource-Aware Hypothesis Router (Ch. 16)
+
+**Source:** Resource-Aware Optimization (Ch. 16, Agentic Design Patterns) — use a cheap/fast model to classify hypothesis complexity before sending to expensive Opus agents. Simple hypotheses go to Sonnet; only genuinely complex cross-boundary hypotheses go to Opus. Could cut Pass 1 cost by ~50%.
+
+**Files:**
+- Modify: `docs/orchestrator/knowledge_gen.py`
+- Modify: `docs/orchestrator/config.py`
+- Modify: `docs/orchestrator/tests/test_knowledge_gen.py`
+
+- [ ] **Step 1: Write failing tests for complexity classification**
+
+Add to `tests/test_knowledge_gen.py`:
+
+```python
+def test_classify_hypothesis_complexity_simple():
+    """Hypothesis referencing a single contract + single function → 'simple'."""
+    from docs.orchestrator.knowledge_gen import classify_hypothesis_complexity
+    h = _make_hypothesis(
+        lines={"lbamm-core/src/modules/AMMModule.sol": [42]},
+        functions=["setValue"],
+        mechanism="Missing zero-address check in setValue",
+    )
+    assert classify_hypothesis_complexity(h) == "simple"
+
+
+def test_classify_hypothesis_complexity_complex():
+    """Hypothesis crossing 3+ contracts with coupled_pair → 'complex'."""
+    from docs.orchestrator.knowledge_gen import classify_hypothesis_complexity
+    h = _make_hypothesis(
+        lines={
+            "lbamm-core/src/modules/AMMModule.sol": [42, 100],
+            "lbamm-hooks-and-handlers/src/hooks/AMMStandardHook.sol": [200],
+            "amm-pool-type-dynamic/src/DynamicPoolType.sol": [300],
+        },
+        functions=["swap", "beforeSwap", "calculateOutput"],
+        mechanism="Cross-contract state desync between AMMModule fee accumulator and DynamicPoolType price calculation via hook callback reordering",
+    )
+    h["coupled_pair"] = {"state_a": "feeAccumulator", "state_b": "sqrtPrice"}
+    assert classify_hypothesis_complexity(h) == "complex"
+
+
+def test_classify_hypothesis_complexity_medium():
+    """Hypothesis with 2 contracts but no coupled_pair → 'medium'."""
+    from docs.orchestrator.knowledge_gen import classify_hypothesis_complexity
+    h = _make_hypothesis(
+        lines={
+            "lbamm-core/src/modules/AMMModule.sol": [42],
+            "lbamm-hooks-and-handlers/src/hooks/AMMStandardHook.sol": [200],
+        },
+        functions=["swap", "beforeSwap"],
+    )
+    assert classify_hypothesis_complexity(h) == "medium"
+
+
+def test_route_by_complexity_assigns_profiles():
+    """Simple → sonnet profile, complex → max_reasoning profile."""
+    from docs.orchestrator.knowledge_gen import route_by_complexity
+    hyps = [
+        _make_hypothesis(mechanism="Missing zero-address check"),
+        _make_hypothesis(
+            lines={"A.sol": [1], "B.sol": [2], "C.sol": [3]},
+            functions=["a", "b", "c"],
+            mechanism="Cross-contract coupled state with callback reordering",
+        ),
+    ]
+    hyps[1]["coupled_pair"] = {"state_a": "x", "state_b": "y"}
+    routed = route_by_complexity(hyps)
+    assert routed[0]["_target_profile"] == "fast_reasoning"
+    assert routed[1]["_target_profile"] == "max_reasoning"
+```
+
+Run: `.venv/bin/python -m pytest docs/orchestrator/tests/test_knowledge_gen.py -v -k complexity`
+Expected: FAIL
+
+- [ ] **Step 2: Implement complexity classification and routing**
+
+Add to `knowledge_gen.py`:
+
+```python
+def classify_hypothesis_complexity(h: dict) -> str:
+    """Classify hypothesis as simple/medium/complex based on scope.
+
+    Based on Resource-Aware Optimization (Ch. 16, Agentic Design Patterns):
+    route simple tasks to cheap models, complex to expensive ones.
+
+    Criteria:
+    - simple: 1 contract, 1 function, no coupled_pair, mechanism < 150 chars
+    - complex: 3+ contracts OR has coupled_pair OR mechanism > 300 chars
+    - medium: everything else
+    """
+    num_contracts = len(h.get("lines", {}))
+    num_functions = len(h.get("functions", []))
+    has_coupling = h.get("coupled_pair") is not None
+    mechanism_len = len(h.get("mechanism", ""))
+
+    if num_contracts >= 3 or has_coupling or mechanism_len > 300:
+        return "complex"
+    if num_contracts <= 1 and num_functions <= 1 and mechanism_len < 150:
+        return "simple"
+    return "medium"
+
+
+_COMPLEXITY_PROFILE_MAP = {
+    "simple": "fast_reasoning",
+    "medium": "deep_reasoning",
+    "complex": "max_reasoning",
+}
+
+
+def route_by_complexity(hypotheses: list[dict]) -> list[dict]:
+    """Annotate each hypothesis with a target profile based on complexity.
+
+    Wave 1 agents can use this to adjust their investigation depth:
+    simple hypotheses get quick verification, complex ones get deep analysis.
+    """
+    for h in hypotheses:
+        complexity = classify_hypothesis_complexity(h)
+        h["_complexity"] = complexity
+        h["_target_profile"] = _COMPLEXITY_PROFILE_MAP[complexity]
+    return hypotheses
+```
+
+- [ ] **Step 3: Add fast_reasoning profile to model_profiles.py if absent**
+
+Check if `fast_reasoning` profile exists in `docs/orchestrator/model_profiles.py`. If not, add:
+
+```python
+    "fast_reasoning": ModelProfile(
+        model="claude-sonnet-4-6",
+        effort="high",
+        extended_thinking=True,
+        thinking_budget_tokens=32000,
+        max_tokens=16384,
+        temperature=1.0,
+        description="Fast reasoning — simple hypothesis verification, lower cost",
+    ),
+```
+
+- [ ] **Step 4: Wire into run_pass1 after evolution and before routing**
+
+In `knowledge_gen.py:run_pass1()`, after `evolve_hypotheses` and before `route_hypotheses`, add:
+
+```python
+    # Classify complexity for resource-aware routing
+    deduped = route_by_complexity(deduped)
+    complexity_counts = {}
+    for h in deduped:
+        c = h.get("_complexity", "unknown")
+        complexity_counts[c] = complexity_counts.get(c, 0) + 1
+    print(f"  Complexity: {complexity_counts}")
+```
+
+- [ ] **Step 5: Update format_hypotheses_block to show complexity**
+
+In `format_hypotheses_block`, after the confidence/prior line, add:
+
+```python
+        complexity = h.get("_complexity", "")
+        if complexity:
+            parts.append(f"**Complexity**: {complexity} (target: {h.get('_target_profile', 'default')})")
+```
+
+Run: `.venv/bin/python -m pytest docs/orchestrator/tests/test_knowledge_gen.py -v -k complexity`
+Expected: PASS
+
+- [ ] **Step 6: Commit**
+
+```
+feat(knowledge_gen): add resource-aware complexity routing for hypotheses
+```
+
+---
+
+## Task 11: Formal Deliverables Contract (Ch. 19)
+
+**Source:** Contractor Agents with Formal Deliverables (Ch. 19, Agentic Design Patterns) — instead of open-ended "investigate these hypotheses" instructions, define a formal contract with explicit, verifiable deliverables. The agent self-validates against the contract. Stronger than sidecar gate enforcement — catches issues at instruction level, not just at submission time.
+
+**Files:**
+- Modify: `docs/orchestrator/knowledge_gen.py` (update `_HYPOTHESIS_TESTING_PROTOCOL`)
+- Modify: `docs/orchestrator/templates/black-hat-preamble.md`
+- Modify: `docs/orchestrator/tests/test_knowledge_gen.py`
+
+- [ ] **Step 1: Write failing test for contract deliverables in protocol**
+
+Add to `tests/test_knowledge_gen.py`:
+
+```python
+def test_format_hypotheses_block_includes_contract():
+    """Output contains formal deliverables contract."""
+    from docs.orchestrator.knowledge_gen import format_hypotheses_block
+    hyps = [_make_hypothesis()]
+    result = format_hypotheses_block(hyps)
+    assert "DELIVERABLES CONTRACT" in result or "Formal Deliverables" in result
+    assert "test_file" in result
+    assert "failure_class" in result
+    assert "self-check" in result.lower() or "validate" in result.lower()
+```
+
+Run: `.venv/bin/python -m pytest docs/orchestrator/tests/test_knowledge_gen.py -v -k contract`
+Expected: FAIL
+
+- [ ] **Step 2: Add formal contract section to _HYPOTHESIS_TESTING_PROTOCOL**
+
+In `knowledge_gen.py`, append to the end of `_HYPOTHESIS_TESTING_PROTOCOL` (after Step D, before the closing `"""`):
+
+```python
+### Formal Deliverables Contract
+
+Before submitting your sidecar, self-validate against this contract:
+
+**Required deliverables per hypothesis:**
+- [ ] `hypothesis_results` entry with `id`, `status`, `detail`
+- [ ] `test_file` pointing to a real Forge test (required for dismissed/tested/confirmed)
+- [ ] `failure_class` set to tactical or strategic (required for dismissed)
+- [ ] `refutation_case` — 2-sentence strongest-case-FOR the vulnerability
+- [ ] `guard_location` — exact file:line of the guard that prevents exploitation
+
+**Completion criteria (you are NOT done until all are met):**
+- [ ] Every injected hypothesis has a `hypothesis_results` entry
+- [ ] At least 60% of hypotheses have status `tested` or `confirmed` (not just `dismissed`)
+- [ ] At least 3 Forge tests compile and execute successfully
+- [ ] Every `dismissed` entry has both `test_file` AND `failure_class`
+
+**Self-check before submission:** Count your deliverables. If any checkbox above is not met, continue working — do NOT submit the sidecar.
+```
+
+Run: `.venv/bin/python -m pytest docs/orchestrator/tests/test_knowledge_gen.py -v -k contract`
+Expected: PASS
+
+- [ ] **Step 3: Add completion self-check to preamble**
+
+In `docs/orchestrator/templates/black-hat-preamble.md`, add at the end of the `### Investigation Discipline` section (after the triage log instruction):
+
+```markdown
+**Hypothesis completion self-check**: Before writing your final sidecar, verify:
+1. Every hypothesis in your `<hypotheses>` block has a corresponding `hypothesis_results` entry
+2. Every dismissed hypothesis has `test_file` + `failure_class`
+3. You wrote at least 3 compiling Forge tests
+If any check fails, go back and complete the missing work. The sidecar gate will reject incomplete submissions.
+```
+
+- [ ] **Step 4: Commit**
+
+```
+feat(knowledge_gen,preamble): add formal deliverables contract for hypothesis investigation
+```
+
+---
+
+## Task 12: SMART Goal-State Monitoring (Ch. 11)
+
+**Source:** Goal Setting and Monitoring with SMART Criteria (Ch. 11, Agentic Design Patterns) — define measurable completion criteria per agent upfront. Currently agents have vague completion conditions. This adds explicit, checkable goals.
+
+**Files:**
+- Modify: `docs/orchestrator/knowledge_gen.py` (format_hypotheses_block)
+- Modify: `docs/orchestrator/sidecar_gate.py` (validate against SMART goals)
+- Modify: `docs/orchestrator/tests/test_sidecar_gate.py`
+- Modify: `docs/orchestrator/tests/test_knowledge_gen.py`
+
+- [ ] **Step 1: Write failing tests for SMART goal validation**
+
+Add to `tests/test_sidecar_gate.py`:
+
+```python
+def test_smart_goals_all_met():
+    """Sidecar meeting all SMART goals → no errors."""
+    sidecar = {
+        "hypothesis_results": [
+            {"id": "H-001", "status": "tested", "test_file": "test/T1.sol",
+             "detail": "Invariant holds", "failure_class": "strategic"},
+            {"id": "H-002", "status": "confirmed", "test_file": "test/T2.sol",
+             "detail": "Exploit works"},
+            {"id": "H-003", "status": "tested", "test_file": "test/T3.sol",
+             "detail": "Guard blocks", "failure_class": "strategic"},
+        ],
+    }
+    from docs.orchestrator.sidecar_gate import validate_smart_goals
+    errors = validate_smart_goals(sidecar, total_hypotheses=3)
+    assert errors == []
+
+
+def test_smart_goals_too_few_tested():
+    """Less than 60% tested/confirmed → warning."""
+    sidecar = {
+        "hypothesis_results": [
+            {"id": "H-001", "status": "dismissed", "test_file": "test/T1.sol",
+             "detail": "x", "failure_class": "strategic"},
+            {"id": "H-002", "status": "dismissed", "test_file": "test/T2.sol",
+             "detail": "y", "failure_class": "strategic"},
+            {"id": "H-003", "status": "dismissed", "test_file": "test/T3.sol",
+             "detail": "z", "failure_class": "strategic"},
+            {"id": "H-004", "status": "not_tested", "detail": "out of scope"},
+            {"id": "H-005", "status": "tested", "test_file": "test/T4.sol",
+             "detail": "holds"},
+        ],
+    }
+    from docs.orchestrator.sidecar_gate import validate_smart_goals
+    errors = validate_smart_goals(sidecar, total_hypotheses=5)
+    assert any("60%" in e or "tested" in e.lower() for e in errors)
+
+
+def test_smart_goals_missing_hypothesis_entries():
+    """Fewer entries than total_hypotheses → error."""
+    sidecar = {
+        "hypothesis_results": [
+            {"id": "H-001", "status": "tested", "test_file": "test/T.sol", "detail": "ok"},
+        ],
+    }
+    from docs.orchestrator.sidecar_gate import validate_smart_goals
+    errors = validate_smart_goals(sidecar, total_hypotheses=5)
+    assert any("1/5" in e or "missing" in e.lower() for e in errors)
+
+
+def test_smart_goals_too_few_forge_tests():
+    """Fewer than 3 unique test_files → warning."""
+    sidecar = {
+        "hypothesis_results": [
+            {"id": "H-001", "status": "tested", "test_file": "test/T1.sol", "detail": "ok"},
+            {"id": "H-002", "status": "tested", "test_file": "test/T1.sol", "detail": "ok"},
+            {"id": "H-003", "status": "tested", "test_file": "test/T1.sol", "detail": "ok"},
+        ],
+    }
+    from docs.orchestrator.sidecar_gate import validate_smart_goals
+    errors = validate_smart_goals(sidecar, total_hypotheses=3)
+    assert any("3" in e and "test" in e.lower() for e in errors)
+```
+
+Run: `.venv/bin/python -m pytest docs/orchestrator/tests/test_sidecar_gate.py -v -k smart`
+Expected: FAIL
+
+- [ ] **Step 2: Implement validate_smart_goals**
+
+Add to `sidecar_gate.py`:
+
+```python
+def validate_smart_goals(sidecar: dict, total_hypotheses: int) -> list[str]:
+    """Validate hypothesis results against SMART completion criteria.
+
+    Based on Goal Setting and Monitoring (Ch. 11, Agentic Design Patterns).
+    SMART = Specific, Measurable, Achievable, Relevant, Time-bound.
+
+    Criteria:
+    1. Every hypothesis has an entry (coverage = entries / total_hypotheses)
+    2. At least 60% of entries are tested or confirmed (not just dismissed/not_tested)
+    3. At least 3 unique Forge test files referenced
+    4. Every dismissed entry has failure_class
+    """
+    issues: list[str] = []
+    results = sidecar.get("hypothesis_results", [])
+
+    # 1. Coverage: every hypothesis accounted for
+    if total_hypotheses > 0 and len(results) < total_hypotheses:
+        issues.append(
+            f"SMART GOAL: Only {len(results)}/{total_hypotheses} hypotheses have entries. "
+            f"Every injected hypothesis must be accounted for."
+        )
+
+    # 2. Testing ratio: at least 60% tested/confirmed
+    if results:
+        tested_count = sum(1 for r in results if r.get("status") in ("tested", "confirmed"))
+        ratio = tested_count / len(results)
+        if ratio < 0.60:
+            issues.append(
+                f"SMART GOAL: Only {tested_count}/{len(results)} ({ratio:.0%}) hypotheses are "
+                f"tested/confirmed. Target is 60%. Write Forge tests for more hypotheses."
+            )
+
+    # 3. Unique test files: at least 3
+    test_files = set()
+    for r in results:
+        tf = r.get("test_file", "")
+        if tf and not tf.startswith("code-analysis:") and not tf.startswith("not-applicable"):
+            test_files.add(tf)
+    if len(test_files) < 3 and len(results) >= 3:
+        issues.append(
+            f"SMART GOAL: Only {len(test_files)} unique Forge test files. "
+            f"Write at least 3 distinct test files for thorough coverage."
+        )
+
+    # 4. failure_class on dismissed (reinforces gate E)
+    for r in results:
+        if r.get("status") == "dismissed" and r.get("failure_class") not in ("tactical", "strategic"):
+            issues.append(
+                f"SMART GOAL: Dismissed hypothesis {r.get('id', '?')} missing failure_class."
+            )
+
+    return issues
+```
+
+- [ ] **Step 3: Wire SMART goals into run_audit.py**
+
+In `run_audit.py`, after the existing `validate_hypothesis_results` block and before the critic block, add:
+
+```python
+    # SMART goal validation for hypothesis completion
+    if wave.number == 1 and agents_with_hypotheses:
+        from .sidecar_gate import validate_smart_goals
+        for agent in wave.agents:
+            if agent.name not in agents_with_hypotheses:
+                continue
+            dir_path = ARTIFACTS_DIR / f"wave{wave.number}-{agent.name}" / "findings.json"
+            flat_path = ARTIFACTS_DIR / f"findings-{agent.name}.json"
+            sidecar_path = dir_path if dir_path.exists() else flat_path
+            if not sidecar_path.exists():
+                continue
+            sidecar = json.loads(sidecar_path.read_text())
+            total_h = len(pass1_result.agent_hypotheses.get(agent.name, [])) if pass1_result else 0
+            smart_issues = validate_smart_goals(sidecar, total_hypotheses=total_h)
+            for issue in smart_issues:
+                print(f"  {agent.name}: {issue}")
+```
+
+- [ ] **Step 4: Add SMART goals display to format_hypotheses_block**
+
+In `knowledge_gen.py`, in `format_hypotheses_block`, after the protocol instructions and before the call map, add:
+
+```python
+    parts.append(f"**SMART Completion Goals** (you are done when ALL are met):")
+    parts.append(f"- [ ] {len(hypotheses)}/{len(hypotheses)} hypotheses have `hypothesis_results` entries")
+    parts.append(f"- [ ] ≥60% of entries are `tested` or `confirmed`")
+    parts.append(f"- [ ] ≥3 unique Forge test files written and executed")
+    parts.append(f"- [ ] Every `dismissed` entry has `test_file` + `failure_class`")
+    parts.append("")
+```
+
+Run: `.venv/bin/python -m pytest docs/orchestrator/tests/ -v --tb=short`
+Expected: All tests pass
+
+- [ ] **Step 5: Commit**
+
+```
+feat(sidecar_gate): add SMART goal-state monitoring for hypothesis completion
+```
+
+---
+
 ## Dependency Graph
 
 ```
-Task 1 (sidecar gate E)  ─┐
-                           ├──→ Task 5 (pipeline wiring) ──→ Task 6 (E2E verify)
-Task 2 (kill gate E)      ─┤          ↑
-                           │          │
-Task 3 (refutation prompt) ─┤         │
-                           │          │
-Task 4 (playbook failures) ─┘         │
-                                      │
-Task 7 (hypothesis evolution) ────────┤  (wired in run_pass1, independent of Tasks 1-4)
-                                      │
-Task 8 (critic agent) ───────────────┤  (wired in run_audit.py, depends on Task 5 for sidecar paths)
-                                      │
-Task 9 (Elo ranking) ────────────────┘  (wired in knowledge_gen, independent of Tasks 1-4)
+Task 1 (sidecar gate E)   ─┐
+                            ├──→ Task 5 (pipeline wiring) ──→ Task 6 (E2E verify)
+Task 2 (kill gate E)       ─┤          ↑
+                            │          │
+Task 3 (refutation prompt)  ─┤         │
+                            │          │
+Task 4 (playbook failures)  ─┘         │
+                                       │
+Task 7 (hypothesis evolution) ─────────┤  (knowledge_gen, independent of 1-4)
+                                       │
+Task 8 (critic agent) ────────────────┤  (run_audit.py, depends on Task 5)
+                                       │
+Task 9 (Elo ranking) ─────────────────┤  (knowledge_gen, independent of 1-4)
+                                       │
+Task 10 (complexity router) ──────────┤  (knowledge_gen + config, independent of 1-4)
+                                       │
+Task 11 (formal contract) ────────────┤  (knowledge_gen + preamble, depends on Task 3 for protocol)
+                                       │
+Task 12 (SMART goals) ────────────────┘  (sidecar_gate + run_audit, depends on Task 1 for gate E)
 ```
 
 **Parallelizable groups:**
 - **Group A** (Tasks 1-4): Independent, parallelize freely
-- **Group B** (Tasks 7, 9): Independent, parallelize freely — both modify knowledge_gen.py but different functions
-- **Group C** (Task 8): Independent of Group A but depends on Task 5 for pipeline wiring
-- **Sequential**: Task 5 → Task 6 (after Groups A+B), then Task 8 wiring into Task 5's pipeline
+- **Group B** (Tasks 7, 9, 10): Independent, parallelize freely — different functions in knowledge_gen.py
+- **Group C** (Task 8): Depends on Task 5 for pipeline wiring
+- **Group D** (Task 11): Depends on Task 3 (extends the protocol it defines)
+- **Group E** (Task 12): Depends on Task 1 (extends gate E validation)
+- **Sequential**: Task 5 → Task 6 (after Groups A+B), then Groups C+D+E
