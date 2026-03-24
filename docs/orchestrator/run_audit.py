@@ -616,6 +616,47 @@ async def run_single_wave(
             strategic = len(failure_entries) - tactical
             print(f"  Failure classifications: {tactical} tactical, {strategic} strategic → playbook")
 
+    # Post-hoc critic: score dismissals, then re-investigate weak ones via LLM
+    if wave.number == 1 and agents_with_hypotheses:
+        from .critic import identify_weak_dismissals, build_critic_feedback, run_critic_reinvestigation
+        weak_by_agent: dict[str, list[dict]] = {}
+        total_weak = 0
+        for agent in wave.agents:
+            if agent.name not in agents_with_hypotheses:
+                continue
+            dir_path = ARTIFACTS_DIR / f"wave{wave.number}-{agent.name}" / "findings.json"
+            flat_path = ARTIFACTS_DIR / f"findings-{agent.name}.json"
+            sidecar_path = dir_path if dir_path.exists() else flat_path
+            if not sidecar_path.exists():
+                continue
+            try:
+                sidecar = json.loads(sidecar_path.read_text())
+            except (json.JSONDecodeError, OSError):
+                continue
+            hr = sidecar.get("hypothesis_results", [])
+            weak = identify_weak_dismissals(hr)
+            if weak:
+                total_weak += len(weak)
+                # Enrich weak dismissals with hypothesis details for reinvestigation
+                hyp_map = {h.get("id"): h for h in (pass1_result.agent_hypotheses.get(agent.name, []) if pass1_result else [])}
+                for w in weak:
+                    orig_hyp = hyp_map.get(w.get("id"), {})
+                    w["mechanism"] = orig_hyp.get("mechanism", w.get("detail", ""))
+                    w["lines"] = orig_hyp.get("lines", {})
+                    w["functions"] = orig_hyp.get("functions", [])
+                weak_by_agent[agent.name] = weak
+                agent.extra_context["_critic_feedback"] = build_critic_feedback(weak)
+                print(f"  {agent.name}: {len(weak)} weak dismissals flagged by critic")
+
+        if total_weak:
+            print(f"  Critic: {total_weak} total weak dismissals — spawning reinvestigation agents...")
+            reinvestigations = await run_critic_reinvestigation(weak_by_agent, PROJECT_ROOT, max_reinvestigate=5)
+            # Log results and escalate any confirmed/plausible findings
+            for agent_name, critic_results in reinvestigations.items():
+                for r in critic_results:
+                    if r.get("verdict") in ("confirmed", "plausible"):
+                        print(f"    ESCALATION: {r.get('id', '?')} — critic found {r['verdict']} exploit path")
+
     # NOOP pre-filter: check findings against known FPs before synthesis (scaffold §7d)
     all_findings = extract_findings_from_artifacts(artifacts)
     if all_findings:
