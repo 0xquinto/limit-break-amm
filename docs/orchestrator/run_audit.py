@@ -682,6 +682,21 @@ async def run_single_wave(
     else:
         passed, nooped = [], []
 
+    # Promote LEADs based on multi-agent convergence and cross-contract echo
+    if wave.number == 1:
+        from .knowledge_gen import promote_leads
+        all_sidecars = []
+        for fp in list(ARTIFACTS_DIR.glob("findings-*.json")) + list(ARTIFACTS_DIR.glob("wave1-*/findings.json")):
+            try:
+                all_sidecars.append(json.loads(fp.read_text()))
+            except (json.JSONDecodeError, OSError):
+                continue
+        promoted = promote_leads(all_sidecars)
+        if promoted:
+            print(f"\n  Lead promotion: {len(promoted)} leads promoted to needs_review")
+            for p in promoted:
+                print(f"    {p.get('id', '?')}: {p.get('title', '?')[:60]} — {p.get('promoted_reason', '')}")
+
     # Generate synthesis (with JSON sidecar reads + deterministic scoring — scaffold §6 + gap 2)
     print(f"\nGenerating synthesis...")
     synthesis = generate_synthesis(wave, results, artifacts)

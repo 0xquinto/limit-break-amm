@@ -27,6 +27,7 @@ class VectorStatus(str, Enum):
     RULED_OUT = "ruled_out"      # investigated, not exploitable
     NEEDS_POC = "needs_poc"      # plausible, needs proof
     NEEDS_REVIEW = "needs_review"  # uncertain
+    LEAD = "lead"                # partial attack path, needs manual investigation
 
 
 @dataclass

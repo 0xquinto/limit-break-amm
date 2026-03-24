@@ -308,6 +308,75 @@ def route_by_complexity(hypotheses: list[dict]) -> list[dict]:
     return hypotheses
 
 
+# ── LEAD Promotion ───────────────────────────────────────────────────────────
+
+def promote_leads(sidecars: list[dict]) -> list[dict]:
+    """Promote LEADs to findings based on convergence and echo rules.
+
+    Promotion rules (from Pashov judging.md v2):
+    1. Multi-agent convergence: 2+ agents flag same (contract, function) as LEAD
+       → promote to needs_review at confidence 75
+    2. Cross-contract echo: same category confirmed as FINDING in one contract
+       → promote LEADs with same category in other contracts
+
+    Returns list of promoted leads (with updated status and confidence).
+    """
+    from collections import defaultdict
+
+    # Collect all leads and findings across agents
+    all_leads: list[dict] = []
+    all_confirmed: list[dict] = []
+    for sidecar in sidecars:
+        for f in sidecar.get("findings", []):
+            if f.get("status") == "lead":
+                f["_source_agent"] = sidecar.get("agent_name", "")
+                all_leads.append(f)
+            elif f.get("status") == "confirmed":
+                all_confirmed.append(f)
+
+    promoted: list[dict] = []
+
+    # Rule 1: Multi-agent convergence
+    convergence: dict[tuple, list[dict]] = defaultdict(list)
+    for lead in all_leads:
+        for contract in lead.get("contracts", []):
+            for func in lead.get("functions", []):
+                key = (contract, func)
+                convergence[key].append(lead)
+
+    promoted_ids: set[str] = set()
+    for key, leads in convergence.items():
+        agents = set(l.get("_source_agent", "") for l in leads)
+        if len(agents) >= 2:
+            best = max(leads, key=lambda l: len(l.get("title", "")))
+            if best.get("id") not in promoted_ids:
+                best["status"] = "needs_review"
+                best["confidence_score"] = 75
+                best["promoted_reason"] = f"Multi-agent convergence: {len(agents)} agents flagged {key}"
+                promoted.append(best)
+                promoted_ids.add(best.get("id", ""))
+
+    # Rule 2: Cross-contract echo
+    confirmed_categories = set()
+    for f in all_confirmed:
+        cat = f.get("category", "")
+        if cat:
+            confirmed_categories.add(cat)
+
+    for lead in all_leads:
+        if lead.get("id") in promoted_ids:
+            continue
+        lead_cat = lead.get("category", "")
+        if lead_cat and lead_cat in confirmed_categories:
+            lead["status"] = "needs_review"
+            lead["confidence_score"] = 75
+            lead["promoted_reason"] = f"Cross-contract echo: category '{lead_cat}' confirmed elsewhere"
+            promoted.append(lead)
+            promoted_ids.add(lead.get("id", ""))
+
+    return promoted
+
+
 # ── Sanitization ─────────────────────────────────────────────────────────────
 
 def _sanitize_hypothesis_text(text: str) -> str:

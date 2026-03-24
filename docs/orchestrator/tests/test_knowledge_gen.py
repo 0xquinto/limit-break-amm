@@ -792,3 +792,55 @@ def test_format_hypotheses_block_includes_contract():
     assert "test_file" in result
     assert "failure_class" in result
     assert "self-check" in result.lower() or "validate" in result.lower()
+
+
+# ── LEAD Promotion ──────────────────────────────────────────────────────────
+
+def test_promote_leads_multi_agent_convergence():
+    """2+ agents flag same area as LEAD → promote to finding at confidence 75."""
+    from docs.orchestrator.knowledge_gen import promote_leads
+    sidecars = [
+        {"agent_name": "agent-a", "findings": [
+            {"id": "L-001", "status": "lead", "title": "Fee bypass via hook",
+             "contracts": ["AMMStandardHook.sol"], "functions": ["beforeSwap"]},
+        ]},
+        {"agent_name": "agent-b", "findings": [
+            {"id": "L-010", "status": "lead", "title": "Hook callback fee issue",
+             "contracts": ["AMMStandardHook.sol"], "functions": ["beforeSwap"]},
+        ]},
+    ]
+    promoted = promote_leads(sidecars)
+    assert len(promoted) >= 1
+    assert promoted[0]["status"] == "needs_review"
+    assert promoted[0]["confidence_score"] == 75
+
+
+def test_promote_leads_single_agent_no_promotion():
+    """Single agent LEAD without convergence → stays as lead."""
+    from docs.orchestrator.knowledge_gen import promote_leads
+    sidecars = [
+        {"agent_name": "agent-a", "findings": [
+            {"id": "L-001", "status": "lead", "title": "Fee bypass",
+             "contracts": ["AMMStandardHook.sol"], "functions": ["beforeSwap"]},
+        ]},
+    ]
+    promoted = promote_leads(sidecars)
+    assert len(promoted) == 0
+
+
+def test_promote_leads_cross_contract_echo():
+    """Same root cause confirmed in contract A → promote LEAD in contract B."""
+    from docs.orchestrator.knowledge_gen import promote_leads
+    sidecars = [
+        {"agent_name": "agent-a", "findings": [
+            {"id": "F-001", "status": "confirmed", "title": "Fee rounding in Dynamic",
+             "contracts": ["DynamicPoolType.sol"], "functions": ["calculateFee"],
+             "category": "rounding"},
+            {"id": "L-001", "status": "lead", "title": "Possible fee rounding in Fixed",
+             "contracts": ["FixedPoolType.sol"], "functions": ["calculateFee"],
+             "category": "rounding"},
+        ]},
+    ]
+    promoted = promote_leads(sidecars)
+    assert len(promoted) == 1
+    assert promoted[0]["id"] == "L-001"
