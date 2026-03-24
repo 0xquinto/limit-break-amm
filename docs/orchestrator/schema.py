@@ -55,6 +55,7 @@ class Finding:
     test_passes: bool = False            # whether the test demonstrates the exploit
     prerequisites: list[str] = field(default_factory=list)  # required conditions
     source_hypothesis: str = ""
+    refutation_attempted: str = ""       # Gate 1: agent's self-refutation of this finding
     pre_filter: dict = field(default_factory=dict)
 
 

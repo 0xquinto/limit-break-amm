@@ -30,6 +30,8 @@ def _make_finding(**overrides) -> dict:
             "2. Fee calculation overflows at FeeHelper._calculateFee()",
             "3. Extract excess tokens via withdraw()",
         ],
+        "refutation_attempted": "Probably safe but unchecked block allows wrap-around",
+        "extractable_value": "$50,000",
     }
     base.update(overrides)
     return base
@@ -374,3 +376,59 @@ def test_annotate_vectors_file(tmp_path):
     data = json.loads(fp.read_text())
     assert data["ruled_out_vectors"][0]["evidence_gate"]["status"] == "passed"
     assert data["ruled_out_vectors"][1]["evidence_gate"]["status"] == "flagged"
+
+
+# ── Pashov v2 4-Gate Validation ──────────────────────────────────────────────
+
+def test_gate_v2_missing_refutation():
+    """Finding without refutation_attempted field → flagged."""
+    from docs.orchestrator.kill_gate import check_gate_v2_refutation
+    finding = {"title": "Reentrancy", "description": "possible reentrancy in swap"}
+    flagged, reason = check_gate_v2_refutation(finding)
+    assert flagged
+
+
+def test_gate_v2_speculative_refutation_passes():
+    """Finding with refutation_attempted that's speculative → passes."""
+    from docs.orchestrator.kill_gate import check_gate_v2_refutation
+    finding = {
+        "title": "Reentrancy", "description": "reentrancy in swap",
+        "refutation_attempted": "Probably safe because of nonReentrant",
+    }
+    flagged, reason = check_gate_v2_refutation(finding)
+    assert not flagged
+
+
+def test_gate_v2_concrete_refutation_rejects():
+    """Finding with concrete refutation citing a guard line → REJECTED."""
+    from docs.orchestrator.kill_gate import check_gate_v2_refutation
+    finding = {
+        "title": "Reentrancy", "description": "reentrancy in swap",
+        "refutation_attempted": "nonReentrant modifier at AMMModule.sol:142 blocks re-entry into _swap()",
+    }
+    flagged, reason = check_gate_v2_refutation(finding)
+    assert flagged
+    assert "refuted" in reason.lower()
+
+
+def test_gate_v2_trigger_no_profit():
+    """Finding where costs exceed extraction → flagged."""
+    from docs.orchestrator.kill_gate import check_gate_v2_trigger
+    finding = {
+        "title": "Dust extraction", "impact": "rounding yields 1 wei per swap",
+        "extractable_value": "$0.001",
+        "prerequisites": ["flash loan of $1M"],
+    }
+    flagged, reason = check_gate_v2_trigger(finding)
+    assert flagged
+
+
+def test_gate_v2_trigger_profitable():
+    """Finding with clear profit → passes."""
+    from docs.orchestrator.kill_gate import check_gate_v2_trigger
+    finding = {
+        "title": "Fee bypass", "impact": "skip 0.3% fee on any swap",
+        "extractable_value": "$50,000",
+    }
+    flagged, reason = check_gate_v2_trigger(finding)
+    assert not flagged

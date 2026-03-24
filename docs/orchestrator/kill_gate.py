@@ -183,7 +183,69 @@ def run_kill_gate(
         flagged, reason = fn()
         if flagged:
             return {"status": "killed", "gate": gate_id, "reason": reason}
+    # Pashov v2 gates (supplement existing gates A/D/F/G/H)
+    flagged, reason = check_gate_v2_refutation(finding)
+    if flagged:
+        return {"status": "flagged", "gate": "V2-refutation", "reason": reason}
+    flagged, reason = check_gate_v2_trigger(finding)
+    if flagged:
+        return {"status": "flagged", "gate": "V2-trigger", "reason": reason}
+
     return {"status": "passed", "gate": None, "reason": None}
+
+
+# ---------------------------------------------------------------------------
+# Pashov v2 4-Gate Finding Validation
+# ---------------------------------------------------------------------------
+
+def check_gate_v2_refutation(finding: dict) -> tuple[bool, str]:
+    """Gate 1 — Refutation: Did the agent try to disprove its own finding?
+
+    If refutation_attempted contains a specific guard (file:line pattern),
+    the finding is REJECTED (concrete refutation kills the finding).
+    If refutation_attempted is speculative ('probably', 'might'), it clears.
+    If refutation_attempted is absent, it's flagged (agent didn't try).
+    """
+    refutation = finding.get("refutation_attempted", "")
+    if not refutation:
+        return True, "Missing refutation_attempted — you must argue against your own finding before submitting"
+
+    # Check for concrete refutation (cites specific guard with file:line)
+    has_file_line = re.search(r'\w+\.sol:\d+', refutation)
+    has_blocking_verb = any(word in refutation.lower() for word in
+                           ["blocks", "prevents", "guards", "reverts", "requires", "enforces"])
+    if has_file_line and has_blocking_verb:
+        return True, f"Self-refuted: concrete guard found ({refutation[:100]}). Move to ruled_out_vectors."
+
+    return False, ""
+
+
+def check_gate_v2_trigger(finding: dict) -> tuple[bool, str]:
+    """Gate 3 — Trigger: Is the attack profitable for an unprivileged actor?
+
+    Checks extractable_value vs prerequisites cost. Flags dust-level or
+    admin-only triggers.
+    """
+    ev = finding.get("extractable_value", "")
+    prereqs = finding.get("prerequisites", [])
+
+    # Check for dust-level extraction
+    if ev:
+        ev_lower = ev.lower().replace(",", "").replace("$", "")
+        try:
+            amount = float(re.search(r'[\d.]+', ev_lower).group())
+            if amount < 1.0:  # less than $1
+                return True, f"Extraction value ${amount} is dust-level — costs exceed extraction"
+        except (AttributeError, ValueError):
+            pass
+
+    # Check for admin-only trigger
+    for p in prereqs:
+        p_lower = p.lower()
+        if any(word in p_lower for word in ["admin", "owner", "governance", "multisig", "timelock"]):
+            return True, f"Requires privileged trigger: '{p}' — demote to LEAD"
+
+    return False, ""
 
 
 # ---------------------------------------------------------------------------
