@@ -327,6 +327,23 @@ def validate_hypothesis_results(sidecar: dict, had_hypotheses: bool) -> list[str
                     "Provide the Forge test file path."
                 )
 
+        # Gate E: exploitation evidence required for dismissed hypotheses
+        if status == "dismissed":
+            tf = entry.get("test_file")
+            if not isinstance(tf, str) or not tf:
+                issues.append(
+                    f"{prefix}: status is 'dismissed' but missing 'test_file'. "
+                    "You MUST write a Forge test that proves the hypothesis is not exploitable "
+                    "before dismissing. Reasoning alone is not sufficient."
+                )
+            fc = entry.get("failure_class")
+            if fc not in ("tactical", "strategic"):
+                issues.append(
+                    f"{prefix}: status is 'dismissed' but missing or invalid 'failure_class'. "
+                    "Set to 'tactical' (test code issue — wrong setup, compilation error) "
+                    "or 'strategic' (hypothesis was wrong — guard exists, path unreachable)."
+                )
+
     # Diversity check: all not_tested/dismissed is a warning
     statuses = [e.get("status") for e in results]
     passive_count = statuses.count("not_tested") + statuses.count("dismissed")

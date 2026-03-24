@@ -51,7 +51,8 @@ def test_validate_valid_mixed_results():
             _make_entry("H-001", "tested", test_file="test/Test.sol"),
             _make_entry("H-002", "confirmed", test_file="test/Confirm.sol"),
             _make_entry("H-003", "not_tested", detail="Out of scope for this agent"),
-            _make_entry("H-004", "dismissed", detail="Investigated, guard exists at line 42"),
+            {"id": "H-004", "status": "dismissed", "detail": "Investigated, guard exists at line 42",
+             "test_file": "test/TestGuard.sol", "failure_class": "strategic"},
         ]
     }
     errors = validate_hypothesis_results(sidecar, had_hypotheses=True)
@@ -143,3 +144,65 @@ def test_validate_missing_detail_and_reason():
     }
     errors = validate_hypothesis_results(sidecar, had_hypotheses=True)
     assert any("detail" in e or "reason" in e for e in errors)
+
+
+# ── Gate E: Exploitation evidence tests ──────────────────────────────────────
+
+def test_dismissed_without_test_file_is_error():
+    """dismissed hypothesis without test_file → error (gate E)."""
+    sidecar = {
+        "hypothesis_results": [
+            _make_entry("H-001", "dismissed", detail="Looks safe, require() guards it"),
+        ]
+    }
+    errors = validate_hypothesis_results(sidecar, had_hypotheses=True)
+    assert any("test_file" in e for e in errors)
+
+
+def test_dismissed_with_test_file_and_failure_class_passes():
+    """dismissed hypothesis with test_file and failure_class → no error."""
+    sidecar = {
+        "hypothesis_results": [
+            {"id": "H-001", "status": "dismissed", "test_file": "test/TestHypH001.sol",
+             "detail": "Test proves require() blocks the path",
+             "failure_class": "strategic"},
+        ]
+    }
+    errors = validate_hypothesis_results(sidecar, had_hypotheses=True)
+    assert not any("test_file" in e for e in errors)
+
+
+def test_not_tested_without_test_file_is_ok():
+    """not_tested hypothesis without test_file → no error (exempt from gate E)."""
+    sidecar = {
+        "hypothesis_results": [
+            _make_entry("H-001", "not_tested", detail="Outside my archetype scope"),
+        ]
+    }
+    errors = validate_hypothesis_results(sidecar, had_hypotheses=True)
+    assert not any("test_file" in e for e in errors)
+
+
+def test_failure_class_required_on_dismissed():
+    """dismissed hypothesis must include failure_class (tactical or strategic)."""
+    sidecar = {
+        "hypothesis_results": [
+            {"id": "H-001", "status": "dismissed",
+             "test_file": "test/T.sol", "detail": "reverted"},
+        ]
+    }
+    errors = validate_hypothesis_results(sidecar, had_hypotheses=True)
+    assert any("failure_class" in e for e in errors)
+
+
+def test_failure_class_valid_values():
+    """failure_class must be 'tactical' or 'strategic'."""
+    sidecar = {
+        "hypothesis_results": [
+            {"id": "H-001", "status": "dismissed",
+             "test_file": "test/T.sol", "detail": "reverted",
+             "failure_class": "tactical"},
+        ]
+    }
+    errors = validate_hypothesis_results(sidecar, had_hypotheses=True)
+    assert not any("failure_class" in e for e in errors)
