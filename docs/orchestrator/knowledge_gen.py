@@ -228,14 +228,47 @@ def _sanitize_hypothesis_text(text: str) -> str:
 _HYPOTHESIS_TESTING_PROTOCOL = """\
 ## Hypothesis Testing Protocol
 
-For each hypothesis below, you MUST:
-1. Read the cited lines and verify the mechanism still applies
-2. Write a Forge test (max 3 compile attempts, max 3 revert-debug attempts)
-3. Report results in your findings JSON under `hypothesis_results`:
-   ```json
-   {"id": "H-...", "status": "confirmed|dismissed|needs_review", "test_file": "path/to/test.sol", "detail": "..."}
-   ```
-4. If you confirm a hypothesis as a finding, set `source_hypothesis` on the finding to the hypothesis ID
+For each hypothesis below, follow these steps IN ORDER:
+
+### Step A: Refutation Challenge (MANDATORY before dismissal)
+Before you can dismiss any hypothesis, you MUST:
+1. Write the **strongest 2-sentence case FOR the vulnerability existing**
+   ("If an attacker called X with Y, then Z because...")
+2. Identify the **specific guard** that prevents it (exact file:line of the require/if/clamp)
+3. Write a Forge test that ATTACKS the guard — try to bypass it with edge-case inputs
+
+### Step B: Write Forge Test
+Write a Forge test for each hypothesis (max 3 compile retries, max 3 revert-debug retries).
+The test must either:
+- **Demonstrate the exploit** (test passes = vulnerability confirmed), or
+- **Prove the invariant holds** (test shows guard works under adversarial inputs)
+
+### Step C: Classify Result
+Report each hypothesis in `hypothesis_results`:
+```json
+{
+  "id": "H-...",
+  "status": "confirmed|tested|dismissed|not_tested",
+  "test_file": "path/to/test.sol",
+  "failure_class": "tactical|strategic",
+  "refutation_case": "If attacker calls X with uint256.max, the fee rounds to 0 because...",
+  "guard_location": "AMMModule.sol:2144",
+  "detail": "..."
+}
+```
+
+**Status meanings:**
+- `confirmed`: Forge test demonstrates profitable exploit path
+- `tested`: Forge test written but result inconclusive (needs deeper investigation)
+- `dismissed`: Forge test proves guard holds AND failure_class set
+- `not_tested`: Hypothesis outside your archetype scope (no test required)
+
+**failure_class (required for dismissed):**
+- `tactical`: Test code issue (compilation error, wrong setup, missing import) — hypothesis still plausible
+- `strategic`: Hypothesis was wrong (guard exists, path unreachable, type system prevents it)
+
+### Step D: Link Findings
+If you confirm a hypothesis as a finding, set `source_hypothesis` on the finding to the hypothesis ID.
 """
 
 

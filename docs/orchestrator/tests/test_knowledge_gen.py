@@ -301,7 +301,7 @@ def test_format_hypotheses_block_includes_instructions():
     hyps = [_make_hypothesis()]
     result = format_hypotheses_block(hyps)
     assert "Hypothesis Testing Protocol" in result
-    assert "max 3 compile attempts" in result
+    assert "max 3 compile retries" in result
     assert "hypothesis_results" in result
     assert "source_hypothesis" in result
 
@@ -616,3 +616,14 @@ def test_build_cost_control_context_no_hypothesis_format(tmp_path, monkeypatch):
     result = build_cost_control_context("core-pooltype", tmp_path)
     assert "<hypotheses>" not in result
     assert "Hypothesis Testing Protocol" not in result
+
+
+# ── Refutation Protocol ─────────────────────────────────────────────────────
+
+def test_format_hypotheses_block_includes_refutation_protocol():
+    """Output contains refutation challenge instructions."""
+    from docs.orchestrator.knowledge_gen import format_hypotheses_block
+    hyps = [_make_hypothesis()]
+    result = format_hypotheses_block(hyps)
+    assert "strongest case" in result.lower() or "refutation" in result.lower()
+    assert "failure_class" in result
