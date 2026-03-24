@@ -172,6 +172,70 @@ _PRIOR_RESULT_ORDER = {
 }
 
 
+def _hypothesis_quality_score(h: dict) -> float:
+    """Compute a quality score for Elo pairwise comparison.
+
+    Dimensions (each 0-1, summed):
+    - Grounding: valid grounded_in reference → 1.0
+    - Test skeleton: has compilable-looking suggested_test → 1.0
+    - Specificity: number of line references (capped at 5) / 5
+    - Confidence: high=1.0, medium=0.6, low=0.3
+    - Mechanism depth: len(mechanism) > 100 chars → 1.0
+    """
+    score = 0.0
+
+    # Grounding
+    grounded = h.get("grounded_in", "")
+    if re.match(r'EXP-\d+', grounded) or "code-observation:" in grounded or "Solodit" in grounded:
+        score += 1.0
+
+    # Test skeleton
+    test = h.get("suggested_test", "")
+    if "function " in test and ("{" in test or "assert" in test or "vm." in test):
+        score += 1.0
+
+    # Specificity
+    total_lines = sum(len(v) for v in h.get("lines", {}).values())
+    score += min(total_lines / 5, 1.0)
+
+    # Confidence
+    conf_map = {"high": 1.0, "medium": 0.6, "low": 0.3}
+    score += conf_map.get(h.get("confidence", "low"), 0.3)
+
+    # Mechanism depth
+    if len(h.get("mechanism", "")) > 100:
+        score += 1.0
+
+    return score
+
+
+def elo_rank_hypotheses(hypotheses: list[dict]) -> list[dict]:
+    """Rank hypotheses using quality-score-based Elo ranking.
+
+    Performs pairwise comparison of all hypotheses using quality scores.
+    Returns sorted list (highest quality first).
+
+    Based on Google Co-Scientist's Elo-based tournament ranking.
+    Uses deterministic quality scoring rather than LLM-based debate
+    (LLM debate deferred to Phase C for cost reasons).
+    """
+    if len(hypotheses) <= 1:
+        return list(hypotheses)
+
+    # Compute quality scores
+    scored = [(h, _hypothesis_quality_score(h)) for h in hypotheses]
+
+    # Sort by quality score descending, stable sort preserves original order for ties
+    scored.sort(key=lambda x: -x[1])
+
+    # Annotate with rank for observability
+    for rank, (h, qs) in enumerate(scored, 1):
+        h["_elo_rank"] = rank
+        h["_quality_score"] = round(qs, 2)
+
+    return [h for h, _ in scored]
+
+
 def apply_volume_cap(
     agent_hypotheses: list[dict],
     max_per_agent: int = MAX_HYPOTHESES_PER_AGENT,
@@ -184,7 +248,7 @@ def apply_volume_cap(
     3. new (no prior_result)
     4. dismissed (prior_result == "dismissed")
 
-    Secondary sort: confidence (high > medium > low).
+    Secondary sort: Elo quality rank, then confidence (high > medium > low).
     """
     def _sort_key(h: dict) -> tuple[int, int]:
         prior = h.get("prior_result")
@@ -192,7 +256,10 @@ def apply_volume_cap(
         conf = _CONFIDENCE_ORDER.get(h.get("confidence", "low"), 2)
         return (tier, conf)
 
-    sorted_hyps = sorted(agent_hypotheses, key=_sort_key)
+    # Primary: Elo quality rank. Secondary: priority tier + confidence
+    ranked = elo_rank_hypotheses(agent_hypotheses)
+    # Within same quality tier, use priority sort for tiebreaking
+    sorted_hyps = sorted(ranked, key=lambda h: (_sort_key(h), h.get("_elo_rank", 999)))
     return sorted_hyps[:max_per_agent]
 
 

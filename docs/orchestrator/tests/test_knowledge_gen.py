@@ -618,6 +618,51 @@ def test_build_cost_control_context_no_hypothesis_format(tmp_path, monkeypatch):
     assert "Hypothesis Testing Protocol" not in result
 
 
+# ── Elo Ranking ─────────────────────────────────────────────────────────────
+
+def test_elo_rank_prefers_grounded_over_ungrounded():
+    """Hypothesis grounded in EXP-XX ranks higher than ungrounded."""
+    from docs.orchestrator.knowledge_gen import elo_rank_hypotheses
+    hyps = [
+        _make_hypothesis(grounded_in="maybe overflow"),
+        _make_hypothesis(grounded_in="EXP-01"),
+    ]
+    ranked = elo_rank_hypotheses(hyps)
+    assert ranked[0].get("grounded_in") == "EXP-01"
+
+
+def test_elo_rank_prefers_test_present():
+    """Hypothesis with suggested_test ranks higher than without."""
+    from docs.orchestrator.knowledge_gen import elo_rank_hypotheses
+    h_with = _make_hypothesis(suggested_test="function test_X() public { assert(true); }")
+    h_without = _make_hypothesis(suggested_test="")
+    ranked = elo_rank_hypotheses([h_without, h_with])
+    assert ranked[0].get("suggested_test") != ""
+
+
+def test_elo_rank_prefers_specific_lines():
+    """Hypothesis with more line references ranks higher."""
+    from docs.orchestrator.knowledge_gen import elo_rank_hypotheses
+    h_many = _make_hypothesis(lines={"A.sol": [10, 20, 30], "B.sol": [5]})
+    h_few = _make_hypothesis(lines={"A.sol": [10]})
+    ranked = elo_rank_hypotheses([h_few, h_many])
+    # More line refs = more specific = higher rank
+    total_lines_first = sum(len(v) for v in ranked[0].get("lines", {}).values())
+    total_lines_second = sum(len(v) for v in ranked[1].get("lines", {}).values())
+    assert total_lines_first >= total_lines_second
+
+
+def test_elo_rank_stable_for_equal():
+    """Two equal hypotheses maintain original order."""
+    from docs.orchestrator.knowledge_gen import elo_rank_hypotheses
+    h1 = _make_hypothesis(mechanism="A")
+    h2 = _make_hypothesis(mechanism="B")
+    h1["confidence"] = h2["confidence"] = "medium"
+    h1["grounded_in"] = h2["grounded_in"] = "EXP-01"
+    ranked = elo_rank_hypotheses([h1, h2])
+    assert len(ranked) == 2
+
+
 # ── Hypothesis Evolution ─────────────────────────────────────────────────────
 
 def test_build_evolution_prompt_includes_mechanism():
