@@ -604,16 +604,548 @@ test: verify Phase A-fix end-to-end — exploitation gate, refutation, failure c
 
 ---
 
+## Task 7: Hypothesis Evolution Agent (Co-Scientist Pattern)
+
+**Source:** Google Co-Scientist (Ch. 21, Agentic Design Patterns) — Evolution agent that continuously refines top-ranked hypotheses. Currently our hypotheses are generated once in Pass 1 and injected as-is. An evolution step between Pass 1 output and wave 1 injection strengthens weak hypotheses.
+
+**Files:**
+- Modify: `docs/orchestrator/knowledge_gen.py`
+- Modify: `docs/orchestrator/tests/test_knowledge_gen.py`
+
+- [ ] **Step 1: Write failing tests for hypothesis evolution**
+
+Add to `tests/test_knowledge_gen.py`:
+
+```python
+def test_evolve_hypotheses_strengthens_low_confidence(tmp_path):
+    """Low-confidence hypotheses get strengthened mechanism text."""
+    from docs.orchestrator.knowledge_gen import evolve_hypotheses
+    hyps = [
+        _make_hypothesis(confidence="low", mechanism="maybe overflow somewhere"),
+        _make_hypothesis(confidence="high", mechanism="In DynamicPoolType.sol:342, unchecked division rounds fee to 0"),
+    ]
+    evolved = evolve_hypotheses(hyps, max_evolve=5)
+    # High-confidence hypotheses pass through unchanged
+    assert evolved[1]["mechanism"] == hyps[1]["mechanism"]
+    # Low-confidence get an evolution prompt appended
+    assert "EVOLUTION NOTE" in evolved[0].get("evolution_prompt", "")
+
+
+def test_evolve_hypotheses_caps_at_max():
+    """Only evolve up to max_evolve hypotheses."""
+    from docs.orchestrator.knowledge_gen import evolve_hypotheses
+    hyps = [_make_hypothesis(confidence="low") for _ in range(10)]
+    evolved = evolve_hypotheses(hyps, max_evolve=3)
+    evolved_count = sum(1 for h in evolved if h.get("evolution_prompt"))
+    assert evolved_count <= 3
+
+
+def test_evolve_hypotheses_skips_confirmed():
+    """Confirmed prior_result hypotheses are not evolved (already validated)."""
+    from docs.orchestrator.knowledge_gen import evolve_hypotheses
+    hyps = [_make_hypothesis(confidence="low", prior_result="confirmed")]
+    evolved = evolve_hypotheses(hyps, max_evolve=5)
+    assert not evolved[0].get("evolution_prompt")
+```
+
+Run: `.venv/bin/python -m pytest docs/orchestrator/tests/test_knowledge_gen.py -v -k evolve`
+Expected: FAIL
+
+- [ ] **Step 2: Implement evolve_hypotheses**
+
+Add to `knowledge_gen.py`:
+
+```python
+def evolve_hypotheses(
+    hypotheses: list[dict], max_evolve: int = 5,
+) -> list[dict]:
+    """Strengthen weak hypotheses with evolution prompts.
+
+    Identifies low-confidence, non-confirmed hypotheses and appends an
+    evolution_prompt field that instructs the wave 1 agent to refine the
+    mechanism before testing. High-confidence and confirmed hypotheses
+    pass through unchanged.
+
+    Based on Google Co-Scientist's Evolution agent pattern: continuously
+    refine top-ranked hypotheses by simplifying concepts, synthesizing
+    ideas, and exploring unconventional reasoning.
+    """
+    evolved_count = 0
+    for h in hypotheses:
+        # Skip already-confirmed or high-confidence
+        if h.get("prior_result") == "confirmed":
+            continue
+        if h.get("confidence") == "high":
+            continue
+        if evolved_count >= max_evolve:
+            break
+
+        mechanism = h.get("mechanism", "")
+        functions = h.get("functions", [])
+        lines = h.get("lines", {})
+
+        # Build evolution prompt
+        lines_summary = ", ".join(
+            f"{c}:{','.join(str(l) for l in lns)}"
+            for c, lns in lines.items()
+        )
+        h["evolution_prompt"] = (
+            f"EVOLUTION NOTE: This hypothesis has {h.get('confidence', 'unknown')} confidence. "
+            f"Before testing, strengthen it by: "
+            f"(1) Reading {lines_summary} and verifying the mechanism is precisely described, "
+            f"(2) Identifying the EXACT input values that would trigger the issue, "
+            f"(3) Calculating the economic impact in USD terms. "
+            f"If after reading the code you find the mechanism is wrong, update your understanding "
+            f"and test the CORRECTED mechanism — do not dismiss based on the original description."
+        )
+        evolved_count += 1
+
+    return hypotheses
+```
+
+- [ ] **Step 3: Wire evolution into run_pass1 after deduplication**
+
+In `knowledge_gen.py:run_pass1()`, after `deduped = deduplicate_hypotheses(...)` and before `routed = route_hypotheses(deduped)`, add:
+
+```python
+    # Evolve weak hypotheses (Co-Scientist pattern)
+    deduped = evolve_hypotheses(deduped, max_evolve=5)
+    evolved_count = sum(1 for h in deduped if h.get("evolution_prompt"))
+    if evolved_count:
+        print(f"  Evolution: {evolved_count} low-confidence hypotheses strengthened")
+```
+
+- [ ] **Step 4: Update format_hypotheses_block to include evolution prompts**
+
+In the `format_hypotheses_block` function, after the `suggested_test` block and before `parts.append("")`, add:
+
+```python
+        evolution = h.get("evolution_prompt", "")
+        if evolution:
+            parts.append(f"**{evolution}**")
+```
+
+Run: `.venv/bin/python -m pytest docs/orchestrator/tests/test_knowledge_gen.py -v -k evolve`
+Expected: PASS
+
+- [ ] **Step 5: Commit**
+
+```
+feat(knowledge_gen): add hypothesis evolution step for low-confidence hypotheses
+```
+
+---
+
+## Task 8: Post-Hoc Critic Agent (Producer-Critic Pattern)
+
+**Source:** Ch. 4 Reflection (Agentic Design Patterns) — separate Critic agent evaluates Producer output. Ch. 21 Agent Laboratory — tripartite judgment with 3 independent reviewers. Our agents currently produce AND self-evaluate (single-agent reflection), which is why they dismiss hypotheses easily.
+
+**Files:**
+- Create: `docs/orchestrator/critic.py`
+- Create: `docs/orchestrator/tests/test_critic.py`
+- Modify: `docs/orchestrator/run_audit.py`
+
+- [ ] **Step 1: Write failing tests for critic scoring**
+
+Write `tests/test_critic.py`:
+
+```python
+def test_score_dismissal_quality_weak():
+    """Dismissal with no test and vague reason → low score."""
+    from docs.orchestrator.critic import score_dismissal_quality
+    entry = {
+        "id": "H-R1-CP-01", "status": "dismissed",
+        "detail": "Looks safe",
+    }
+    score = score_dismissal_quality(entry)
+    assert score < 30  # weak dismissal
+
+
+def test_score_dismissal_quality_strong():
+    """Dismissal with test file, guard location, and failure_class → high score."""
+    from docs.orchestrator.critic import score_dismissal_quality
+    entry = {
+        "id": "H-R1-CP-01", "status": "dismissed",
+        "test_file": "test/TestH001.sol",
+        "guard_location": "AMMModule.sol:2144",
+        "failure_class": "strategic",
+        "detail": "require(_amount > 0) at AMMModule.sol:2144 blocks zero-amount path",
+    }
+    score = score_dismissal_quality(entry)
+    assert score >= 70  # strong dismissal
+
+
+def test_score_dismissal_quality_tested_auto_pass():
+    """Tested/confirmed entries auto-score 100."""
+    from docs.orchestrator.critic import score_dismissal_quality
+    entry = {"id": "H-R1-CP-01", "status": "confirmed", "test_file": "test/T.sol"}
+    score = score_dismissal_quality(entry)
+    assert score == 100
+
+
+def test_identify_weak_dismissals():
+    """identify_weak_dismissals returns entries below threshold."""
+    from docs.orchestrator.critic import identify_weak_dismissals
+    results = [
+        {"id": "H-001", "status": "dismissed", "detail": "safe"},
+        {"id": "H-002", "status": "dismissed", "test_file": "test/T.sol",
+         "guard_location": "X.sol:42", "failure_class": "strategic",
+         "detail": "require blocks"},
+        {"id": "H-003", "status": "confirmed", "test_file": "test/T.sol"},
+    ]
+    weak = identify_weak_dismissals(results, threshold=50)
+    assert len(weak) == 1
+    assert weak[0]["id"] == "H-001"
+
+
+def test_build_critic_feedback():
+    """Build critic feedback for weak dismissals."""
+    from docs.orchestrator.critic import build_critic_feedback
+    weak = [{"id": "H-001", "status": "dismissed", "detail": "safe"}]
+    feedback = build_critic_feedback(weak)
+    assert "H-001" in feedback
+    assert "test" in feedback.lower() or "forge" in feedback.lower()
+```
+
+Run: `.venv/bin/python -m pytest docs/orchestrator/tests/test_critic.py -v`
+Expected: FAIL
+
+- [ ] **Step 2: Implement critic.py**
+
+Write `docs/orchestrator/critic.py`:
+
+```python
+"""Post-hoc critic for hypothesis dismissal quality.
+
+Scores each dismissed hypothesis_results entry on evidence quality.
+Identifies weak dismissals that need re-investigation.
+Based on Producer-Critic pattern (Ch. 4, Agentic Design Patterns)
+and Tripartite Judgment (Ch. 21, Agent Laboratory).
+"""
+
+import re
+
+
+def score_dismissal_quality(entry: dict) -> int:
+    """Score a hypothesis_results entry on dismissal evidence quality (0-100).
+
+    Scoring rubric:
+    - confirmed/tested with test_file → 100 (auto-pass)
+    - not_tested → 50 (neutral, not a dismissal)
+    - dismissed:
+        - has test_file: +30
+        - has guard_location (file:line): +25
+        - has failure_class: +15
+        - detail mentions specific function or line: +15
+        - detail is >50 chars: +15
+    """
+    status = entry.get("status", "")
+    if status in ("confirmed", "tested"):
+        return 100
+    if status == "not_tested":
+        return 50
+
+    # Score dismissed entries
+    score = 0
+    if entry.get("test_file"):
+        score += 30
+    if entry.get("guard_location"):
+        score += 25
+    if entry.get("failure_class") in ("tactical", "strategic"):
+        score += 15
+    detail = entry.get("detail", "")
+    if re.search(r'\w+\.sol:\d+', detail) or re.search(r'\w+\(', detail):
+        score += 15
+    if len(detail) > 50:
+        score += 15
+
+    return min(score, 100)
+
+
+def identify_weak_dismissals(
+    hypothesis_results: list[dict], threshold: int = 50,
+) -> list[dict]:
+    """Return dismissed entries scoring below threshold."""
+    weak = []
+    for entry in hypothesis_results:
+        if entry.get("status") != "dismissed":
+            continue
+        if score_dismissal_quality(entry) < threshold:
+            weak.append(entry)
+    return weak
+
+
+def build_critic_feedback(weak_dismissals: list[dict]) -> str:
+    """Build feedback text for weak dismissals to inject into continuation prompts.
+
+    For each weak dismissal, tells the agent exactly what evidence is missing.
+    """
+    if not weak_dismissals:
+        return ""
+
+    lines = ["## Critic Feedback: Weak Dismissals Requiring Re-Investigation\n"]
+    lines.append("The following hypotheses were dismissed without sufficient evidence. "
+                 "You MUST re-investigate each one with a Forge test before final dismissal.\n")
+
+    for entry in weak_dismissals:
+        hid = entry.get("id", "?")
+        detail = entry.get("detail", "(no detail)")[:100]
+        missing = []
+        if not entry.get("test_file"):
+            missing.append("Forge test file")
+        if not entry.get("guard_location"):
+            missing.append("guard location (file:line)")
+        if entry.get("failure_class") not in ("tactical", "strategic"):
+            missing.append("failure_class (tactical/strategic)")
+
+        lines.append(f"- **{hid}**: \"{detail}\"")
+        if missing:
+            lines.append(f"  Missing: {', '.join(missing)}")
+        lines.append("")
+
+    return "\n".join(lines)
+```
+
+Run: `.venv/bin/python -m pytest docs/orchestrator/tests/test_critic.py -v`
+Expected: PASS
+
+- [ ] **Step 3: Wire critic into run_audit.py after hypothesis_results validation**
+
+In `run_audit.py`, after the hypothesis_results validation block (search for `validate_hypothesis_results`), add:
+
+```python
+    # Post-hoc critic: identify weak dismissals for continuation feedback
+    if wave.number == 1 and agents_with_hypotheses:
+        from .critic import identify_weak_dismissals, build_critic_feedback
+        total_weak = 0
+        for agent in wave.agents:
+            if agent.name not in agents_with_hypotheses:
+                continue
+            dir_path = ARTIFACTS_DIR / f"wave{wave.number}-{agent.name}" / "findings.json"
+            flat_path = ARTIFACTS_DIR / f"findings-{agent.name}.json"
+            sidecar_path = dir_path if dir_path.exists() else flat_path
+            if not sidecar_path.exists():
+                continue
+            try:
+                sidecar = json.loads(sidecar_path.read_text())
+            except (json.JSONDecodeError, OSError):
+                continue
+            hr = sidecar.get("hypothesis_results", [])
+            weak = identify_weak_dismissals(hr)
+            if weak:
+                total_weak += len(weak)
+                # Store feedback for continuation pass injection
+                agent.extra_context["_critic_feedback"] = build_critic_feedback(weak)
+                print(f"  {agent.name}: {len(weak)} weak dismissals flagged by critic")
+        if total_weak:
+            print(f"  Critic: {total_weak} total weak dismissals across all agents")
+```
+
+Then in the bounded continuation loop (search for `build_continuation_prompt`), inject critic feedback:
+
+```python
+                # Inject critic feedback if available
+                critic_fb = orig_agent.extra_context.get("_critic_feedback", "") if orig_agent else ""
+                if critic_fb:
+                    prompt += f"\n\n{critic_fb}\n"
+```
+
+- [ ] **Step 4: Run full test suite**
+
+Run: `.venv/bin/python -m pytest docs/orchestrator/tests/ -v --tb=short`
+Expected: All tests pass
+
+- [ ] **Step 5: Commit**
+
+```
+feat(critic): add post-hoc dismissal quality scorer and weak dismissal feedback
+```
+
+---
+
+## Task 9: Elo Ranking for Hypothesis Prioritization (Co-Scientist Pattern)
+
+**Source:** Google Co-Scientist (Ch. 21) — Elo-based tournament to compare, rank, and prioritize hypotheses through simulated debates. Currently we use a simple 4-tier priority sort (confirmed > untested > new > dismissed) with confidence as secondary. Elo ranking produces a more nuanced ordering based on pairwise quality comparisons.
+
+**Files:**
+- Modify: `docs/orchestrator/knowledge_gen.py`
+- Modify: `docs/orchestrator/tests/test_knowledge_gen.py`
+
+- [ ] **Step 1: Write failing tests for Elo ranking**
+
+Add to `tests/test_knowledge_gen.py`:
+
+```python
+def test_elo_rank_prefers_grounded_over_ungrounded():
+    """Hypothesis grounded in EXP-XX ranks higher than ungrounded."""
+    from docs.orchestrator.knowledge_gen import elo_rank_hypotheses
+    hyps = [
+        _make_hypothesis(grounded_in="maybe overflow"),
+        _make_hypothesis(grounded_in="EXP-01"),
+    ]
+    ranked = elo_rank_hypotheses(hyps)
+    assert ranked[0].get("grounded_in") == "EXP-01"
+
+
+def test_elo_rank_prefers_test_present():
+    """Hypothesis with suggested_test ranks higher than without."""
+    from docs.orchestrator.knowledge_gen import elo_rank_hypotheses
+    h_with = _make_hypothesis(suggested_test="function test_X() public { assert(true); }")
+    h_without = _make_hypothesis(suggested_test="")
+    ranked = elo_rank_hypotheses([h_without, h_with])
+    assert ranked[0].get("suggested_test") != ""
+
+
+def test_elo_rank_prefers_specific_lines():
+    """Hypothesis with more line references ranks higher."""
+    from docs.orchestrator.knowledge_gen import elo_rank_hypotheses
+    h_many = _make_hypothesis(lines={"A.sol": [10, 20, 30], "B.sol": [5]})
+    h_few = _make_hypothesis(lines={"A.sol": [10]})
+    ranked = elo_rank_hypotheses([h_few, h_many])
+    # More line refs = more specific = higher rank
+    total_lines_first = sum(len(v) for v in ranked[0].get("lines", {}).values())
+    total_lines_second = sum(len(v) for v in ranked[1].get("lines", {}).values())
+    assert total_lines_first >= total_lines_second
+
+
+def test_elo_rank_stable_for_equal():
+    """Two equal hypotheses maintain original order."""
+    from docs.orchestrator.knowledge_gen import elo_rank_hypotheses
+    h1 = _make_hypothesis(mechanism="A")
+    h2 = _make_hypothesis(mechanism="B")
+    h1["confidence"] = h2["confidence"] = "medium"
+    h1["grounded_in"] = h2["grounded_in"] = "EXP-01"
+    ranked = elo_rank_hypotheses([h1, h2])
+    assert len(ranked) == 2
+```
+
+Run: `.venv/bin/python -m pytest docs/orchestrator/tests/test_knowledge_gen.py -v -k elo`
+Expected: FAIL
+
+- [ ] **Step 2: Implement elo_rank_hypotheses**
+
+Add to `knowledge_gen.py`:
+
+```python
+def _hypothesis_quality_score(h: dict) -> float:
+    """Compute a quality score for Elo pairwise comparison.
+
+    Dimensions (each 0-1, summed):
+    - Grounding: valid grounded_in reference → 1.0
+    - Test skeleton: has compilable-looking suggested_test → 1.0
+    - Specificity: number of line references (capped at 5) / 5
+    - Confidence: high=1.0, medium=0.6, low=0.3
+    - Mechanism depth: len(mechanism) > 100 chars → 1.0
+    """
+    score = 0.0
+
+    # Grounding
+    grounded = h.get("grounded_in", "")
+    if re.match(r'EXP-\d+', grounded) or "code-observation:" in grounded or "Solodit" in grounded:
+        score += 1.0
+
+    # Test skeleton
+    test = h.get("suggested_test", "")
+    if "function " in test and ("{" in test or "assert" in test or "vm." in test):
+        score += 1.0
+
+    # Specificity
+    total_lines = sum(len(v) for v in h.get("lines", {}).values())
+    score += min(total_lines / 5, 1.0)
+
+    # Confidence
+    conf_map = {"high": 1.0, "medium": 0.6, "low": 0.3}
+    score += conf_map.get(h.get("confidence", "low"), 0.3)
+
+    # Mechanism depth
+    if len(h.get("mechanism", "")) > 100:
+        score += 1.0
+
+    return score
+
+
+def elo_rank_hypotheses(hypotheses: list[dict]) -> list[dict]:
+    """Rank hypotheses using quality-score-based Elo ranking.
+
+    Performs pairwise comparison of all hypotheses using quality scores.
+    Returns sorted list (highest quality first).
+
+    Based on Google Co-Scientist's Elo-based tournament ranking.
+    Uses deterministic quality scoring rather than LLM-based debate
+    (LLM debate deferred to Phase C for cost reasons).
+    """
+    if len(hypotheses) <= 1:
+        return list(hypotheses)
+
+    # Compute quality scores
+    scored = [(h, _hypothesis_quality_score(h)) for h in hypotheses]
+
+    # Sort by quality score descending, stable sort preserves original order for ties
+    scored.sort(key=lambda x: -x[1])
+
+    # Annotate with rank for observability
+    for rank, (h, qs) in enumerate(scored, 1):
+        h["_elo_rank"] = rank
+        h["_quality_score"] = round(qs, 2)
+
+    return [h for h, _ in scored]
+```
+
+- [ ] **Step 3: Wire Elo ranking into apply_volume_cap**
+
+Replace the simple priority sort in `apply_volume_cap` with Elo ranking as the primary sort, falling back to priority tiers for tiebreaking:
+
+In `apply_volume_cap`, change:
+
+```python
+    sorted_hyps = sorted(agent_hypotheses, key=_sort_key)
+```
+
+to:
+
+```python
+    # Primary: Elo quality rank. Secondary: priority tier + confidence
+    ranked = elo_rank_hypotheses(agent_hypotheses)
+    # Within same quality tier, use priority sort for tiebreaking
+    sorted_hyps = sorted(ranked, key=lambda h: (_sort_key(h), h.get("_elo_rank", 999)))
+```
+
+Run: `.venv/bin/python -m pytest docs/orchestrator/tests/test_knowledge_gen.py -v -k elo`
+Expected: PASS
+
+- [ ] **Step 4: Run full test suite to check no regressions in volume_cap tests**
+
+Run: `.venv/bin/python -m pytest docs/orchestrator/tests/test_knowledge_gen.py -v`
+Expected: All tests pass (existing volume_cap tests should still pass since Elo ranking preserves the priority ordering for hypotheses with equal quality)
+
+- [ ] **Step 5: Commit**
+
+```
+feat(knowledge_gen): add Elo-based quality ranking for hypothesis prioritization
+```
+
+---
+
 ## Dependency Graph
 
 ```
 Task 1 (sidecar gate E)  ─┐
                            ├──→ Task 5 (pipeline wiring) ──→ Task 6 (E2E verify)
-Task 2 (kill gate E)      ─┤
-                           │
-Task 3 (refutation prompt) ─┤
-                           │
-Task 4 (playbook failures) ─┘
+Task 2 (kill gate E)      ─┤          ↑
+                           │          │
+Task 3 (refutation prompt) ─┤         │
+                           │          │
+Task 4 (playbook failures) ─┘         │
+                                      │
+Task 7 (hypothesis evolution) ────────┤  (wired in run_pass1, independent of Tasks 1-4)
+                                      │
+Task 8 (critic agent) ───────────────┤  (wired in run_audit.py, depends on Task 5 for sidecar paths)
+                                      │
+Task 9 (Elo ranking) ────────────────┘  (wired in knowledge_gen, independent of Tasks 1-4)
 ```
 
-Tasks 1-4 are independent and can be parallelized. Task 5 depends on all four. Task 6 depends on Task 5.
+**Parallelizable groups:**
+- **Group A** (Tasks 1-4): Independent, parallelize freely
+- **Group B** (Tasks 7, 9): Independent, parallelize freely — both modify knowledge_gen.py but different functions
+- **Group C** (Task 8): Independent of Group A but depends on Task 5 for pipeline wiring
+- **Sequential**: Task 5 → Task 6 (after Groups A+B), then Task 8 wiring into Task 5's pipeline
