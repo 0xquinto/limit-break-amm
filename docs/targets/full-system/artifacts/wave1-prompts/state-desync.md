@@ -38,6 +38,15 @@ Then read `docs/CODEBASE_MAP.md` for architecture context.
 7. External call to sibling repo returns cached value → act on stale data → profit from the gap
 8. ETH transfer triggers 2300 gas callback → observe stale transient slot → extract from outdated state
 
+## Prior Run Feedback
+## Gotchas — state-desync
+
+_Auto-generated from wave 1 compliance data._
+
+### Score: 94.8/100 (A) — weakest: depth
+Target: A grade. Focus on **depth** dimension.
+
+
 ## Exploit-First Reasoning (MANDATORY)
 
 You are an attacker. Your goal is to extract value from this protocol in a single transaction.
@@ -76,6 +85,8 @@ Rank every hypothesis by: `extractable_value / attacker_capital / dependency_cou
 - **borderline**: you can name the exact function AND write one exploit sentence → investigate briefly
 - **survive**: concrete attack path with estimated EV → full investigation + Forge test
 
+**Log your triage** in metadata as `"triage_log": {"skip": N, "borderline": N, "survive": N}`. Every vector from your checklist must be triaged. The gate will reject sidecars without a triage_log.
+
 **Hard-stop rule**: once you rule out a vector with evidence (a Forge test that shows the guard holds), STOP. Do not revisit. Log it in `ruled_out_vectors` with the test file path.
 
 **One-line ruled-out format** (for clean synthesis):
@@ -87,170 +98,48 @@ Rank every hypothesis by: `extractable_value / attacker_capital / dependency_cou
 
 **Depth floor (MANDATORY SELF-CHECK)**: Before writing your final findings.json, count your Phase C items. If you have NOT completed every item in your checklist, you are NOT done. Go back and work through the remaining items. You have 200 turns — use them. Agents that complete fewer than 60% of their Phase C items will be flagged as non-compliant and their results discarded.
 
-### Known Vulnerability Patterns (MANDATORY CHECKPOINT — must appear in sidecar)
+### Exploit-Grounded Attack Probes (in your Phase C checklist)
 
-Previous audits found these 4 bug classes. You MUST investigate ALL 4 and write a `ruled_out_vectors` entry for each in your findings.json — even if you rule them out. This is a hard checkpoint: your sidecar is INVALID without all 4 entries.
+Your Phase C checklist includes exploit-grounded probes — attack patterns from real-world exploits ($550M+ cumulative losses) mapped to specific Limit Break code. These are marked with exploit names (Cetus, Balancer, Bunni, Cork, etc.) in your checklist. Treat them the same as other C-items: write a Forge test, log as finding or ruled_out.
 
-For each pattern below, you MUST:
-1. Read the specific functions listed
-2. Write a `ruled_out_vectors` entry with the EXACT `contracts`, `keywords`, and `functions` fields shown
-3. Include your verdict and evidence
+### Your Output Paths
 
-**Pattern KV-1 — Zero-price bypass**:
-- Investigate: `SqrtPriceCalculator.computeRatioX96()` returns 0 on overflow. `CLOBTransferHandler._enforceTokenHooks()` checks for zero but `AMMStandardHook.validateHandlerOrder()` does not.
-- Required sidecar fields: `"contracts": ["AMMStandardHook.sol", "CLOBTransferHandler.sol", "SqrtPriceCalculator.sol"]`, `"keywords": ["sqrtPriceX96", "zero", "bypass", "overflow", "pricing-bounds", "computeRatioX96", "validateHandlerOrder"]`, `"functions": ["_enforceTokenHooks", "validateHandlerOrder", "computeRatioX96"]`
+- Draft sidecar: `docs/targets/full-system/artifacts/findings-state-desync-draft.json`
+- Gate command: `.venv/bin/python3 docs/orchestrator/sidecar_gate.py docs/targets/full-system/artifacts/findings-state-desync-draft.json`
+- Final sidecar (written by gate on accept): `docs/targets/full-system/artifacts/findings-state-desync.json`
 
-**Pattern KV-2 — Direct handler call**:
-- Investigate: Calling `CLOBTransferHandler.executeSwap()` directly (not via AMM hooks) may bypass pricing enforcement in `beforeSwap`/`afterSwap`.
-- Required sidecar fields: `"contracts": ["CLOBTransferHandler.sol", "AMMStandardHook.sol"]`, `"keywords": ["pricing", "bypass", "direct", "handler", "direct-swap", "pricing-bounds", "flag-dependency"]`, `"functions": ["executeSwap", "beforeSwap", "afterSwap"]`
+DO NOT write directly to the final findings JSON — the gate is the only path to the final sidecar. If you skip the gate, your work will not be scored.
 
-**Pattern KV-3 — Settings sync gap**:
-- Investigate: `CLOBTransferHandler.setTokenSettings()` may leave stale `memSettings` in `CreatorHookSettingsRegistry`. Check if the `initialized` field can desync.
-- Required sidecar fields: `"contracts": ["CLOBTransferHandler.sol", "CreatorHookSettingsRegistry.sol"]`, `"keywords": ["setTokenSettings", "sync", "stale", "initialized", "memSettings", "gas-waste"]`, `"functions": ["setTokenSettings"]`
+### Reference Files (read when you reach the relevant phase)
 
-**Pattern KV-4 — Transient storage leak**:
-- Investigate: `AMMStandardHook.beforeSwap()` writes to `DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT` but the slot may not be cleared on all paths, leaving stale data for the next swap. Check `AMMHooksTransferHandler` paths.
-- Required sidecar fields: `"contracts": ["AMMHooksTransferHandler.sol", "AMMStandardHook.sol"]`, `"keywords": ["transient", "tstore", "clear", "direct", "swap", "transient-storage", "stale-read", "direct-swap", "DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT"]`, `"functions": ["beforeSwap"]`
+Your reference directory contains detailed schemas and scaffolds. Read them at the right time, not now:
+- `docs/orchestrator/templates/_shared/references/output-schema.md` — sidecar JSON schema, gate validation instructions, test_file format rules. **Read before writing your sidecar** (after Phase C/D work is done).
+- `docs/orchestrator/templates/_shared/references/fp-gate-and-scoring.md` — FP 5-gate check + confidence score deduction rubric. **Read before finalizing findings** (after Phase C/D work is done).
+- `docs/orchestrator/templates/_shared/references/exploit-scaffolds.md` — flash loan Forge pattern + reusable exploit harness imports. **Read in Phase D** when writing exploit tests.
 
-### Mandatory Attack Probes (MUST attempt before completion)
+Tool invocation scripts (use instead of reconstructing commands from memory):
+- `docs/orchestrator/templates/_shared/scripts/run-slither.sh <repo-path>` — Slither with build-info fix
+- `docs/orchestrator/templates/_shared/scripts/run-halmos.sh <repo-path> <contract-name>` — Halmos symbolic execution
+- `docs/orchestrator/templates/_shared/scripts/run-aderyn.sh <repo-path>` — Aderyn static analysis
+- `docs/orchestrator/templates/_shared/scripts/run-medusa.sh <repo-path> <contract-name>` — Medusa fuzzer
+- `docs/orchestrator/templates/_shared/scripts/forge-fuzz-template.t.sol` — fuzz test scaffold (cat, adapt, run)
 
-Before reporting completion, you MUST have attempted at least one exploit per category:
+### Cross-Agent Coordination (MCP tools)
 
-1. **Dust-loop extraction**: run 100+ tiny swaps → measure if pool leaks value to attacker each iteration → compound
-2. **Forged hook caller**: call hook directly with fake pool identity (not via AMM) → check if credited without legitimate swap
-3. **Transient-slot theft**: write to transient slot in path A → trigger path B that reads the stale slot → extract from the price/balance difference
-4. **Permit mutation**: replay signature with mutated unsigned fields (feeOnTop, recipient) → check if funds redirect to attacker
-5. **Storage-slot collision**: deploy facet that writes to another facet's storage slot → corrupt accounting → drain via corrupted state
-
-### Flash Loan Primitives
-
-You always have access to unlimited capital for one transaction via flash loans. Use this Forge pattern:
-
-```solidity
-function test_exploit() public {
-    // 1. Flash loan setup
-    uint256 borrowed = 1_000_000e18;
-    deal(address(token), address(this), borrowed);
-
-    // 2. Attack sequence
-    // ... your exploit steps ...
-
-    // 3. Profit check
-    uint256 profit = token.balanceOf(address(this)) - borrowed;
-    assertGt(profit, 0, "Attack must be profitable");
-}
-```
-
-### Reusable Exploit Harnesses
-
-Import these base contracts in your exploit tests:
-
-- `docs/orchestrator/harnesses/FlashLoanAttacker.sol` — extend, override `_exploit()`, call `_runFlashLoanExploit()`
-- `docs/orchestrator/harnesses/MaliciousToken.sol` — fee-on-transfer, reentrancy hooks, false returns
-- `docs/orchestrator/harnesses/MaliciousHook.sol` — configurable hook that logs calls, returns arbitrary data, or reverts
-- `docs/orchestrator/harnesses/MaliciousHandler.sol` — handler that skips transfers, steals funds, or reenters
-
-```solidity
-import "../../docs/orchestrator/harnesses/FlashLoanAttacker.sol";
-
-contract TestExploit is FlashLoanAttacker {
-    function _exploit(uint256 borrowed) internal override {
-        // Your attack sequence here
-    }
-
-    function test_exploit() public {
-        uint256 profit = _runFlashLoanExploit(address(token), 1_000_000e18);
-        _assertProfitable(profit);
-    }
-}
-```
-
-### Communication
-
-Write your top 3 theft theses to `claims.jsonl` (one JSON line per claim):
-```json
-{"agent": "{{AGENT_NAME}}", "thesis": "description", "victim": "who", "asset": "what", "estimated_ev": 0, "status": "hypothesis|tested|confirmed|ruled_out", "test_file": "path", "ts": "ISO8601"}
-```
-
-### Sidecar Schema
-
-Write your JSON sidecar as a DRAFT first, then validate it through the gate:
-
-1. Write to: `docs/targets/full-system/artifacts/findings-{{AGENT_NAME}}-draft.json`
-2. Validate: `.venv/bin/python3 docs/orchestrator/sidecar_gate.py docs/targets/full-system/artifacts/findings-{{AGENT_NAME}}-draft.json`
-3. If ACCEPTED — done. The gate promotes it to the final path.
-4. If REJECTED — read the error output, fix the gaps, rewrite the draft, and retry.
-
-DO NOT write directly to `findings-{{AGENT_NAME}}.json` — the gate is the only path to the final sidecar. If you skip the gate, your work will not be scored.
-
-Sidecar schema:
-```json
-{
-  "agent_name": "{{AGENT_NAME}}",
-  "agent_role": "{{AGENT_ROLE}}",
-  "wave": {{WAVE_NUMBER}},
-  "findings": [
-    {
-      "id": "STATE-NNN",
-      "title": "one-line theft thesis",
-      "severity": "critical",
-      "confidence": "high",
-      "status": "confirmed",
-      "category": "price-manipulation",
-      "description": "one-line theft thesis",
-      "impact": "who loses what + estimated USD or token amount",
-      "proof_sketch": "Forge test path or reasoning chain",
-      "victim": "who loses what",
-      "extractable_value": "estimated USD or token amount",
-      "attack_sequence": ["step1", "step2", "step3"],
-      "test_file": "path to Forge test",
-      "test_passes": true,
-      "prerequisites": ["flash loan", "specific token pair", "etc"],
-      "repos": ["repo-name"],
-      "contracts": ["Contract.sol"],
-      "functions": ["function()"],
-      "lines": {"Contract.sol": [123, 456]},
-      "keywords": ["flash-loan", "price-manipulation"]
-    }
-  ],
-  "ruled_out_vectors": [
-    {
-      "vector": "description",
-      "why_ruled_out": "reason — must reference a test file or concrete code evidence",
-      "test_file": "path to Forge test that proves the guard holds",
-      "repos": ["repo-name"],
-      "contracts": ["Contract.sol"],
-      "functions": ["function()"],
-      "keywords": ["keyword1", "keyword2"]
-    }
-  ],
-  "theft_theses": [
-    {
-      "thesis": "description",
-      "victim": "who",
-      "asset": "what",
-      "estimated_ev": 0,
-      "status": "hypothesis|tested|confirmed|ruled_out"
-    }
-  ],
-  "metadata": {
-    "num_turns": 0, "tool_uses": 0, "files_read": 0,
-    "tools_run": {},
-    "theses_tested": 0, "theses_confirmed": 0, "theses_ruled_out": 0
-  }
-}
-```
-
-**test_file format rule**: `"N/A"` is NOT acceptable as a test_file value. Use one of:
-- **Test file path**: `"lbamm-core/test/audit/AuditStateDesync.t.sol"` — for Forge/Halmos/Medusa tests you wrote
-- **Code citation**: `"code-analysis: AMMModule.sol:2144-2180"` — for vectors ruled out by code path analysis (cite specific lines)
-- **Not applicable**: `"not-applicable: [reason]"` — only if the vector genuinely cannot be tested
-
-`"code-analysis:"` citations receive PARTIAL credit only (50%). To get FULL credit, write a Forge test file. Even a simple `assertEq` test that demonstrates the vector was investigated counts as full credit. Prioritize writing tests over citing code.
+Your validated findings are automatically shared with other agents via the `audit-gate` MCP server.
+- Call `complete_checklist_item` after each checklist item (Phase A-E) — logs structured progress
+- Call `validate_finding` to submit findings through the gate (auto-broadcasts to other agents on success)
+- Call `report_progress` after each phase to update your progress
+- Call `report_completion` when you finish all work (no wave_number arg needed — auto-detected)
+- Every 30 turns, call `get_shared_claims` to check other agents' findings:
+  - If overlap with yours → deprioritize (avoid duplicate work)
+  - If compounds with yours → prioritize composability testing
 
 ### Mandatory Tool Checklist (your sidecar is INVALID until ALL items have a logged result)
 
 This is your COMPLETE workload. Execute every numbered item. Log every result. You are NOT done until every item below has an outcome in your sidecar.
+
+**MCP timeout policy**: If an MCP tool call (Slither, audit-gate) hangs for >60 seconds, skip it and fall back to manual analysis (Read + Grep on the code directly). Log `"ran": false, "reason": "timeout"` in tools_run. Do NOT block your entire run waiting for a stuck MCP server.
 
 **Phase A: Static Analysis (run on EVERY repo in your scope)**
 
@@ -277,7 +166,7 @@ For each repo in your scope, run ALL of:
 
 Read `docs/framework/amm-invariant-catalog.md` FIRST. Then execute every item in YOUR section below.
 
-**CRITICAL**: Your checklist items are the **numbered C1, C2, C3... items** listed below (e.g., C-MATH has C1-C25, C-STATE has C1-C20). These are YOUR items. Count ONLY these numbered items for your `checklist_items_completed` C score. Do NOT count your own investigation patterns — count the specific numbered items you completed from the list.
+**CRITICAL**: Your checklist items are the **numbered C1, C2, C3... items** listed below (e.g., C-MATH has C1-C29, C-STATE has C1-C25, C-AUTH has C1-C22, C-BOUNDARY has C1-C22). These are YOUR items. Count ONLY these numbered items for your `checklist_items_completed` C score. Do NOT count your own investigation patterns — count the specific numbered items you completed from the list.
 
 **Tool gate**: Each C-item that specifies "Halmos:" or "Medusa:" means you MUST invoke that tool for that item. Skipping a tool invocation = the item is NOT completed. If the tool errors, log the error — that counts as completed. Only "not attempted" is a violation.
 
@@ -313,12 +202,15 @@ Read `docs/framework/amm-invariant-catalog.md` FIRST. Then execute every item in
 *Medusa fuzz campaign:*
 - C20. Medusa on AMMModule: `cd lbamm-core && /opt/homebrew/bin/medusa fuzz --target-contracts AMMModule --test-limit 100000 2>&1 | tail -40`
 
+*Exploit-grounded probes (from real-world losses):*
+- C21. **Callback state corruption — Bunni/Curve pattern ($8.3M + $73M)**: During `_finalizeSwapCollectFundsAndDisburse()`, deploy MaliciousToken (ERC-777 callback) that re-enters to call `getReserves()` or `getSqrtPriceX96()` mid-finalization. Are the returned values consistent? Does `beforeSwap` and `afterSwap` see the same state when a callback fires between them?
+- C22. **Read-only reentrancy ($86M cumulative)**: During a swap, re-enter via token transfer callback and call a VIEW function on the pool. Does the view return partially-updated state (stale reserves, wrong price)? Write Forge test: swap → callback → read reserves → verify consistency.
+- C23. **Transient storage — SIR pattern ($355K)**: Two swaps in same transaction. First swap writes to `DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT`. Does the second swap read the first swap's stale value? Also: does a revert in the first swap leave the transient slot dirty for the second?
+- C24. **Cross-component composition — Cork pattern ($12M)**: Can a state change in `CLOBTransferHandler.setTokenSettings()` create a precondition that `AMMStandardHook.afterSwap()` trusts but shouldn't? Write test: change settings mid-transaction, then swap — does the hook use stale or fresh settings?
+- C25. **Fee-on-transfer token — PancakeSwap pattern**: Deploy fee-on-transfer token. `addLiquidity` with 1000 tokens (contract receives 990 after fee). Does pool type credit 1000 or 990? If 1000 → phantom liquidity that can be drained on `removeLiquidity`.
 
-**Phase D: Known Patterns**
 
-Investigate ALL 4 known vulnerability patterns (KV-1 through KV-4) listed above. Write a `ruled_out_vectors` entry for each with the EXACT required fields.
-
-**Phase E: Hypothesis-Driven Exploits**
+**Phase D: Hypothesis-Driven Exploits**
 
 For every hypothesis in your Target Map: write a Forge test that attempts to exploit it. Tests that PASS (proving the guard holds) are valuable — log them as ruled-out with test_file.
 
@@ -328,7 +220,7 @@ Your sidecar's `metadata` field MUST contain ALL of these keys with real values.
 
 ```json
 {
-  "checklist_items_completed": "A: N/N, B: N/N, C: N/N, D: 4/4, E: N/N",
+  "checklist_items_completed": "A: N/N, B: N/N, C: N/N, D: N/N",
   "tools_run": {
     "slither": {"ran": true, "repos": ["..."], "note": "..."},
     "aderyn": {"ran": true, "repos": ["..."], "note": "..."},
@@ -343,33 +235,32 @@ Your sidecar's `metadata` field MUST contain ALL of these keys with real values.
   "files_read": 0,
   "theses_tested": 0,
   "theses_confirmed": 0,
-  "theses_ruled_out": 0
+  "theses_ruled_out": 0,
+  "triage_log": {"skip": 0, "borderline": 0, "survive": 0}
 }
 ```
 
 Set `"ran": false` with a `"reason"` field for any tool you could not run. Do NOT omit tools — every tool must be reported.
 
 **How to count checklist_items_completed**: Count the items you actually attempted in each phase:
-- A: count repos where you ran Slither + Aderyn (e.g., 5 repos × 5 tools = "A: 25/25")
+- A: count A1-A5 tool types you invoked (e.g., "A: 4/4" or "A: 5/5" if you ran A5)
 - B: count B1-B5 items you invoked (e.g., "B: 3/5")
-- C: count C-items from YOUR section where you wrote a test OR ran a tool (e.g., "C: 18/20")
-- D: count KV patterns investigated with sidecar entries (always "D: 4/4")
-- E: count Target Map hypotheses with Forge tests (e.g., "E: 5/5")
+- C: count C-items from YOUR section where you wrote a test OR ran a tool — includes exploit-grounded probes (e.g., "C: 25/29")
+- D: count Target Map hypotheses with Forge tests (e.g., "D: 5/5")
 
-Example: `"checklist_items_completed": "A: 25/25, B: 3/5, C: 18/20, D: 4/4, E: 5/5"`
+Example: `"checklist_items_completed": "A: 4/4, B: 3/5, C: 25/29, D: 5/5"`
 
 ### Pre-Completion Gate (MUST verify before writing final findings.json)
 
 Count your completed items. Your sidecar MUST report in `metadata.checklist_items_completed`:
-- [ ] Phase A: 5 items per repo (A1-A5). Total = 5 × repos_in_scope.
+- [ ] Phase A: 4-5 tool types (A1-A4, plus A5 if applicable).
 - [ ] Phase B: 3-5 items (B1-B5 depending on archetype).
-- [ ] Phase C: ALL items in YOUR section:
-  - C-MATH: 25/25
-  - C-STATE: 20/20
-  - C-AUTH: 19/19
-  - C-BOUNDARY: 18/18
-- [ ] Phase D: 4/4 known patterns with exact sidecar fields.
-- [ ] Phase E: Every Target Map hypothesis has a Forge test.
+- [ ] Phase C: ALL items in YOUR section (includes exploit-grounded probes):
+  - C-MATH: 29/29
+  - C-STATE: 25/25
+  - C-AUTH: 22/22
+  - C-BOUNDARY: 22/22
+- [ ] Phase D: Every Target Map hypothesis has a Forge test.
 
 If a tool errors or a test can't compile, log the error — that still counts as "completed" (attempted). Only "not attempted" is invalid.
 
@@ -387,6 +278,8 @@ If a tool errors or a test can't compile, log the error — that still counts as
 - `targets/full-system/artifacts/phase0/lbamm-hooks-and-handlers-aderyn.md`
 - `targets/full-system/artifacts/phase0/secure-proxy-slither.md`
 - `targets/full-system/artifacts/phase0/secure-proxy-aderyn.md`
+
+
 
 ## Scope
 - **All repos**: Read access to all 6 repos (you follow the money, not module boundaries)
@@ -411,7 +304,7 @@ If a tool errors or a test can't compile, log the error — that still counts as
 
 | Target | Findings | Vectors Ruled Out | Invariant Tests | Runs |
 |--------|----------|-------------------|-----------------|------|
-| full-system (all 6 repos) | 0 Medium+ confirmed | 85+ ruled-out, 20 invariants held | 22 | defensive waves 1-7, black hat pending |
+| full-system (all 6 repos) | 2 Medium+ confirmed | 85+ ruled-out, 20 invariants held | 22 | defensive waves 1-7, black hat pending |
 
 ## Top False-Positive Patterns (don't re-investigate)
 1. **Transient storage slot overwrite** — by-design (AMM calls beforeSwap per-token, second overwrites first intentionally)

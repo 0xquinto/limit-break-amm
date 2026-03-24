@@ -1,3 +1,13 @@
-{"event":"SESSION_START","ts":"2026-03-16T00:00:00Z","session_id":"wave1-insolvency","agent_id":"insolvency-engineer","model":"claude-opus-4-6","scope":"lbamm-core, amm-pool-type-dynamic, lbamm-pool-type-fixed, lbamm-pool-type-single-provider, lbamm-hooks-and-handlers","max_turns":200}
-{"event":"TURN_COMPLETE","ts":"2026-03-16T03:00:00Z","turn":30,"theses_tested":11,"theses_confirmed":0,"theses_ruled_out":11,"findings":0,"ruled_out_vectors":15}
-{"event":"SESSION_END","ts":"2026-03-16T03:01:00Z","session_id":"wave1-insolvency","agent_id":"insolvency-engineer","stop_reason":"complete","findings":0,"ruled_out":15,"theft_theses":5,"tools_run":["slither","aderyn","forge","halmos","medusa"],"checklist":"A:14/25 B:0/5 C:15/20 D:4/4 E:11/11"}
+{"event":"SESSION_START","ts":"2026-03-23T10:00:00Z","session_id":"wave1-insolvency","agent_id":"insolvency-engineer","model":"claude-opus-4-6","scope":"lbamm-core, amm-pool-type-dynamic","max_turns":200}
+{"event":"TOOL_CHECKPOINT","ts":"2026-03-23T10:01:00Z","agent_id":"insolvency-engineer","checkpoint":0,"tool":"phase0_artifacts","status":"read"}
+{"event":"TOOL_CHECKPOINT","ts":"2026-03-23T10:02:00Z","agent_id":"insolvency-engineer","checkpoint":1,"tool":"slither","repos":["lbamm-core","amm-pool-type-dynamic"],"high":6,"medium":24}
+{"event":"TOOL_CHECKPOINT","ts":"2026-03-23T10:02:30Z","agent_id":"insolvency-engineer","checkpoint":1,"tool":"aderyn","repos":["lbamm-core"],"findings":10}
+{"event":"TOOL_CHECKPOINT","ts":"2026-03-23T10:10:00Z","agent_id":"insolvency-engineer","checkpoint":2,"tool":"audit-context-building","status":"complete"}
+{"event":"TOOL_CHECKPOINT","ts":"2026-03-23T10:15:00Z","agent_id":"insolvency-engineer","checkpoint":2,"tool":"entry-point-analyzer","status":"complete"}
+{"event":"TOOL_CHECKPOINT","ts":"2026-03-23T10:20:00Z","agent_id":"insolvency-engineer","checkpoint":2,"tool":"call-graph","status":"complete","nodes":98,"edges":189}
+{"event":"TURN_COMPLETE","ts":"2026-03-23T10:30:00Z","agent_id":"insolvency-engineer","phase":"C","items_complete":"25/25","tests_pass":127,"tests_fail":0}
+{"event":"TOOL_CHECKPOINT","ts":"2026-03-23T10:35:00Z","agent_id":"insolvency-engineer","checkpoint":3,"tool":"halmos","checks":3,"pass":2,"timeout":1}
+{"event":"TOOL_CHECKPOINT","ts":"2026-03-23T10:40:00Z","agent_id":"insolvency-engineer","checkpoint":3,"tool":"forge-fuzz","runs":1000,"failures":0}
+{"event":"TURN_COMPLETE","ts":"2026-03-23T10:50:00Z","agent_id":"insolvency-engineer","phase":"D","hypotheses_tested":11,"confirmed":0,"ruled_out":11}
+{"event":"SIDECAR_GATE","ts":"2026-03-23T10:55:00Z","agent_id":"insolvency-engineer","status":"ACCEPTED","findings":0,"ruled_out":16}
+{"event":"SESSION_END","ts":"2026-03-23T11:00:00Z","agent_id":"insolvency-engineer","stop_reason":"complete","turns_used":120,"findings":0,"ruled_out_vectors":16,"checklist":"A:4/5,B:3/5,C:25/25,D:11/11"}

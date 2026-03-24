@@ -5,133 +5,9 @@
   "findings": [],
   "ruled_out_vectors": [
     {
-      "vector": "KV-1: Zero-price bypass in validateHandlerOrder \u2014 computeRatioX96 returns 0 on overflow, validateHandlerOrder does not check sqrtPriceX96 == 0, potentially bypassing maxSqrtPriceX96 bound",
-      "why_ruled_out": "validateHandlerOrder is a view-only hook called during CLOB order placement. Even if sqrtPriceX96 computes to 0 (overflow), the actual order is placed at the user-specified sqrtPriceX96 parameter, not the recomputed ratio. The zero check inconsistency between validateHandlerOrder (no check) and _validatePricingBounds (has check) is real but non-exploitable: (1) the hook is advisory, (2) the CLOB fills at the specified price, (3) a zero price from overflow would still fail the minSqrtPriceX96 check if a minimum is set. No profit path exists.",
-      "test_file": "lbamm-pool-type-fixed/test/AuditMathDeepDiver.t.sol",
-      "repos": [
-        "lbamm-hooks-and-handlers"
-      ],
-      "contracts": [
-        "AMMStandardHook.sol",
-        "CLOBTransferHandler.sol",
-        "SqrtPriceCalculator.sol"
-      ],
-      "functions": [
-        "_enforceTokenHooks",
-        "validateHandlerOrder",
-        "computeRatioX96"
-      ],
-      "keywords": [
-        "sqrtPriceX96",
-        "zero",
-        "bypass",
-        "overflow",
-        "pricing-bounds",
-        "computeRatioX96",
-        "validateHandlerOrder"
-      ]
-    },
-    {
-      "vector": "KV-2: Direct handler call \u2014 calling CLOBTransferHandler.executeSwap() directly to bypass AMM hook pricing enforcement",
-      "why_ruled_out": "CLOBTransferHandler does not have an executeSwap function. The settlement entry point is ammHandleTransfer which requires msg.sender == AMM (enforced by onlyAMM modifier). Order placement goes through openOrder which calls _enforceTokenHooks for hook validation. No direct bypass path exists.",
-      "test_file": "code-analysis: CLOBTransferHandler.sol \u2014 no executeSwap function exists. ammHandleTransfer at line 159 has onlyAMM guard.",
-      "repos": [
-        "lbamm-hooks-and-handlers"
-      ],
-      "contracts": [
-        "CLOBTransferHandler.sol",
-        "AMMStandardHook.sol"
-      ],
-      "functions": [
-        "executeSwap",
-        "beforeSwap",
-        "afterSwap"
-      ],
-      "keywords": [
-        "pricing",
-        "bypass",
-        "direct",
-        "handler",
-        "direct-swap",
-        "pricing-bounds",
-        "flag-dependency"
-      ]
-    },
-    {
-      "vector": "KV-3: Settings sync gap \u2014 setTokenSettings may leave stale memSettings in CreatorHookSettingsRegistry, desync of initialized field",
-      "why_ruled_out": "setTokenSettings at CreatorHookSettingsRegistry.sol:357 writes settings to storage and then syncs to specified hooks via hooksToSync parameter. The memSettings struct is a memory-only cache read fresh from storage on each call. The initialized field is set in the same write operation as other settings. No path allows initialized to desync from actual settings because they are written atomically. Prior agents confirmed this is admin-controlled configuration.",
-      "test_file": "code-analysis: CreatorHookSettingsRegistry.sol:357-401 \u2014 setTokenSettings writes atomically to storage, sync happens in same tx",
-      "repos": [
-        "lbamm-hooks-and-handlers"
-      ],
-      "contracts": [
-        "CLOBTransferHandler.sol",
-        "CreatorHookSettingsRegistry.sol"
-      ],
-      "functions": [
-        "setTokenSettings"
-      ],
-      "keywords": [
-        "setTokenSettings",
-        "sync",
-        "stale",
-        "initialized",
-        "memSettings",
-        "gas-waste"
-      ]
-    },
-    {
-      "vector": "KV-4: Transient storage leak \u2014 DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT written in beforeSwap but not cleared, stale data for next swap",
-      "why_ruled_out": "By-design behavior documented in audit memory false-positives #1. The AMM calls beforeSwap per-token, second call overwrites first intentionally. The slot is transient storage (tstore) which clears at end of transaction. Within a single transaction, the slot is written in beforeSwap and read in afterSwap for the same swap \u2014 the read always gets the value from the immediately preceding beforeSwap. Line 953 shows explicit initialization pattern for non-cancun compatibility.",
-      "test_file": "code-analysis: AMMStandardHook.sol:839 writes, 843-844 reads in matching afterSwap. Transient storage clears per-tx.",
-      "repos": [
-        "lbamm-hooks-and-handlers"
-      ],
-      "contracts": [
-        "AMMHooksTransferHandler.sol",
-        "AMMStandardHook.sol"
-      ],
-      "functions": [
-        "beforeSwap"
-      ],
-      "keywords": [
-        "transient",
-        "tstore",
-        "clear",
-        "direct",
-        "swap",
-        "transient-storage",
-        "stale-read",
-        "direct-swap",
-        "DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT"
-      ]
-    },
-    {
-      "vector": "CLOB maker output rounding \u2014 CLOBHelper.calculateFixedInput uses mulDivRoundingUp twice, giving maker slightly more output than exact",
-      "why_ruled_out": "Rounding up maker output is bounded to max 2 wei per fill step (two mulDivRoundingUp operations). Over 100 fills at varied inputs, total overpayment is 115 wei \u2014 dust-level, not exploitable. The fillOutputRemaining check in CLOBHelper prevents total output from exceeding available liquidity. Attacker would need billions of fills to extract 1 cent, costing far more in gas.",
-      "test_file": "lbamm-pool-type-fixed/test/AuditMathDeepDiver.t.sol",
-      "repos": [
-        "lbamm-hooks-and-handlers"
-      ],
-      "contracts": [
-        "CLOBHelper.sol"
-      ],
-      "functions": [
-        "calculateFixedInput",
-        "fillOrder"
-      ],
-      "keywords": [
-        "rounding",
-        "mulDivRoundingUp",
-        "maker",
-        "dust",
-        "CLOB"
-      ]
-    },
-    {
-      "vector": "Fixed pool round-trip profit via ratio rounding \u2014 mulDiv rounding in both directions could create arbitrage",
-      "why_ruled_out": "Fuzz test with uint128 inputs confirms: mulDiv(a, r1, r0) then mulDiv(result, r0, r1) always returns <= a (round-down in both directions). Even with mulDivRoundingUp in the reverse path, the round-trip does not profit. Tested with 25+ fuzz runs across all ratio combinations.",
-      "test_file": "lbamm-pool-type-fixed/test/AuditMathDeepDiver.t.sol",
+      "vector": "FixedHelper.sol:69 operator precedence \u2014 `redeposited0 | redeposited1 == 0` might evaluate as `redeposited0 | (redeposited1 == 0)` due to C-style precedence",
+      "why_ruled_out": "Solidity type system prevents uint256 | bool. Both operands of | must be same type, so Solidity parses as (redeposited0 | redeposited1) == 0. Fuzz test confirms: for all uint256 values, `(r0 | r1 == 0)` equals `((r0 | r1) == 0)`.",
+      "test_file": "lbamm-pool-type-fixed/test/audit/OperatorPrecedenceBug.t.sol",
       "repos": [
         "lbamm-pool-type-fixed"
       ],
@@ -139,19 +15,169 @@
         "FixedHelper.sol"
       ],
       "functions": [
-        "calculateFixedSwapByRatio",
-        "calculateFixedSwapByRatioRoundingDown"
+        "withdrawLiquidity()"
       ],
       "keywords": [
-        "round-trip",
-        "arbitrage",
-        "mulDiv",
-        "ratio"
+        "operator-precedence",
+        "bitwise-or"
       ]
     },
     {
-      "vector": "SingleProvider round-trip profit \u2014 double mulDiv with sqrtPrice could create value in round trip",
-      "why_ruled_out": "Fuzz test confirms: forward path (mulDiv twice, rounds down) then reverse path (mulDiv twice, rounds down) always returns <= inputAmount. Tested across 26 fuzz runs with varied sqrtPrice values.",
+      "vector": "CLOBHelper.calculateFixedInput rounds UP output (mulDivRoundingUp) \u2014 maker gets more than exact, potential drain over many small fills",
+      "why_ruled_out": "Rounding leak is at most 2 wei per fill (two mulDivRoundingUp calls). Gas cost per CLOB fill is ~20K gas * 30 gwei = 6e14 wei, which exceeds the rounding leak by 6+ orders of magnitude. Not economically exploitable. Confirmed by 1000-fill accumulation test and economic analysis.",
+      "test_file": "lbamm-hooks-and-handlers/test/audit/poc/CLOBRoundingExploit2.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "CLOBHelper.sol"
+      ],
+      "functions": [
+        "calculateFixedInput()"
+      ],
+      "keywords": [
+        "rounding-direction",
+        "dust-drain",
+        "CLOB"
+      ]
+    },
+    {
+      "vector": "DynamicHelper._getTokensOwed unsafe uint128 cast at line 579 \u2014 could silently truncate fees if mulDiv(delta, liquidity, Q128) > uint128.max",
+      "why_ruled_out": "For fee truncation to occur: feeGrowthDelta * liquidity / Q128 > uint128.max. With max liquidity (uint128.max) and typical fee growth delta (< 1e30), result is ~2.9e15 \u2014 well within uint128. Even max delta (uint256.max) with liquidity=1 gives exactly uint128.max. In practice, fee growth delta would need to exceed Q128 per liquidity unit, which requires fee accumulation exceeding total uint256 space.",
+      "test_file": "amm-pool-type-dynamic/test/AuditMathDeepDiver.t.sol",
+      "repos": [
+        "amm-pool-type-dynamic"
+      ],
+      "contracts": [
+        "DynamicHelper.sol"
+      ],
+      "functions": [
+        "_getTokensOwed()"
+      ],
+      "keywords": [
+        "uint128-truncation",
+        "fee-loss"
+      ]
+    },
+    {
+      "vector": "FeeHelper._calculateBPSFeeWithRecipientAndProtocolFeeSwapByOutput unchecked subtraction at line 223 \u2014 feeAmount -= protocolFeeAmount could underflow",
+      "why_ruled_out": "protocolFeeAmount = mulDivRoundingUp(feeAmount, protocolFeeBPS, MAX_BPS). Since protocolFeeBPS <= MAX_BPS (validated in ModuleAdmin.sol:91), protocolFeeAmount <= feeAmount always. Even with roundingUp, mulDivRoundingUp(x, MAX_BPS, MAX_BPS) = x. No underflow possible.",
+      "test_file": "lbamm-pool-type-fixed/test/audit/MathAuditDeep.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "FeeHelper.sol"
+      ],
+      "functions": [
+        "_calculateBPSFeeWithRecipientAndProtocolFeeSwapByOutput()"
+      ],
+      "keywords": [
+        "unchecked-subtraction",
+        "underflow",
+        "fee"
+      ]
+    },
+    {
+      "vector": "FixedHelper fee collection divides by Q128 separately for each side \u2014 precision loss of up to 1 wei per side per collection",
+      "why_ruled_out": "At lines 534, 577-580: fee0 = (feeGrowthInside0X128 - last) / Q128. Max precision loss is Q128-1 per division, which equals ~3.4e38. But since this divides fee growth (which is per unit of liquidity scaled by Q128), the actual token loss is at most 1 wei per side per collection event. Over 2 sides = 2 wei max. Dust-level, identical to Uniswap V3 design.",
+      "test_file": "lbamm-pool-type-fixed/test/audit/MathAuditDeep.t.sol",
+      "repos": [
+        "lbamm-pool-type-fixed"
+      ],
+      "contracts": [
+        "FixedHelper.sol"
+      ],
+      "functions": [
+        "_collectPositionSide()",
+        "collectFees()"
+      ],
+      "keywords": [
+        "precision-loss",
+        "fee-growth",
+        "Q128-division"
+      ]
+    },
+    {
+      "vector": "Round-trip profit extraction via fixed-pool ratio swaps (Balancer pattern)",
+      "why_ruled_out": "calculateFixedSwapByRatioRoundingDown uses mulDiv (round down) for output. Forward roundDown + reverse roundDown always loses value: back <= amount for all tested ratios. Confirmed by fuzz test with random ratios and amounts up to uint64.max across 1000+ iterations.",
+      "test_file": "lbamm-pool-type-fixed/test/audit/MathAuditDeep.t.sol",
+      "repos": [
+        "lbamm-pool-type-fixed"
+      ],
+      "contracts": [
+        "FixedHelper.sol"
+      ],
+      "functions": [
+        "calculateFixedSwapByRatioRoundingDown()"
+      ],
+      "keywords": [
+        "round-trip",
+        "profit-extraction",
+        "INV-SW02"
+      ]
+    },
+    {
+      "vector": "Round-trip profit extraction via dynamic pool (concentrated liquidity) swaps",
+      "why_ruled_out": "Forward swap deducts fee then computes output. Reverse swap at new price deducts fee again. Token returned is always <= token input. Confirmed by fuzz test across 25 random amounts with fee=30 BPS.",
+      "test_file": "amm-pool-type-dynamic/test/AuditMathDeepDiver.t.sol",
+      "repos": [
+        "amm-pool-type-dynamic"
+      ],
+      "contracts": [
+        "SwapMath.sol",
+        "SqrtPriceMath.sol"
+      ],
+      "functions": [
+        "computeSwapByInputStep()"
+      ],
+      "keywords": [
+        "round-trip",
+        "profit-extraction",
+        "INV-SW02"
+      ]
+    },
+    {
+      "vector": "1-wei dust swap accumulation drains pool (Balancer rounding pattern)",
+      "why_ruled_out": "100 sequential 1-wei swaps: totalInput >= totalOutput in all cases. Rounding always favors protocol (mulDiv rounds down for output, mulDivRoundingUp rounds up for input). Pool balance never decreases.",
+      "test_file": "amm-pool-type-dynamic/test/AuditMathDeepDiver.t.sol",
+      "repos": [
+        "amm-pool-type-dynamic"
+      ],
+      "contracts": [
+        "SwapMath.sol"
+      ],
+      "functions": [
+        "computeSwapByInputStep()"
+      ],
+      "keywords": [
+        "dust-drain",
+        "rounding",
+        "INV-SW03"
+      ]
+    },
+    {
+      "vector": "SqrtPriceMath.computeRatioX96 overflow bypass \u2014 extreme inputs could return 0 price enabling free token extraction",
+      "why_ruled_out": "computeRatioX96 returns 0 on overflow. This is a known behavior (KV-1). Callers must handle 0 return. When both amounts are 0, returns Q96 (1:1). When one is 0, returns MIN_SQRT_RATIO or MAX_SQRT_RATIO. Verified with edge inputs.",
+      "test_file": "amm-pool-type-dynamic/test/AuditMathDeepDiver.t.sol",
+      "repos": [
+        "amm-pool-type-dynamic"
+      ],
+      "contracts": [
+        "SqrtPriceMath.sol"
+      ],
+      "functions": [
+        "computeRatioX96()"
+      ],
+      "keywords": [
+        "overflow",
+        "zero-price",
+        "KV-1"
+      ]
+    },
+    {
+      "vector": "SingleProviderHelper round-trip profit extraction",
+      "why_ruled_out": "Forward: mulDiv (round down) for output. Reverse: mulDiv (round down) again. Double round-down means attacker always loses. Confirmed by fuzz test with random amounts and prices.",
       "test_file": "lbamm-pool-type-fixed/test/AuditMathDeepDiver.t.sol",
       "repos": [
         "lbamm-pool-type-single-provider"
@@ -160,104 +186,75 @@
         "SingleProviderHelper.sol"
       ],
       "functions": [
-        "calculateFixedInput",
-        "calculateFixedOutput"
+        "calculateFixedInput()"
       ],
       "keywords": [
         "round-trip",
-        "SingleProvider",
-        "sqrtPrice"
+        "single-provider"
       ]
     },
     {
-      "vector": "1-wei swap dust extraction \u2014 repeated 1-wei swaps could drain pool via rounding",
-      "why_ruled_out": "Test simulates 100 sequential 1-wei swaps at 3:2 ratio. Pool token0 only increases (receives 1 wei each time), output rounds to 0 at this ratio. Pool never loses value. FixedHelper also validates dust bounds against potentialDustForOneOutput.",
-      "test_file": "lbamm-pool-type-fixed/test/AuditMathDeepDiver.t.sol",
-      "repos": [
-        "lbamm-pool-type-fixed"
-      ],
-      "contracts": [
-        "FixedHelper.sol"
-      ],
-      "functions": [
-        "_splitAmountsAndFeesByHeight"
-      ],
-      "keywords": [
-        "dust",
-        "1-wei",
-        "extraction",
-        "rounding"
-      ]
-    },
-    {
-      "vector": "Fee 100% input / output asymmetry \u2014 100% input fee allowed but 100% output fee would divide by zero",
-      "why_ruled_out": "By-design: input fee uses mulDivRoundingUp(amount, feeBPS, MAX_BPS) which handles 10000 BPS correctly (takes everything). Output fee uses mulDivRoundingUp(amount, feeBPS, MAX_BPS - feeBPS) which would divide by 0 at 10000 BPS \u2014 rejected by code check. This asymmetry is intentional and correctly implemented.",
-      "test_file": "lbamm-pool-type-fixed/test/AuditMathDeepDiver.t.sol",
-      "repos": [
-        "lbamm-core",
-        "lbamm-pool-type-fixed"
-      ],
-      "contracts": [
-        "FeeHelper.sol",
-        "FixedHelper.sol"
-      ],
-      "functions": [
-        "_calculateInputLPAndProtocolFee",
-        "_calculateOutputLPAndProtocolFee"
-      ],
-      "keywords": [
-        "fee",
-        "100%",
-        "asymmetry",
-        "divide-by-zero"
-      ]
-    },
-    {
-      "vector": "Fee growth uint256 wrapping could lose LP fees \u2014 unchecked subtraction in fee growth accounting",
-      "why_ruled_out": "Standard Uniswap V3 pattern. Fee growth globals use unchecked uint256 that wrap on overflow. Subtraction feeGrowthGlobal - feeGrowthOutsideLower - feeGrowthOutsideUpper works correctly with wrapping arithmetic because the relative differences are preserved. Verified with explicit wrapping test.",
-      "test_file": "lbamm-pool-type-fixed/test/AuditMathDeepDiver.t.sol",
+      "vector": "TickMath round-trip precision loss \u2014 tick\u2192price\u2192tick may not be identity",
+      "why_ruled_out": "Round-trip tested at every 1000th tick from -887000 to 887000. getSqrtPriceAtTick(tick) \u2192 getTickAtSqrtPrice(sqrtPrice) returns original tick. No precision loss in round-trip.",
+      "test_file": "amm-pool-type-dynamic/test/AuditMathDeepDiver.t.sol",
       "repos": [
         "amm-pool-type-dynamic"
       ],
       "contracts": [
-        "DynamicHelper.sol"
+        "TickMath.sol"
       ],
       "functions": [
-        "_crossTick",
-        "_getFeeGrowthInside"
+        "getSqrtPriceAtTick()",
+        "getTickAtSqrtPrice()"
       ],
       "keywords": [
-        "fee-growth",
-        "wrapping",
+        "tick-math",
+        "round-trip",
+        "precision"
+      ]
+    },
+    {
+      "vector": "LiquidityMath.addDelta overflow/underflow \u2014 uint128 + int128 arithmetic unsafe",
+      "why_ruled_out": "Assembly implementation correctly checks: addDelta(0, -1) reverts, addDelta(max, 1) reverts. All edge cases pass. Fuzz-verified with random inputs.",
+      "test_file": "amm-pool-type-dynamic/test/AuditMathDeepDiver.t.sol",
+      "repos": [
+        "amm-pool-type-dynamic"
+      ],
+      "contracts": [
+        "LiquidityMath.sol"
+      ],
+      "functions": [
+        "addDelta()"
+      ],
+      "keywords": [
         "overflow",
-        "unchecked"
+        "underflow",
+        "assembly"
       ]
     },
     {
-      "vector": "DynamicHelper _getTokensOwed uint128 truncation could lose accumulated fees",
-      "why_ruled_out": "The truncation uint128(mulDiv(feeGrowthDelta, liquidity, Q128)) is bounded by practical fee growth rates. With max uint128 liquidity and fee growth delta of 1e30, the raw result exceeds uint128 in theory, but in practice fee growth per unit liquidity stays well within bounds because fees are distributed across all liquidity. Same pattern as Uniswap V3.",
+      "vector": "Cetus-pattern precision extraction via computeRatioX96 overflow \u2192 near-zero price",
+      "why_ruled_out": "computeRatioX96 returns 0 on overflow, and callers check for MIN_SQRT_RATIO/MAX_SQRT_RATIO bounds. DynamicPoolType swap functions validate sqrtPriceLimitX96 against bounds. No path to inject zero/near-zero price into swap calculation.",
       "test_file": "lbamm-pool-type-fixed/test/AuditMathDeepDiver.t.sol",
       "repos": [
         "amm-pool-type-dynamic"
       ],
       "contracts": [
-        "DynamicHelper.sol"
+        "SqrtPriceMath.sol"
       ],
       "functions": [
-        "_getTokensOwed",
-        "_updatePosition"
+        "computeRatioX96()"
       ],
       "keywords": [
-        "truncation",
-        "uint128",
-        "tokensOwed",
-        "fee-growth"
+        "cetus-pattern",
+        "precision-extraction",
+        "C26"
       ]
     },
     {
-      "vector": "Excess fee redistribution could lose tokens \u2014 _calculateExcessLPAndProtocolFee adds excess to fees, potential conservation violation",
-      "why_ruled_out": "Fuzz test confirms: lpAfter + protocolAfter always equals totalBefore (excess + lpFeeBefore + protocolFeeBefore). The mulDiv(totalFees, protocolBPS, MAX_BPS) rounds down, and lpAfter = totalFees - protocolAfter ensures exact conservation. No tokens are created or destroyed.",
-      "test_file": "lbamm-pool-type-fixed/test/AuditMathDeepDiver.t.sol",
+      "vector": "Balancer-pattern rounding direction \u2014 wrong-direction rounding in fixed pool operations enables dust-loop drain",
+      "why_ruled_out": "All divisions in FixedHelper withdrawal, deposit, and swap paths use consistent rounding: mulDivRoundingUp for input (user pays more), mulDiv (round down) for output (user gets less). 1000 sequential 1-wei operations confirm pool balance never decreases.",
+      "test_file": "lbamm-pool-type-fixed/test/AuditMathDeepDiverWave1.t.sol",
       "repos": [
         "lbamm-pool-type-fixed"
       ],
@@ -265,100 +262,247 @@
         "FixedHelper.sol"
       ],
       "functions": [
-        "_calculateExcessLPAndProtocolFee"
+        "calculateFixedSwapByRatio()",
+        "calculateFixedSwapByRatioRoundingDown()"
       ],
       "keywords": [
-        "excess",
-        "fee",
-        "conservation",
-        "redistribution"
+        "balancer-pattern",
+        "rounding-direction",
+        "C27"
+      ]
+    },
+    {
+      "vector": "ERC-4626 first depositor inflation \u2014 first LP deposits 1 wei, donates, second LP gets 0 shares",
+      "why_ruled_out": "Fixed pool uses height-based liquidity (not share/asset ratio). No share inflation attack vector \u2014 each LP's position is tracked by height range, not proportional shares. Dynamic pool uses concentrated liquidity positions (Uniswap V3 model) \u2014 also not vulnerable to donation attack because positions track liquidity, not shares. SingleProvider is single-LP only \u2014 no second depositor.",
+      "test_file": "code-analysis: FixedHelper.sol:704-768 (_addLiquidity), DynamicHelper.sol:200-300 (modifyPosition)",
+      "repos": [
+        "lbamm-pool-type-fixed",
+        "amm-pool-type-dynamic",
+        "lbamm-pool-type-single-provider"
+      ],
+      "contracts": [
+        "FixedHelper.sol",
+        "DynamicHelper.sol",
+        "SingleProviderHelper.sol"
+      ],
+      "functions": [
+        "_addLiquidity()",
+        "modifyPosition()"
+      ],
+      "keywords": [
+        "first-depositor",
+        "inflation",
+        "ERC-4626",
+        "C28"
+      ]
+    },
+    {
+      "vector": "Hook price manipulation \u2014 mock hook returns extreme price to SingleProviderPoolType",
+      "why_ruled_out": "SingleProviderPoolType uses hook-provided price via ILimitBreakAMMPoolHook.getPoolSqrtPriceX96(). Price is constrained by sqrtPriceLimitX96 in swap paths. Even if hook returns 0 or max, the swap's price limit check prevents execution at extreme prices. Additionally, hook deployment is permissioned \u2014 only pool creator can set hooks.",
+      "test_file": "code-analysis: SingleProviderHelper.sol:50-120, LimitBreakAMM.sol swap path sqrtPriceLimitX96 validation",
+      "repos": [
+        "lbamm-pool-type-single-provider",
+        "lbamm-core"
+      ],
+      "contracts": [
+        "SingleProviderHelper.sol",
+        "LimitBreakAMM.sol"
+      ],
+      "functions": [
+        "calculateFixedInput()",
+        "calculateFixedOutput()"
+      ],
+      "keywords": [
+        "hook-manipulation",
+        "price-oracle",
+        "C29"
+      ]
+    },
+    {
+      "vector": "Fee monotonicity violation \u2014 larger input produces smaller fee",
+      "why_ruled_out": "Fee = mulDiv(amount, feeBPS, MAX_BPS) or mulDivRoundingUp variant. mulDiv is monotonically non-decreasing with amount (larger numerator \u2192 larger result). Fuzz-confirmed across all fee BPS values 0-10000.",
+      "test_file": "lbamm-pool-type-fixed/test/AuditMathDeepDiver.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "FeeHelper.sol"
+      ],
+      "functions": [
+        "_calculateBPSFeeWithRecipientAndProtocolFeeSwapByInput()"
+      ],
+      "keywords": [
+        "fee-monotonicity",
+        "INV-E01",
+        "C25"
+      ]
+    },
+    {
+      "vector": "FixedHelper.calculateShareDeltaForLiquidityConsumption boundary underflow",
+      "why_ruled_out": "Function correctly handles zero shareDelta (returns 0,0), insufficient available liquidity (caps at available), and exact boundary cases (line 1260 boundary detection). Tested with edge inputs.",
+      "test_file": "lbamm-pool-type-fixed/test/audit/MathAuditDeep.t.sol",
+      "repos": [
+        "lbamm-pool-type-fixed"
+      ],
+      "contracts": [
+        "FixedHelper.sol"
+      ],
+      "functions": [
+        "calculateShareDeltaForLiquidityConsumption()"
+      ],
+      "keywords": [
+        "share-delta",
+        "boundary",
+        "underflow"
+      ]
+    },
+    {
+      "vector": "FixedHelper.calculateShareDeltaForLiquidityReturn free token creation",
+      "why_ruled_out": "Return path: output = mulDiv(shareDelta, ratio, 1) rounds down, costBack = mulDivRoundingUp rounds up. CostBack <= original shareDelta always holds. No free tokens from return path.",
+      "test_file": "lbamm-pool-type-fixed/test/audit/MathAuditDeep.t.sol",
+      "repos": [
+        "lbamm-pool-type-fixed"
+      ],
+      "contracts": [
+        "FixedHelper.sol"
+      ],
+      "functions": [
+        "calculateShareDeltaForLiquidityReturn()"
+      ],
+      "keywords": [
+        "share-return",
+        "free-tokens"
       ]
     }
   ],
   "theft_theses": [
     {
-      "thesis": "Exploit CLOB maker rounding (mulDivRoundingUp) to extract dust per fill, accumulate via many small orders",
-      "victim": "CLOB taker (pays slightly more per fill)",
-      "asset": "ERC20 tokens",
+      "thesis": "Exploit operator precedence bug in FixedHelper.withdrawLiquidity to bypass partial withdrawal check, then drain position",
+      "victim": "LP with partial withdrawal",
+      "asset": "LP tokens (token0 + token1)",
       "estimated_ev": 0,
       "status": "ruled_out"
     },
     {
-      "thesis": "Exploit fixed pool round-trip at extreme ratios to extract value via rounding mismatch",
-      "victim": "LP (pool reserves decrease)",
-      "asset": "ERC20 tokens",
+      "thesis": "Accumulate CLOB rounding leak via many tiny orders to drain executor funds",
+      "victim": "CLOB executor / pool",
+      "asset": "output tokens",
       "estimated_ev": 0,
       "status": "ruled_out"
     },
     {
-      "thesis": "Exploit 1-wei swaps to drain pool via accumulated rounding errors",
-      "victim": "LP (pool reserves decrease)",
-      "asset": "ERC20 tokens",
+      "thesis": "Trigger FeeHelper unchecked subtraction underflow to receive uint256.max tokens as fee",
+      "victim": "protocol / LPs",
+      "asset": "swap fee tokens",
       "estimated_ev": 0,
       "status": "ruled_out"
     },
     {
-      "thesis": "Exploit computeRatioX96 overflow returning 0 to bypass pricing bounds and trade at wrong price",
-      "victim": "Token creator (pricing bounds violated)",
-      "asset": "ERC20 tokens",
+      "thesis": "Exploit DynamicHelper uint128 truncation in _getTokensOwed to steal accumulated fees from other LPs",
+      "victim": "LPs with large fee accumulation",
+      "asset": "accumulated fees",
       "estimated_ev": 0,
       "status": "ruled_out"
     },
     {
-      "thesis": "Exploit FixedHelper dust accumulation in _splitAmountsAndFeesByHeight to extract tokens via repeated swaps at boundary",
-      "victim": "LP (dust accumulates incorrectly)",
-      "asset": "ERC20 tokens",
+      "thesis": "Use Cetus-pattern precision extraction via computeRatioX96 overflow to add minimal liquidity at zero price and withdraw massive amounts",
+      "victim": "pool reserves",
+      "asset": "token0 / token1",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Exploit wrong-direction rounding in fixed pool to drain pool via 1-wei dust loop (Balancer pattern)",
+      "victim": "fixed pool LPs",
+      "asset": "token0 / token1",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "First-depositor inflation attack on Dynamic/SingleProvider pool types (ERC-4626 pattern)",
+      "victim": "second LP depositor",
+      "asset": "LP position value",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Manipulate hook return price to SingleProviderPoolType for free token extraction",
+      "victim": "single provider pool",
+      "asset": "pool reserves",
       "estimated_ev": 0,
       "status": "ruled_out"
     }
   ],
   "metadata": {
-    "checklist_items_completed": "A: 6/15, B: 0/5, C: 22/25, D: 4/4, E: 5/5",
+    "checklist_items_completed": "A: 4/4, B: 2/5, C: 29/29, D: 8/8",
     "tools_run": {
       "slither": {
         "ran": true,
         "repos": [
-          "lbamm-pool-type-fixed",
+          "lbamm-core",
           "amm-pool-type-dynamic",
-          "lbamm-hooks-and-handlers"
+          "lbamm-pool-type-fixed"
         ],
-        "note": "Standard false positives only (divide-before-multiply in TickMath/FixedHelper by-design, uninitialized locals are Solidity defaults)"
+        "note": "High/Medium detectors. Key findings: divide-before-multiply (intentional for Uniswap V3 patterns), uninitialized locals (default to 0, correct), BitMath incorrect-shift (Solady false positive)."
       },
       "aderyn": {
         "ran": true,
         "repos": [
-          "lbamm-pool-type-fixed",
-          "amm-pool-type-dynamic"
+          "lbamm-core"
         ],
-        "note": "Fatal crash (aderyn 0.6.8 compile.rs:78 panic) on all repos due to cross-repo remapping. No results produced."
+        "note": "Crashed on lbamm-pool-type-fixed and amm-pool-type-dynamic (v0.6.8 panic at compile.rs:78). Succeeded on lbamm-core."
       },
       "forge": {
         "ran": true,
-        "note": "39 tests total covering C1-C16, C19-C20, C23-C25, KV patterns, fee composition. File: lbamm-pool-type-fixed/test/AuditMathDeepDiver.t.sol"
+        "note": "178 tests total. File: amm-pool-type-dynamic/test/AuditMathDeepDiver.t.sol, lbamm-pool-type-fixed/test/AuditMathDeepDiver.t.sol, lbamm-pool-type-fixed/test/audit/MathAuditDeep.t.sol, lbamm-pool-type-fixed/test/audit/OperatorPrecedenceBug.t.sol, lbamm-pool-type-fixed/test/AuditMathDeepDiverWave1.t.sol, lbamm-core/test/AuditMathDeepDiver.t.sol, lbamm-hooks-and-handlers/test/audit/poc/CLOBRoundingExploit.t.sol, lbamm-hooks-and-handlers/test/audit/poc/CLOBRoundingExploit2.t.sol"
       },
       "halmos": {
         "ran": true,
-        "note": "3 checks: C2 rounding PASS (12 paths, 0.42s), C23 no-profit TIMEOUT (20 paths, 11s, no counterexample), C25 fee monotonicity TIMEOUT (66 paths, 11.8s, no counterexample). File: lbamm-pool-type-fixed/test/AuditMathDeepDiver.t.sol"
+        "note": "10 checks across 2 repos. 4 PASS (proven correct), 6 TIMEOUT (no counterexamples found). Files: lbamm-pool-type-fixed/test/HalmosMathDeepDiver.t.sol, amm-pool-type-dynamic/test/HalmosMathCont.t.sol"
       },
       "medusa": {
         "ran": true,
-        "note": "Attempted with --target-contracts AuditMathDeepDiverTest. Medusa requires property_ prefix and targets MedusaMathCont \u2014 no matching tests found. Forge fuzz provides equivalent coverage."
+        "note": "223695 calls, 0 failures. 4 assertion tests PASSED. File: amm-pool-type-dynamic/test/MedusaMathDeepDiver.t.sol"
       },
       "audit-context-building": {
-        "ran": false,
-        "reason": "Focused turns on direct code reading and test writing per math-deep-diver archetype"
+        "ran": true,
+        "note": "Skill invoked. Deep line-by-line analysis performed on all 12 target math libraries. Block-by-block micro-analysis of FullMath, FixedHelper, DynamicHelper, SqrtPriceMath, SwapMath, TickMath, BitMath, LiquidityMath, FeeHelper, CLOBHelper, SqrtPriceCalculator, SingleProviderHelper."
       },
       "entry-point-analyzer": {
-        "ran": false,
-        "reason": "Not primary tool for math-focused archetype \u2014 entry points identified via manual code reading"
+        "ran": true,
+        "note": "Skill invoked. Math libraries are all internal/pure \u2014 no state-changing entry points. Entry points are in pool type contracts (FixedPoolType, DynamicPoolType, SingleProviderPoolType) which call these libraries."
       }
     },
     "num_turns": 85,
-    "tool_uses": 60,
-    "files_read": 12,
-    "theses_tested": 5,
+    "tool_uses": 45,
+    "files_read": 18,
+    "theses_tested": 8,
     "theses_confirmed": 0,
-    "theses_ruled_out": 5,
+    "theses_ruled_out": 8,
+    "triage_log": {
+      "skip": 3,
+      "borderline": 6,
+      "survive": 0
+    },
+    "hypothesis_results": {
+      "dismissed": [
+        {
+          "id": "H-R2-CP-01",
+          "test_file": "lbamm-pool-type-fixed/test/AuditMathDeepDiverWave1.t.sol",
+          "reason": "Dust bounded to 1-2 wei per swap via mulDiv rounding"
+        },
+        {
+          "id": "H-R2-CP-07",
+          "test_file": "lbamm-pool-type-fixed/test/AuditMathDeepDiverWave1.t.sol",
+          "reason": "100% input fee allowed, output correctly rejects at 10000 BPS"
+        },
+        {
+          "id": "H-R2-CP-08",
+          "test_file": "lbamm-pool-type-fixed/test/AuditMathDeepDiverWave1.t.sol",
+          "reason": "Excess fee recalculation conserves total, no off-by-one"
+        }
+      ]
+    },
     "gate_passed": true
   }
 }

@@ -1,10 +1,2 @@
-{"event":"SESSION_START","agent":"extension-hijacker","wave":1,"timestamp":"2026-03-16T00:00:00Z","archetype":"extension-hijacker","mission":"If I control one extension point, can I lie to the core and cash out before anyone notices?"}
-{"event":"PHASE_A","agent":"extension-hijacker","tools":["slither","aderyn"],"repos":["lbamm-hooks-and-handlers","lbamm-core","secure-proxy"],"results":"slither: hooks 5H/3M, core 7H/20M, proxy 0H/1M. aderyn: core 1H/9L, proxy clean, hooks crashed (v0.6.8 bug)."}
-{"event":"PHASE_B","agent":"extension-hijacker","tools":["slither"],"analysis":"Call graph export for AMMStandardHook, storage layout for all 4 core modules (0 local slots each, diamond storage at 0x9A1D)."}
-{"event":"PHASE_C","agent":"extension-hijacker","checklist":"C-BOUNDARY","items_completed":18,"items_total":18,"test_files":["lbamm-core/test/AuditExtensionHijacker.t.sol","lbamm-hooks-and-handlers/test/AuditExtensionHijackerWave1.t.sol"]}
-{"event":"PHASE_D","agent":"extension-hijacker","patterns":["KV-1","KV-2","KV-3","KV-4"],"results":"KV-1: real inconsistency (Low, CP-003), KV-2: blocked by msg.sender check, KV-3: gas waste only (CP-005), KV-4: known Low (HOOK-001/CP-001)."}
-{"event":"PHASE_E","agent":"extension-hijacker","hypotheses":9,"ruled_out":9,"confirmed":0,"probes":5,"probes_ruled_out":5}
-{"event":"TOOL_RUN","agent":"extension-hijacker","tool":"halmos","tests":4,"passed":4,"failed":0,"note":"KV-1 pricing bounds symbolic verification"}
-{"event":"TOOL_RUN","agent":"extension-hijacker","tool":"medusa","sequences":10000,"assertion_tests":19,"failures":0,"note":"AMMStandardHook fuzzing"}
-{"event":"TOOL_RUN","agent":"extension-hijacker","tool":"forge","tests":37,"passed":37,"failed":0,"note":"18 core + 19 hooks tests"}
-{"event":"SESSION_END","agent":"extension-hijacker","wave":1,"findings":0,"ruled_out_vectors":18,"theft_theses":5,"theses_confirmed":0,"tools_run":["slither","aderyn","forge","halmos","medusa"],"num_turns":28,"tool_uses":45}
+{"event":"SESSION_START","ts":"2026-03-23T10:00:00Z","session_id":"wave1-ext-hijacker-2026-03-23","agent_id":"extension-hijacker","model":"claude-opus-4-6","scope":"lbamm-core, lbamm-hooks-and-handlers, secure-proxy","max_turns":200}
+{"event":"AGENT_COMPLETE","agent":"extension-hijacker","wave":1,"findings":0,"ruled_out":22,"checklist_pct":100,"tools":["slither","aderyn","forge","halmos","medusa","audit-context-building","entry-point-analyzer"],"test_file":"lbamm-core/test/AuditExtensionHijackerWave1.t.sol","timestamp":"2026-03-23T20:48:16Z"}
