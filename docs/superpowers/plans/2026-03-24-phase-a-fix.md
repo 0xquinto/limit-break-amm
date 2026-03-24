@@ -1562,7 +1562,571 @@ feat(sidecar_gate): add SMART goal-state monitoring for hypothesis completion
 
 ---
 
+## Task 13: 4-Gate Finding Validation (Pashov judging.md v2)
+
+**Source:** Pashov Audit Group `judging.md` (v2, March 2026) — 4 sequential gates that are stricter than our current 5-gate FP check. Gate 1 mandates self-refutation, Gate 3 requires profitability proof. Our `fp-gate-and-scoring.md` checks location/reachability/guard/path/poc but doesn't require the agent to **argue against its own finding** or **prove trigger profitability**.
+
+**Files:**
+- Modify: `docs/orchestrator/templates/_shared/references/fp-gate-and-scoring.md`
+- Modify: `docs/orchestrator/kill_gate.py`
+- Modify: `docs/orchestrator/tests/test_kill_gate.py`
+
+- [ ] **Step 1: Write failing tests for 4-gate validation**
+
+Add to `tests/test_kill_gate.py`:
+
+```python
+def test_gate_v2_missing_refutation():
+    """Finding without refutation_attempted field → flagged."""
+    from docs.orchestrator.kill_gate import check_gate_v2_refutation
+    finding = {"title": "Reentrancy", "description": "possible reentrancy in swap"}
+    flagged, reason = check_gate_v2_refutation(finding)
+    assert flagged
+
+
+def test_gate_v2_speculative_refutation_passes():
+    """Finding with refutation_attempted that's speculative → passes (not concrete)."""
+    from docs.orchestrator.kill_gate import check_gate_v2_refutation
+    finding = {
+        "title": "Reentrancy", "description": "reentrancy in swap",
+        "refutation_attempted": "Probably safe because of nonReentrant",
+    }
+    flagged, reason = check_gate_v2_refutation(finding)
+    assert not flagged  # speculative refutation clears gate
+
+
+def test_gate_v2_concrete_refutation_rejects():
+    """Finding with concrete refutation citing a guard line → REJECTED."""
+    from docs.orchestrator.kill_gate import check_gate_v2_refutation
+    finding = {
+        "title": "Reentrancy", "description": "reentrancy in swap",
+        "refutation_attempted": "nonReentrant modifier at AMMModule.sol:142 blocks re-entry into _swap()",
+    }
+    flagged, reason = check_gate_v2_refutation(finding)
+    assert flagged  # concrete refutation = finding should be rejected
+    assert "refuted" in reason.lower()
+
+
+def test_gate_v2_trigger_no_profit():
+    """Finding where costs exceed extraction → flagged."""
+    from docs.orchestrator.kill_gate import check_gate_v2_trigger
+    finding = {
+        "title": "Dust extraction", "impact": "rounding yields 1 wei per swap",
+        "extractable_value": "$0.001",
+        "prerequisites": ["flash loan of $1M"],
+    }
+    flagged, reason = check_gate_v2_trigger(finding)
+    assert flagged
+
+
+def test_gate_v2_trigger_profitable():
+    """Finding with clear profit → passes."""
+    from docs.orchestrator.kill_gate import check_gate_v2_trigger
+    finding = {
+        "title": "Fee bypass", "impact": "skip 0.3% fee on any swap",
+        "extractable_value": "$50,000",
+    }
+    flagged, reason = check_gate_v2_trigger(finding)
+    assert not flagged
+```
+
+Run: `.venv/bin/python -m pytest docs/orchestrator/tests/test_kill_gate.py -v -k gate_v2`
+Expected: FAIL
+
+- [ ] **Step 2: Implement 4-gate validation functions**
+
+Add to `kill_gate.py`:
+
+```python
+# ── Pashov v2 4-Gate Finding Validation ──────────────────────────────────────
+# Source: Pashov Audit Group judging.md (v2, March 2026)
+# Gates: Refutation → Reachability → Trigger → Impact (sequential, fail-fast)
+
+def check_gate_v2_refutation(finding: dict) -> tuple[bool, str]:
+    """Gate 1 — Refutation: Did the agent try to disprove its own finding?
+
+    If refutation_attempted contains a specific guard (file:line pattern),
+    the finding is REJECTED (concrete refutation kills the finding).
+    If refutation_attempted is speculative ('probably', 'might'), it clears.
+    If refutation_attempted is absent, it's flagged (agent didn't try).
+    """
+    refutation = finding.get("refutation_attempted", "")
+    if not refutation:
+        return True, "Missing refutation_attempted — you must argue against your own finding before submitting"
+
+    # Check for concrete refutation (cites specific guard with file:line)
+    import re
+    has_file_line = re.search(r'\w+\.sol:\d+', refutation)
+    has_blocking_verb = any(word in refutation.lower() for word in
+                           ["blocks", "prevents", "guards", "reverts", "requires", "enforces"])
+    if has_file_line and has_blocking_verb:
+        return True, f"Self-refuted: concrete guard found ({refutation[:100]}). Move to ruled_out_vectors."
+
+    return False, ""
+
+
+def check_gate_v2_trigger(finding: dict) -> tuple[bool, str]:
+    """Gate 3 — Trigger: Is the attack profitable for an unprivileged actor?
+
+    Checks extractable_value vs prerequisites cost. Flags dust-level or
+    admin-only triggers.
+    """
+    ev = finding.get("extractable_value", "")
+    prereqs = finding.get("prerequisites", [])
+
+    # Check for dust-level extraction
+    if ev:
+        ev_lower = ev.lower().replace(",", "").replace("$", "")
+        try:
+            amount = float(re.search(r'[\d.]+', ev_lower).group())
+            if amount < 1.0:  # less than $1
+                return True, f"Extraction value ${amount} is dust-level — costs exceed extraction"
+        except (AttributeError, ValueError):
+            pass
+
+    # Check for admin-only trigger
+    for p in prereqs:
+        p_lower = p.lower()
+        if any(word in p_lower for word in ["admin", "owner", "governance", "multisig", "timelock"]):
+            return True, f"Requires privileged trigger: '{p}' — demote to LEAD"
+
+    return False, ""
+```
+
+- [ ] **Step 3: Replace fp-gate-and-scoring.md with 4-gate sequence**
+
+Rewrite `docs/orchestrator/templates/_shared/references/fp-gate-and-scoring.md`:
+
+```markdown
+### Finding Validation — 4-Gate Sequential Check (MANDATORY)
+
+Every finding passes four sequential gates. Fail any gate → move to `ruled_out_vectors` or demote to a LEAD. Later gates are NOT evaluated for failed findings.
+
+#### Gate 1 — Refutation (Self-Adversarial)
+
+Before submitting ANY finding, construct the strongest argument that it is WRONG:
+1. Find the guard, check, or constraint that kills the attack
+2. Quote the exact line (`Contract.sol:NNN`) and trace how it blocks the claimed step
+3. Record in `refutation_attempted` field
+
+- **Concrete refutation** (specific guard blocks exact claimed step) → **REJECTED** — move to `ruled_out_vectors`
+- **Speculative refutation** ("probably wouldn't happen") → **clears**, continue to Gate 2
+
+#### Gate 2 — Reachability
+
+Prove the vulnerable state exists in a live deployment:
+- Structurally impossible (enforced invariant prevents it) → **REJECTED**
+- Requires privileged actions outside normal operation → **DEMOTE** to LEAD
+- Achievable through normal usage or common token behaviors → **clears**, continue
+
+Record in `fp_gate.entry_reachable`.
+
+#### Gate 3 — Trigger (Profitability)
+
+Prove an unprivileged actor executes the attack profitably:
+- Only trusted roles can trigger → **DEMOTE** to LEAD
+- Costs exceed extraction (gas + flash loan fee > extracted value) → **REJECTED**
+- Unprivileged actor triggers profitably → **clears**, continue
+
+Record `extractable_value` and `prerequisites`.
+
+#### Gate 4 — Impact
+
+Prove material harm to an identifiable victim:
+- Self-harm only → **REJECTED**
+- Dust-level, no compounding → **DEMOTE** to LEAD
+- Material loss to identifiable victim → **CONFIRMED**
+
+Record `victim` and `impact`.
+
+### Confidence Scoring (MANDATORY per finding)
+
+Start at **confidence_score: 100**. Apply deductions:
+
+| Condition | Deduction |
+|-----------|-----------|
+| Partial attack path (missing one step) | -20 |
+| Bounded non-compounding impact | -15 |
+| Requires specific (but achievable) state | -10 |
+| No Forge PoC (only code-analysis reasoning) | -10 |
+
+Confidence ≥ 80 → include description + fix suggestion.
+Confidence < 80 → include description only (no fix).
+Confidence < 50 → reconsider: likely false positive.
+
+### Safe Patterns (Do NOT flag)
+
+- `unchecked` in Solidity 0.8+ (but verify reasoning)
+- Explicit narrowing casts in 0.8+ (reverts on overflow)
+- MINIMUM_LIQUIDITY burn on first deposit
+- SafeERC20 (`safeTransfer`/`safeTransferFrom`)
+- `nonReentrant` (only flag cross-contract reentrancy)
+- Two-step admin transfer
+- Consistent protocol-favoring rounding (unless compounding or zero-rounding)
+- Fee-on-transfer/rebasing tokens ARE valid attack surface if protocol accepts arbitrary ERC20s
+```
+
+- [ ] **Step 4: Add `refutation_attempted` to Finding schema**
+
+In `docs/orchestrator/schema.py`, add to the `Finding` dataclass:
+
+```python
+refutation_attempted: str = ""  # Gate 1: agent's self-refutation of this finding
+```
+
+- [ ] **Step 5: Wire v2 gates into kill_gate.run_kill_gate**
+
+In `kill_gate.py`, in the existing `run_kill_gate` function, add Gate 1 and Gate 3 checks after the existing gates:
+
+```python
+    # Pashov v2 gates (supplement existing gates A/D/F/G/H)
+    flagged, reason = check_gate_v2_refutation(finding)
+    if flagged:
+        return {"status": "flagged", "gate": "V2-refutation", "reason": reason}
+    flagged, reason = check_gate_v2_trigger(finding)
+    if flagged:
+        return {"status": "flagged", "gate": "V2-trigger", "reason": reason}
+```
+
+Run: `.venv/bin/python -m pytest docs/orchestrator/tests/test_kill_gate.py -v -k gate_v2`
+Expected: PASS
+
+- [ ] **Step 6: Commit**
+
+```
+feat(kill_gate,fp-gate): replace FP gate with Pashov v2 4-gate validation sequence
+```
+
+---
+
+## Task 14: LEAD Tier for Partial Findings
+
+**Source:** Pashov Audit Group `judging.md` + `shared-rules.md` (v2) — intermediate status between confirmed finding and ruled_out. Currently our agents produce binary outcomes (finding or ruled_out) with nothing in between. Adding LEADs captures the 242 borderline vectors that might have partial attack paths.
+
+**Promotion rules (from Pashov):**
+- **Cross-contract echo**: Same root cause confirmed as FINDING in one contract → promote LEAD in every contract where the same pattern appears
+- **Multi-agent convergence**: 2+ agents flagged same area, lead was demoted (not rejected) → promote to FINDING at confidence 75
+- **Partial-path completion**: Only weakness is incomplete trace but path is reachable and unguarded → promote at confidence 75
+
+**Files:**
+- Modify: `docs/orchestrator/schema.py`
+- Modify: `docs/orchestrator/synthesizer.py`
+- Modify: `docs/orchestrator/templates/black-hat-preamble.md`
+- Modify: `docs/orchestrator/tests/test_knowledge_gen.py`
+
+- [ ] **Step 1: Add "lead" to VectorStatus enum**
+
+In `docs/orchestrator/schema.py`, add to the `VectorStatus` enum:
+
+```python
+class VectorStatus(str, Enum):
+    CONFIRMED = "confirmed"
+    RULED_OUT = "ruled_out"
+    NEEDS_POC = "needs_poc"
+    NEEDS_REVIEW = "needs_review"
+    LEAD = "lead"            # NEW: partial attack path, needs manual investigation
+```
+
+Verify: `.venv/bin/python -c "from docs.orchestrator.schema import VectorStatus; print(VectorStatus.LEAD)"`
+
+- [ ] **Step 2: Add LEAD instructions to preamble**
+
+In `docs/orchestrator/templates/black-hat-preamble.md`, after the `### What Counts as a Finding` section, add:
+
+```markdown
+### What Counts as a LEAD
+
+A LEAD is a high-signal trail for manual investigation — stronger than ruled_out, weaker than a finding:
+- You found real code smells but the full attack path is incomplete
+- You can describe the vulnerability mechanism but can't prove profitability
+- The 4-gate validation demoted (not rejected) the finding
+- You have a partial Forge test that shows suspicious behavior but doesn't demonstrate extraction
+
+**LEAD format** in your sidecar:
+```json
+{
+  "status": "lead",
+  "title": "Possible fee bypass via hook callback ordering",
+  "code_smells": ["AMMStandardHook.sol:200 — beforeSwap reads fee before afterSwap updates it"],
+  "what_remains_unverified": "Whether an attacker can profitably exploit the ordering gap"
+}
+```
+
+Place LEADs in the `findings` array with `status: "lead"`. They will be reviewed for promotion by the synthesizer.
+
+**Default to LEAD over dropping.** If you investigated a vector and found real code smells but can't complete the exploit path, report it as a LEAD. Only use `ruled_out` when you have concrete evidence (Forge test) that the path is blocked.
+```
+
+- [ ] **Step 3: Write failing test for lead promotion in synthesizer**
+
+Add to `tests/test_knowledge_gen.py` (or create `tests/test_synthesizer_leads.py`):
+
+```python
+def test_promote_leads_multi_agent_convergence():
+    """2+ agents flag same area as LEAD → promote to finding at confidence 75."""
+    from docs.orchestrator.knowledge_gen import promote_leads
+    sidecars = [
+        {"agent_name": "agent-a", "findings": [
+            {"id": "L-001", "status": "lead", "title": "Fee bypass via hook",
+             "contracts": ["AMMStandardHook.sol"], "functions": ["beforeSwap"]},
+        ]},
+        {"agent_name": "agent-b", "findings": [
+            {"id": "L-010", "status": "lead", "title": "Hook callback fee issue",
+             "contracts": ["AMMStandardHook.sol"], "functions": ["beforeSwap"]},
+        ]},
+    ]
+    promoted = promote_leads(sidecars)
+    assert len(promoted) >= 1
+    assert promoted[0]["status"] == "needs_review"
+    assert promoted[0]["confidence_score"] == 75
+
+
+def test_promote_leads_single_agent_no_promotion():
+    """Single agent LEAD without convergence → stays as lead."""
+    from docs.orchestrator.knowledge_gen import promote_leads
+    sidecars = [
+        {"agent_name": "agent-a", "findings": [
+            {"id": "L-001", "status": "lead", "title": "Fee bypass",
+             "contracts": ["AMMStandardHook.sol"], "functions": ["beforeSwap"]},
+        ]},
+    ]
+    promoted = promote_leads(sidecars)
+    assert len(promoted) == 0  # no promotion without convergence
+
+
+def test_promote_leads_cross_contract_echo():
+    """Same root cause confirmed in contract A → promote LEAD in contract B."""
+    from docs.orchestrator.knowledge_gen import promote_leads
+    sidecars = [
+        {"agent_name": "agent-a", "findings": [
+            {"id": "F-001", "status": "confirmed", "title": "Fee rounding in Dynamic",
+             "contracts": ["DynamicPoolType.sol"], "functions": ["calculateFee"],
+             "category": "rounding"},
+            {"id": "L-001", "status": "lead", "title": "Possible fee rounding in Fixed",
+             "contracts": ["FixedPoolType.sol"], "functions": ["calculateFee"],
+             "category": "rounding"},
+        ]},
+    ]
+    promoted = promote_leads(sidecars)
+    assert len(promoted) == 1
+    assert promoted[0]["id"] == "L-001"
+```
+
+Run: `.venv/bin/python -m pytest docs/orchestrator/tests/test_knowledge_gen.py -v -k promote`
+Expected: FAIL
+
+- [ ] **Step 4: Implement promote_leads**
+
+Add to `knowledge_gen.py`:
+
+```python
+def promote_leads(sidecars: list[dict]) -> list[dict]:
+    """Promote LEADs to findings based on convergence and echo rules.
+
+    Promotion rules (from Pashov judging.md v2):
+    1. Multi-agent convergence: 2+ agents flag same (contract, function) as LEAD
+       → promote to needs_review at confidence 75
+    2. Cross-contract echo: same category confirmed as FINDING in one contract
+       → promote LEADs with same category in other contracts
+
+    Returns list of promoted leads (with updated status and confidence).
+    """
+    # Collect all leads and findings across agents
+    all_leads: list[dict] = []
+    all_confirmed: list[dict] = []
+    for sidecar in sidecars:
+        for f in sidecar.get("findings", []):
+            if f.get("status") == "lead":
+                f["_source_agent"] = sidecar.get("agent_name", "")
+                all_leads.append(f)
+            elif f.get("status") == "confirmed":
+                all_confirmed.append(f)
+
+    promoted: list[dict] = []
+
+    # Rule 1: Multi-agent convergence
+    # Group leads by (contract, function) — if 2+ agents flag same area, promote
+    from collections import defaultdict
+    convergence: dict[tuple, list[dict]] = defaultdict(list)
+    for lead in all_leads:
+        for contract in lead.get("contracts", []):
+            for func in lead.get("functions", []):
+                key = (contract, func)
+                convergence[key].append(lead)
+
+    promoted_ids: set[str] = set()
+    for key, leads in convergence.items():
+        agents = set(l.get("_source_agent", "") for l in leads)
+        if len(agents) >= 2:
+            # Promote the best lead (longest description)
+            best = max(leads, key=lambda l: len(l.get("title", "")))
+            if best.get("id") not in promoted_ids:
+                best["status"] = "needs_review"
+                best["confidence_score"] = 75
+                best["promoted_reason"] = f"Multi-agent convergence: {len(agents)} agents flagged {key}"
+                promoted.append(best)
+                promoted_ids.add(best.get("id", ""))
+
+    # Rule 2: Cross-contract echo
+    confirmed_categories = set()
+    for f in all_confirmed:
+        cat = f.get("category", "")
+        if cat:
+            confirmed_categories.add(cat)
+
+    for lead in all_leads:
+        if lead.get("id") in promoted_ids:
+            continue
+        lead_cat = lead.get("category", "")
+        if lead_cat and lead_cat in confirmed_categories:
+            # Same category confirmed elsewhere → promote
+            lead["status"] = "needs_review"
+            lead["confidence_score"] = 75
+            lead["promoted_reason"] = f"Cross-contract echo: category '{lead_cat}' confirmed elsewhere"
+            promoted.append(lead)
+            promoted_ids.add(lead.get("id", ""))
+
+    return promoted
+```
+
+- [ ] **Step 5: Wire lead promotion into run_audit.py after synthesis**
+
+In `run_audit.py`, after `validate_sidecars(wave)` and before `generate_synthesis`, add:
+
+```python
+    # Promote LEADs based on multi-agent convergence and cross-contract echo
+    if wave.number == 1:
+        from .knowledge_gen import promote_leads
+        all_sidecars = []
+        for fp in list(ARTIFACTS_DIR.glob("findings-*.json")) + list(ARTIFACTS_DIR.glob("wave1-*/findings.json")):
+            try:
+                all_sidecars.append(json.loads(fp.read_text()))
+            except (json.JSONDecodeError, OSError):
+                continue
+        promoted = promote_leads(all_sidecars)
+        if promoted:
+            print(f"\n  Lead promotion: {len(promoted)} leads promoted to needs_review")
+            for p in promoted:
+                print(f"    {p.get('id', '?')}: {p.get('title', '?')[:60]} — {p.get('promoted_reason', '')}")
+```
+
+- [ ] **Step 6: Add cross-contract weaponization instruction to preamble**
+
+In `docs/orchestrator/templates/black-hat-preamble.md`, after `**Composability exploit**:`, add:
+
+```markdown
+**Cross-contract weaponization**: When you find ANY bug or suspicious pattern in one contract, immediately search for the identical pattern in every other in-scope contract. Finding fee rounding in `DynamicPoolType.sol:calculateFee` means you check `FixedPoolType.sol:calculateFee` and `SingleProviderPoolType.sol:calculateFee`. Missing a repeat instance is an audit failure. Report repeat instances as LEADs at minimum.
+```
+
+- [ ] **Step 7: Add safe patterns preemptive list to preamble**
+
+In `docs/orchestrator/templates/black-hat-preamble.md`, after the `### What Counts as a Finding` section, add:
+
+```markdown
+### Safe Patterns (Do NOT investigate — waste of turns)
+
+These patterns are intentional by design. Do NOT report them unless you have a concrete bypass:
+- `unchecked` blocks in Solidity 0.8+ (verify the reasoning, but the compiler reverts on overflow outside unchecked)
+- Explicit narrowing casts in 0.8+ (reverts on overflow)
+- `MINIMUM_LIQUIDITY` burn on first deposit (standard Uniswap pattern)
+- `SafeERC20` usage (`safeTransfer`/`safeTransferFrom`)
+- `nonReentrant` modifier (only flag cross-contract reentrancy that bypasses the guard)
+- Two-step admin transfer patterns
+- Consistent protocol-favoring rounding (unless it compounds to material loss or rounds to zero)
+- Admin-only functions doing admin things (no "admin can rug" without a concrete mechanism)
+- Missing events, naming issues, NatSpec, gas micro-optimizations
+
+**Exception**: Fee-on-transfer, rebasing, and blacklistable tokens ARE valid attack vectors if the protocol accepts arbitrary ERC20s.
+```
+
+- [ ] **Step 8: Commit**
+
+```
+feat(schema,preamble,knowledge_gen): add LEAD tier, promotion rules, safe patterns, cross-contract weaponization
+```
+
+---
+
+## Task 15: Update Local Pashov Reference to v2
+
+**Files:**
+- Update: `docs/references/pashov-skills/` directory
+
+- [ ] **Step 1: Update local copy of attack vectors and agents**
+
+The local copy at `docs/references/pashov-skills/` has v1 content (2 agents, ~80 vectors). Update to v2 (8 agents, 170+ vectors). Clone or download from https://github.com/pashov/skills and copy:
+
+```bash
+# From the cloned repo, copy updated files
+cp solidity-auditor/references/judging.md docs/references/pashov-skills/judging.md
+cp solidity-auditor/references/hacking-agents/*.md docs/references/pashov-skills/agents/
+cp solidity-auditor/references/attack-vectors/*.md docs/references/pashov-skills/attack-vectors/
+cp solidity-auditor/SKILL.md docs/references/pashov-skills/SKILL.md
+```
+
+- [ ] **Step 2: Verify new agents are present**
+
+```bash
+ls docs/references/pashov-skills/agents/
+```
+
+Expected: 9 files (8 hacking agents + shared-rules.md):
+- access-control-agent.md
+- economic-security-agent.md
+- execution-trace-agent.md
+- first-principles-agent.md
+- invariant-agent.md
+- math-precision-agent.md
+- periphery-agent.md
+- shared-rules.md
+- vector-scan-agent.md
+
+- [ ] **Step 3: Commit**
+
+```
+chore(references): update pashov-skills to v2 — 8 agents, 170+ vectors, 4-gate judging
+```
+
+---
+
 ## Dependency Graph
+
+```
+Task 1 (sidecar gate E)   ─┐
+                            ├──→ Task 5 (pipeline wiring) ──→ Task 6 (E2E verify)
+Task 2 (kill gate E)       ─┤          ↑
+                            │          │
+Task 3 (refutation prompt)  ─┤         │
+                            │          │
+Task 4 (playbook failures)  ─┘         │
+                                       │
+Task 7 (hypothesis evolution) ──→ Task 10 (complexity router) ──┤  (Task 10 depends on Task 7: shared run_pass1 + format_hypotheses_block)
+                                       │
+Task 8 (critic agent) ────────────────┤  (run_audit.py, depends on Task 5)
+                                       │
+Task 9 (Elo ranking) ─────────────────┤  (knowledge_gen, independent of 1-4)
+                                       │
+Task 11 (formal contract) ────────────┤  (knowledge_gen + preamble, depends on Task 3 for protocol)
+                                       │
+Task 12 (SMART goals) ────────────────┤  (sidecar_gate + run_audit, depends on Task 1 for gate E)
+                                       │
+Task 13 (4-gate validation) ──────────┤  (kill_gate + fp-gate + schema, independent — replaces existing gate)
+                                       │
+Task 14 (LEAD tier) ──────────────────┤  (schema + preamble + synthesizer, depends on Task 13 for demotion rules)
+                                       │
+Task 15 (update pashov ref) ──────────┘  (reference files only, independent)
+```
+
+**Parallelizable groups:**
+- **Group A** (Tasks 1-4): Independent, parallelize freely
+- **Group B** (Tasks 7, 9): Independent, parallelize freely — different functions in knowledge_gen.py
+- **Group B2** (Task 10): Depends on Task 7 — both modify `run_pass1` and `format_hypotheses_block`. Task 10 Step 4 inserts after `evolve_hypotheses` (Task 7 Step 3). Must sequence Task 7 → Task 10.
+- **Group C** (Task 8): Depends on Task 5 for pipeline wiring
+- **Group D** (Task 11): Depends on Task 3 (extends the protocol it defines)
+- **Group E** (Task 12): Depends on Task 1 (extends gate E validation)
+- **Group F** (Tasks 13, 15): Independent, parallelize freely — Task 13 modifies kill_gate/schema, Task 15 updates reference files
+- **Group G** (Task 14): Depends on Task 13 (uses demotion rules from 4-gate validation)
+- **Sequential**: Task 5 → Task 6 (after Groups A+B+B2), then Groups C+D+E+F+G
 
 ```
 Task 1 (sidecar gate E)   ─┐
