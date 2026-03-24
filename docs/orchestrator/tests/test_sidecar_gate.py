@@ -206,3 +206,68 @@ def test_failure_class_valid_values():
     }
     errors = validate_hypothesis_results(sidecar, had_hypotheses=True)
     assert not any("failure_class" in e for e in errors)
+
+
+# ── SMART Goal Validation ────────────────────────────────────────────────────
+
+def test_smart_goals_all_met():
+    """Sidecar meeting all SMART goals → no errors."""
+    sidecar = {
+        "hypothesis_results": [
+            {"id": "H-001", "status": "tested", "test_file": "test/T1.sol",
+             "detail": "Invariant holds", "failure_class": "strategic"},
+            {"id": "H-002", "status": "confirmed", "test_file": "test/T2.sol",
+             "detail": "Exploit works"},
+            {"id": "H-003", "status": "tested", "test_file": "test/T3.sol",
+             "detail": "Guard blocks", "failure_class": "strategic"},
+        ],
+    }
+    from docs.orchestrator.sidecar_gate import validate_smart_goals
+    errors = validate_smart_goals(sidecar, total_hypotheses=3)
+    assert errors == []
+
+
+def test_smart_goals_too_few_tested():
+    """Less than 60% tested/confirmed → warning."""
+    sidecar = {
+        "hypothesis_results": [
+            {"id": "H-001", "status": "dismissed", "test_file": "test/T1.sol",
+             "detail": "x", "failure_class": "strategic"},
+            {"id": "H-002", "status": "dismissed", "test_file": "test/T2.sol",
+             "detail": "y", "failure_class": "strategic"},
+            {"id": "H-003", "status": "dismissed", "test_file": "test/T3.sol",
+             "detail": "z", "failure_class": "strategic"},
+            {"id": "H-004", "status": "not_tested", "detail": "out of scope"},
+            {"id": "H-005", "status": "tested", "test_file": "test/T4.sol",
+             "detail": "holds"},
+        ],
+    }
+    from docs.orchestrator.sidecar_gate import validate_smart_goals
+    errors = validate_smart_goals(sidecar, total_hypotheses=5)
+    assert any("60%" in e or "tested" in e.lower() for e in errors)
+
+
+def test_smart_goals_missing_hypothesis_entries():
+    """Fewer entries than total_hypotheses → error."""
+    sidecar = {
+        "hypothesis_results": [
+            {"id": "H-001", "status": "tested", "test_file": "test/T.sol", "detail": "ok"},
+        ],
+    }
+    from docs.orchestrator.sidecar_gate import validate_smart_goals
+    errors = validate_smart_goals(sidecar, total_hypotheses=5)
+    assert any("1/5" in e or "missing" in e.lower() for e in errors)
+
+
+def test_smart_goals_too_few_forge_tests():
+    """Fewer than 3 unique test_files → warning."""
+    sidecar = {
+        "hypothesis_results": [
+            {"id": "H-001", "status": "tested", "test_file": "test/T1.sol", "detail": "ok"},
+            {"id": "H-002", "status": "tested", "test_file": "test/T1.sol", "detail": "ok"},
+            {"id": "H-003", "status": "tested", "test_file": "test/T1.sol", "detail": "ok"},
+        ],
+    }
+    from docs.orchestrator.sidecar_gate import validate_smart_goals
+    errors = validate_smart_goals(sidecar, total_hypotheses=3)
+    assert any("3" in e and "test" in e.lower() for e in errors)

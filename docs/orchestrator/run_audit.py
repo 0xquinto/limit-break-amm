@@ -561,6 +561,23 @@ async def run_single_wave(
                 for w in warnings:
                     print(f"  {agent.name}: {w}")
 
+    # SMART goal validation for hypothesis completion
+    if wave.number == 1 and agents_with_hypotheses:
+        from .sidecar_gate import validate_smart_goals
+        for agent in wave.agents:
+            if agent.name not in agents_with_hypotheses:
+                continue
+            dir_path = ARTIFACTS_DIR / f"wave{wave.number}-{agent.name}" / "findings.json"
+            flat_path = ARTIFACTS_DIR / f"findings-{agent.name}.json"
+            sidecar_path = dir_path if dir_path.exists() else flat_path
+            if not sidecar_path.exists():
+                continue
+            sidecar = json.loads(sidecar_path.read_text())
+            total_h = len(pass1_result.agent_hypotheses.get(agent.name, [])) if pass1_result else 0
+            smart_issues = validate_smart_goals(sidecar, total_hypotheses=total_h)
+            for issue in smart_issues:
+                print(f"  {agent.name}: {issue}")
+
     # Run regression check (cumulative across all waves)
     run_regression_check(wave.number)
 

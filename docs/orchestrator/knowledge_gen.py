@@ -427,6 +427,13 @@ def format_hypotheses_block(
         parts.append(call_map)
         parts.append("")
 
+    parts.append(f"**SMART Completion Goals** (you are done when ALL are met):")
+    parts.append(f"- [ ] {len(hypotheses)}/{len(hypotheses)} hypotheses have `hypothesis_results` entries")
+    parts.append(f"- [ ] ≥60% of entries are `tested` or `confirmed`")
+    parts.append(f"- [ ] ≥3 unique Forge test files written and executed")
+    parts.append(f"- [ ] Every `dismissed` entry has `test_file` + `failure_class`")
+    parts.append("")
+
     parts.append("## Hypotheses to Investigate")
     parts.append("")
 

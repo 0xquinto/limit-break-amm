@@ -361,6 +361,60 @@ def validate_hypothesis_results(sidecar: dict, had_hypotheses: bool) -> list[str
     return issues
 
 
+def validate_smart_goals(sidecar: dict, total_hypotheses: int) -> list[str]:
+    """Validate hypothesis results against SMART completion criteria.
+
+    Based on Goal Setting and Monitoring (Ch. 11, Agentic Design Patterns).
+    SMART = Specific, Measurable, Achievable, Relevant, Time-bound.
+
+    Criteria:
+    1. Every hypothesis has an entry (coverage = entries / total_hypotheses)
+    2. At least 60% of entries are tested or confirmed (not just dismissed/not_tested)
+    3. At least 3 unique Forge test files referenced
+    4. Every dismissed entry has failure_class
+    """
+    issues: list[str] = []
+    results = sidecar.get("hypothesis_results", [])
+
+    # 1. Coverage: every hypothesis accounted for
+    if total_hypotheses > 0 and len(results) < total_hypotheses:
+        issues.append(
+            f"SMART GOAL: Only {len(results)}/{total_hypotheses} hypotheses have entries. "
+            f"Every injected hypothesis must be accounted for."
+        )
+
+    # 2. Testing ratio: at least 60% tested/confirmed
+    if results:
+        tested_count = sum(1 for r in results if r.get("status") in ("tested", "confirmed"))
+        ratio = tested_count / len(results)
+        if ratio < 0.60:
+            issues.append(
+                f"SMART GOAL: Only {tested_count}/{len(results)} ({ratio:.0%}) hypotheses are "
+                f"tested/confirmed. Target is 60%. Write Forge tests for more hypotheses."
+            )
+
+    # 3. Unique test files: at least 3
+    test_files = set()
+    for r in results:
+        tf = r.get("test_file", "")
+        if tf and not tf.startswith("code-analysis:") and not tf.startswith("not-applicable"):
+            test_files.add(tf)
+    if len(test_files) < 3 and len(results) >= 3:
+        issues.append(
+            f"SMART GOAL: Only {len(test_files)} unique Forge test files. "
+            f"Write at least 3 distinct test files for thorough coverage."
+        )
+
+    # 4. failure_class on dismissed (reinforces gate E)
+    for r in results:
+        if r.get("status") == "dismissed" and r.get("failure_class") not in ("tactical", "strategic"):
+            issues.append(
+                f"SMART GOAL: Dismissed hypothesis {r.get('id', '?')} missing failure_class."
+            )
+
+    return issues
+
+
 def main():
     if len(sys.argv) < 2:
         print("Usage: python3 sidecar_gate.py <draft-path>", file=sys.stderr)
