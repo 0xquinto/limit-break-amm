@@ -781,3 +781,14 @@ def test_format_hypotheses_block_includes_refutation_protocol():
     result = format_hypotheses_block(hyps)
     assert "strongest case" in result.lower() or "refutation" in result.lower()
     assert "failure_class" in result
+
+
+def test_format_hypotheses_block_includes_contract():
+    """Output contains formal deliverables contract."""
+    from docs.orchestrator.knowledge_gen import format_hypotheses_block
+    hyps = [_make_hypothesis()]
+    result = format_hypotheses_block(hyps)
+    assert "DELIVERABLES CONTRACT" in result or "Formal Deliverables" in result
+    assert "test_file" in result
+    assert "failure_class" in result
+    assert "self-check" in result.lower() or "validate" in result.lower()

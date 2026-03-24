@@ -49,6 +49,12 @@ Rank every hypothesis by: `extractable_value / attacker_capital / dependency_cou
 
 **Depth floor (MANDATORY SELF-CHECK)**: Before writing your final findings.json, count your Phase C items. If you have NOT completed every item in your checklist, you are NOT done. Go back and work through the remaining items. You have 200 turns — use them. Agents that complete fewer than 60% of their Phase C items will be flagged as non-compliant and their results discarded.
 
+**Hypothesis completion self-check**: Before writing your final sidecar, verify:
+1. Every hypothesis in your `<hypotheses>` block has a corresponding `hypothesis_results` entry
+2. Every dismissed hypothesis has `test_file` + `failure_class`
+3. You wrote at least 3 compiling Forge tests
+If any check fails, go back and complete the missing work. The sidecar gate will reject incomplete submissions.
+
 ### Exploit-Grounded Attack Probes (in your Phase C checklist)
 
 Your Phase C checklist includes exploit-grounded probes — attack patterns from real-world exploits ($550M+ cumulative losses) mapped to specific Limit Break code. These are marked with exploit names (Cetus, Balancer, Bunni, Cork, etc.) in your checklist. Treat them the same as other C-items: write a Forge test, log as finding or ruled_out.

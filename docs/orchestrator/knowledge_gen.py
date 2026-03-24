@@ -381,6 +381,25 @@ Report each hypothesis in `hypothesis_results`:
 
 ### Step D: Link Findings
 If you confirm a hypothesis as a finding, set `source_hypothesis` on the finding to the hypothesis ID.
+
+### Formal Deliverables Contract
+
+Before submitting your sidecar, self-validate against this contract:
+
+**Required deliverables per hypothesis:**
+- [ ] `hypothesis_results` entry with `id`, `status`, `detail`
+- [ ] `test_file` pointing to a real Forge test (required for dismissed/tested/confirmed)
+- [ ] `failure_class` set to tactical or strategic (required for dismissed)
+- [ ] `refutation_case` — 2-sentence strongest-case-FOR the vulnerability
+- [ ] `guard_location` — exact file:line of the guard that prevents exploitation
+
+**Completion criteria (you are NOT done until all are met):**
+- [ ] Every injected hypothesis has a `hypothesis_results` entry
+- [ ] At least 60% of hypotheses have status `tested` or `confirmed` (not just `dismissed`)
+- [ ] At least 3 Forge tests compile and execute successfully
+- [ ] Every `dismissed` entry has both `test_file` AND `failure_class`
+
+**Self-check before submission:** Count your deliverables. If any checkbox above is not met, continue working — do NOT submit the sidecar.
 """
 
 
