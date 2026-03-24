@@ -321,10 +321,157 @@ def format_hypotheses_block(
         suggested_test = h.get("suggested_test", "")
         if suggested_test:
             parts.append(f"**Suggested test skeleton**:\n```solidity\n{suggested_test}\n```")
+        evolution = h.get("evolution_prompt", "")
+        if evolution:
+            parts.append(f"**{evolution}**")
+        if h.get("evolved_by"):
+            parts.append(f"*(Mechanism refined by {h['evolved_by']} — original: \"{h.get('original_mechanism', '')[:80]}...\")*")
         parts.append("")
 
     parts.append("</hypotheses>")
     return "\n".join(parts)
+
+
+# ── Hypothesis Evolution (Co-Scientist Pattern) ─────────────────────────────
+
+def build_evolution_prompt(hypothesis: dict) -> str:
+    """Build a prompt for Sonnet to rewrite a weak hypothesis into a precise one."""
+    mechanism = hypothesis.get("mechanism", "")
+    functions = hypothesis.get("functions", [])
+    lines = hypothesis.get("lines", {})
+    grounded = hypothesis.get("grounded_in", "")
+
+    lines_block = ""
+    for contract, lns in lines.items():
+        lines_block += f"\n  - {contract}: lines {', '.join(str(l) for l in lns)}"
+
+    return f"""You are a smart contract security researcher. Rewrite this weak vulnerability hypothesis into a precise, testable one.
+
+ORIGINAL HYPOTHESIS (confidence: {hypothesis.get('confidence', 'unknown')}):
+{mechanism}
+
+REFERENCED CODE:{lines_block}
+FUNCTIONS: {', '.join(functions)}
+GROUNDED IN: {grounded or 'ungrounded'}
+
+REWRITE REQUIREMENTS:
+1. Read the referenced lines mentally and describe the EXACT code behavior
+2. Identify SPECIFIC input values that would trigger the issue (e.g., "amount = type(uint256).max - 1")
+3. Trace the EXACT execution path: caller → function → state change → impact
+4. Calculate economic impact: how much can an attacker extract per transaction?
+5. If the original mechanism is wrong, describe what the code ACTUALLY does and what vulnerability (if any) exists at those lines
+
+OUTPUT: Write ONLY the improved mechanism description (2-4 sentences). No preamble, no markdown headers."""
+
+
+def select_hypotheses_for_evolution(
+    hypotheses: list[dict], max_evolve: int = 5,
+) -> list[dict]:
+    """Select hypotheses that need LLM-powered evolution.
+
+    Criteria: low or medium confidence, not confirmed, not high confidence.
+    Returns up to max_evolve hypotheses sorted by confidence (lowest first).
+    """
+    candidates = []
+    for h in hypotheses:
+        if h.get("prior_result") == "confirmed":
+            continue
+        if h.get("confidence") == "high":
+            continue
+        candidates.append(h)
+
+    # Sort: low confidence first (most need for evolution)
+    conf_order = {"low": 0, "medium": 1, "unknown": 1}
+    candidates.sort(key=lambda h: conf_order.get(h.get("confidence", "unknown"), 1))
+    return candidates[:max_evolve]
+
+
+def merge_evolved_hypothesis(original: dict, evolved_text: str) -> dict:
+    """Merge an evolved mechanism back into the hypothesis dict."""
+    original["original_mechanism"] = original.get("mechanism", "")
+    original["mechanism"] = evolved_text.strip()
+    original["evolved_by"] = "sonnet"
+    return original
+
+
+async def evolve_hypotheses_llm(
+    hypotheses: list[dict],
+    repo_root: Path,
+    max_evolve: int = 5,
+) -> list[dict]:
+    """Spawn Sonnet agents to rewrite weak hypotheses into precise ones.
+
+    Uses ClaudeSDKClient for quick one-shot queries (~$1/hypothesis).
+    Falls back to prompt-only evolution if SDK unavailable.
+
+    Based on Google Co-Scientist's Evolution agent.
+    """
+    candidates = select_hypotheses_for_evolution(hypotheses, max_evolve)
+    if not candidates:
+        return hypotheses
+
+    print(f"  Evolving {len(candidates)} weak hypotheses via Sonnet...")
+
+    try:
+        from claude_agent_sdk import ClaudeAgentOptions, ClaudeSDKClient, ResultMessage
+        import os
+        os.environ.pop("CLAUDECODE", None)
+
+        options = ClaudeAgentOptions(
+            cwd=str(repo_root),
+            model="sonnet",
+            max_turns=3,
+            permission_mode="bypassPermissions",
+        )
+
+        for h in candidates:
+            prompt = build_evolution_prompt(h)
+            try:
+                output_parts: list[str] = []
+                async with ClaudeSDKClient(options) as client:
+                    await client.query(prompt)
+                    async for message in client.receive_messages():
+                        if hasattr(message, 'content'):
+                            for block in message.content:
+                                if hasattr(block, 'text'):
+                                    output_parts.append(block.text)
+                        if isinstance(message, ResultMessage):
+                            break
+
+                evolved_text = "\n".join(output_parts).strip()
+                if evolved_text and len(evolved_text) > 50:
+                    merge_evolved_hypothesis(h, evolved_text)
+                    print(f"    Evolved {h.get('id', '?')}: {evolved_text[:80]}...")
+                else:
+                    h["evolution_prompt"] = (
+                        f"EVOLUTION NOTE: This hypothesis has {h.get('confidence', 'unknown')} confidence. "
+                        f"Before testing, read the cited lines carefully and identify EXACT input values "
+                        f"that would trigger the issue. Calculate economic impact in USD."
+                    )
+            except Exception as e:
+                print(f"    Evolution failed for {h.get('id', '?')}: {e}")
+                h["evolution_prompt"] = (
+                    f"EVOLUTION NOTE: Strengthen this {h.get('confidence', 'unknown')}-confidence hypothesis "
+                    f"before testing. Identify exact input values and economic impact."
+                )
+
+    except ImportError:
+        # SDK not available — use prompt-only fallback for all candidates
+        print(f"  SDK unavailable — using prompt-only evolution for {len(candidates)} hypotheses")
+        for h in candidates:
+            lines_summary = ", ".join(
+                f"{c}:{','.join(str(l) for l in lns)}"
+                for c, lns in h.get("lines", {}).items()
+            )
+            h["evolution_prompt"] = (
+                f"EVOLUTION NOTE: This hypothesis has {h.get('confidence', 'unknown')} confidence. "
+                f"Before testing, strengthen it by: "
+                f"(1) Reading {lines_summary} and verifying the mechanism, "
+                f"(2) Identifying EXACT input values that trigger the issue, "
+                f"(3) Calculating economic impact in USD."
+            )
+
+    return hypotheses
 
 
 # ── Curated Pattern Loading ──────────────────────────────────────────────────
@@ -957,6 +1104,12 @@ async def run_pass1(
     # 9. Deduplicate across all boundaries
     deduped = deduplicate_hypotheses(all_passing_hyps, boundary_scores)
     print(f"  Deduplication: {len(all_passing_hyps)} → {len(deduped)} hypotheses")
+
+    # 9b. Evolve weak hypotheses via LLM (Co-Scientist pattern, ~$1/hypothesis)
+    deduped = await evolve_hypotheses_llm(deduped, repo_root, max_evolve=5)
+    evolved_count = sum(1 for h in deduped if h.get("evolved_by") or h.get("evolution_prompt"))
+    if evolved_count:
+        print(f"  Evolution: {evolved_count} hypotheses strengthened")
 
     # 10. Route to Pass 2 agents with volume cap
     routed = route_hypotheses(deduped)

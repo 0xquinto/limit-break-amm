@@ -618,6 +618,56 @@ def test_build_cost_control_context_no_hypothesis_format(tmp_path, monkeypatch):
     assert "Hypothesis Testing Protocol" not in result
 
 
+# ── Hypothesis Evolution ─────────────────────────────────────────────────────
+
+def test_build_evolution_prompt_includes_mechanism():
+    """Evolution prompt contains the original mechanism for refinement."""
+    from docs.orchestrator.knowledge_gen import build_evolution_prompt
+    h = _make_hypothesis(confidence="low", mechanism="maybe overflow somewhere")
+    prompt = build_evolution_prompt(h)
+    assert "maybe overflow somewhere" in prompt
+    assert "strengthen" in prompt.lower() or "rewrite" in prompt.lower()
+
+
+def test_build_evolution_prompt_includes_lines():
+    """Evolution prompt references the specific source lines."""
+    from docs.orchestrator.knowledge_gen import build_evolution_prompt
+    h = _make_hypothesis(
+        confidence="low",
+        lines={"lbamm-core/src/modules/AMMModule.sol": [42, 100]},
+    )
+    prompt = build_evolution_prompt(h)
+    assert "AMMModule.sol" in prompt
+    assert "42" in prompt
+
+
+def test_select_hypotheses_for_evolution():
+    """Selects low/medium confidence, skips high and confirmed."""
+    from docs.orchestrator.knowledge_gen import select_hypotheses_for_evolution
+    hyps = [
+        _make_hypothesis(confidence="low", mechanism="weak"),
+        _make_hypothesis(confidence="high", mechanism="strong"),
+        _make_hypothesis(confidence="medium", mechanism="medium"),
+    ]
+    hyps[0]["prior_result"] = None
+    hyps[1]["prior_result"] = None
+    hyps[2]["prior_result"] = "confirmed"
+    selected = select_hypotheses_for_evolution(hyps, max_evolve=5)
+    assert len(selected) == 1  # only the low-confidence, non-confirmed one
+    assert selected[0]["mechanism"] == "weak"
+
+
+def test_merge_evolved_hypothesis():
+    """Evolved hypothesis replaces mechanism and adds evolved_by field."""
+    from docs.orchestrator.knowledge_gen import merge_evolved_hypothesis
+    original = _make_hypothesis(confidence="low", mechanism="vague overflow")
+    evolved_text = "In AMMModule.sol:2144, the fee calculation uses unchecked{amount / totalLiquidity} which rounds to 0 when amount < totalLiquidity, allowing free swaps of up to 1e15 wei (~$0.001 per swap, compounding to ~$50 over 50000 swaps)."
+    merged = merge_evolved_hypothesis(original, evolved_text)
+    assert merged["mechanism"] == evolved_text
+    assert merged["evolved_by"] == "sonnet"
+    assert merged["original_mechanism"] == "vague overflow"
+
+
 # ── Refutation Protocol ─────────────────────────────────────────────────────
 
 def test_format_hypotheses_block_includes_refutation_protocol():
