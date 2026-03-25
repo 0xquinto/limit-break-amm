@@ -498,6 +498,37 @@ def check_evidence_coverage(sidecar: dict, total_hypotheses: int) -> tuple[bool,
     return passes, issues
 
 
+# ── Test Verification Summary ────────────────────────────────────────────────
+
+def summarize_test_verification(sidecar: dict) -> dict:
+    """Summarize independent test verification results.
+
+    Returns dict with: total, compiled, executed, fabricated, trivial, real.
+    """
+    verified = sidecar.get("_verified_tests", {})
+    if not verified:
+        return {"available": False}
+
+    total = sum(1 for v in verified.values() if not v.get("skipped"))
+    compiled = sum(1 for v in verified.values() if v.get("compiled"))
+    executed = sum(1 for v in verified.values() if v.get("executed"))
+    fabricated = total - compiled
+    trivial = sum(1 for v in verified.values()
+                  if isinstance(v.get("quality"), dict) and v["quality"].get("quality") == "trivial")
+    real = sum(1 for v in verified.values()
+               if isinstance(v.get("quality"), dict) and v["quality"].get("quality") == "real")
+
+    return {
+        "available": True,
+        "total": total,
+        "compiled": compiled,
+        "executed": executed,
+        "fabricated": fabricated,
+        "trivial": trivial,
+        "real": real,
+    }
+
+
 def main():
     if len(sys.argv) < 2:
         print("Usage: python3 sidecar_gate.py <draft-path>", file=sys.stderr)
