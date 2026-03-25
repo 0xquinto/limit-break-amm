@@ -334,12 +334,26 @@ def _score_hypothesis_compliance(
     test_pct = tested / len(results) if results else 0.0
     test_pts = round(test_pct * 5, 1)
 
-    # Evidence quality (0-5)
-    with_file = sum(1 for r in results if r.get("test_file")
-                    and not r["test_file"].startswith("code-analysis:")
-                    and not r["test_file"].startswith("not-applicable"))
-    evidence_pct = with_file / len(results) if results else 0.0
-    evidence_pts = round(evidence_pct * 5, 1)
+    # Evidence quality (0-5) — prefer verification results over self-report
+    verified = sidecar.get("_verified_tests", {})
+    if verified:
+        verified_compiled = sum(1 for v in verified.values()
+                               if v.get("compiled") and not v.get("skipped"))
+        verified_real = sum(1 for v in verified.values()
+                           if isinstance(v.get("quality"), dict) and v["quality"].get("quality") == "real")
+        verified_total = sum(1 for v in verified.values() if not v.get("skipped"))
+        # Weighted: real tests get full credit, compiled-but-trivial get half
+        if verified_total > 0:
+            evidence_pct = (verified_real + 0.5 * (verified_compiled - verified_real)) / verified_total
+        else:
+            evidence_pct = 0.0
+    else:
+        # Fallback: count test_file presence (pre-verification)
+        with_file = sum(1 for r in results if r.get("test_file")
+                        and not r["test_file"].startswith("code-analysis:")
+                        and not r["test_file"].startswith("not-applicable"))
+        evidence_pct = with_file / len(results) if results else 0.0
+    evidence_pts = round(min(1.0, evidence_pct) * 5, 1)
 
     # Classification quality (0-5) — only counts dismissed entries
     dismissed = [r for r in results if r.get("status") == "dismissed"]
