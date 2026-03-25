@@ -96,20 +96,7 @@ def _score_checklist(sidecar: dict, agent_name: str, num_repos: int) -> tuple[fl
         for match in re.finditer(r'(\d+)/(\d+)', checklist_raw):
             reported += int(match.group(1))
 
-    # Try MCP progress.json as supplementary source (structured per-phase counts)
-    from .config import ARTIFACTS_DIR
-    progress_path = ARTIFACTS_DIR / f"wave1-{agent_name}" / "progress.json"
-    mcp_total = 0
-    if progress_path.exists():
-        try:
-            progress = json.loads(progress_path.read_text())
-            for phase_data in progress.values():
-                if isinstance(phase_data, dict):
-                    mcp_total += phase_data.get("completed", 0)
-        except (json.JSONDecodeError, OSError):
-            pass
-
-    # Always compute inferred count from actual sidecar content
+    # Compute inferred count from actual sidecar content
     tools = meta.get("tools_run", {})
     inferred = sum(1 for _, v in tools.items()
                    if (v is True) or (isinstance(v, dict) and v.get("ran")))
@@ -117,8 +104,8 @@ def _score_checklist(sidecar: dict, agent_name: str, num_repos: int) -> tuple[fl
     inferred += len(sidecar.get("findings", []))
 
     # Use the highest of reported vs inferred vs MCP progress — agents under-report
-    completed = max(reported, inferred, mcp_total)
-    source = "reported" if reported >= max(inferred, mcp_total) else ("mcp" if mcp_total >= inferred else "inferred")
+    completed = max(reported, inferred)
+    source = "reported" if reported >= inferred else "inferred"
 
     if expected_total == 0:
         pct = 0.0

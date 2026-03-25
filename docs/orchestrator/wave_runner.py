@@ -217,17 +217,6 @@ async def run_wave(
         from .run_manager import archive_wave
         archive_wave(wave.number)
 
-    # 1b. Set wave number for MCP audit-gate server (read by mcp_audit_gate.py)
-    os.environ["AUDIT_WAVE_NUMBER"] = str(wave.number)
-
-    # 1c. Clean up MCP shared state from previous run — but NOT during continuation
-    # runs (skip_archive=True), which need to preserve claims from the primary wave.
-    if not skip_archive:
-        mcp_state = ARTIFACTS_DIR / ".mcp-state"
-        if mcp_state.exists():
-            import shutil
-            shutil.rmtree(mcp_state)
-
     # 2. Write prompts to disk (after archive, so they don't get archived)
     print(f"  Writing {len(prompts)} prompts to disk...")
     prompt_paths = _write_prompts_to_disk(wave, prompts)
