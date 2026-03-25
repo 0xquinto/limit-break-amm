@@ -336,12 +336,14 @@ def _score_hypothesis_compliance(
 
     # Evidence quality (0-5) — prefer verification results over self-report
     verified = sidecar.get("_verified_tests", {})
+    with_file = 0  # always initialize for details dict
     if verified:
         verified_compiled = sum(1 for v in verified.values()
                                if v.get("compiled") and not v.get("skipped"))
         verified_real = sum(1 for v in verified.values()
                            if isinstance(v.get("quality"), dict) and v["quality"].get("quality") == "real")
         verified_total = sum(1 for v in verified.values() if not v.get("skipped"))
+        with_file = verified_compiled  # for details reporting
         # Weighted: real tests get full credit, compiled-but-trivial get half
         if verified_total > 0:
             evidence_pct = (verified_real + 0.5 * (verified_compiled - verified_real)) / verified_total
