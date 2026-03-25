@@ -337,3 +337,89 @@ def test_verify_test_artifacts_not_tested_skipped(tmp_path):
     }
     issues = verify_test_artifacts(sidecar, [tmp_path])
     assert issues == []
+
+
+# ── Blocking Evidence-Coverage Thresholds (Layer 3) ──────────────────────────
+
+def test_evidence_coverage_all_tested():
+    """All hypotheses tested → passes."""
+    from docs.orchestrator.sidecar_gate import check_evidence_coverage
+    sidecar = {
+        "hypothesis_results": [
+            {"id": "H-001", "status": "tested", "test_file": "test/T1.sol"},
+            {"id": "H-002", "status": "confirmed", "test_file": "test/T2.sol"},
+            {"id": "H-003", "status": "tested", "test_file": "test/T3.sol"},
+        ]
+    }
+    passes, issues = check_evidence_coverage(sidecar, total_hypotheses=3)
+    assert passes is True
+    assert issues == []
+
+
+def test_evidence_coverage_too_many_not_tested():
+    """5/10 not_tested (50%) → fails (max 30%)."""
+    from docs.orchestrator.sidecar_gate import check_evidence_coverage
+    sidecar = {
+        "hypothesis_results": [
+            {"id": f"H-{i:03d}", "status": "not_tested"} for i in range(5)
+        ] + [
+            {"id": f"H-{i:03d}", "status": "tested", "test_file": f"test/T{i}.sol"} for i in range(5, 10)
+        ]
+    }
+    passes, issues = check_evidence_coverage(sidecar, total_hypotheses=10)
+    assert passes is False
+    assert any("not_tested" in i for i in issues)
+
+
+def test_evidence_coverage_missing_entries():
+    """3 entries for 10 hypotheses → fails."""
+    from docs.orchestrator.sidecar_gate import check_evidence_coverage
+    sidecar = {
+        "hypothesis_results": [
+            {"id": "H-001", "status": "tested", "test_file": "test/T1.sol"},
+            {"id": "H-002", "status": "tested", "test_file": "test/T2.sol"},
+            {"id": "H-003", "status": "tested", "test_file": "test/T3.sol"},
+        ]
+    }
+    passes, issues = check_evidence_coverage(sidecar, total_hypotheses=10)
+    assert passes is False
+    assert any("3/10" in i or "entries" in i.lower() for i in issues)
+
+
+def test_evidence_coverage_low_test_ratio():
+    """1/10 tested (10%) → fails (need 50%)."""
+    from docs.orchestrator.sidecar_gate import check_evidence_coverage
+    sidecar = {
+        "hypothesis_results": [
+            {"id": "H-001", "status": "tested", "test_file": "test/T1.sol"},
+        ] + [
+            {"id": f"H-{i:03d}", "status": "dismissed", "test_file": f"test/T{i}.sol",
+             "failure_class": "strategic"} for i in range(2, 11)
+        ]
+    }
+    passes, issues = check_evidence_coverage(sidecar, total_hypotheses=10)
+    assert passes is False
+    assert any("tested/confirmed" in i for i in issues)
+
+
+def test_evidence_coverage_zero_hypotheses():
+    """total_hypotheses=0 → passes (nothing to check)."""
+    from docs.orchestrator.sidecar_gate import check_evidence_coverage
+    sidecar = {"hypothesis_results": []}
+    passes, issues = check_evidence_coverage(sidecar, total_hypotheses=0)
+    assert passes is True
+    assert issues == []
+
+
+def test_evidence_coverage_too_few_unique_files():
+    """All entries use same test file → fails (need 3 unique)."""
+    from docs.orchestrator.sidecar_gate import check_evidence_coverage
+    sidecar = {
+        "hypothesis_results": [
+            {"id": f"H-{i:03d}", "status": "tested", "test_file": "test/T1.sol"}
+            for i in range(5)
+        ]
+    }
+    passes, issues = check_evidence_coverage(sidecar, total_hypotheses=5)
+    assert passes is False
+    assert any("unique test files" in i for i in issues)

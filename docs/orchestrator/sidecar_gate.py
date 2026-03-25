@@ -437,6 +437,67 @@ def verify_test_artifacts(sidecar: dict, repo_roots: list) -> list[str]:
     return issues
 
 
+# ── Blocking Evidence-Coverage Gate (ADORE/EviBound Layer 3) ─────────────────
+
+def check_evidence_coverage(sidecar: dict, total_hypotheses: int) -> tuple[bool, list[str]]:
+    """Blocking evidence-coverage gate (ADORE/EviBound pattern).
+
+    Returns (passes, issues). If passes=False, sidecar is REJECTED
+    and agent enters the compliance continuation loop.
+
+    Thresholds:
+    - Every hypothesis must have an entry
+    - At most 30% may be not_tested
+    - At least 50% must be tested or confirmed
+    - At least 3 unique test files
+    """
+    results = sidecar.get("hypothesis_results", [])
+    issues: list[str] = []
+    passes = True
+
+    # Coverage: every hypothesis accounted for
+    if total_hypotheses > 0 and len(results) < total_hypotheses:
+        issues.append(
+            f"Only {len(results)}/{total_hypotheses} hypotheses have entries. "
+            "Every injected hypothesis must be accounted for."
+        )
+        passes = False
+
+    # not_tested cap: max 30%
+    not_tested = sum(1 for r in results if r.get("status") == "not_tested")
+    max_not_tested = max(1, int(total_hypotheses * 0.3))
+    if not_tested > max_not_tested:
+        issues.append(
+            f"{not_tested} entries are not_tested (max {max_not_tested}). "
+            "Write Forge tests for more hypotheses instead of skipping them."
+        )
+        passes = False
+
+    # Testing ratio: at least 50% tested/confirmed
+    tested = sum(1 for r in results if r.get("status") in ("tested", "confirmed"))
+    if results and len(results) > 0 and tested / len(results) < 0.50:
+        issues.append(
+            f"Only {tested}/{len(results)} tested/confirmed (need 50%). "
+            "Write Forge tests — dismissed-without-test and not_tested don't count."
+        )
+        passes = False
+
+    # Unique test files: at least 3
+    test_files = set()
+    for r in results:
+        tf = r.get("test_file", "")
+        if tf and not tf.startswith("code-analysis:") and not tf.startswith("not-applicable"):
+            test_files.add(tf)
+    if len(test_files) < 3 and total_hypotheses >= 3:
+        issues.append(
+            f"Only {len(test_files)} unique test files (need 3). "
+            "Write distinct Forge tests for different hypotheses."
+        )
+        passes = False
+
+    return passes, issues
+
+
 def main():
     if len(sys.argv) < 2:
         print("Usage: python3 sidecar_gate.py <draft-path>", file=sys.stderr)
