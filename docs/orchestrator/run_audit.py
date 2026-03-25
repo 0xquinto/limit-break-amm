@@ -783,6 +783,18 @@ async def run_single_wave(
         )
         for cont_round in range(MAX_CONTINUATION_ROUNDS):
             failing = identify_failing_agents(wave.number)
+
+            # Force evidence-failed agents into continuation even if compliance score is high
+            if evidence_failures:
+                failing_names = {ac.name for ac, _ in failing}
+                from .compliance import score_wave as _sw_cont
+                rc_cont = _sw_cont(wave.number)
+                for ac in rc_cont.agents:
+                    if ac.name in evidence_failures and ac.name not in failing_names:
+                        gaps = {"hypothesis": f"Evidence gate failed: {'; '.join(evidence_failures[ac.name][:3])}"}
+                        failing.append((ac, gaps))
+                        print(f"  {ac.name}: forced into continuation (evidence gate failure)")
+
             if not failing:
                 print(f"  Round {cont_round}: all agents above threshold")
                 break
