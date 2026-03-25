@@ -794,6 +794,20 @@ def test_format_hypotheses_block_includes_contract():
     assert "self-check" in result.lower() or "validate" in result.lower()
 
 
+def test_format_hypotheses_block_has_acceptance_contract():
+    """Output contains ACCEPTANCE CONTRACT with concrete numbers."""
+    from docs.orchestrator.knowledge_gen import format_hypotheses_block
+    hyps = [_make_hypothesis(hyp_id=f"H-{i}") for i in range(10)]
+    result = format_hypotheses_block(hyps)
+    assert "ACCEPTANCE CONTRACT" in result
+    assert "10 entries" in result or "10 hypotheses" in result
+    # Markdown bold: **3** contains the number
+    plain = result.replace("**", "")
+    assert "At most 3" in plain  # 30% of 10 = 3 not_tested cap
+    assert "At least 5" in plain  # 50% of 10 = 5 tested/confirmed
+    assert "REJECTED" in result
+
+
 # ── LEAD Promotion ──────────────────────────────────────────────────────────
 
 def test_promote_leads_multi_agent_convergence():
