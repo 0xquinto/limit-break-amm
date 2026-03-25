@@ -4,48 +4,97 @@
   "hypotheses": [
     {
       "id": "H-core-pooltype-01",
-      "mechanism": "In FixedHelper._accumulateDustToWithdrawal (line 271-290), accumulated dust from swap rounding (stored in ptrPoolState.dust0 and dust1, written at lines 1706-1708) is given entirely to the FIRST LP that calls withdrawLiquidity or withdrawAll after dust accrues. The dust is cleared to zero after the first withdrawal (lines 280, 286). In a pool with many LPs, dust accumulates across all swapByOutput operations (line 1694-1710) and a single LP can front-run other withdrawals to claim all dust. With high-frequency trading generating dust on every swapByOutput, the accumulated dust could become economically significant. The dust is unbounded (uint256 at DataTypes.sol line 46-47) and grows with each swap that produces output rounding. A bot monitoring the pool could call withdrawAll whenever dust exceeds gas costs.",
-      "functions": ["_accumulateDustToWithdrawal", "withdrawLiquidity", "withdrawAll", "_splitAmountsAndFeesByHeight"],
+      "mechanism": "In FixedHelper._splitAmountsAndFeesByHeight (lines 1678-1691), the swap-by-output path permits totalAmountInFilled to exceed amountIn by exactly 1 wei (line 1680: `totalAmountInFilled > amountIn + 1`). When this +1 overflow occurs, the fee recalculation at line 1691 calls _calculateOutputLPAndProtocolFee(totalAmountInFilled, ...) with the inflated amount. The resulting amountIn written back to swapCache.amountIn (line 1688) is larger than what AMMModule originally computed. However, AMMModule._validateProtocolFees (line 1662) checks `totalFees > amountIn` using the pool type's returned amountIn — if the pool type returns amountIn = totalAmountInFilled (which includes the +1), and the AMMModule uses this value for reserve calculation at line 1675 (`reserveIn = amountIn - totalFees`), then the AMM will increment reserves by 1 wei more than the user actually provided. Over many swap-by-output operations in fixed pools, this +1 reserve inflation compounds. The AMMModule balance check at line 2208 only runs during _finalizeSwapCollectFundsAndDisburse for the initial token collection, not for the pool type's internal arithmetic, so this inflation is not caught.",
+      "functions": ["_splitAmountsAndFeesByHeight", "swapByOutput", "_validateProtocolFees", "_calculateOutputLPAndProtocolFee"],
       "lines": {
-        "lbamm-pool-type-fixed/src/libraries/FixedHelper.sol": [271, 276, 280, 286, 1694, 1706, 1708],
-        "lbamm-pool-type-fixed/src/DataTypes.sol": [46, 47]
+        "lbamm-pool-type-fixed/src/libraries/FixedHelper.sol": [1678, 1680, 1688, 1691],
+        "lbamm-core/src/modules/AMMModule.sol": [1585, 1662, 1675]
       },
       "confidence": "medium",
-      "grounded_in": "EXP-02",
-      "suggested_test": "function test_dustFrontRunning() public {\n    // Setup: Create fixed pool with 2 LPs\n    // LP1 and LP2 both add liquidity\n    \n    // Action: Execute 1000 swapByOutput operations that each generate dust\n    for (uint i = 0; i < 1000; i++) {\n        vm.prank(swapper);\n        amm.singleSwap(swapByOutputOrder);\n    }\n    \n    // LP1 front-runs and withdraws\n    vm.prank(lp1);\n    amm.removeLiquidity(removeAllParams);\n    \n    // LP2 withdraws after\n    vm.prank(lp2);\n    amm.removeLiquidity(removeAllParams);\n    \n    // Assert: LP1 got all dust, LP2 got none\n    // LP1 received more tokens than their proportional share\n    assertGt(lp1Token0Balance - lp1ExpectedBalance, 0);\n    assertEq(lp2Token0Balance - lp2ExpectedBalance, 0);\n}",
+      "grounded_in": "code-observation: FixedHelper.sol:1680",
+      "suggested_test": "function test_swapByOutputPlusOneWeiInflation() public {\n    // Setup: Create a fixed pool with an asymmetric ratio (e.g., 3:7)\n    // that maximizes the split rounding divergence\n    _createFixedPool(ratio0: 3, ratio1: 7, fee: 30);\n    _addLiquidity(amount0: 100e18, amount1: 100e18);\n    \n    // Action: Perform 1000 swap-by-output operations with amounts\n    // crafted to trigger the totalAmountInFilled > amountIn + 0 path\n    uint256 reserveBefore = pool.reserve0;\n    for (uint i = 0; i < 1000; i++) {\n        vm.prank(user);\n        amm.singleSwapByOutput(poolId, amountOut: _craftedAmount(i), ...);\n    }\n    uint256 reserveAfter = pool.reserve0;\n    \n    // Assert: Reserve inflation should be bounded by actual token transfers\n    // If reserve0 grew by more than actual balanceOf increase, vulnerability confirmed\n    uint256 actualBalance = token0.balanceOf(address(amm));\n    assertGe(actualBalance, reserveAfter + pool.feeBalance0, \"Reserve inflated beyond actual balance\");\n}",
       "category": "state_coupling",
-      "source_category": "2b",
+      "source_category": "2a",
       "coupled_pair": {
-        "state_a": "ptrPoolState.dust0/dust1",
-        "state_b": "individual position values",
-        "invariant": "Dust should be distributed proportionally to all LPs, not first-come-first-served",
+        "state_a": "FixedHelper.totalAmountInFilled (computed in _splitAmountsAndFeesByHeight)",
+        "state_b": "AMMModule.ptrPoolState.reserve0/reserve1 (updated in _poolSwapByOutput)",
+        "invariant": "reserveIn added to pool must equal the actual tokens collected from the user minus fees",
         "gap_contract": "FixedHelper.sol",
-        "gap_function": "_accumulateDustToWithdrawal",
-        "gap_line": 276
+        "gap_function": "_splitAmountsAndFeesByHeight",
+        "gap_line": 1680
       },
       "masking_code": {
         "file": "FixedHelper.sol",
-        "line": 1671,
-        "pattern": "silent_guard",
-        "masks_invariant": "dust validation (potentialDustForOneOutput check) limits dust per swap to 1 price unit, but accumulation across many swaps is unbounded"
+        "line": 1680,
+        "pattern": "ternary_clamp",
+        "masks_invariant": "Allows +1 overflow silently instead of reverting, masks potential reserve-balance divergence"
       }
     },
     {
       "id": "H-core-pooltype-02",
-      "mechanism": "In FixedHelper._collectPositionSide (lines 474-540), the entire function body is in an unchecked block (line 490). At line 516, `height.consumedLiquidity -= (liquidity - sideValue)` can underflow if `sideValue > liquidity`. The variable sideValue is computed at lines 498-501 as `endHeight - currentHeight` (which equals liquidity if currentHeight == startHeight), but at line 502-503, when `height.liquidity != height.remainingAtHeight`, sideValue is decremented: `--sideValue`. This creates a case where sideValue could equal liquidity (when startHeight == currentHeight and the position spans the full current height), and then gets decremented. However if currentHeight == startHeight exactly, sideValue = endHeight - currentHeight = liquidity, and after --sideValue, sideValue = liquidity - 1, so `liquidity - sideValue = 1`. But if there's an edge case where startHeight > currentHeight (which can't happen in this branch), or if currentHeight == startHeight - 1 (also handled by the first branch), the math is safe. The real concern is the pairValue calculation at line 506-508 where `consumedLiquidity - (liquidity - sideValue)` can underflow if consumedLiquidity < (liquidity - sideValue) within the unchecked block. If a position's consumed liquidity tracking gets out of sync (e.g. through concurrent add/remove operations manipulating consumedLiquidity via _addLiquidity line 723), this subtraction wraps to a huge number, causing calculateFixedSwapByRatioRoundingDown to return an inflated pairValue.",
-      "functions": ["_collectPositionSide", "_addLiquidity", "calculateFixedSwapByRatioRoundingDown"],
+      "mechanism": "In FixedHelper._splitAmountsAndFeesByHeight (lines 1694-1710), the swap-by-output path converts excess output to dust via `ptrPoolState.dust0 += dust` or `ptrPoolState.dust1 += dust`. This dust accumulates across multiple swaps without bound (no cap on total accumulated dust). The dust is only cleared when _accumulateDustToWithdrawal (line 271-290) is called during withdrawLiquidity or withdrawAll. Critically, the dust is added to the WITHDRAWAL amount at lines 279/285 (`updatedWithdraw0 = withdraw0 + dust0`), and AMMModule then decrements reserves by the full withdraw amount including dust (line 579: `ptrPoolState.reserve0 = _safeDecrementUint128(ptrPoolState.reserve0, withdraw0)`). If dust exceeds what the reserves can cover relative to what was actually deposited, the withdrawal could extract more value than the LP's position is worth. For pools with extreme ratios (e.g., 1:10000), each swap can generate up to `calculateFixedSwapByRatio(1, packedRatio, zeroForOne)` dust, which for a 1:10000 ratio could be up to 10000 wei per swap. After 10^14 swaps, this accumulates to 10^18 wei = 1 token of phantom value. The first LP to withdraw captures ALL accumulated dust from the entire pool.",
+      "functions": ["_splitAmountsAndFeesByHeight", "_accumulateDustToWithdrawal", "withdrawLiquidity", "withdrawAll"],
       "lines": {
-        "lbamm-pool-type-fixed/src/libraries/FixedHelper.sol": [490, 498, 502, 503, 506, 508, 516, 723]
+        "lbamm-pool-type-fixed/src/libraries/FixedHelper.sol": [1694, 1706, 1708, 271, 279, 285]
       },
       "confidence": "low",
-      "grounded_in": "code-observation: FixedHelper.sol:490",
-      "suggested_test": "function test_collectPositionSideConsumedLiquidityUnderflow() public {\n    // Setup: Create a fixed pool with specific height configuration\n    // Add liquidity position that spans exactly one height unit\n    // Execute swaps to consume exactly the right amount of liquidity\n    \n    // Action: Add another position that increases consumedLiquidity via _addLiquidity line 723\n    // Then try to collect the first position\n    \n    // The key is: can we get consumedLiquidity < (liquidity - sideValue)?\n    // This requires consumedLiquidity to be less than the position's consumed portion\n    \n    // Assert: If underflow occurs, pairValue will be massive\n    // The withdrawal amount will be inflated\n    vm.expectRevert(); // or check for unexpectedly large withdrawal\n}",
+      "grounded_in": "EXP-02",
+      "suggested_test": "function test_dustAccumulationExtremeRatio() public {\n    // Setup: Create a fixed pool with extreme ratio (1:10000)\n    _createFixedPool(ratio0: 1, ratio1: 10000, fee: 30);\n    _addLiquidity(amount0: 1000e18, amount1: 1000e18);\n    \n    // Action: Perform many swap-by-output operations to accumulate dust\n    for (uint i = 0; i < 10000; i++) {\n        vm.prank(user);\n        // Craft amount to trigger dust path in _splitAmountsAndFeesByHeight\n        amm.singleSwapByOutput(poolId, amountOut: 1, ...);\n    }\n    \n    // Check accumulated dust\n    (,,,,,,,,,,,, uint256 dust0, uint256 dust1) = fixedPoolType.getFixedPoolState(poolId);\n    \n    // Assert: dust should be bounded\n    // If dust > some threshold, first LP to withdraw gets unfair windfall\n    vm.prank(lp);\n    (uint256 w0, uint256 w1,,) = amm.removeLiquidity(poolId, ...);\n    // w0 and w1 include dust - check if this exceeds LP's fair share\n    assertLe(w0 + w1, lpDeposited + fees, \"Dust windfall exceeds fair value\");\n}",
+      "category": "state_coupling",
+      "source_category": "2g",
+      "coupled_pair": {
+        "state_a": "ptrPoolState.dust0/dust1 (accumulated in _splitAmountsAndFeesByHeight)",
+        "state_b": "AMMModule.ptrPoolState.reserve0/reserve1 (decremented in _positionRemoveLiquidity)",
+        "invariant": "Total withdrawable value across all LPs must not exceed total deposited value plus fees earned",
+        "gap_contract": "FixedHelper.sol",
+        "gap_function": "_splitAmountsAndFeesByHeight",
+        "gap_line": 1706
+      },
+      "masking_code": null
+    },
+    {
+      "id": "H-core-pooltype-03",
+      "mechanism": "In FixedHelper._calculateLiquidityStartAndEndHeights (lines 313-390), when both addInRange0=true and addInRange1=true, the side0 computation at line 329 modifies add0 (`add0 += depth0`) and add1 (`add1 -= depth0ValueOf1`). Then the side1 computation at line 349 checks `originalAdd0 < depth1ValueOf0` using the ORIGINAL add0 (line 315: `originalAdd0 = add0`), not the modified add0. However, the actual subtraction at line 353 (`add0 -= depth1ValueOf0`) operates on the ALREADY-MODIFIED add0 (which had depth0 added). This means the check at line 349 uses a smaller value than the actual add0 being decremented. If originalAdd0 >= depth1ValueOf0 but originalAdd0 + depth0 - depth1ValueOf0 results in a value that, when truncated by precision at line 360-362, produces a different height range than expected. The net effect is that with carefully chosen amounts and both addInRange flags, the LP could end up with a position whose height range covers more liquidity than the tokens they deposited can support, because the depth0 bonus to add0 is consumed by both the in-range fill AND the side1 depth fill.",
+      "functions": ["_calculateLiquidityStartAndEndHeights", "depositLiquidity"],
+      "lines": {
+        "lbamm-pool-type-fixed/src/libraries/FixedHelper.sol": [315, 329, 330, 349, 353, 360, 362]
+      },
+      "confidence": "medium",
+      "grounded_in": "code-observation: FixedHelper.sol:315",
+      "suggested_test": "function test_dualAddInRangeDoubleCounting() public {\n    // Setup: Create a fixed pool with non-trivial ratio and spacing\n    _createFixedPool(ratio0: 5, ratio1: 3, spacing0: 100, spacing1: 100, fee: 30);\n    // Add initial liquidity and perform swaps to create partial heights\n    _addLiquidity(amount0: 1000e18, amount1: 1000e18);\n    _swap(amount: 500e18); // Move heights to mid-precision\n    \n    // Action: Add liquidity with both addInRange0=true, addInRange1=true\n    // where depth0 and depth1 are both non-zero\n    vm.prank(lp2);\n    (uint256 d0, uint256 d1,,) = amm.addLiquidity(\n        poolId,\n        amount0: 100e18,\n        amount1: 100e18,\n        addInRange0: true,\n        addInRange1: true\n    );\n    \n    // Assert: deposited tokens should cover the full position range\n    // Check position height range vs actual token value\n    FixedPositionInfo memory pos = fixedPoolType.getPositionInfo(positionId);\n    uint256 positionValue0 = pos.endHeight0 - pos.startHeight0;\n    assertLe(positionValue0, d0, \"Position range exceeds deposited token0\");\n}",
       "category": "state_coupling",
       "source_category": "2a",
       "coupled_pair": {
-        "state_a": "height.consumedLiquidity",
-        "state_b": "position liquidity (endHeight - startHeight)",
-        "invariant": "consumedLiquidity must always be >= sum of (liquidity - sideValue) for all positions at that height",
+        "state_a": "add0 (modified by depth0 in side0 computation)",
+        "state_b": "add0 (consumed by depth1ValueOf0 in side1 computation)",
+        "invariant": "Total add0 consumed across both sides must not exceed the original add0 provided by the user",
+        "gap_contract": "FixedHelper.sol",
+        "gap_function": "_calculateLiquidityStartAndEndHeights",
+        "gap_line": 353
+      },
+      "masking_code": {
+        "file": "FixedHelper.sol",
+        "line": 349,
+        "pattern": "silent_guard",
+        "masks_invariant": "Uses originalAdd0 for the underflow check but operates on a different (larger) add0 value, masking potential over-allocation"
+      }
+    },
+    {
+      "id": "H-core-pooltype-04",
+      "mechanism": "In FixedHelper._collectPositionSide (lines 490-539), the entire function body executes in an `unchecked` block. At line 508, the expression `consumedLiquidity - (liquidity - sideValue)` computes the consumed liquidity attributable to other positions. If a position is collected after another LP has removed liquidity that reduced consumedLiquidity via line 516 (`height.consumedLiquidity -= (liquidity - sideValue)`), and the first LP's position spans a range where the combined consumedLiquidity reductions cause the total to go below `(liquidity - sideValue)` for the second LP, the subtraction at line 508 wraps to a massive uint256. This wrapped value passes to calculateFixedSwapByRatioRoundingDown (line 507), computing a massive pairValue. The LP then claims this inflated pairValue as their withdrawal amount. AMMModule._safeDecrementUint128 (line 579) would catch this IF pairValue exceeds uint128, but if the wrapped value modulo the ratio produces a value within uint128, the decrement succeeds and the LP extracts tokens from other LPs' reserves.",
+      "functions": ["_collectPositionSide", "_collectPosition", "withdrawLiquidity", "depositLiquidity"],
+      "lines": {
+        "lbamm-pool-type-fixed/src/libraries/FixedHelper.sol": [490, 506, 508, 510, 512, 516]
+      },
+      "confidence": "medium",
+      "grounded_in": "code-observation: FixedHelper.sol:490",
+      "suggested_test": "function test_collectPositionSideUncheckedUnderflow() public {\n    // Setup: Create a fixed pool, add two LP positions covering overlapping heights\n    _createFixedPool(ratio0: 1, ratio1: 1, fee: 30);\n    vm.prank(lp1);\n    amm.addLiquidity(poolId, amount0: 1000e18, amount1: 1000e18);\n    vm.prank(lp2);\n    amm.addLiquidity(poolId, amount0: 500e18, amount1: 500e18);\n    \n    // Perform swaps to consume liquidity partially\n    _swap(amount: 200e18);\n    \n    // LP2 removes their position, which calls _collectPositionSide\n    // and reduces consumedLiquidity via height operations\n    vm.prank(lp2);\n    amm.removeLiquidity(poolId, ...);\n    \n    // Now LP1 removes their position - consumedLiquidity may have been\n    // reduced below what LP1's position expects\n    vm.prank(lp1);\n    (uint256 w0, uint256 w1,,) = amm.removeLiquidity(poolId, ...);\n    \n    // Assert: withdrawal should not exceed actual token balance\n    assertLe(w0, token0.balanceOf(address(amm)), \"Withdrawal exceeds balance\");\n    assertLe(w1, token1.balanceOf(address(amm)), \"Withdrawal exceeds balance\");\n}",
+      "category": "state_coupling",
+      "source_category": "2a",
+      "coupled_pair": {
+        "state_a": "height.consumedLiquidity (decremented by _collectPositionSide and _addLiquidity)",
+        "state_b": "pairValue (computed in _collectPositionSide using consumedLiquidity)",
+        "invariant": "consumedLiquidity must always be >= (liquidity - sideValue) for any position being collected",
         "gap_contract": "FixedHelper.sol",
         "gap_function": "_collectPositionSide",
         "gap_line": 508
@@ -53,166 +102,119 @@
       "masking_code": null
     },
     {
-      "id": "H-core-pooltype-03",
-      "mechanism": "In FixedHelper._increaseHeight (line 1856-1955), the `height.consumedLiquidity += amount` at line 1866 is inside an unchecked block (line 1865). The consumedLiquidity field is a uint256 (DataTypes.sol line 101), but there's no explicit overflow check. While individual swap amounts are bounded by uint128 (line 1469 check), consumedLiquidity accumulates across ALL swaps over the pool's lifetime. After sufficient swap volume, consumedLiquidity could theoretically overflow uint256. More practically, the paired calculation at updateExpectedReserve (line 1385-1386) uses consumedLiquidity in calculateFixedSwapByRatioRoundingDown which calls FullMath.mulDiv. If consumedLiquidity is very large, this could produce unexpected results in the expected reserve calculation, leading to swaps being priced against incorrect reserves. The accumulation path is: each swap's amountIn (after fees) adds to consumedLiquidity of the output side, and the consumed amount from the input side is returned. Over millions of swaps, the net consumedLiquidity on one side can grow without bound.",
-      "functions": ["_increaseHeight", "updateExpectedReserve", "calculateFixedSwapByRatioRoundingDown"],
+      "id": "H-core-pooltype-05",
+      "mechanism": "In FixedHelper._increaseHeight (line 1866), `height.consumedLiquidity += amount` is in an `unchecked` block. The consumedLiquidity field is uint256 in FixedHeightState. While uint256 overflow is practically infeasible for a single token, the more concerning interaction is between _increaseHeight and _decreaseHeight. In _decreaseHeight (lines 1763-1767), the check `if (consumedLiquidity < amount)` guards against underflow — but consumedLiquidity could have been artificially inflated by _increaseHeight's unchecked addition if overflow DID occur. More practically: _addLiquidity at line 723 does `height.consumedLiquidity += (currentHeight - startHeight)` in checked arithmetic (no unchecked block). This means adding liquidity with a startHeight far below currentHeight can inflate consumedLiquidity significantly. If a position is then removed, _collectPositionSide reduces consumedLiquidity at line 516. The interaction between these two paths — _addLiquidity inflating consumedLiquidity and _collectPositionSide reducing it — could create a situation where the expected reserve (updateExpectedReserve line 1377-1388) includes phantom liquidity that was never backed by real tokens.",
+      "functions": ["_increaseHeight", "_decreaseHeight", "_addLiquidity", "updateExpectedReserve"],
       "lines": {
-        "lbamm-pool-type-fixed/src/libraries/FixedHelper.sol": [1865, 1866, 1385, 1386, 1388],
-        "lbamm-pool-type-fixed/src/DataTypes.sol": [101]
+        "lbamm-pool-type-fixed/src/libraries/FixedHelper.sol": [1865, 1866, 1763, 1764, 1767, 723, 1377, 1388]
       },
       "confidence": "low",
-      "grounded_in": "code-observation: FixedHelper.sol:1866",
-      "suggested_test": "function test_consumedLiquidityOverflow() public {\n    // Setup: Create fixed pool with large positions on both sides\n    \n    // Action: Execute millions of back-and-forth swaps to grow consumedLiquidity\n    // Each swap cycle: swap A->B then B->A\n    // Net consumedLiquidity grows by the rounding difference each cycle\n    \n    // Check: At what point does consumedLiquidity grow large enough\n    // to cause FullMath.mulDiv to produce incorrect results?\n    // FullMath.mulDiv handles up to uint256 * uint256 / uint256 correctly\n    // so this is likely safe, but verify the interaction with\n    // the expectedReserve calculation\n    \n    // Assert: After many swaps, expectedReserve should still be consistent\n    assertEq(actualReserve, expectedReserve, \"Reserve mismatch after high volume\");\n}",
-      "category": null,
-      "source_category": "2a",
-      "coupled_pair": null,
-      "masking_code": null
-    },
-    {
-      "id": "H-core-pooltype-04",
-      "mechanism": "In SingleProviderPoolType.swapByInput (lines 283-341), the hook-provided price (sqrtPriceCurrentX96) is validated only against MIN_SQRT_RATIO and MAX_SQRT_RATIO bounds (line 328-330), but there is NO check that the new price is within a reasonable range of the lastSqrtPriceX96 (the previous swap's price). The ISingleProviderPoolHook.getPoolPriceForSwap can return any price between MIN_SQRT_RATIO and MAX_SQRT_RATIO-1 on each swap call. A malicious or compromised hook could return alternating extreme prices — e.g., near-MIN_SQRT_RATIO for one swap direction and near-MAX_SQRT_RATIO for the reverse — to extract maximum value from the single LP. The lastSqrtPriceX96 is stored (line 331) but never compared against for continuity. While the hook is set at pool creation by the pool creator (who is presumably the LP), if the hook contract has an exploitable vulnerability (e.g., a manipulable oracle, an upgrade path), the price can be controlled by an attacker. The Core's reserve checks (_safeDecrementUint128 for amountOut vs reserve) still apply, but within those bounds, extreme price swings extract maximum value per swap.",
-      "functions": ["swapByInput", "swapByOutput", "getPoolPriceForSwap"],
-      "lines": {
-        "lbamm-pool-type-single-provider/src/SingleProviderPoolType.sol": [283, 323, 328, 330, 331, 368, 408, 413, 416]
-      },
-      "confidence": "medium",
-      "grounded_in": "EXP-15",
-      "suggested_test": "function test_hookPriceManipulation() public {\n    // Setup: Create SingleProvider pool with a manipulable hook\n    // Hook initially returns fair price\n    // LP adds liquidity\n    \n    // Action: Attacker manipulates hook to return extreme price\n    mockHook.setPrice(MIN_SQRT_RATIO + 1); // Near-zero price for token0/token1\n    \n    // Swap token0 for token1 at extreme price\n    // This gives attacker massive token1 for minimal token0\n    vm.prank(attacker);\n    amm.singleSwap(swapOrder);\n    \n    // Assert: Attacker received disproportionate output\n    // Limited only by pool reserves, not by price reasonableness\n    assertGt(token1Received, fairPriceOutput * 10);\n}",
-      "category": null,
-      "source_category": "2d",
-      "coupled_pair": null,
-      "masking_code": {
-        "file": "SingleProviderPoolType.sol",
-        "line": 328,
-        "pattern": "min_max",
-        "masks_invariant": "MIN/MAX_SQRT_RATIO bounds mask the absence of a relative price change limit (e.g., max 10% change per swap)"
-      }
-    },
-    {
-      "id": "H-core-pooltype-05",
-      "mechanism": "In DynamicPoolType.addLiquidity (line 216-279), the snapPrice feature (line 232-234) allows any caller to move the pool's price to an arbitrary sqrtPriceX96 value when liquidity is zero. The only restriction is that no initialized ticks with liquidity exist between the current price and the target price (DynamicHelper.snapPrice line 237-291). This creates a front-running vector: when the last LP removes liquidity (making liquidity=0), an attacker can immediately call addLiquidity via the AMM with snapSqrtPriceX96 set to an extreme value, moving the price. Then they add liquidity at a narrow tick range centered on the manipulated price. When the original LP (or any user) tries to add liquidity back or swap, they interact with a pool at a manipulated price. The Core AMM's _positionAddLiquidity (AMMModule.sol line 397) delegates to the pool type without validating the resulting price. The attacker profits when subsequent swaps return the price to fair value, as they capture the arbitrage. This is essentially an empty-pool price manipulation attack.",
-      "functions": ["addLiquidity", "snapPrice", "_positionAddLiquidity"],
-      "lines": {
-        "amm-pool-type-dynamic/src/DynamicPoolType.sol": [216, 232, 233, 234],
-        "amm-pool-type-dynamic/src/libraries/DynamicHelper.sol": [237, 245, 289, 290],
-        "lbamm-core/src/modules/AMMModule.sol": [397, 422]
-      },
-      "confidence": "medium",
-      "grounded_in": "EXP-11",
-      "suggested_test": "function test_emptyPoolPriceManipulation() public {\n    // Setup: Create dynamic pool at fair price, LP adds liquidity\n    \n    // Step 1: LP removes all liquidity (pool now has 0 liquidity)\n    vm.prank(lp);\n    amm.removeLiquidity(removeAllParams);\n    \n    // Step 2: Attacker front-runs and snaps price to extreme\n    DynamicLiquidityModificationParams memory attackParams;\n    attackParams.snapSqrtPriceX96 = MIN_SQRT_RATIO + 1; // Extreme low price\n    attackParams.tickLower = -887220;\n    attackParams.tickUpper = -887210;\n    attackParams.liquidityChange = int128(1000000);\n    \n    vm.prank(attacker);\n    amm.addLiquidity(poolId, attackLiquidityParams);\n    \n    // Step 3: Innocent user swaps at manipulated price\n    vm.prank(user);\n    amm.singleSwap(swapOrder);\n    \n    // Assert: Attacker's position captured value from the price dislocation\n    vm.prank(attacker);\n    amm.removeLiquidity(poolId, attackRemoveParams);\n    assertGt(attackerProfit, 0);\n}",
+      "grounded_in": "EXP-01",
+      "suggested_test": "function test_consumedLiquidityInflationViaAddLiquidity() public {\n    // Setup: Create a fixed pool\n    _createFixedPool(ratio0: 1, ratio1: 1, fee: 0);\n    _addLiquidity(amount0: 1000e18, amount1: 1000e18);\n    \n    // Perform many swaps to push currentHeight high\n    for (uint i = 0; i < 50; i++) {\n        vm.prank(user);\n        amm.singleSwap(poolId, amountIn: 10e18, zeroForOne: true, ...);\n    }\n    \n    // Add new liquidity with startHeight far below currentHeight\n    // This inflates consumedLiquidity via line 723\n    vm.prank(lp2);\n    amm.addLiquidity(poolId, amount0: 100e18, amount1: 100e18, ...);\n    \n    // Check expectedReserve vs actual reserves\n    (uint256 er0, uint256 er1) = fixedPoolType.getExpectedReserves(poolId);\n    PoolState memory ps = amm.getPoolState(poolId);\n    \n    // Assert: expectedReserve should not exceed actual reserves\n    assertLe(er0, ps.reserve0 + 100, \"Expected reserve inflated beyond actual\");\n    assertLe(er1, ps.reserve1 + 100, \"Expected reserve inflated beyond actual\");\n}",
       "category": "state_coupling",
-      "source_category": "2e",
+      "source_category": "2a",
       "coupled_pair": {
-        "state_a": "poolState.liquidity (DynamicPoolState)",
-        "state_b": "poolState.sqrtPriceX96 (DynamicPoolState)",
-        "invariant": "Price should only change through swaps when liquidity > 0; snapPrice at liquidity=0 has no economic cost to the manipulator",
-        "gap_contract": "DynamicHelper.sol",
-        "gap_function": "snapPrice",
-        "gap_line": 289
+        "state_a": "height.consumedLiquidity (inflated by _addLiquidity line 723)",
+        "state_b": "expectedReserve (computed in updateExpectedReserve using consumedLiquidity)",
+        "invariant": "expectedReserve must always be backed by actual token reserves in the AMMModule",
+        "gap_contract": "FixedHelper.sol",
+        "gap_function": "_addLiquidity",
+        "gap_line": 723
       },
-      "masking_code": {
-        "file": "DynamicHelper.sol",
-        "line": 245,
-        "pattern": "silent_guard",
-        "masks_invariant": "liquidity > 0 check only prevents snap when there IS liquidity, but allows free price manipulation on empty pools"
-      }
+      "masking_code": null
     },
     {
       "id": "H-core-pooltype-06",
-      "mechanism": "In FixedHelper.withdrawLiquidity (lines 38-124), the unchecked block at lines 73-76 computes `withdraw0 = value0 - redeposited0` and `withdraw1 = value1 - redeposited1`. The safety relies on _calculateLiquidityStartAndEndHeights producing redeposited amounts <= value amounts. However, when addInRange0 is true (line 63), the function adds `depth0` to `add0` (line 329) and subtracts `depth0ValueOf1` from `add1` (line 330). The redeposited amounts are then computed from the height calculations which involve precision truncation (lines 360-363, 376-378: `precisionAddLoss` is subtracted). But the check at line 49 (`value0 < liquidityParams.amount0`) validates against the USER-PROVIDED withdrawal amounts, not against the redeposited amounts. The redeposit calculation uses `value0 - liquidityParams.amount0` as input, but due to precision loss and the addInRange cross-token conversion, it's possible for `redeposited0` to slightly exceed `value0`. Specifically, when addInRange0 is true and the in-range deposit converts token1 to token0 height positions, the `amountAddedOf0To0` (line 367) includes the depth addition, which could round up via the height precision alignment, making redeposited0 > value0. The unchecked subtraction would then wrap to type(uint256).max.",
-      "functions": ["withdrawLiquidity", "_calculateLiquidityStartAndEndHeights", "_collectPosition"],
+      "mechanism": "DynamicPoolType has no access control modifier (no `onlyAMM`). It uses `globalState[msg.sender]` (line 35, 71, 161, 228, 321, 444, 563) to isolate state per caller. Any external contract can call DynamicPoolType.createPool, addLiquidity, swapByInput, etc. directly. While pool state is isolated per msg.sender, this has an implication for pool ID uniqueness: the poolId generated at _generatePoolId (lines 114-128) includes `address(this)` (the pool type address itself) and the caller's parameters but NOT msg.sender. Two different callers creating pools with the same parameters get the SAME poolId but with isolated state. The concern: if any external integrator uses DynamicPoolType.getCurrentPriceX96 or other view functions, they pass an `address` parameter (which is unused per line 460) and read from the WRONG caller's state — unless the view function is also isolated. Checking the code: getCurrentPriceX96 at line 459-463 does NOT use globalState — it references a different mapping. But wait, re-reading the contract: there's only globalState (line 35). The view function MUST be reading from globalState too via some mechanism. If not, external price readers get stale/zero data.",
+      "functions": ["getCurrentPriceX96", "createPool", "swapByInput"],
       "lines": {
-        "lbamm-pool-type-fixed/src/libraries/FixedHelper.sol": [38, 49, 54, 55, 66, 67, 69, 73, 74, 75, 304, 329, 330, 360, 367]
+        "amm-pool-type-dynamic/src/DynamicPoolType.sol": [35, 44, 71, 228, 444, 459, 462]
       },
       "confidence": "low",
-      "grounded_in": "code-observation: FixedHelper.sol:73",
-      "suggested_test": "function test_withdrawLiquidityRedepositOverflow() public {\n    // Setup: Create fixed pool with specific ratio that causes precision edge cases\n    // Add liquidity with amount0 and amount1 at specific heights\n    \n    // Action: Withdraw with addInRange0=true and specific amounts that cause\n    // the redeposit calculation to round up past value0\n    FixedLiquidityModificationParams memory params;\n    params.amount0 = value0 - 1; // Withdraw almost everything\n    params.amount1 = value1 - 1;\n    params.addInRange0 = true;\n    \n    // The remaining 1 token0 and 1 token1 get redeposited\n    // But the in-range conversion + precision alignment could make redeposited0 = 2\n    // Then: withdraw0 = value0 - 2 = underflow in unchecked block\n    \n    // Assert: Either revert (safe) or massively inflated withdrawal (vuln)\n    vm.prank(lp);\n    amm.removeLiquidity(poolId, withdrawParams);\n}",
-      "category": null,
-      "source_category": "2a",
-      "coupled_pair": null,
-      "masking_code": null
-    },
-    {
-      "id": "H-core-pooltype-07",
-      "mechanism": "In DynamicPoolType.swapByOutput (lines 517-607), the fee validation at line 531 uses `poolFeeBPS >= MAX_BPS` (strict greater-than-or-equal), while swapByInput at line 412 uses `poolFeeBPS > MAX_BPS` (strict greater-than). This means swapByInput ALLOWS poolFeeBPS == MAX_BPS (100% fee) but swapByOutput REJECTS it. This asymmetry is intentional (same pattern as FixedPoolType lines 340 vs 414 and SingleProviderPoolType lines 297 vs 382), but creates a subtle interaction: the Core AMM's _getPoolFee (AMMModule.sol line 1706-1721) validates dynamic fees with the same asymmetry check at line 1717: `(swapCache.inputSwap && poolFeeBPS > MAX_BPS) || poolFeeBPS >= MAX_BPS`. A dynamic fee hook that returns exactly MAX_BPS would be accepted for input swaps but rejected for output swaps. If a pool uses dynamic fees and the hook returns MAX_BPS, input swaps take 100% as fees (user gets 0 output), but output swaps revert. This could be exploited by a hook to create a one-directional trap: users can swap in one direction (losing everything to fees) but cannot swap back.",
-      "functions": ["swapByInput", "swapByOutput", "_getPoolFee"],
-      "lines": {
-        "amm-pool-type-dynamic/src/DynamicPoolType.sol": [412, 531],
-        "lbamm-pool-type-fixed/src/FixedPoolType.sol": [340, 414],
-        "lbamm-pool-type-single-provider/src/SingleProviderPoolType.sol": [297, 382],
-        "lbamm-core/src/modules/AMMModule.sol": [1717]
-      },
-      "confidence": "medium",
-      "grounded_in": "code-observation: DynamicPoolType.sol:412",
-      "suggested_test": "function test_100PercentFeeAsymmetry() public {\n    // Setup: Create dynamic fee pool with hook that returns MAX_BPS\n    mockHook.setFee(10000); // 100% fee\n    \n    // Action 1: Input swap should succeed but take 100% fee\n    vm.prank(user);\n    amm.singleSwap(inputSwapOrder);\n    assertEq(amountOut, 0, \"Output should be zero with 100% fee\");\n    \n    // Action 2: Output swap should revert\n    vm.prank(user);\n    vm.expectRevert();\n    amm.singleSwap(outputSwapOrder);\n    \n    // Assert: One-directional trap confirmed\n    // Users can put tokens in but cannot get any out via output swaps\n}",
+      "grounded_in": "code-observation: DynamicPoolType.sol:35",
+      "suggested_test": "function test_dynamicPoolTypeNoAccessControl() public {\n    // Setup: Deploy attacker contract that calls DynamicPoolType directly\n    AttackerContract attacker = new AttackerContract(address(dynamicPoolType));\n    \n    // Action: Attacker creates a pool with same params as legitimate AMM pool\n    vm.prank(address(attacker));\n    bytes32 poolId = dynamicPoolType.createPool(sameParams);\n    \n    // Attacker adds liquidity and swaps to manipulate price in their copy\n    vm.prank(address(attacker));\n    dynamicPoolType.addLiquidity(poolId, ...);\n    vm.prank(address(attacker));\n    dynamicPoolType.swapByInput(poolId, ...);\n    \n    // Check: view function behavior\n    uint160 reportedPrice = dynamicPoolType.getCurrentPriceX96(address(amm), poolId);\n    \n    // Assert: Price should reflect real AMM state, not attacker's\n    assertGt(reportedPrice, 0, \"View function returns zero/wrong state\");\n}",
       "category": null,
       "source_category": "2c",
       "coupled_pair": null,
       "masking_code": null
     },
     {
-      "id": "H-core-pooltype-08",
-      "mechanism": "In FixedHelper._splitAmountsAndFeesByHeight (lines 1559-1736), the swap-by-output path at lines 1678-1692 allows `totalAmountInFilled > amountIn + 1` to revert, but permits exactly `totalAmountInFilled == amountIn + 1` (line 1680). When this +1 tolerance is hit, the function recalculates fees via _calculateOutputLPAndProtocolFee (line 1691) using `totalAmountInFilled` as the base, not the original `amountIn`. This means the pool type returns `amountIn = totalAmountInFilled` to Core, which is 1 more than what Core passed in. Core's _poolSwapByOutput at line 1585 calls _validateProtocolFees with `swapCache.amountIn` (which is now the pool type's returned value), and at line 1592, `ptrPoolState.reserve1 = _safeIncrementUint128(ptrPoolState.reserve1, reserveIn)` adds `reserveIn = amountIn - totalFees` to reserves. If the pool type returns amountIn that's 1 unit larger than what Core actually collects from the user, reserves would be incremented by 1 more than the actual tokens received. However, Core's balance check at _finalizeSwapCollectFundsAndDisburse (line 2208) verifies actual token balance, so this 1-unit discrepancy would trigger a revert. The question is whether this off-by-one can compound across many swaps before the balance check catches it.",
-      "functions": ["_splitAmountsAndFeesByHeight", "_poolSwapByOutput", "_validateProtocolFees", "_finalizeSwapCollectFundsAndDisburse"],
+      "id": "H-core-pooltype-07",
+      "mechanism": "In FixedHelper.collectFees (lines 554-587), inside an `unchecked` block, the fee calculation divides by Q128 SEPARATELY for each side: `fee0 = (feeGrowthInside0Of0X128 - position.feeGrowthInside0Of0LastX128) / Q128 + (feeGrowthInside0Of1X128 - position.feeGrowthInside0Of1LastX128) / Q128` (lines 577-578). The wrapping subtraction relies on the Uniswap V3 invariant that feeGrowthInside always increases monotonically for a given position. But in the fixed pool's height-based system, feeGrowthOutside values are initialized in _crossHeight (line 1993 onward) using the CURRENT global feeGrowthGlobal minus the outgoing height's feeGrowthOutside. If _crossHeight is called during _increaseHeight but the heightCache.feeGrowthGlobalOf0X128 has not yet been updated with the current swap's fee (because fee distribution happens WITHIN the same _increaseHeight loop at lines 1911-1927), then feeGrowthOutside could be initialized with a stale global value. This creates a gap: the position initialized at this height records feeGrowthInsideLast based on the stale feeGrowthOutside, then when collecting fees later, the wrapping subtraction produces a value that includes fees from BEFORE the position was created.",
+      "functions": ["collectFees", "_collectPositionSide", "getFeeGrowthInside", "_crossHeight", "_increaseHeight"],
       "lines": {
-        "lbamm-pool-type-fixed/src/libraries/FixedHelper.sol": [1559, 1678, 1680, 1688, 1691],
-        "lbamm-core/src/modules/AMMModule.sol": [1506, 1545, 1585, 1588, 2208]
+        "lbamm-pool-type-fixed/src/libraries/FixedHelper.sol": [534, 535, 561, 577, 578, 873, 883, 1911, 1916, 1993]
       },
       "confidence": "medium",
-      "grounded_in": "EXP-02",
-      "suggested_test": "function test_offByOneAmountInFixed() public {\n    // Setup: Create fixed pool with ratio that triggers the +1 tolerance\n    // The ratio needs to cause rounding in _splitAmountsAndFeesByHeight\n    // such that totalAmountInFilled = amountIn + 1\n    \n    // Action: Execute swapByOutput with carefully chosen amountOut\n    vm.prank(user);\n    (uint256 actualAmountOut, uint256 amountIn,,) = fixedPoolType.swapByOutput(\n        context, poolId, true, amountOut, poolFeeBPS, protocolFeeBPS, \"\"\n    );\n    \n    // Check: Does the returned amountIn exceed what Core passed?\n    // If so, Core's reserve accounting will be +1 off\n    // Verify via balance check at AMMModule line 2208\n    \n    // Assert: Either the swap reverts at balance check (safe) or\n    // reserves desync from actual balances (vuln)\n    assertEq(token0.balanceOf(address(amm)), expectedBalance, \"Balance mismatch\");\n}",
+      "grounded_in": "code-observation: FixedHelper.sol:1993",
+      "suggested_test": "function test_feeGrowthStaleInitInCrossHeight() public {\n    // Setup: Create a fixed pool with positions at different heights\n    _createFixedPool(ratio0: 1, ratio1: 1, fee: 3000);\n    vm.prank(lp1);\n    amm.addLiquidity(poolId, amount0: 100e18, amount1: 100e18);\n    \n    // Generate significant fee growth via swaps\n    for (uint i = 0; i < 100; i++) {\n        vm.prank(user);\n        amm.singleSwap(poolId, amountIn: 10e18, zeroForOne: true, ...);\n        vm.prank(user);\n        amm.singleSwap(poolId, amountIn: 10e18, zeroForOne: false, ...);\n    }\n    \n    // A large swap that crosses heights during _increaseHeight\n    // triggers _crossHeight which initializes feeGrowthOutside\n    vm.prank(user);\n    amm.singleSwap(poolId, amountIn: 50e18, zeroForOne: true, ...);\n    \n    // Add new position at the newly crossed height\n    vm.prank(lp2);\n    amm.addLiquidity(poolId, amount0: 50e18, amount1: 50e18, ...);\n    \n    // Perform more swaps\n    for (uint i = 0; i < 10; i++) {\n        vm.prank(user);\n        amm.singleSwap(poolId, amountIn: 5e18, zeroForOne: true, ...);\n    }\n    \n    // LP2 collects fees - check if inflated\n    vm.prank(lp2);\n    (uint256 fees0, uint256 fees1) = amm.collectFees(poolId, ...);\n    \n    // Assert: fees should not exceed feeBalance\n    PoolState memory ps = amm.getPoolState(poolId);\n    assertLe(fees0, ps.feeBalance0, \"Fee claim exceeds pool fee balance\");\n}",
       "category": "state_coupling",
       "source_category": "2g",
       "coupled_pair": {
-        "state_a": "FixedPoolType returned amountIn",
-        "state_b": "Core's ptrPoolState.reserve (token in side)",
-        "invariant": "Pool type's returned amountIn must exactly match the amount Core collects from the user",
+        "state_a": "heightInfo[height].feeGrowthOutside0X128 (set during _crossHeight within _increaseHeight)",
+        "state_b": "position.feeGrowthInside0Of0LastX128 (set during _addLiquidity after the swap)",
+        "invariant": "feeGrowthOutside must reflect all fees accumulated up to the point of height crossing",
         "gap_contract": "FixedHelper.sol",
-        "gap_function": "_splitAmountsAndFeesByHeight",
-        "gap_line": 1680
-      },
-      "masking_code": {
-        "file": "AMMModule.sol",
-        "line": 2208,
-        "pattern": "silent_guard",
-        "masks_invariant": "Balance check at finalization catches reserve-balance mismatch, but only for the current transaction - accumulated 1-wei discrepancies across txs might not be caught"
-      }
-    },
-    {
-      "id": "H-core-pooltype-09",
-      "mechanism": "In SingleProviderPoolType (lines 137-256), the addLiquidity, removeLiquidity, and collectFees functions all call ILimitBreakAMM(AMM).getPoolState(poolId) to read the current reserves and fee balances. This creates a cross-contract read during a state-modifying operation. The flow is: Core._positionAddLiquidity calls poolType.addLiquidity, which calls back to Core.getPoolState to read reserves. The pool type then returns deposit0/deposit1 to Core, which updates reserves at lines 455-458. But between the getPoolState read and the reserve write, the reserves could theoretically change if there's a reentrancy path. While TstorishReentrancyGuardWithFlags protects against direct reentrancy, the getPoolState call is a VIEW function that doesn't trigger the reentrancy guard. The concern is: if a token transfer callback (from a previous operation in the same TX) fires between Core calling poolType.addLiquidity and the poolType calling back Core.getPoolState, the pool state read by the pool type could be stale. In practice, the reentrancy guard blocks concurrent state-modifying operations, so the pool state should be consistent. But this cross-contract read pattern is architecturally fragile — the pool type trusts Core's view function to return current state mid-operation.",
-      "functions": ["addLiquidity", "removeLiquidity", "collectFees", "getPoolState", "_positionAddLiquidity"],
-      "lines": {
-        "lbamm-pool-type-single-provider/src/SingleProviderPoolType.sol": [149, 150, 195, 196, 242, 243, 248, 312],
-        "lbamm-core/src/modules/AMMModule.sol": [397, 422, 455, 458]
-      },
-      "confidence": "low",
-      "grounded_in": "EXP-03",
-      "suggested_test": "function test_singleProviderStaleStateRead() public {\n    // Setup: Create SingleProvider pool with liquidity\n    \n    // Action: In same TX, execute operations that modify reserves\n    // before the pool type reads them via getPoolState\n    // e.g., batch: collectFees (modifies feeBalance) then addLiquidity\n    \n    // The pool type's addLiquidity reads feeBalance via getPoolState\n    // If collectFees already reduced feeBalance, addLiquidity sees\n    // the post-collection balances and returns fees0/fees1 accordingly\n    \n    // Assert: Verify that the fees returned by addLiquidity are consistent\n    // with the actual feeBalance state\n    assertEq(fees0FromAdd, expectedFees0, \"Fee state inconsistency\");\n}",
-      "category": "state_coupling",
-      "source_category": "2e",
-      "coupled_pair": {
-        "state_a": "Core's ptrPoolState.feeBalance0/feeBalance1",
-        "state_b": "SingleProviderPoolType's fees0/fees1 return values",
-        "invariant": "Pool type's returned fees must match actual feeBalance at time of Core's feeBalance decrement",
-        "gap_contract": "SingleProviderPoolType.sol",
-        "gap_function": "addLiquidity",
-        "gap_line": 195
+        "gap_function": "_crossHeight",
+        "gap_line": 1993
       },
       "masking_code": null
     },
     {
-      "id": "H-core-pooltype-10",
-      "mechanism": "In SingleProviderPoolType.swapByInput (lines 283-341), when `amountOut > swapCache.reserveOut` (SingleProviderHelper.sol line 43), the function falls through to swapByOutput with the remaining reserves as amountOut (line 45-47). The swapByOutput function at line 130-131 caps amountOut to reserveOut. However, the reserveOut read from Core via getPoolState at line 312-320 is the reserve at the time of the call. Between the pool type reading reserveOut and Core updating the reserve (AMMModule.sol line 1437/1440 via _safeDecrementUint128), no new state has changed because this is a single external call. But the subtlety is: reserveOut is the CORE's reserve (PoolState.reserve0 or reserve1), while the amountOut is what gets RETURNED to Core, which then decrements its own reserve. If the pool type returns amountOut == reserveOut, Core decrements reserve to 0. This is fine. But what if two pool types are involved in the same pool? Actually, each pool has exactly one pool type, so this is safe. The real question is: does the SingleProviderHelper.calculateFixedInput (line 42) ever return amountOut > reserveOut for mathematically sound prices? Yes, if the price makes the output very large for a given input. The fallback to swapByOutput at line 47 recalculates amountIn, and checks `swapCache.amountIn > initialAmountIn` (line 49-50). But the recalculated amountIn from swapByOutput uses calculateFixedOutput (SingleProviderHelper.sol line 137) which rounds UP, while calculateFixedInput (line 107-112) rounds DOWN. This means the swap-by-output fallback could return a LOWER amountIn than the original, which passes the check at line 49. The user gets the full reserve as output but pays less than the initial amountIn. Core's _poolSwapByInput at line 1400-1407 checks actualAmountIn < originalAmountIn and permits partial fills. So the user gets a partial fill at a better rate than the swap-by-input rate, because the output-based fee calculation at lines 160-179 uses a different formula than the input-based one at lines 69-88.",
-      "functions": ["swapByInput", "swapByOutput", "calculateFixedInput", "calculateFixedOutput", "_calculateInputLPAndProtocolFee", "_calculateOutputLPAndProtocolFee"],
+      "id": "H-core-pooltype-08",
+      "mechanism": "In FixedHelper._removeLiquidity (lines 601-628), when a position's endHeight equals the height.nextHeightAbove at line 660, the removal enters a special 'tail end' branch at line 663-668. Here, `mapBelow.nextHeightAbove = nextHeightAbove = nextHeightBelow` effectively sets the nextHeightAbove to point to nextHeightBelow, and then if `nextHeightBelow < height.currentHeight`, it moves currentHeight DOWN to nextHeightBelow (line 668). This currentHeight reduction during a remove-liquidity operation can cause subsequent swaps to see a different expectedReserve via updateExpectedReserve. Specifically, if currentHeight is moved down, the outputShareOfExpectedReserve at line 1376-1380 changes because position0ShareOf0/position1ShareOf1 values are computed based on positions that span the new (lower) currentHeight. The _collectPositionSide function (lines 497-514) would report more sideValue (unconsumed liquidity) for remaining positions because `sideValue = endHeight - currentHeight` grows when currentHeight decreases. This inflated sideValue means the LP claims more unconsumed liquidity than they should.",
+      "functions": ["_removeLiquidity", "_removeLiquidityFromHeight", "updateExpectedReserve", "_collectPositionSide"],
       "lines": {
-        "lbamm-pool-type-single-provider/src/libraries/SingleProviderHelper.sol": [29, 42, 43, 45, 47, 49, 101, 107, 125, 137, 160, 192]
+        "lbamm-pool-type-fixed/src/libraries/FixedHelper.sol": [601, 660, 663, 666, 668, 1377, 1388, 497, 501]
       },
       "confidence": "medium",
-      "grounded_in": "code-observation: SingleProviderHelper.sol:43",
-      "suggested_test": "function test_swapByInputFallbackRateArbitrage() public {\n    // Setup: SingleProvider pool with specific reserves and hook price\n    // Set reserves low enough that a moderate swap exceeds them\n    \n    // Action: Execute swapByInput with amount that causes amountOut > reserveOut\n    // This triggers the fallback to swapByOutput at line 45-47\n    \n    uint256 amountIn = 1000e18;\n    // calculateFixedInput returns amountOut = 1200e18 but reserveOut = 1000e18\n    // Fallback: swapByOutput(reserveOut=1000e18)\n    // calculateFixedOutput(1000e18) rounds UP -> requires 833e18 input\n    // Fees calculated on output-based formula\n    // actualAmountIn = 833e18 + fees < 1000e18 = initial amountIn\n    // User pays 833e18 for 1000e18 output\n    \n    // Compare: If pool had enough reserves, swapByInput would give\n    // user 1200e18 for 1000e18 input (after fees)\n    // The fallback rate (1000/833 = 1.20) vs direct rate (1200/1000 = 1.20)\n    // should be identical. Check if fee asymmetry creates a gap.\n    \n    // Assert: Compare effective rates\n    uint256 effectiveRate = amountOut * 1e18 / actualAmountIn;\n    assertApproxEqAbs(effectiveRate, expectedRate, 1);\n}",
+      "grounded_in": "code-observation: FixedHelper.sol:663",
+      "suggested_test": "function test_tailRemovalHeightManipulation() public {\n    // Setup: Create a fixed pool with specific spacing\n    _createFixedPool(ratio0: 1, ratio1: 1, spacing0: 10, spacing1: 10, fee: 30);\n    \n    // Add LP1 with a position that creates a specific height range\n    vm.prank(lp1);\n    amm.addLiquidity(poolId, amount0: 100e18, amount1: 100e18, ...);\n    \n    // Add LP2 with a position whose endHeight equals nextHeightAbove\n    vm.prank(lp2);\n    amm.addLiquidity(poolId, amount0: 50e18, amount1: 50e18, ...);\n    \n    // Perform swaps to move currentHeight near lp2's endHeight\n    vm.prank(user);\n    amm.singleSwap(poolId, amountIn: 45e18, zeroForOne: true, ...);\n    \n    // LP2 removes their position - should trigger tail removal branch\n    vm.prank(lp2);\n    amm.removeLiquidity(poolId, ...);\n    \n    // LP1 now tries to withdraw\n    vm.prank(lp1);\n    (uint256 w0, uint256 w1,,) = amm.removeLiquidity(poolId, ...);\n    \n    // Assert: LP1 withdrawal should not exceed actual tokens in pool\n    assertLe(w0, token0.balanceOf(address(amm)), \"Withdrawal exceeds balance\");\n    assertLe(w1, token1.balanceOf(address(amm)), \"Withdrawal exceeds balance\");\n}",
+      "category": "state_coupling",
+      "source_category": "2b",
+      "coupled_pair": {
+        "state_a": "height.currentHeight (modified during tail removal in _removeLiquidityFromHeight)",
+        "state_b": "sideValue computed in _collectPositionSide using currentHeight",
+        "invariant": "currentHeight movement during liquidity removal must not cause other positions to report inflated value",
+        "gap_contract": "FixedHelper.sol",
+        "gap_function": "_removeLiquidityFromHeight",
+        "gap_line": 668
+      },
+      "masking_code": null
+    },
+    {
+      "id": "H-core-pooltype-09",
+      "mechanism": "In SingleProviderPoolType.swapByInput (lines 283-341), the hook-provided price is fetched at line 323 via `ISingleProviderPoolHook(swapCache.poolHook).getPoolPriceForSwap(context, priceParams, swapExtraData)`. The bounds check at lines 328-330 ensures MIN_SQRT_RATIO <= price < MAX_SQRT_RATIO. However, the price is used in SingleProviderHelper.calculateFixedInput (lines 101-113) which performs TWO sequential mulDiv operations: for zeroForOne=true, `amountOut = mulDiv(amountIn, sqrtPriceX96, Q96)` then `amountOut = mulDiv(amountOut, sqrtPriceX96, Q96)`. For very low sqrtPriceX96 near MIN_SQRT_RATIO (4295128739, which is ~4.3e9), with amountIn < Q96/sqrtPriceX96 (~1.8e19), the first mulDiv returns 0, and the second also returns 0. SingleProviderHelper.swapByInput does NOT check amountOut > 0 (line 43 only checks `amountOut > swapCache.reserveOut`). So the user pays amountIn + fees and receives 0 output. While AMMModule's limitAmount check protects normal users, a user setting limitAmount=0 or a composing contract that doesn't set slippage would lose their input entirely. The pool's reserves increase while no output is delivered.",
+      "functions": ["swapByInput", "calculateFixedInput", "_calculateInputLPAndProtocolFee"],
+      "lines": {
+        "lbamm-pool-type-single-provider/src/SingleProviderPoolType.sol": [283, 323, 328, 333],
+        "lbamm-pool-type-single-provider/src/libraries/SingleProviderHelper.sol": [29, 42, 43, 101, 107, 108]
+      },
+      "confidence": "medium",
+      "grounded_in": "EXP-01",
+      "suggested_test": "function test_singleProviderZeroOutputSwap() public {\n    // Setup: Create a SingleProvider pool with a hook that returns MIN_SQRT_RATIO + 1\n    MockPriceHook hook = new MockPriceHook(MIN_SQRT_RATIO + 1);\n    _createSingleProviderPool(hook, fee: 30);\n    _addLiquidity(amount0: 100e18, amount1: 100e18);\n    \n    // Action: Swap a small amount of token0 for token1\n    uint256 amountIn = 1000; // Small amount\n    vm.prank(user);\n    (uint256 actualIn, uint256 amountOut,,) = amm.singleSwap(\n        poolId,\n        amountIn: amountIn,\n        limitAmount: 0,\n        zeroForOne: true\n    );\n    \n    // Assert: Should not charge user for zero output\n    if (amountOut == 0) {\n        assertEq(actualIn, 0, \"User charged for zero output\");\n    }\n}",
       "category": null,
-      "source_category": "2d",
+      "source_category": "2a",
+      "coupled_pair": null,
+      "masking_code": {
+        "file": "SingleProviderHelper.sol",
+        "line": 43,
+        "pattern": "silent_guard",
+        "masks_invariant": "Only checks amountOut > reserveOut, does not check amountOut > 0, allowing zero-output swaps"
+      }
+    },
+    {
+      "id": "H-core-pooltype-10",
+      "mechanism": "In FixedHelper._addLiquidityToHeight (lines 782-850), the linked list insertion uses a `while(true)` loop at line 796 with no gas bound or iteration limit. The traversal relies on the linked list being well-formed — each node's nextHeightAbove and nextHeightBelow point to valid, initialized nodes. If _removeLiquidityFromHeight (lines 642-689) clears a node's pointers at line 682-683 (`mapHeight.nextHeightBelow = 0; mapHeight.nextHeightAbove = 0`) for a height that other nodes still reference as their neighbor, the linked list becomes corrupted. Subsequent _addLiquidityToHeight calls that traverse through the corrupted region could enter an infinite loop between lines 834-840 (walking up/down repeatedly) or between the root and an orphaned node. A malicious LP could craft this scenario by: (1) adding two overlapping positions at heights A and B, (2) removing position at height B to clear its pointers, (3) then adding a new position with endHeightInsertionHint pointing to B. The gas exhaustion DoS would prevent any new liquidity from being added to the pool.",
+      "functions": ["_addLiquidityToHeight", "_removeLiquidityFromHeight"],
+      "lines": {
+        "lbamm-pool-type-fixed/src/libraries/FixedHelper.sol": [782, 796, 799, 810, 834, 840, 842, 680, 682, 683]
+      },
+      "confidence": "low",
+      "grounded_in": "code-observation: FixedHelper.sol:796",
+      "suggested_test": "function test_linkedListDoSViaCorruptedPointers() public {\n    // Setup: Create a fixed pool with spacing=1 for precise height control\n    _createFixedPool(ratio0: 1, ratio1: 1, spacing0: 1, spacing1: 1, fee: 30);\n    \n    // Add positions to create height entries at specific points\n    vm.prank(lp1);\n    amm.addLiquidity(poolId, amount0: 100, amount1: 100, ...);\n    vm.prank(lp2);\n    amm.addLiquidity(poolId, amount0: 200, amount1: 200, ...);\n    \n    // Remove LP1's position to potentially clear height pointers\n    vm.prank(lp1);\n    amm.removeLiquidity(poolId, ...);\n    \n    // Add new position with hint pointing to removed height\n    uint256 gasBefore = gasleft();\n    vm.prank(lp3);\n    amm.addLiquidity(poolId, amount0: 50, amount1: 50, endHeightInsertionHint0: removedHeight, ...);\n    uint256 gasUsed = gasBefore - gasleft();\n    \n    // Assert: Should not consume excessive gas\n    assertLt(gasUsed, 1_000_000, \"Possible infinite loop in height traversal\");\n}",
+      "category": null,
+      "source_category": "2b",
       "coupled_pair": null,
       "masking_code": null
     }

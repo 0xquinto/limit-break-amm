@@ -1,82 +1,86 @@
 # Wave 1 Synthesis (black-hat-offense)
-Generated: 2026-03-23T21:01:41Z
+Generated: 2026-03-25T03:55:34Z
 Data source: JSON sidecars
 
 ## Agents
 
 | Agent | Role | Model | Turns | Tokens | Status |
 |-------|------|-------|-------|--------|--------|
-| precision-sniper | black-hat | claude-opus-4-6 | 120 | 0 | completed |
-| state-desync | black-hat | claude-opus-4-6 | 120 | 0 | completed |
-| auth-forger | black-hat | claude-opus-4-6 | 55 | 0 | completed |
-| math-deep-diver | black-hat | claude-opus-4-6 | 85 | 0 | completed |
-| cross-boundary | black-hat | claude-opus-4-6 | 0 | 0 | stale |
-| composability-exploiter | black-hat | claude-opus-4-6 | 120 | 0 | completed |
-| price-distorter | black-hat | claude-opus-4-6 | 180 | 0 | completed |
-| insolvency-engineer | black-hat | claude-opus-4-6 | 120 | 0 | completed |
-| extension-hijacker | black-hat | claude-opus-4-6 | 120 | 0 | completed |
+| precision-sniper | black-hat | claude-opus-4-6 | 80 | 0 | completed |
+| state-desync | black-hat | claude-opus-4-6 | 55 | 0 | completed |
+| auth-forger | black-hat | claude-opus-4-6 | 150 | 0 | completed |
+| math-deep-diver | black-hat | claude-opus-4-6 | 75 | 0 | completed |
+| cross-boundary | black-hat | claude-opus-4-6 | 50 | 0 | completed |
+| composability-exploiter | black-hat | claude-opus-4-6 | 100 | 0 | completed |
+| price-distorter | black-hat | claude-opus-4-6 | 120 | 0 | completed |
+| insolvency-engineer | black-hat | claude-opus-4-6 | 85 | 0 | completed |
+| extension-hijacker | black-hat | claude-opus-4-6 | 55 | 0 | completed |
 
 **Total tokens**: 0
 
 ## Tool Coverage
 
-- **WARNING**: TOOL_COVERAGE: precision-sniper (Precision Math Sniper) did NOT run entry_point_analyzer — reason: no reason given
-- **WARNING**: TOOL_COVERAGE: precision-sniper (Precision Math Sniper) did NOT run audit_context_building — reason: no reason given
-- **WARNING**: TOOL_COVERAGE: precision-sniper (Precision Math Sniper) did not report on conditional tool token_integration_analyzer — add to tools_run with ran=false and reason if not applicable
-- **WARNING**: TOOL_COVERAGE: precision-sniper (Precision Math Sniper) did not report on conditional tool sharp_edges — add to tools_run with ran=false and reason if not applicable
-- **WARNING**: TOOL_COVERAGE: state-desync (state-desync) did NOT run entry_point_analyzer — reason: no reason given
-- **WARNING**: TOOL_COVERAGE: state-desync (state-desync) did NOT run audit_context_building — reason: no reason given
-- **WARNING**: TOOL_COVERAGE: state-desync (state-desync) did not report on conditional tool token_integration_analyzer — add to tools_run with ran=false and reason if not applicable
-- **WARNING**: TOOL_COVERAGE: state-desync (state-desync) did not report on conditional tool sharp_edges — add to tools_run with ran=false and reason if not applicable
+- **WARNING**: TOOL_COVERAGE: precision-sniper (precision-sniper) did NOT run entry_point_analyzer — reason: no reason given
+- **WARNING**: TOOL_COVERAGE: precision-sniper (precision-sniper) did NOT run audit_context_building — reason: no reason given
+- **WARNING**: TOOL_COVERAGE: precision-sniper (precision-sniper) did not report on conditional tool sharp_edges — add to tools_run with ran=false and reason if not applicable
+- **WARNING**: TOOL_COVERAGE: precision-sniper (precision-sniper) did not report on conditional tool token_integration_analyzer — add to tools_run with ran=false and reason if not applicable
+- **WARNING**: TOOL_COVERAGE: state-desync (State Desync Operator) did NOT run entry_point_analyzer — reason: no reason given
+- **WARNING**: TOOL_COVERAGE: state-desync (State Desync Operator) did NOT run audit_context_building — reason: no reason given
+- **WARNING**: TOOL_COVERAGE: state-desync (State Desync Operator) did not report on conditional tool sharp_edges — add to tools_run with ran=false and reason if not applicable
+- **WARNING**: TOOL_COVERAGE: state-desync (State Desync Operator) did not report on conditional tool token_integration_analyzer — add to tools_run with ran=false and reason if not applicable
 - **WARNING**: TOOL_COVERAGE: auth-forger (Authorization & Settlement Forger) did NOT run entry_point_analyzer — reason: no reason given
 - **WARNING**: TOOL_COVERAGE: auth-forger (Authorization & Settlement Forger) did NOT run audit_context_building — reason: no reason given
-- **WARNING**: TOOL_COVERAGE: auth-forger (Authorization & Settlement Forger) did not report on conditional tool token_integration_analyzer — add to tools_run with ran=false and reason if not applicable
 - **WARNING**: TOOL_COVERAGE: auth-forger (Authorization & Settlement Forger) did not report on conditional tool sharp_edges — add to tools_run with ran=false and reason if not applicable
+- **WARNING**: TOOL_COVERAGE: auth-forger (Authorization & Settlement Forger) did not report on conditional tool token_integration_analyzer — add to tools_run with ran=false and reason if not applicable
 - **WARNING**: TOOL_COVERAGE: math-deep-diver (Math Deep-Diver) did NOT run entry_point_analyzer — reason: no reason given
 - **WARNING**: TOOL_COVERAGE: math-deep-diver (Math Deep-Diver) did NOT run audit_context_building — reason: no reason given
-- **WARNING**: TOOL_COVERAGE: math-deep-diver (Math Deep-Diver) did not report on conditional tool token_integration_analyzer — add to tools_run with ran=false and reason if not applicable
 - **WARNING**: TOOL_COVERAGE: math-deep-diver (Math Deep-Diver) did not report on conditional tool sharp_edges — add to tools_run with ran=false and reason if not applicable
-- **WARNING**: TOOL_COVERAGE: cross-boundary (Cross-Boundary Trust Analyzer) has no tools_run in metadata — likely ran NO external tools
-- **WARNING**: TOOL_COVERAGE: composability-exploiter (Composability Exploiter — finds multi-step composition attacks that chain individually safe operations) did NOT run entry_point_analyzer — reason: no reason given
-- **WARNING**: TOOL_COVERAGE: composability-exploiter (Composability Exploiter — finds multi-step composition attacks that chain individually safe operations) did NOT run audit_context_building — reason: no reason given
-- **WARNING**: TOOL_COVERAGE: composability-exploiter (Composability Exploiter — finds multi-step composition attacks that chain individually safe operations) did not report on conditional tool token_integration_analyzer — add to tools_run with ran=false and reason if not applicable
-- **WARNING**: TOOL_COVERAGE: composability-exploiter (Composability Exploiter — finds multi-step composition attacks that chain individually safe operations) did not report on conditional tool sharp_edges — add to tools_run with ran=false and reason if not applicable
+- **WARNING**: TOOL_COVERAGE: math-deep-diver (Math Deep-Diver) did not report on conditional tool token_integration_analyzer — add to tools_run with ran=false and reason if not applicable
+- **WARNING**: TOOL_COVERAGE: cross-boundary (Cross-Boundary Tracer) did NOT run entry_point_analyzer — reason: no reason given
+- **WARNING**: TOOL_COVERAGE: cross-boundary (Cross-Boundary Tracer) did NOT run audit_context_building — reason: no reason given
+- **WARNING**: TOOL_COVERAGE: cross-boundary (Cross-Boundary Tracer) did not report on conditional tool sharp_edges — add to tools_run with ran=false and reason if not applicable
+- **WARNING**: TOOL_COVERAGE: cross-boundary (Cross-Boundary Tracer) did not report on conditional tool token_integration_analyzer — add to tools_run with ran=false and reason if not applicable
+- **WARNING**: TOOL_COVERAGE: composability-exploiter (Wave 1 Composability Exploiter - chains individually-safe operations into exploitable sequences) did NOT run entry_point_analyzer — reason: no reason given
+- **WARNING**: TOOL_COVERAGE: composability-exploiter (Wave 1 Composability Exploiter - chains individually-safe operations into exploitable sequences) did NOT run audit_context_building — reason: no reason given
+- **WARNING**: TOOL_COVERAGE: composability-exploiter (Wave 1 Composability Exploiter - chains individually-safe operations into exploitable sequences) did not report on conditional tool sharp_edges — add to tools_run with ran=false and reason if not applicable
+- **WARNING**: TOOL_COVERAGE: composability-exploiter (Wave 1 Composability Exploiter - chains individually-safe operations into exploitable sequences) did not report on conditional tool token_integration_analyzer — add to tools_run with ran=false and reason if not applicable
 - **WARNING**: TOOL_COVERAGE: price-distorter (Cross-Venue Price Distorter) did NOT run entry_point_analyzer — reason: no reason given
 - **WARNING**: TOOL_COVERAGE: price-distorter (Cross-Venue Price Distorter) did NOT run audit_context_building — reason: no reason given
-- **WARNING**: TOOL_COVERAGE: price-distorter (Cross-Venue Price Distorter) did not report on conditional tool token_integration_analyzer — add to tools_run with ran=false and reason if not applicable
 - **WARNING**: TOOL_COVERAGE: price-distorter (Cross-Venue Price Distorter) did not report on conditional tool sharp_edges — add to tools_run with ran=false and reason if not applicable
-- **WARNING**: TOOL_COVERAGE: insolvency-engineer (Insolvency Engineer) did NOT run entry_point_analyzer — reason: no reason given
-- **WARNING**: TOOL_COVERAGE: insolvency-engineer (Insolvency Engineer) did NOT run audit_context_building — reason: no reason given
-- **WARNING**: TOOL_COVERAGE: insolvency-engineer (Insolvency Engineer) did not report on conditional tool token_integration_analyzer — add to tools_run with ran=false and reason if not applicable
-- **WARNING**: TOOL_COVERAGE: insolvency-engineer (Insolvency Engineer) did not report on conditional tool sharp_edges — add to tools_run with ran=false and reason if not applicable
+- **WARNING**: TOOL_COVERAGE: price-distorter (Cross-Venue Price Distorter) did not report on conditional tool token_integration_analyzer — add to tools_run with ran=false and reason if not applicable
+- **WARNING**: TOOL_COVERAGE: insolvency-engineer (unknown) did NOT run entry_point_analyzer — reason: no reason given
+- **WARNING**: TOOL_COVERAGE: insolvency-engineer (unknown) did NOT run audit_context_building — reason: no reason given
+- **WARNING**: TOOL_COVERAGE: insolvency-engineer (unknown) did not report on conditional tool sharp_edges — add to tools_run with ran=false and reason if not applicable
+- **WARNING**: TOOL_COVERAGE: insolvency-engineer (unknown) did not report on conditional tool token_integration_analyzer — add to tools_run with ran=false and reason if not applicable
 - **WARNING**: TOOL_COVERAGE: extension-hijacker (extension-hijacker) did NOT run entry_point_analyzer — reason: no reason given
 - **WARNING**: TOOL_COVERAGE: extension-hijacker (extension-hijacker) did NOT run audit_context_building — reason: no reason given
-- **WARNING**: TOOL_COVERAGE: extension-hijacker (extension-hijacker) did not report on conditional tool token_integration_analyzer — add to tools_run with ran=false and reason if not applicable
 - **WARNING**: TOOL_COVERAGE: extension-hijacker (extension-hijacker) did not report on conditional tool sharp_edges — add to tools_run with ran=false and reason if not applicable
-- **WARNING**: LENS_COVERAGE: precision-sniper (Precision Math Sniper) has no lens_coverage in metadata — likely did NOT apply value lifecycle lenses
-- **WARNING**: LENS_COVERAGE: state-desync (state-desync) has no lens_coverage in metadata — likely did NOT apply value lifecycle lenses
+- **WARNING**: TOOL_COVERAGE: extension-hijacker (extension-hijacker) did not report on conditional tool token_integration_analyzer — add to tools_run with ran=false and reason if not applicable
+- **WARNING**: LENS_COVERAGE: precision-sniper (precision-sniper) has no lens_coverage in metadata — likely did NOT apply value lifecycle lenses
+- **WARNING**: LENS_COVERAGE: state-desync (State Desync Operator) has no lens_coverage in metadata — likely did NOT apply value lifecycle lenses
+- **WARNING**: LENS_COVERAGE: auth-forger (Authorization & Settlement Forger) has no lens_coverage in metadata — likely did NOT apply value lifecycle lenses
 - **WARNING**: LENS_COVERAGE: math-deep-diver (Math Deep-Diver) has no lens_coverage in metadata — likely did NOT apply value lifecycle lenses
-- **WARNING**: LENS_COVERAGE: cross-boundary (Cross-Boundary Trust Analyzer) has no lens_coverage in metadata — likely did NOT apply value lifecycle lenses
-- **WARNING**: LENS_COVERAGE: composability-exploiter (Composability Exploiter — finds multi-step composition attacks that chain individually safe operations) has no lens_coverage in metadata — likely did NOT apply value lifecycle lenses
+- **WARNING**: LENS_COVERAGE: cross-boundary (Cross-Boundary Tracer) has no lens_coverage in metadata — likely did NOT apply value lifecycle lenses
+- **WARNING**: LENS_COVERAGE: composability-exploiter (Wave 1 Composability Exploiter - chains individually-safe operations into exploitable sequences) has no lens_coverage in metadata — likely did NOT apply value lifecycle lenses
 - **WARNING**: LENS_COVERAGE: price-distorter (Cross-Venue Price Distorter) has no lens_coverage in metadata — likely did NOT apply value lifecycle lenses
-- **WARNING**: LENS_COVERAGE: insolvency-engineer (Insolvency Engineer) has no lens_coverage in metadata — likely did NOT apply value lifecycle lenses
+- **WARNING**: LENS_COVERAGE: insolvency-engineer (unknown) has no lens_coverage in metadata — likely did NOT apply value lifecycle lenses
 - **WARNING**: LENS_COVERAGE: extension-hijacker (extension-hijacker) has no lens_coverage in metadata — likely did NOT apply value lifecycle lenses
 
 ## Agent Compliance
 
-**Aggregate: 87.0/100 (B)** — weakest dimension: evidence
+**Aggregate: 95.8/100 (A)** — weakest dimension: thesis
 
 | Agent | Total | Grade | Checklist | Tools | Evidence | Depth | Thesis |
 |-------|-------|-------|-----------|-------|----------|-------|--------|
-| precision-sniper | 98.6 | A | 30.0/30 | 20.0/20 | 18.6/20 | 20.0/20 | 10.0/10 |
-| state-desync | 100.0 | A | 30.0/30 | 20.0/20 | 20.0/20 | 20.0/20 | 10.0/10 |
-| auth-forger | 95.8 | A | 30.0/30 | 20.0/20 | 18.5/20 | 17.3/20 | 10.0/10 |
-| math-deep-diver | 95.6 | A | 30.0/30 | 20.0/20 | 18.9/20 | 16.7/20 | 10.0/10 |
-| cross-boundary | 0.0 | F | 0.0/30 | 0.0/20 | 0.0/20 | 0.0/20 | 0.0/10 |
-| composability-exploiter | 99.0 | A | 30.0/30 | 20.0/20 | 20.0/20 | 19.0/20 | 10.0/10 |
-| price-distorter | 100.0 | A | 30.0/30 | 20.0/20 | 20.0/20 | 20.0/20 | 10.0/10 |
-| insolvency-engineer | 97.5 | A | 30.0/30 | 20.0/20 | 17.5/20 | 20.0/20 | 10.0/10 |
-| extension-hijacker | 96.7 | A | 30.0/30 | 20.0/20 | 17.7/20 | 19.0/20 | 10.0/10 |
+| precision-sniper | 96.7 | A | 30.0/30 | 20.0/20 | 18.9/20 | 17.8/20 | 10.0/10 |
+| state-desync | 94.9 | A | 30.0/30 | 20.0/20 | 18.0/20 | 16.9/20 | 10.0/10 |
+| auth-forger | 99.7 | A | 30.0/30 | 20.0/20 | 19.7/20 | 20.0/20 | 10.0/10 |
+| math-deep-diver | 96.6 | A | 30.0/30 | 20.0/20 | 18.1/20 | 18.5/20 | 10.0/10 |
+| cross-boundary | 95.4 | A | 30.0/30 | 20.0/20 | 19.4/20 | 16.0/20 | 10.0/10 |
+| composability-exploiter | 100.0 | A | 30.0/30 | 20.0/20 | 20.0/20 | 20.0/20 | 10.0/10 |
+| price-distorter | 97.0 | A | 30.0/30 | 20.0/20 | 17.0/20 | 20.0/20 | 10.0/10 |
+| insolvency-engineer | 87.1 | B | 30.0/30 | 20.0/20 | 20.0/20 | 17.1/20 | 0.0/10 |
+| extension-hijacker | 94.5 | A | 30.0/30 | 20.0/20 | 17.2/20 | 17.3/20 | 10.0/10 |
 
 ## Safety Events
 
@@ -86,47 +90,79 @@ Data source: JSON sidecars
 
 (No hot spots — review artifacts manually)
 
-## Confirmed Findings (0 after dedup)
+## Confirmed Findings (3 after dedup)
 
-(No confirmed findings in this wave)
+- **HOOK-001** [medium/?] validateHandlerOrder bypasses max-only pricing bounds when computeRatioX96 overflows to 0 — contracts: AMMStandardHook.sol, SqrtPriceCalculator.sol (consensus: 3, agents: extension-hijacker, state-desync)
+- **HOOK-002** [low/?] Whitelist ID change via registryUpdateTokenSettings leaves hook with empty whitelist, blocking direct swaps — contracts: AMMStandardHook.sol, CreatorHookSettingsRegistry.sol (consensus: 2, agents: extension-hijacker)
+- **HOOK-003** [low/?] CLOB calculateFixedInput double rounding causes cumulative overconsumption in multi-order fills — contracts: CLOBHelper.sol (consensus: 1, agents: composability-exploiter)
 
-## Ruled-Out Vectors (242 total)
+## Ruled-Out Vectors (168 total)
 
-- C1: FullMath.mulDiv phantom overflow — intermediate 512-bit multiplication produces incorrect results: mulDiv correctly handles phantom overflow via 512-bit intermediate computation. Forge fuzz (25 runs  — agent: precision-sniper
-- C2: mulDivRoundingUp produces incorrect result less than mulDiv: Forge fuzz (25 runs): mulDivRoundingUp >= mulDiv for all inputs, difference <= 1. Halmos check_ conf — agent: precision-sniper
-- C3: FixedHelper._splitAmountsAndFeesByHeight — 1-wei swap produces free tokens or bypasses dust validation: 1-wei input with fee rounds to 0 after fee, pool correctly reverts with FixedPool__ZeroValueSwap. La — agent: precision-sniper
-- C4: FixedHelper._calculateSwapByInputFixed — max fee or zero liquidity height bypass: 99.99% fee (9999 BPS) correctly leaves near-zero for swap. Pool rejects zero-value swaps. Integratio — agent: precision-sniper
-- C5: FixedHelper._calculateSwapByOutputFixed — output exceeds full reserve: Output capped by expectedReserve at line 1020-1021. Full-reserve output swap test passes. Round-trip — agent: precision-sniper
-- C6: Fixed pool add/remove liquidity round-trip creates tokens from rounding: Add 50K then remove all — user balance <= original + 2 wei (rounding dust to protocol). Integration  — agent: precision-sniper
-- C7: DynamicHelper.computeSwap — tick boundary overshoot causing price to jump past tick into incorrect range: Forge tests verify: (1) single-tick range swap stays within bounds, (2) exact boundary swap with 0.3 — agent: precision-sniper
-- C8: DynamicHelper._getTokensOwed — uint128 truncation on large feeGrowth * liquidity: With liquidity=1 and max feeGrowth, result = max256/Q128 = max128 (fits). With max liquidity and del — agent: precision-sniper
-- C9: DynamicHelper._updatePosition — 0 liquidity change allows extracting more fees than owed: Fee calculation with Q128 feeGrowth per unit liquidity correctly returns expected tokens. Fuzz (25 r — agent: precision-sniper
-- C10: DynamicHelper._crossTick — fee growth outside flip incorrect, causing wrong fee distribution on direction change: Cross tick correctly computes: newOutside = global - outside. Verified forward/reverse flip consiste — agent: precision-sniper
-- C11: SqrtPriceMath.getNextSqrtPrice — zero amount, zero price, zero liquidity edge cases allow extraction: Zero amount returns same price. Zero price and zero liquidity correctly revert. Price direction veri — agent: precision-sniper
-- C12: getAmount0Delta/getAmount1Delta — wrong rounding direction allows user to extract dust: Equal prices return 0. RoundUp >= RoundDown for all tested liquidity levels. Max liquidity does not  — agent: precision-sniper
-- C13: SwapMath.computeSwapStep — free tokens when amountRemaining=1 or extreme fees: amountIn + feeAmount >= amountOut for all tested inputs (1 wei, max, 0% fee, 99.99% fee). Output swa — agent: precision-sniper
-- C14: TickMath round-trip — getSqrtPriceAtTick -> getTickAtSqrtPrice loses precision: Round-trip exact at every 1000th tick from MIN_TICK to MAX_TICK (1775 ticks). MIN_TICK -> MIN_SQRT_R — agent: precision-sniper
-- C15: BitMath.MSB/LSB — incorrect result for edge values causes wrong tick bitmap navigation: MSB(2^n) == n for all n in [0,254]. MSB(max) == 255. MSB(1) == 0. MSB(0) and LSB(0) revert. Halmos c — agent: precision-sniper
-- C16: LiquidityMath.addDelta — underflow or overflow allows creating/destroying liquidity: Positive addition works. Negative subtraction works. Underflow (50, -51) reverts. Overflow (max, +1) — agent: precision-sniper
-- C17: FeeHelper — 100% fee creates free tokens or fee exceeds input: 100% fee (10000 BPS) on input: amountIn=0, amountOut=0, feeAmount=full input. Entire input becomes f — agent: precision-sniper
-- C18: CLOBHelper.calculateFixedInput — rounding up causes maker to overpay taker: CLOB uses mulDivRoundingUp (rounds UP for output), while SingleProvider uses mulDiv (rounds DOWN). C — agent: precision-sniper
-- C19: SqrtPriceCalculator.computeRatioX96 — overflow on extreme inputs produces near-zero price: Both zeros return 2^96. amount1=0 returns MIN_SQRT_RATIO. amount0=0 returns MAX_SQRT_RATIO. Equal am — agent: precision-sniper
-- C20: SingleProviderHelper — round-trip calculateFixedInput/Output produces profit: calculateFixedInput rounds DOWN (mulDiv), calculateFixedOutput rounds UP (mulDivRoundingUp). Fuzz co — agent: precision-sniper
-- C21: Medusa fuzzing on FixedPoolType — property violations: Medusa failed to initialize: constructor arguments for FixedPoolType not provided. Contract requires — agent: precision-sniper
-- C22: Medusa fuzzing on DynamicPoolType — property violations: Medusa ran 333,893 calls (50K test limit), 37 corpus items, 353 branches explored. 14/14 assertion t — agent: precision-sniper
-- C23: INV-SW02 No Profitable Round-Trip — swap A->B then B->A yields more than started: Dynamic pool: fuzz (25 runs) confirms amountOut0 <= original amountIn for all token0->token1->token0 — agent: precision-sniper
-- C24: INV-SW03 Rounding Favors Protocol — 1-wei swaps drain pool: Dynamic: 100 sequential 1-wei swaps accumulate 0 total output (fee rounds to total input). Fixed: 1- — agent: precision-sniper
-- C25: INV-E01 Fee Monotonicity — feeGrowthGlobal decreases across swaps: 100 sequential swaps (alternating directions, increasing amounts) with 0.3% fee: cumulative fee is s — agent: precision-sniper
-- C26: Cetus-pattern precision extraction — crafted tick_index causes overflow in sqrt price, producing near-zero price enabling massive withdrawal: MIN_TICK produces MIN_SQRT_RATIO (4295128739, non-zero). MAX_TICK produces MAX_SQRT_RATIO. 100 ticks — agent: precision-sniper
-- C27: Balancer-pattern rounding direction — wrong-direction rounding allows dust-loop drain via repeated add/remove: For all liquidity levels 1-100: addAmount >= |removeAmount| for both tokens. Protocol keeps rounding — agent: precision-sniper
-- C28: ERC-4626 first depositor inflation — 1-wei LP deposit + donation allows stealing from second LP: With liquidity=1: addAmount >= removeAmount for both tokens. Rounding favors protocol even at minimu — agent: precision-sniper
-- C29: Hook price manipulation — malicious hook returns extreme price (0, max, 1 wei) to SingleProviderPoolType: SingleProviderPoolType.swapByInput (line 328-330) explicitly bounds-checks: if (sqrtPriceCurrentX96  — agent: precision-sniper
-- H1: Tick crossing at exact boundary — liquidity not properly added/removed: LiquidityMath.addDelta correctly handles both positive (crossing right) and negative (crossing left) — agent: precision-sniper
+- H-R3-CP-01: swap-by-output +1 wei reserve inflation via totalAmountInFilled > amountIn in _splitAmountsAndFeesByHeight: Forge test performs 100 swap-by-output operations and verifies reserve0+feeBalance0 <= actual USDC b — agent: precision-sniper
+- H-R3-CP-02: Dust double-counting in swap-by-output path — dust tracked in ptrPoolState.dust0/dust1 AND sent to swapper via amountOut = totalAmountOutFilled: Forge test performs 50 swap-by-output ops then withdraws all liquidity. Pool solvency holds: reserve — agent: precision-sniper
+- H-R3-CP-03: Dual addInRange double-counting in _calculateLiquidityStartAndEndHeights — add0 modified by side0 then consumed by side1: Forge test adds liquidity with addInRange0=true, addInRange1=true after swaps, then immediately with — agent: precision-sniper
+- H-R3-CP-04: Unchecked underflow in _collectPositionSide at line 508 — consumedLiquidity - (liquidity - sideValue) could wrap: Forge test with two LPs, swaps to consume liquidity, LP2 removes first, then LP1 removes. Both withd — agent: precision-sniper
+- H-R3-CP-05: consumedLiquidity inflation via addLiquidity when startHeight < currentHeight at line 723: Forge test pushes currentHeight high via 30 swaps, then LP2 adds liquidity (which triggers consumedL — agent: precision-sniper
+- H-R3-CP-06: DynamicPoolType no access control — globalState[msg.sender] isolation but poolId collision: Code analysis: DynamicPoolType uses globalState[msg.sender] for ALL state reads/writes. Two differen — agent: precision-sniper
+- H-R3-CP-07: Fee growth stale initialization in _crossHeight — feeGrowthOutside set with stale global value during height increase: Forge test: LP1 adds, 30 bidirectional swaps generate fee growth, LP2 adds at new height, 10 more sw — agent: precision-sniper
+- H-R3-CP-08: Tail removal in _removeLiquidityFromHeight moves currentHeight down, inflating sideValue for remaining LPs: Forge test: LP1 and LP2 add, swaps consume liquidity, LP2 removes (may trigger tail branch at line 6 — agent: precision-sniper
+- H-R3-CP-09: SingleProviderPoolType zero-output swap with extreme price near MIN_SQRT_RATIO: Outside primary scope for this run (SingleProviderPoolType not tested with mock hooks). The concern  — agent: precision-sniper
+- H-R3-CP-10: Linked list gas DoS via stale endHeightInsertionHint pointing to zeroed node: Forge test: LP1 adds, LP2 adds, LP2 removes (clears height pointers), LP3 adds with potentially stal — agent: precision-sniper
+- INV-SW02: No Profitable Round-Trip on Fixed Pool: Forge test swaps USDC->WETH then WETH->USDC at various sizes (1, 100, 10K, 50K USDC). finalUsdc <= i — agent: precision-sniper
+- INV-SW03: Rounding Favors Protocol on 1-wei swaps: Forge test performs 200 sequential 1-wei USDC input swaps. AMM USDC balance never decreases. Either  — agent: precision-sniper
+- Add/remove liquidity round-trip rounding loss > 2 wei: Forge test adds 10K USDC + 10K WETH then withdraws all. deposit >= withdrawal and loss <= 2 wei per  — agent: precision-sniper
+- Pool solvency violation after mixed swap operations: Forge test: 2 LPs, 50 bidirectional swaps mixing input/output-based. reserve+fees <= balance holds f — agent: precision-sniper
+- 100% fee pool swap produces unexpected behavior: Forge test creates pool with fee=10000 BPS (100%). Swap attempt either reverts (expected — no reserv — agent: precision-sniper
+- C3: _splitAmountsAndFeesByHeight fails on 1-wei input or large input: Forge test: 1-wei input reverts with ZeroValueSwap (expected). 50K USDC input succeeds. Solvency hol — agent: precision-sniper
+- C4: swapByInput succeeds with zero liquidity pool: Forge test: swap on empty pool reverts as expected. No tokens lost. — agent: precision-sniper
+- C5: swapByOutput with output > reserve drains pool: Forge test: output=0 reverts. output=reserve+1 either reverts or caps at reserve amount. Solvency ho — agent: precision-sniper
+- C9: Fee-only collection without liquidity change causes accounting error: Forge test: Alice adds liquidity, Bob swaps generating fees, Alice calls collectFees. Solvency holds — agent: precision-sniper
+- H-R3-CH-01: Operator precedence bug in registryUpdatePricingBounds (minSqrtPriceX96 | maxSqrtPriceX96 == 0): Solidity operator precedence: | has higher precedence than ==. Expression is correctly parsed as (mi — agent: state-desync
+- H-R3-CH-02: Lower-only bound silently unset when min>0, max=0: Same root cause as CH-01 disproval. (1000 | 0) == 0 evaluates to false, so code correctly enters SET — agent: state-desync
+- H-R3-DP-03: Fee amplification via high hopFeeBPS (9999) in output-based swaps: hopFeeBPS is admin-controlled (setTokenFees requires ROLE_FEE_MANAGER). Forge test confirms non-admi — agent: state-desync
+- H-R3-CH-07: Transient slot cross-contamination in direct swaps (HOOK-001 variant): Known issue HOOK-001. Direct swap transient storage slot is singleton (0xFFFFFFFFFFFFFFFF) but withi — agent: state-desync
+- H-R3-TS-02: Direct swap afterSwap-only configuration causes permanent DoS: Logical path verified: if afterSwap enabled but beforeSwap disabled with pricing bounds, direct swap — agent: state-desync
+- H-R3-CP-01: FixedHelper swap-by-output +1 wei reserve inflation: The +1 tolerance at FixedHelper line 1680 is a standard rounding tolerance for height-based math. AM — agent: state-desync
+- H-R3-CP-04: FixedHelper._collectPositionSide unchecked underflow in multi-LP scenario: The unchecked block relies on the invariant that consumedLiquidity grows monotonically and position  — agent: state-desync
+- H-R3-CH-04: CLOB fill rounding overconsumption DoS: The double mulDivRoundingUp in calculateFixedInput accumulates rounding across N fills. The rounding — agent: state-desync
+- CLOB-002 / H-R3-CH-03: afterSwapRefund missing nonReentrant guard creates reentrancy window: Reentrancy window exists (afterSwapRefund lacks nonReentrant, CLOB guard is NOT_ENTERED). However, F — agent: state-desync
+- target: PermitTransferHandler._executeFillOrKillPermit() → feeOnTop unsigned in SWAP_TYPEHASH → forge permit draining extra tokens: feeOnTop is unsigned by design. limitAmount caps total user cost: user signs limitAmount which bound — agent: auth-forger
+- target: PermitTransferHandler.ammHandleTransfer() → spoof executor context → settle orders with wrong recipient: msg.sender == AMM check at L110 prevents direct calls. Recipient is encoded in signed permit data (a — agent: auth-forger
 ...
 
 ## Agent Contradictions
 
-(No contradictions detected)
+- **HOOK-003** (agent: state-desync) vs **?** (agent: state-desync) — match: keywords: ['pricing-bounds']
+- **HOOK-003** (agent: state-desync) vs **?** (agent: state-desync) — match: keywords: ['pricing-bounds']
+- **HOOK-003** (agent: state-desync) vs **?** (agent: state-desync) — match: functions: ['_validatePricingBounds()']
+- **HOOK-003** (agent: state-desync) vs **?** (agent: state-desync) — match: functions: ['_validatePricingBounds()']
+- **HOOK-003** (agent: state-desync) vs **?** (agent: auth-forger) — match: keywords: ['pricing-bounds']
+- **HOOK-003** (agent: state-desync) vs **?** (agent: auth-forger) — match: functions: ['_validatePricingBounds()']
+- **HOOK-003** (agent: state-desync) vs **?** (agent: auth-forger) — match: functions: ['_validatePricingBounds()']; keywords: ['pricing-bounds']
+- **HOOK-003** (agent: state-desync) vs **?** (agent: auth-forger) — match: functions: ['validateHandlerOrder()']
+- **HOOK-003** (agent: state-desync) vs **?** (agent: cross-boundary) — match: functions: ['computeRatioX96()', 'validateHandlerOrder()']; keywords: ['CLOB', 'overflow', 'pricing-bounds']
+- **HOOK-003** (agent: state-desync) vs **?** (agent: cross-boundary) — match: functions: ['computeRatioX96()', 'validateHandlerOrder()']; keywords: ['pricing-bounds']
+- **HOOK-003** (agent: state-desync) vs **?** (agent: cross-boundary) — match: functions: ['_validatePricingBounds()']
+- **HOOK-003** (agent: state-desync) vs **?** (agent: cross-boundary) — match: functions: ['_validatePricingBounds()']
+- **HOOK-003** (agent: state-desync) vs **?** (agent: cross-boundary) — match: functions: ['_validatePricingBounds()']
+- **HOOK-003** (agent: state-desync) vs **?** (agent: cross-boundary) — match: functions: ['_validatePricingBounds()']
+- **HOOK-003** (agent: state-desync) vs **?** (agent: cross-boundary) — match: functions: ['validateHandlerOrder()']; keywords: ['handler-order']
+- **HOOK-003** (agent: state-desync) vs **?** (agent: composability-exploiter) — match: keywords: ['pricing-bounds']
+- **HOOK-003** (agent: state-desync) vs **?** (agent: composability-exploiter) — match: keywords: ['pricing-bounds']
+- **HOOK-003** (agent: state-desync) vs **?** (agent: composability-exploiter) — match: functions: ['_validatePricingBounds()']
+- **HOOK-003** (agent: state-desync) vs **?** (agent: composability-exploiter) — match: functions: ['_validatePricingBounds()']
+- **HOOK-003** (agent: state-desync) vs **?** (agent: composability-exploiter) — match: functions: ['_validatePricingBounds()']
+- **HOOK-003** (agent: state-desync) vs **?** (agent: extension-hijacker) — match: functions: ['validateHandlerOrder()']
+- **EH-004** (agent: extension-hijacker) vs **?** (agent: extension-hijacker) — match: functions: ['_getOrFetchTokenSettings()']
+- **EH-004** (agent: extension-hijacker) vs **?** (agent: extension-hijacker) — match: functions: ['_getOrFetchTokenSettings()', '_validateTokenTradingRules()']; keywords: ['direct-swap-dos']
+- **EH-004** (agent: extension-hijacker) vs **?** (agent: extension-hijacker) — match: functions: ['_getOrFetchTokenSettings()', 'registryUpdateTokenSettings()']
+- **EH-004** (agent: extension-hijacker) vs **?** (agent: extension-hijacker) — match: functions: ['registryUpdateTokenSettings()']
+- **CE-001** (agent: composability-exploiter) vs **?** (agent: state-desync) — match: functions: ['calculateFixedInput()', 'fillOrder()']; keywords: ['CLOB', 'DoS', 'rounding']
+- **CE-001** (agent: composability-exploiter) vs **?** (agent: auth-forger) — match: functions: ['calculateFixedInput()', 'fillOrder()']; keywords: ['mulDivRoundingUp', 'rounding']
+- **CE-001** (agent: composability-exploiter) vs **?** (agent: auth-forger) — match: functions: ['fillOrder()']
+- **CE-001** (agent: composability-exploiter) vs **?** (agent: cross-boundary) — match: functions: ['calculateFixedInput()']; keywords: ['CLOB', 'DoS']
+- **CE-001** (agent: composability-exploiter) vs **?** (agent: cross-boundary) — match: functions: ['calculateFixedInput()', 'fillOrder()']; keywords: ['CLOB', 'rounding']
+- **CE-001** (agent: composability-exploiter) vs **?** (agent: composability-exploiter) — match: functions: ['calculateFixedInput()']; keywords: ['CLOB', 'DoS']
 
 ## Recommended Wave 2 Focus
 

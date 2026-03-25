@@ -4,21 +4,21 @@
   "hypotheses": [
     {
       "id": "H-hook-registry-01",
-      "mechanism": "In CreatorHookSettingsRegistry.setTokenSettings (line 397), the sync loop calls IAMMStandardHook(hooksToSync[i]).registryUpdateTokenSettings(token, settings) passing the raw calldata `settings`, NOT `memSettings` (line 376-377 sets memSettings.initialized = true). The hook's registryUpdateTokenSettings (AMMStandardHook.sol:522) stores whatever it receives without setting initialized=true. If the caller passes settings with initialized=false, the registry stores initialized=true but the hook stores initialized=false. On next _getOrFetchTokenSettings (line 908), the hook sees initialized=false and re-fetches from the registry. This creates a TOCTOU window: (1) Token admin calls setTokenSettings with initialized=false, syncing hook. Hook cache has initialized=false. (2) Token admin calls setTokenSettings AGAIN with different fee rates, NOT including hook in hooksToSync. Registry updates but hook is not synced. (3) Next swap on the hook triggers _getOrFetchTokenSettings: sees initialized=false, re-fetches from registry, and picks up the SECOND (newer) settings. The token admin effectively bypasses the intentional cache-desync model: the hook uses registry settings that were never explicitly synced to it. This could allow silent fee changes or trading rule modifications that affect in-flight swaps.",
+      "mechanism": "In CreatorHookSettingsRegistry.setTokenSettings (line 397), the sync loop calls IAMMStandardHook(hooksToSync[i]).registryUpdateTokenSettings(token, settings) passing the raw calldata 'settings', NOT 'memSettings' (line 376-378 copies settings to memSettings and sets memSettings.initialized=true, but the sync uses the original). The hook's registryUpdateTokenSettings (AMMStandardHook.sol:522) stores whatever it receives. Since the caller provides settings with initialized=false (or the value they specified), the hook stores initialized=false. On the next _getOrFetchTokenSettings call (line 907-908), the hook sees initialized=false and re-fetches from the registry. This creates a bypass of the intended cache-desync model: (1) Token admin calls setTokenSettings with fees=500BPS, hooksToSync=[hook]. Hook cache gets fees=500BPS but initialized=false. (2) Admin calls setTokenSettings again with fees=0, hooksToSync=[] (no hook sync). Registry updates to 0 fees. (3) Next swap triggers _getOrFetchTokenSettings: initialized=false, re-fetches from registry, gets 0 fees. The explicit sync to the hook is silently overridden by the auto-refetch. This means any synced settings are ephemeral — they persist only until the next call to _getOrFetchTokenSettings, which always picks up the latest registry state regardless of sync intent.",
       "functions": ["setTokenSettings", "registryUpdateTokenSettings", "_getOrFetchTokenSettings"],
       "lines": {
-        "lbamm-hooks-and-handlers/src/hooks/CreatorHookSettingsRegistry.sol": [376, 377, 397],
-        "lbamm-hooks-and-handlers/src/hooks/AMMStandardHook.sol": [519, 522, 907, 908, 912]
+        "lbamm-hooks-and-handlers/src/hooks/CreatorHookSettingsRegistry.sol": [376, 377, 378, 396, 397],
+        "lbamm-hooks-and-handlers/src/hooks/AMMStandardHook.sol": [519, 522, 907, 908, 911, 912, 914]
       },
       "confidence": "medium",
       "grounded_in": "code-observation: CreatorHookSettingsRegistry.sol:397",
-      "suggested_test": "function test_initializedFlagDesyncForceRefetch() public {\n    // Setup: Deploy registry, hook, token\n    HookTokenSettings memory settings1 = _defaultSettings();\n    settings1.initialized = false;\n    settings1.tokenFeeBuyBPS = 100;\n    address[] memory hooks = new address[](1);\n    hooks[0] = address(hook);\n    vm.prank(tokenAdmin);\n    registry.setTokenSettings(address(token), settings1, new bytes32[](0), new bytes[](0), new bytes32[](0), new bytes32[](0), hooks);\n    // Hook has initialized=false, registry has initialized=true with 100 BPS\n    \n    // Action: Change fees to 0 without syncing hook\n    HookTokenSettings memory settings2 = _defaultSettings();\n    settings2.tokenFeeBuyBPS = 0;\n    vm.prank(tokenAdmin);\n    registry.setTokenSettings(address(token), settings2, new bytes32[](0), new bytes[](0), new bytes32[](0), new bytes32[](0), new address[](0));\n    \n    // Assert: Next swap re-fetches from registry, gets 0 BPS (not 100 BPS)\n    vm.prank(address(amm));\n    uint256 fee = hook.beforeSwap(swapContext, swapParams, bytes(''));\n    assertEq(fee, 0, \"Hook uses newer registry settings via force-refetch\");\n}",
+      "suggested_test": "function test_H01_settingsSyncInitializedFalseOverwrite() public {\n    // Setup: Deploy registry and hook, initialize token with restrictive settings\n    HookTokenSettings memory restrictive = _defaultSettings();\n    restrictive.tokenFeeBuyBPS = 500;\n    address[] memory hooks = new address[](1);\n    hooks[0] = address(hook);\n    vm.prank(tokenOwner);\n    registry.setTokenSettings(token, restrictive, new bytes32[](0), new bytes[](0), new bytes32[](0), new bytes32[](0), hooks);\n    // Hook has fees=500 but initialized=false\n    \n    // Action: Change fees to 0 without syncing hook\n    HookTokenSettings memory permissive = _defaultSettings();\n    permissive.tokenFeeBuyBPS = 0;\n    vm.prank(tokenOwner);\n    registry.setTokenSettings(token, permissive, new bytes32[](0), new bytes[](0), new bytes32[](0), new bytes32[](0), new address[](0));\n    \n    // Assert: Next swap re-fetches, gets 0 fees\n    vm.prank(address(amm));\n    uint256 fee = hook.beforeSwap(ctx, swapParams, \"\");\n    assertEq(fee, 0, \"Synced 500BPS silently overridden by registry re-fetch\");\n}",
       "category": "state_coupling",
       "source_category": "2g",
       "coupled_pair": {
-        "state_a": "_tokenSettings[token].initialized in registry (always true after setTokenSettings)",
-        "state_b": "_tokenSettings[token].initialized in hook (receives raw calldata, may be false)",
-        "invariant": "After setTokenSettings with hooksToSync, hook.initialized should match registry.initialized (both true)",
+        "state_a": "CreatorHookSettingsRegistry._tokenSettings[token] (always initialized=true)",
+        "state_b": "AMMStandardHook._tokenSettings[token] (receives raw calldata, initialized=false)",
+        "invariant": "After registryUpdateTokenSettings, hook should use exactly those settings until next explicit sync",
         "gap_contract": "CreatorHookSettingsRegistry.sol",
         "gap_function": "setTokenSettings",
         "gap_line": 397
@@ -32,15 +32,15 @@
     },
     {
       "id": "H-hook-registry-02",
-      "mechanism": "In AMMStandardHook.validateHandlerOrder (lines 198-226), the pricing bounds check computes sqrtPriceX96 via SqrtPriceCalculator.computeRatioX96(amount1, amount0) at line 215. When the ratio overflows uint160, computeRatioX96 returns 0 (SqrtPriceCalculator.sol:51-53). In validateHandlerOrder, when sqrtPriceX96=0 and only a max bound is set (minSqrtPriceX96=0, maxSqrtPriceX96>0): the min check at line 218 is `0 != 0 && ...` which is false (skipped), and the max check at line 221 is `maxSqrtPriceX96 != 0 && 0 > maxSqrtPriceX96` which is false. So the order is ACCEPTED. This means a handler order with an extreme token ratio (amount1 massively exceeds amount0, causing overflow) bypasses max-only pricing bounds. A token creator who sets only a max price ceiling to prevent their token from trading at extreme prices gets no protection when the actual price exceeds the computation range. The handler order is validated despite the effective price being far above the intended maximum. Note: in _validatePricingBounds (line 847-849), sqrtPriceX96==0 triggers a revert for direct swaps, but validateHandlerOrder lacks this check entirely.",
+      "mechanism": "In AMMStandardHook.validateHandlerOrder (lines 198-226), when SqrtPriceCalculator.computeRatioX96 returns 0 (overflow, line 215), the pricing bounds checks at lines 218-223 both pass: minSqrtPriceX96 != 0 && 0 < min evaluates to true only if min != 0 (this WOULD revert), BUT maxSqrtPriceX96 != 0 && 0 > max evaluates to false always (0 is never > max). So: if only maxSqrtPriceX96 is set (minSqrtPriceX96=0), a price overflow (sqrtPriceX96=0) bypasses the max check because 0 > max is false. The handler order with an astronomical price ratio gets accepted. In contrast, _validatePricingBounds (AMMStandardHook.sol:847-849) explicitly checks sqrtPriceX96 == 0 and reverts, but validateHandlerOrder lacks this check. A token creator setting only a max price ceiling (common pattern: 'my token should never trade above X') gets no protection when a handler creates an order with a ratio so extreme it overflows computeRatioX96.",
       "functions": ["validateHandlerOrder", "computeRatioX96"],
       "lines": {
-        "lbamm-hooks-and-handlers/src/hooks/AMMStandardHook.sol": [198, 210, 211, 215, 217, 218, 221, 222],
-        "lbamm-hooks-and-handlers/src/hooks/libraries/SqrtPriceCalculator.sol": [28, 39, 49, 50, 51, 52, 53]
+        "lbamm-hooks-and-handlers/src/hooks/AMMStandardHook.sol": [198, 210, 211, 215, 217, 218, 221],
+        "lbamm-hooks-and-handlers/src/hooks/libraries/SqrtPriceCalculator.sol": [28, 49, 50, 51, 52, 53]
       },
       "confidence": "high",
       "grounded_in": "code-observation: AMMStandardHook.sol:215",
-      "suggested_test": "function test_overflowPriceBypassesMaxBoundInHandlerOrder() public {\n    // Setup: Set max-only pricing bound\n    uint160 maxPrice = 1e30;\n    address[] memory pairTokens = new address[](1);\n    pairTokens[0] = address(pairedToken);\n    uint160[] memory mins = new uint160[](1);\n    mins[0] = 0;\n    uint160[] memory maxs = new uint160[](1);\n    maxs[0] = maxPrice;\n    vm.prank(tokenAdmin);\n    registry.setPricingBounds(address(token), pairTokens, mins, maxs, hooks);\n    \n    // Action: Create handler order with extreme ratio causing overflow\n    // token < pairedToken so (amountIn, amountOut) -> (amount0, amount1)\n    uint256 amountIn = 1;\n    uint256 amountOut = type(uint256).max / 2; // huge ratio, overflows sqrt\n    // computeRatioX96 returns 0\n    \n    // Assert: validateHandlerOrder should revert (price exceeds max)\n    // but sqrtPriceX96=0 passes both checks\n    hook.validateHandlerOrder(\n        address(maker), true, address(token), address(pairedToken),\n        amountIn, amountOut, bytes(''), bytes('')\n    );\n    // No revert — extreme price order accepted despite max bound\n}",
+      "suggested_test": "function test_H02_overflowPriceBypassesMaxBound() public {\n    // Setup: Set pricing bounds with only max (min=0)\n    address[] memory pairTokens = new address[](1);\n    pairTokens[0] = address(pairToken);\n    uint160[] memory mins = new uint160[](1);\n    mins[0] = 0; // no min\n    uint160[] memory maxs = new uint160[](1);\n    maxs[0] = 1e30; // max bound\n    address[] memory hooksArr = new address[](1);\n    hooksArr[0] = address(hook);\n    vm.prank(tokenOwner);\n    registry.setPricingBounds(token, pairTokens, mins, maxs, hooksArr);\n    \n    // Action: validateHandlerOrder with extreme ratio causing overflow\n    // token < pairToken, so (amountIn, amountOut) = (amount0, amount1)\n    uint256 amountIn = 1;\n    uint256 amountOut = type(uint256).max / 2; // causes overflow in computeRatioX96 -> returns 0\n    \n    // Assert: Should revert (price > max) but doesn't because sqrtPriceX96=0 < max\n    hook.validateHandlerOrder(address(0xBEEF), true, token, pairToken, amountIn, amountOut, \"\", \"\");\n    // No revert — extreme price order accepted despite max bound\n}",
       "category": null,
       "source_category": "2a",
       "coupled_pair": null,
@@ -48,25 +48,25 @@
         "file": "SqrtPriceCalculator.sol",
         "line": 53,
         "pattern": "ternary_clamp",
-        "masks_invariant": "computeRatioX96 returns 0 on overflow instead of reverting, causing downstream price checks to use 0 as the price"
+        "masks_invariant": "computeRatioX96 returns 0 on overflow instead of reverting, causing downstream checks to treat infinite price as zero price"
       }
     },
     {
       "id": "H-hook-registry-03",
-      "mechanism": "In AMMStandardHook._checkPoolEnabled (line 651-657), when tokenSettings.checkDisabledPools is true, the function makes a cross-contract call to SETTINGS_REGISTRY.isPoolDisabled(poolId). The token settings (including checkDisabledPools) are cached locally in the hook via _getOrFetchTokenSettings and remain static until explicitly synced. However, the pool disabled state is read LIVE from the registry on every call. This creates a coupled-state gap: if a token admin first syncs hook settings with checkDisabledPools=false, then later updates registry settings to checkDisabledPools=true (without re-syncing the hook), and then disables a pool — the hook's cached checkDisabledPools remains false, so _checkPoolEnabled skips the registry check entirely. Swaps proceed on a pool the admin intended to disable. The admin believes the pool is blocked (registry says checkDisabledPools=true AND pool is disabled) but the hook permits trading because its stale cache says checkDisabledPools=false.",
+      "mechanism": "In AMMStandardHook._checkPoolEnabled (lines 651-657), when tokenSettings.checkDisabledPools is true, a live cross-contract call to SETTINGS_REGISTRY.isPoolDisabled(poolId) is made. The tokenSettings are cached locally and only updated via explicit sync. If a token admin first syncs hook settings with checkDisabledPools=false, then later updates registry settings to checkDisabledPools=true WITHOUT syncing to the hook, and then disables a pool via setPoolDisabled — the hook's cached checkDisabledPools remains false, so _checkPoolEnabled skips the registry check entirely. Swaps proceed on a pool the admin intended to disable. The admin sees checkDisabledPools=true in the registry and isPoolDisabled=true, but the hook permits trading because its stale cache says checkDisabledPools=false. NOTE: Due to H-hook-registry-01 (initialized=false propagation), if the settings were synced via setTokenSettings, the next _getOrFetchTokenSettings re-fetches and picks up the new checkDisabledPools=true. But if the admin used registryUpdateTokenSettings directly (which does NOT set initialized), or if the hook was initially synced via the setTokenSettings path AND another setTokenSettings was called with hooksToSync INCLUDING this hook (fixing initialized), then the cache is locked with whatever was last synced.",
       "functions": ["_checkPoolEnabled", "isPoolDisabled", "setTokenSettings", "_getOrFetchTokenSettings"],
       "lines": {
-        "lbamm-hooks-and-handlers/src/hooks/AMMStandardHook.sol": [116, 165, 258, 651, 652, 653, 907, 908, 909],
-        "lbamm-hooks-and-handlers/src/hooks/CreatorHookSettingsRegistry.sol": [378, 396, 397, 417, 445, 904, 905]
+        "lbamm-hooks-and-handlers/src/hooks/AMMStandardHook.sol": [651, 652, 653, 654, 907, 908, 909],
+        "lbamm-hooks-and-handlers/src/hooks/CreatorHookSettingsRegistry.sol": [417, 445, 904, 905]
       },
       "confidence": "medium",
       "grounded_in": "code-observation: AMMStandardHook.sol:652",
-      "suggested_test": "function test_disabledPoolBypassViaCacheDesync() public {\n    // Setup: Sync hook with checkDisabledPools=false\n    HookTokenSettings memory settings1 = _defaultSettings();\n    settings1.checkDisabledPools = false;\n    address[] memory hooks = new address[](1);\n    hooks[0] = address(hook);\n    vm.prank(tokenAdmin);\n    registry.setTokenSettings(address(token), settings1, _e(), _e(), _e(), _e(), hooks);\n    \n    // Action 1: Admin enables check + disables pool WITHOUT syncing hook\n    HookTokenSettings memory settings2 = _defaultSettings();\n    settings2.checkDisabledPools = true;\n    vm.prank(tokenAdmin);\n    registry.setTokenSettings(address(token), settings2, _e(), _e(), _e(), _e(), new address[](0));\n    vm.prank(tokenAdmin);\n    registry.setPoolDisabled(address(token), poolId, true);\n    assertTrue(registry.isPoolDisabled(poolId));\n    \n    // Assert: Swap succeeds despite pool being disabled in registry\n    vm.prank(address(amm));\n    hook.beforeSwap(swapContext, swapParams, bytes(''));\n    // Reaches here = disabled pool bypass confirmed\n}",
+      "suggested_test": "function test_H03_disabledPoolBypassViaCacheDesync() public {\n    // Setup: Force hook cache to have initialized=true and checkDisabledPools=false\n    // This requires syncing settings where initialized flag is preserved\n    // Method: Auto-cache first (triggers initialized=true in hook cache)\n    HookTokenSettings memory settings1 = _defaultSettings();\n    settings1.checkDisabledPools = false;\n    vm.prank(tokenOwner);\n    registry.setTokenSettings(token, settings1, _e(), _d(), _e(), _w(), _emptyHooks());\n    // Trigger auto-cache via first swap\n    vm.prank(address(amm));\n    hook.beforeSwap(ctx, swapParams, \"\"); // auto-caches with checkDisabledPools=false, initialized=true\n    \n    // Admin changes to checkDisabledPools=true in registry, no hook sync\n    HookTokenSettings memory settings2 = _defaultSettings();\n    settings2.checkDisabledPools = true;\n    vm.prank(tokenOwner);\n    registry.setTokenSettings(token, settings2, _e(), _d(), _e(), _w(), _emptyHooks());\n    vm.prank(tokenOwner);\n    registry.setPoolDisabled(token, poolId, true);\n    assertTrue(registry.isPoolDisabled(poolId));\n    \n    // Assert: Swap succeeds — hook has checkDisabledPools=false (stale cache)\n    vm.prank(address(amm));\n    hook.beforeSwap(ctx, swapParams, \"\"); // no revert\n}",
       "category": "state_coupling",
       "source_category": "2e",
       "coupled_pair": {
-        "state_a": "hook._tokenSettings[token].checkDisabledPools (cached, potentially stale false)",
-        "state_b": "registry._disabledPools[poolId] (live, set to disabled)",
+        "state_a": "AMMStandardHook._tokenSettings[token].checkDisabledPools (cached, potentially stale false)",
+        "state_b": "CreatorHookSettingsRegistry._disabledPools[poolId] (live, set to disabled)",
         "invariant": "If registry intends pool disabled + checking enabled, hook must reject swaps on that pool",
         "gap_contract": "AMMStandardHook.sol",
         "gap_function": "_checkPoolEnabled",
@@ -76,25 +76,25 @@
         "file": "AMMStandardHook.sol",
         "line": 652,
         "pattern": "silent_guard",
-        "masks_invariant": "When checkDisabledPools is false (stale cache), the entire pool-disabled check is silently skipped"
+        "masks_invariant": "if (tokenSettings.checkDisabledPools) guard silently skips the entire pool-disabled check when stale cache says false"
       }
     },
     {
       "id": "H-hook-registry-04",
-      "mechanism": "In AMMStandardHook._getOrFetchTokenSettings (line 907-919), when settings are not cached (first access for a token), the function fetches from SETTINGS_REGISTRY.getTokenSettings(token) and caches the result with initialized=true. This auto-cache operation occurs during any swap/addLiquidity/poolCreation. Critically, the auto-cached settings include whitelist IDs (pairedTokenWhitelistId, lpWhitelistId, poolTypeWhitelistId) from the registry, but the hook's LOCAL whitelist content caches (_pairTokenWhitelists, _lpWhitelists, _poolTypeWhitelists) are NOT populated during auto-cache. If the registry has tokenSettings with pairedTokenWhitelistId=5, the hook caches this ID, but _pairTokenWhitelists[5] is empty on the hook. For direct swaps (poolId==bytes32(0)), the check at line 685-687 queries the empty local whitelist and rejects ALL paired tokens, permanently blocking direct swaps until someone explicitly syncs whitelist 5's content to the hook via registryUpdateWhitelistPairToken. This creates a denial-of-service on direct swaps for any token that auto-caches with non-zero whitelist IDs.",
-      "functions": ["_getOrFetchTokenSettings", "_validateTokenTradingRules", "getTokenSettings"],
+      "mechanism": "In AMMStandardHook._getOrFetchTokenSettings (lines 907-919), when auto-caching from the registry, the function stores the settings struct (including whitelist IDs like pairedTokenWhitelistId, lpWhitelistId, poolTypeWhitelistId) but does NOT populate the corresponding whitelist content caches (_pairTokenWhitelists, _lpWhitelists, _poolTypeWhitelists). If the registry has tokenSettings with pairedTokenWhitelistId=5, the hook auto-caches this ID. For direct swaps (poolId==bytes32(0)), _validateTokenTradingRules at line 685-687 checks if the paired token is in _pairTokenWhitelists[5].contains(pairedToken). Since the hook's local _pairTokenWhitelists[5] was never populated, it's empty. ALL paired tokens are rejected for direct swaps, creating a permanent DoS until explicit whitelist content sync. Similarly, lpWhitelistId>0 blocks ALL liquidity providers (line 725). This is a significant availability issue for any token that relies on auto-cache rather than explicit full sync (settings + all whitelist contents).",
+      "functions": ["_getOrFetchTokenSettings", "_validateTokenTradingRules", "_enforceLiquidityModificationSettings"],
       "lines": {
-        "lbamm-hooks-and-handlers/src/hooks/AMMStandardHook.sol": [907, 911, 912, 913, 914, 670, 679, 685, 686, 687]
+        "lbamm-hooks-and-handlers/src/hooks/AMMStandardHook.sol": [907, 911, 912, 913, 914, 670, 679, 685, 686, 687, 720, 724, 725]
       },
       "confidence": "medium",
       "grounded_in": "code-observation: AMMStandardHook.sol:912",
-      "suggested_test": "function test_autoCacheLeavesWhitelistEmpty() public {\n    // Setup: Register token in registry with pairedTokenWhitelistId=1\n    // Add WETH to pair token whitelist 1 in REGISTRY\n    // Do NOT sync whitelist content to hook\n    HookTokenSettings memory settings = _defaultSettings();\n    settings.pairedTokenWhitelistId = 1;\n    vm.prank(tokenAdmin);\n    registry.setTokenSettings(address(token), settings, _e(), _e(), _e(), _e(), new address[](0));\n    address[] memory wethArr = new address[](1);\n    wethArr[0] = address(weth);\n    vm.prank(whitelistOwner);\n    registry.updatePairTokenWhitelist(1, wethArr, true, new address[](0));\n    \n    // Action: First direct swap triggers auto-cache\n    vm.prank(address(amm));\n    vm.expectRevert(AMMStandardHook.AMMStandardHook__PairNotAllowed.selector);\n    hook.beforeSwap(swapContext, directSwapWithWETH, bytes(''));\n    // Reverts because hook._pairTokenWhitelists[1] is empty\n    // despite registry._pairTokenWhitelists[1] containing WETH\n}",
+      "suggested_test": "function test_H04_autoCacheLeavesWhitelistEmpty() public {\n    // Setup: Token settings in registry with pairedTokenWhitelistId=1\n    HookTokenSettings memory settings = _defaultSettings();\n    settings.pairedTokenWhitelistId = 1;\n    vm.prank(tokenOwner);\n    registry.setTokenSettings(token, settings, _e(), _d(), _e(), _w(), _emptyHooks()); // no hook sync\n    // Add WETH to registry's whitelist 1\n    address[] memory tokens = new address[](1);\n    tokens[0] = address(weth);\n    vm.prank(whitelistOwner);\n    registry.updatePairTokenWhitelist(1, tokens, true, _emptyHooks()); // not synced to hook\n    \n    // Action: Direct swap triggers auto-cache\n    vm.prank(address(amm));\n    vm.expectRevert(abi.encodeWithSelector(AMMStandardHook__PairNotAllowed.selector));\n    hook.beforeSwap(ctx, directSwapWithWETH, \"\");\n    // Reverts: hook._pairTokenWhitelists[1] is empty despite registry having WETH\n}",
       "category": "state_coupling",
       "source_category": "2g",
       "coupled_pair": {
         "state_a": "AMMStandardHook._tokenSettings[token].pairedTokenWhitelistId (auto-cached from registry)",
         "state_b": "AMMStandardHook._pairTokenWhitelists[whitelistId] (empty, never synced)",
-        "invariant": "If tokenSettings references whitelist ID > 0, the hook's local cache for that ID should be populated",
+        "invariant": "If tokenSettings references whitelist ID > 0, the hook's local whitelist cache should be populated",
         "gap_contract": "AMMStandardHook.sol",
         "gap_function": "_getOrFetchTokenSettings",
         "gap_line": 912
@@ -103,7 +103,7 @@
     },
     {
       "id": "H-hook-registry-05",
-      "mechanism": "In AMMStandardHook.registryUpdateTokenSettings (line 519-525), when the registry pushes new settings to the hook, ONLY the _tokenSettings mapping is updated. Whitelist caches, pricing bounds, and disabled pool state are NOT updated. If new settings change whitelist IDs (e.g., pairedTokenWhitelistId changes from 1 to 2), the hook now references whitelist ID 2, but its _pairTokenWhitelists[2] may be empty. The registry's setTokenSettings (line 396-398) calls registryUpdateTokenSettings on hooks but does NOT call registryUpdateWhitelistPairToken for the new whitelist IDs. This means changing whitelist IDs via setTokenSettings creates an immediate desync: token settings reference whitelist 2 but hook only has content for whitelist 1. For direct swaps, all paired tokens are rejected (empty whitelist). For pool-based swaps, the pair token check is skipped (line 679 only checks for DIRECT_SWAP_POOL_ID). This creates asymmetric DoS: direct swaps break immediately but pool swaps continue unaffected. A malicious scenario: admin changes whitelist ID to one they control that's empty on the hook, selectively blocking direct swaps while leaving pool-routed swaps operational.",
+      "mechanism": "In AMMStandardHook.registryUpdateTokenSettings (line 519-525), when the registry pushes new settings that change whitelist IDs (e.g., pairedTokenWhitelistId changes from 1 to 2), only _tokenSettings[token] is updated. The hook's local _pairTokenWhitelists, _lpWhitelists, and _poolTypeWhitelists caches are NOT updated as part of this call. CreatorHookSettingsRegistry.setTokenSettings (line 396-398) only calls registryUpdateTokenSettings, it does NOT call registryUpdateWhitelistPairToken for the new IDs. This means changing whitelist IDs via setTokenSettings creates immediate desync: token settings reference whitelist 2 but hook only has content for whitelist 1. For direct swaps, all paired tokens in the old whitelist 1 pass the check, but tokens in the new whitelist 2 are not found (it's empty on the hook). This creates asymmetric DoS: direct swaps break (whitelist check against empty set) while pool swaps continue unaffected (line 679: whitelist check only applies to DIRECT_SWAP_POOL_ID). A token admin changing whitelist IDs without separately syncing content could unintentionally break direct swaps.",
       "functions": ["registryUpdateTokenSettings", "setTokenSettings", "_validateTokenTradingRules"],
       "lines": {
         "lbamm-hooks-and-handlers/src/hooks/AMMStandardHook.sol": [519, 522, 670, 679, 685, 686],
@@ -111,7 +111,7 @@
       },
       "confidence": "medium",
       "grounded_in": "code-observation: AMMStandardHook.sol:522",
-      "suggested_test": "function test_whitelistIdChangeBlocksDirectSwaps() public {\n    // Setup: Token with whitelist 1 containing WETH, synced to hook\n    // Both settings and whitelist content synced\n    \n    // Action: Admin changes to whitelist 2 via setTokenSettings + sync to hook\n    // But does NOT sync whitelist 2's content to hook\n    HookTokenSettings memory newSettings = _defaultSettings();\n    newSettings.pairedTokenWhitelistId = 2;\n    address[] memory hooks = new address[](1);\n    hooks[0] = address(hook);\n    vm.prank(tokenAdmin);\n    registry.setTokenSettings(address(token), newSettings, _e(), _e(), _e(), _e(), hooks);\n    \n    // Assert: Direct swap with WETH fails (whitelist 2 empty on hook)\n    vm.prank(address(amm));\n    vm.expectRevert(AMMStandardHook.AMMStandardHook__PairNotAllowed.selector);\n    hook.beforeSwap(swapContext, directSwapParams, bytes(''));\n    \n    // But pool swap works (no whitelist check)\n    vm.prank(address(amm));\n    hook.beforeSwap(swapContext, poolSwapParams, bytes(''));\n    // Pool swap succeeds — asymmetric behavior\n}",
+      "suggested_test": "function test_H05_whitelistIdChangeBlocksDirectSwaps() public {\n    // Setup: Token with whitelist 1 containing WETH, synced to hook\n    // Both settings and whitelist 1 content synced\n    address[] memory hooks = new address[](1);\n    hooks[0] = address(hook);\n    address[] memory wethArr = new address[](1);\n    wethArr[0] = address(weth);\n    vm.prank(whitelistOwner);\n    registry.updatePairTokenWhitelist(1, wethArr, true, hooks); // sync whitelist 1 to hook\n    \n    // Change to whitelist 2, sync settings but NOT whitelist 2 content\n    HookTokenSettings memory newSettings = _defaultSettings();\n    newSettings.pairedTokenWhitelistId = 2;\n    vm.prank(tokenOwner);\n    registry.setTokenSettings(token, newSettings, _e(), _d(), _e(), _w(), hooks);\n    // Now hook has pairedTokenWhitelistId=2 but _pairTokenWhitelists[2] is empty\n    \n    // Assert: Direct swap with WETH fails\n    vm.prank(address(amm));\n    vm.expectRevert(abi.encodeWithSelector(AMMStandardHook__PairNotAllowed.selector));\n    hook.beforeSwap(ctx, directSwapParams, \"\");\n    // But pool swap succeeds (no whitelist check for pool swaps)\n    vm.prank(address(amm));\n    hook.beforeSwap(ctx, poolSwapParams, \"\");\n}",
       "category": "state_coupling",
       "source_category": "2g",
       "coupled_pair": {
@@ -126,75 +126,115 @@
     },
     {
       "id": "H-hook-registry-06",
-      "mechanism": "In AMMStandardHook._getOrFetchTokenSettings (lines 907-919), the auto-cache on first access creates a race condition for newly registered tokens. When a token admin calls setTokenSettings on the registry WITHOUT syncing to hooks (hooksToSync=[]), the token is initialized in the registry. If a swap occurs on the hook before the admin syncs, _getOrFetchTokenSettings auto-caches the current registry settings. The admin then updates registry settings (e.g., adding fee restrictions) and syncs to hook — but the hook already has initialized=true from the auto-cache, so registryUpdateTokenSettings overwrites correctly. However, there's a nuance: between the auto-cache and the admin's sync, all swaps use the INITIAL settings (possibly no fees). If the admin intended to set fees before any trading occurs, a front-runner who monitors the mempool for setTokenSettings transactions can execute swaps at 0-fee rates by triggering the auto-cache before the admin's sync completes. The auto-cache permanently locks the initial settings until an explicit sync occurs.",
-      "functions": ["_getOrFetchTokenSettings", "setTokenSettings", "registryUpdateTokenSettings"],
+      "mechanism": "In AMMStandardHook._getOrFetchTokenSettings (lines 907-919), the auto-cache on first access creates a front-running window for newly registered tokens. When a token admin calls setTokenSettings on the registry WITHOUT syncing to hooks (planning to sync in a second tx with proper whitelist content), the token becomes initialized in the registry. If a front-runner monitors the mempool and triggers a swap BEFORE the admin's sync transaction, _getOrFetchTokenSettings auto-caches the initial settings (possibly 0 fees, no whitelist restrictions). The hook stores these with initialized=true (line 913). The admin's subsequent sync via setTokenSettings changes registryUpdateTokenSettings, which overwrites — but if the admin's second tx sets DIFFERENT settings (with fees), and the front-runner already extracted value at 0 fees, the damage is done. More critically: if the admin calls setTokenSettings ONCE with hooksToSync=[hook], the hook gets settings with initialized=false (H-01) and would re-fetch. But if a swap occurred before this sync and auto-cached, the hook has initialized=true from auto-cache and won't re-fetch — the admin's sync STILL works because registryUpdateTokenSettings overwrites. So the race is specifically between registry initialization and the first swap.",
+      "functions": ["_getOrFetchTokenSettings", "setTokenSettings"],
       "lines": {
         "lbamm-hooks-and-handlers/src/hooks/AMMStandardHook.sol": [907, 908, 911, 912, 913, 914],
         "lbamm-hooks-and-handlers/src/hooks/CreatorHookSettingsRegistry.sol": [366, 378, 396, 397]
       },
       "confidence": "medium",
       "grounded_in": "code-observation: AMMStandardHook.sol:908",
-      "suggested_test": "function test_autoFetchRaceConditionFrontRun() public {\n    // Setup: Token admin sets initial settings in registry with 0 fees\n    // Plans to add fees before trading starts\n    HookTokenSettings memory initialSettings = _defaultSettings();\n    initialSettings.tokenFeeBuyBPS = 0;\n    vm.prank(tokenAdmin);\n    registry.setTokenSettings(address(token), initialSettings, _e(), _e(), _e(), _e(), new address[](0));\n    \n    // Action: Front-runner triggers auto-cache before admin syncs fees\n    vm.prank(address(amm));\n    uint256 fee = hook.beforeSwap(swapContext, swapParams, bytes(''));\n    assertEq(fee, 0);\n    \n    // Admin updates registry to 500 BPS WITHOUT syncing hook\n    HookTokenSettings memory feeSettings = _defaultSettings();\n    feeSettings.tokenFeeBuyBPS = 500;\n    vm.prank(tokenAdmin);\n    registry.setTokenSettings(address(token), feeSettings, _e(), _e(), _e(), _e(), new address[](0));\n    \n    // Assert: Hook still uses cached 0-fee (initialized=true from auto-cache)\n    vm.prank(address(amm));\n    fee = hook.beforeSwap(swapContext, swapParams, bytes(''));\n    assertEq(fee, 0, \"Hook locked to auto-cached 0 fees\");\n}",
-      "category": "state_coupling",
+      "suggested_test": "function test_H06_autoFetchRaceFrontRun() public {\n    // Setup: Admin sets initial settings in registry with 0 fees, no hook sync\n    HookTokenSettings memory initial = _defaultSettings();\n    initial.tokenFeeBuyBPS = 0;\n    vm.prank(tokenOwner);\n    registry.setTokenSettings(token, initial, _e(), _d(), _e(), _w(), _emptyHooks());\n    \n    // Front-runner triggers auto-cache before admin syncs\n    vm.prank(address(amm));\n    uint256 fee = hook.beforeSwap(ctx, swapParams, \"\");\n    assertEq(fee, 0); // 0 fee swap\n    \n    // Admin now syncs with 500 BPS fees\n    HookTokenSettings memory withFees = _defaultSettings();\n    withFees.tokenFeeBuyBPS = 500;\n    address[] memory hooks = new address[](1);\n    hooks[0] = address(hook);\n    vm.prank(tokenOwner);\n    registry.setTokenSettings(token, withFees, _e(), _d(), _e(), _w(), hooks);\n    // registryUpdateTokenSettings overwrites, but front-runner already traded at 0 fees\n}",
+      "category": null,
       "source_category": "2b",
-      "coupled_pair": {
-        "state_a": "CreatorHookSettingsRegistry._tokenSettings[token] (updated by admin)",
-        "state_b": "AMMStandardHook._tokenSettings[token] (auto-cached on first access, frozen until explicit sync)",
-        "invariant": "Hook settings should reflect admin's intended fee configuration before trading begins",
-        "gap_contract": "AMMStandardHook.sol",
-        "gap_function": "_getOrFetchTokenSettings",
-        "gap_line": 914
-      },
+      "coupled_pair": null,
       "masking_code": {
         "file": "AMMStandardHook.sol",
         "line": 908,
         "pattern": "silent_guard",
-        "masks_invariant": "The initialized=true check prevents re-fetching, silently locking in stale settings"
+        "masks_invariant": "initialized=true check prevents re-fetch, locking in auto-cached settings until explicit sync"
       }
     },
     {
       "id": "H-hook-registry-07",
-      "mechanism": "In AMMStandardHook._enforcePoolCreationSettings (lines 780-803), pricing bounds for both token0->token1 and token1->token0 directions are checked against the SAME sqrtPriceX96 value fetched from the pool type at line 785. The sqrtPriceX96 returned by getCurrentPriceX96 represents sqrt(reserve1/reserve0) * 2^96, which is the price in the token0-denominated-in-token1 direction. When checking bounds0 (pricing bounds for token0 against token1, lines 787-793), this sqrtPriceX96 is correct. However, bounds1 (pricing bounds for token1 against token0, lines 796-802) are set by token1's admin from token1's perspective — i.e., what range of prices is acceptable for token1 relative to token0. The admin calls setPricingBounds(token1, [token0], [min], [max]) thinking of 'the price of token1 measured in token0'. But sqrtPriceX96 from the pool is sqrt(token1/token0), which is actually the price of token0 measured in token1 (inverted). So bounds1's min/max are compared against the wrong direction: if token1 admin sets min=sqrt(2)*2^96 meaning 'token1 should be worth at least 2 token0', the check compares sqrt(token1/token0) against this — but sqrt(token1/token0) being high means token0 is cheap relative to token1, which is the SAME as token1 being expensive. So actually the comparison may be directionally correct depending on how admins interpret it. The key issue is whether _pricingBounds[token1][token0] means 'minimum price of token1 relative to token0' or 'minimum sqrtPriceX96 from the pool where token0 < token1'.",
-      "functions": ["_enforcePoolCreationSettings", "getCurrentPriceX96", "setPricingBounds"],
+      "mechanism": "In AMMStandardHook._validatePricingBounds (lines 838-840), for direct swaps where poolType==address(0), the beforeSwap path stores params.amount via _setTstorish and returns without checking bounds. The afterSwap path reads the stored value and checks bounds. The _setTstorish function in tm-core-lib's Tstorish (lines 128-151) uses immutable function pointers set at construction. If the chain initially did NOT support tstore, _setTstorish points to _setTstorishWithSstoreFallback which uses sstore. The __activateTstore function (Tstorish.sol:104) in this version has NO msg.sender != tx.origin check (unlike the older tstorish version in creator-token-standards). If __activateTstore is called between beforeSwap and afterSwap within the same transaction: beforeSwap writes to sstore (via fallback); __activateTstore sets tstoreSupport=true and calls _onTstoreSupportActivated which copies sstore→tstore for DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT (AMMStandardHook.sol:953); afterSwap reads from the fallback function which NOW checks tstoreSupport=true and uses tload. The copy in _onTstoreSupportActivated preserves the value, so this appears safe. HOWEVER, the immutable function pointers (_setTstorish, _getTstorish) are set at construction and never change — they always point to the fallback versions. So even after activation, the fallback functions are called, which check StorageTstorish.data().tstoreSupport dynamically. This means the read DOES use tload after activation. Since _onTstoreSupportActivated copies the value, the read succeeds. This hypothesis is likely safe but warrants verification that _onTstoreSupportActivated is called atomically with the tstoreSupport flag change.",
+      "functions": ["_validatePricingBounds", "_setTstorish", "_getTstorish", "__activateTstore", "_onTstoreSupportActivated"],
       "lines": {
-        "lbamm-hooks-and-handlers/src/hooks/AMMStandardHook.sol": [780, 781, 783, 784, 785, 787, 788, 796, 798]
+        "lbamm-hooks-and-handlers/src/hooks/AMMStandardHook.sol": [838, 839, 843, 844, 951, 952, 953],
+        "lbamm-core/lib/tm-core-lib/src/utils/misc/Tstorish.sol": [104, 106, 116, 118, 142, 143, 179, 182]
       },
       "confidence": "low",
-      "grounded_in": "code-observation: AMMStandardHook.sol:785",
-      "suggested_test": "function test_poolCreationBoundsDirectionForToken1() public {\n    // Setup: token0 < token1 (sorted), both have pricing bounds\n    // Token1 admin sets bounds: min price of token1 should be 2 token0\n    // sqrtPriceX96 for that = sqrt(2) * 2^96 = ~111845106989789\n    uint160 minForToken1 = 111845106989789;\n    \n    // Create pool where token1 is worth 0.5 token0\n    // sqrtPriceX96 = sqrt(0.5) * 2^96 = ~55922553494894\n    \n    // Expected: Creation should be blocked (token1 below its price floor)\n    // Check: sqrtPriceX96(55922...) < bounds1.minSqrtPriceX96(111845...)?\n    //   YES -> reverts. So bounds1 check IS correct for pool creation.\n    //   sqrtPriceX96 IS sqrt(reserve1/reserve0).\n    //   A low sqrtPriceX96 = token1 is cheap relative to token0.\n    //   Token1 admin's min bound prevents token1 from being too cheap.\n    \n    vm.prank(tokenAdmin1);\n    registry.setPricingBounds(token1, [token0], [minForToken1], [0], hooks);\n    \n    vm.expectRevert(AMMStandardHook.AMMStandardHook__InvalidPrice.selector);\n    amm.createPool(poolParamsWithLowPrice);\n}",
+      "grounded_in": "code-observation: Tstorish.sol:104",
+      "suggested_test": "function test_H07_tstoreActivationMidSwap() public {\n    // Setup: Deploy on chain without tstore initially\n    // Hook uses sstore fallback for DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT\n    \n    // Action 1: beforeSwap stores amount=1000 via sstore\n    vm.prank(address(amm));\n    hook.beforeSwap(ctx, directSwapParams, \"\");\n    // sstore(0xFFFFFFFFFFFFFFFF, 1000)\n    \n    // Action 2: Activate tstore\n    // _onTstoreSupportActivated copies sstore→tstore\n    vm.prank(someEOA);\n    hook.__activateTstore();\n    // tstore(0xFFFFFFFFFFFFFFFF, sload(0xFFFFFFFFFFFFFFFF)) = tstore(slot, 1000)\n    \n    // Action 3: afterSwap reads via tload\n    vm.prank(address(amm));\n    hook.afterSwap(ctx, directSwapParams, \"\");\n    // _getTstorish now reads tload(0xFFFFFFFFFFFFFFFF) = 1000 ✓\n    // Verify: price computation uses 1000, same as beforeSwap stored\n}",
       "category": "state_coupling",
-      "source_category": "2d",
+      "source_category": "2b",
       "coupled_pair": {
-        "state_a": "_pricingBounds[token1][token0] (set from token1 admin's semantic perspective)",
-        "state_b": "sqrtPriceX96 from getCurrentPriceX96 (pool's sqrt(reserve1/reserve0))",
-        "invariant": "Bounds comparison direction must match admin's semantic intent for price protection",
+        "state_a": "sstore(DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT) written in beforeSwap",
+        "state_b": "tload(DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT) read in afterSwap after activation",
+        "invariant": "Value written in beforeSwap must be readable in afterSwap regardless of storage mechanism switch",
         "gap_contract": "AMMStandardHook.sol",
-        "gap_function": "_enforcePoolCreationSettings",
-        "gap_line": 785
+        "gap_function": "_validatePricingBounds",
+        "gap_line": 843
+      },
+      "masking_code": {
+        "file": "AMMStandardHook.sol",
+        "line": 953,
+        "pattern": "try_catch",
+        "masks_invariant": "_onTstoreSupportActivated copies sstore→tstore at activation time, preserving the value across mechanism switch"
+      }
+    },
+    {
+      "id": "H-hook-registry-08",
+      "mechanism": "In AMMStandardHook.validateAddLiquidity (lines 261-276), pricing bounds are checked against the pool's CURRENT sqrtPriceX96 obtained from ILimitBreakAMMPoolType(poolType).getCurrentPriceX96(AMM, poolId) at line 266. This check occurs BEFORE the liquidity is actually added to the pool. For concentrated liquidity pool types, adding significant one-sided liquidity can shift the effective price. The validateAddLiquidity hook is called by the AMM as a pre-check, but the actual liquidity addition happens after the hook returns. If the pre-addition price is just within bounds (e.g., sqrtPriceX96 = maxSqrtPriceX96 - 1), and the liquidity addition shifts price above maxSqrtPriceX96, the bounds check passes but the post-addition state violates the intended invariant. This is a TOCTOU gap. The magnitude of impact depends on the pool type implementation — if addLiquidity doesn't change the pool price (like a constant-product AMM where adding liquidity proportionally doesn't change price), this is not exploitable. But for pool types where single-sided liquidity can shift price, it could matter.",
+      "functions": ["validateAddLiquidity", "getCurrentPriceX96"],
+      "lines": {
+        "lbamm-hooks-and-handlers/src/hooks/AMMStandardHook.sol": [243, 261, 264, 265, 266, 268, 269, 272]
+      },
+      "confidence": "low",
+      "grounded_in": "code-observation: AMMStandardHook.sol:266",
+      "suggested_test": "function test_H08_addLiquidityPriceTOCTOU() public {\n    // Setup: Pool at price just within max bound\n    // Set tight pricing bounds synced to hook\n    // Action: Add large one-sided liquidity that shifts price\n    vm.prank(address(amm));\n    (uint256 fee0, uint256 fee1) = hook.validateAddLiquidity(\n        true, context, params, amount0, amount1, 0, 0, \"\"\n    );\n    // Hook passed — but now simulate the actual add\n    // Post-add: check if price exceeded bounds\n    uint160 newPrice = ILimitBreakAMMPoolType(poolType).getCurrentPriceX96(amm, poolId);\n    // Assert: newPrice > bounds.maxSqrtPriceX96 despite hook passing\n    assert(newPrice > bounds.maxSqrtPriceX96);\n}",
+      "category": "state_coupling",
+      "source_category": "2e",
+      "coupled_pair": {
+        "state_a": "Pool sqrtPriceX96 at time of validateAddLiquidity check",
+        "state_b": "Pool sqrtPriceX96 after liquidity is actually added",
+        "invariant": "Price should remain within bounds after the liquidity operation, not just before",
+        "gap_contract": "AMMStandardHook.sol",
+        "gap_function": "validateAddLiquidity",
+        "gap_line": 266
       },
       "masking_code": null
     },
     {
-      "id": "H-hook-registry-08",
-      "mechanism": "In AMMStandardHook._validatePricingBounds (line 838-840), for direct swaps where poolType is address(0) and isBeforeSwap=true, the function stores params.amount in transient storage via _setTstorish(DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT, params.amount) and returns early WITHOUT checking pricing bounds. The bounds check only occurs in the afterSwap path. However, the pricing bounds at line 829 `_pricingBounds[token][pairedToken]` are read from PERSISTENT storage, which can be modified between beforeSwap and afterSwap calls. If the registry pushes new pricing bounds to the hook (via registryUpdatePricingBounds) between the AMM's beforeSwap and afterSwap callbacks, the afterSwap would enforce DIFFERENT bounds than what existed at beforeSwap time. For pool-based swaps, both beforeSwap and afterSwap check bounds so both see the change. But for direct swaps, beforeSwap stores amount and returns (no bound check), then afterSwap checks new bounds. If bounds were tightened between before and after, a swap that would have succeeded gets reverted at afterSwap. If bounds were loosened, a swap that should have been price-limited proceeds with less restrictive bounds. While this requires admin cooperation (or compromise), it creates a mid-swap configuration change vulnerability.",
-      "functions": ["_validatePricingBounds", "registryUpdatePricingBounds", "setPricingBounds"],
+      "id": "H-hook-registry-09",
+      "mechanism": "In AMMStandardHook.validateHandlerOrder (lines 198-226), the function is marked 'view' and has NO access control — anyone can call it. It reads pricing bounds from the hook's local _pricingBounds cache (line 210). Unlike _validatePricingBounds (used in beforeSwap/afterSwap), which is called during live swaps where _getOrFetchTokenSettings auto-populates the settings cache, validateHandlerOrder does NOT fetch or check token settings at all. It only checks pricing bounds. If pricing bounds were set in the registry but never synced to this specific hook instance (the hook was not in hooksToSync for setPricingBounds), the hook's _pricingBounds[token][pairedToken].isSet is false (line 211), and the function returns without any validation. A CLOB handler that relies on this hook for order validation would accept orders at any price. The fundamental issue is that _pricingBounds has no auto-fetch equivalent to _getOrFetchTokenSettings — it's purely push-based from the registry. Stale pricing bounds are silently treated as 'no bounds configured'.",
+      "functions": ["validateHandlerOrder", "setPricingBounds", "registryUpdatePricingBounds"],
       "lines": {
-        "lbamm-hooks-and-handlers/src/hooks/AMMStandardHook.sol": [823, 829, 835, 838, 839, 840, 842, 846, 854, 862],
-        "lbamm-hooks-and-handlers/src/hooks/CreatorHookSettingsRegistry.sol": [482, 523, 524]
+        "lbamm-hooks-and-handlers/src/hooks/AMMStandardHook.sol": [198, 207, 210, 211, 546, 552]
+      },
+      "confidence": "medium",
+      "grounded_in": "code-observation: AMMStandardHook.sol:210",
+      "suggested_test": "function test_H09_staleEmptyBoundsInHandlerValidation() public {\n    // Setup: Set pricing bounds in registry but don't sync to hook\n    address[] memory pairTokens = new address[](1);\n    pairTokens[0] = pairToken;\n    uint160[] memory mins = new uint160[](1);\n    mins[0] = 1e18; // tight lower bound\n    uint160[] memory maxs = new uint160[](1);\n    maxs[0] = 2e18; // tight upper bound\n    vm.prank(tokenOwner);\n    registry.setPricingBounds(token, pairTokens, mins, maxs, _emptyHooks()); // no hook sync!\n    \n    // Action: Call validateHandlerOrder with price WAY outside bounds\n    hook.validateHandlerOrder(address(0xBEEF), true, token, pairToken, 1e18, 100e18, \"\", \"\");\n    // Assert: No revert — hook has no cached bounds, silently skips validation\n}",
+      "category": "state_coupling",
+      "source_category": "2.5",
+      "coupled_pair": {
+        "state_a": "CreatorHookSettingsRegistry._pricingBounds[token][pairToken] (set by admin)",
+        "state_b": "AMMStandardHook._pricingBounds[token][pairToken] (empty, never synced)",
+        "invariant": "Handler order validation should enforce registry-configured pricing bounds",
+        "gap_contract": "AMMStandardHook.sol",
+        "gap_function": "validateHandlerOrder",
+        "gap_line": 210
+      },
+      "masking_code": {
+        "file": "AMMStandardHook.sol",
+        "line": 211,
+        "pattern": "silent_guard",
+        "masks_invariant": "if (bounds.isSet) silently skips all pricing validation when bounds are not cached in hook"
+      }
+    },
+    {
+      "id": "H-hook-registry-10",
+      "mechanism": "In AMMStandardHook._validatePricingBounds (lines 854-869), the directional check for pool-based swaps allows price to move in the 'recovery' direction. At line 854-860: if price < min AND zeroForOne (price moving down), it reverts. If price < min AND !zeroForOne (price moving up, toward recovery), it does NOT revert. Similarly at line 862-868: if price > max AND !zeroForOne (price moving up), it reverts. If price > max AND zeroForOne (price moving down, toward recovery), it does NOT revert. This means when the price is already outside bounds, any swap that would move it FURTHER away is blocked, but swaps moving it back are allowed. However, there is no check that the swap actually MOVES the price back toward bounds — only that the swap DIRECTION is toward recovery. A swap in the 'recovery' direction could be tiny (1 wei) and still be allowed, even though the effective price after the swap remains far outside bounds. This allows arbitrageurs to execute tiny recovery-direction swaps at extreme prices, potentially extracting MEV from the price being out of bounds, while the price barely moves back.",
+      "functions": ["_validatePricingBounds"],
+      "lines": {
+        "lbamm-hooks-and-handlers/src/hooks/AMMStandardHook.sol": [854, 855, 856, 857, 858, 862, 863, 864, 865, 866]
       },
       "confidence": "low",
-      "grounded_in": "code-observation: AMMStandardHook.sol:829",
-      "suggested_test": "function test_pricingBoundsChangesBetweenBeforeAndAfterSwap() public {\n    // Setup: Set wide pricing bounds, enable direct swap\n    vm.prank(tokenAdmin);\n    registry.setPricingBounds(token, pairTokens, [uint160(100)], [uint160(1e36)], hooks);\n    \n    // Action: beforeSwap stores amount, returns early (no bound check)\n    vm.prank(address(amm));\n    hook.beforeSwap(context, directSwapParams, bytes(''));\n    \n    // Between before/after: admin tightens bounds via registry\n    vm.prank(tokenAdmin);\n    registry.setPricingBounds(token, pairTokens, [uint160(1e30)], [uint160(1e30 + 1)], hooks);\n    \n    // afterSwap now uses tightened bounds\n    vm.prank(address(amm));\n    vm.expectRevert(AMMStandardHook.AMMStandardHook__InvalidPrice.selector);\n    hook.afterSwap(context, directSwapParams, bytes(''));\n    // Swap fails at afterSwap despite being valid at beforeSwap time\n}",
-      "category": "state_coupling",
-      "source_category": "2e",
-      "coupled_pair": {
-        "state_a": "AMMStandardHook._pricingBounds[token][pairedToken] (mutable via registryUpdatePricingBounds)",
-        "state_b": "Transient DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT (written in beforeSwap, read in afterSwap)",
-        "invariant": "Pricing bounds applied in afterSwap should be consistent with state at beforeSwap time",
-        "gap_contract": "AMMStandardHook.sol",
-        "gap_function": "_validatePricingBounds",
-        "gap_line": 829
-      },
+      "grounded_in": "code-observation: AMMStandardHook.sol:854-868",
+      "suggested_test": "function test_H10_recoveryDirectionMicroSwap() public {\n    // Setup: Pool price far below minSqrtPriceX96\n    // zeroForOne=false (token1→token0, recovery direction)\n    // Action: Execute 1 wei swap in recovery direction\n    vm.prank(address(amm));\n    // beforeSwap: price < min AND !zeroForOne → allowed (recovery direction)\n    hook.beforeSwap(ctx, tinyRecoverySwapParams, \"\");\n    // afterSwap: price still below min but swap allowed\n    vm.prank(address(amm));\n    hook.afterSwap(ctx, tinyRecoverySwapParams, \"\");\n    // Assert: Price barely moved, still below min, but swap succeeded\n    uint160 priceAfter = poolType.getCurrentPriceX96(amm, poolId);\n    assert(priceAfter < bounds.minSqrtPriceX96);\n    // Arbitrageur extracts value from out-of-bounds pricing\n}",
+      "category": null,
+      "source_category": "2a",
+      "coupled_pair": null,
       "masking_code": null
     }
   ]

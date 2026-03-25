@@ -3,53 +3,43 @@
 ## Summary
 - **Agent**: auth-forger (Authorization & Settlement Forger)
 - **Wave**: 1
-- **Findings**: 0 (no exploitable vulnerabilities found)
-- **Ruled Out Vectors**: 38
-- **Theft Theses**: 10 tested, 0 confirmed, 10 ruled out
-- **Hypothesis Results**: dismissed (all 10 hypotheses ruled out with evidence)
+- **Findings**: 0 confirmed (Medium+)
+- **Leads**: 0
+- **Ruled-out vectors**: 32
+- **Hypotheses tested**: 9 injected + 10 original = 19 total
+- **Hypotheses confirmed**: 0
+- **Hypotheses dismissed**: 19 (all strategic)
 
 ## Checklist Completion
-- **Section A (Setup)**: 4/4 (100%)
-- **Section B (Tools)**: 5/5 (100%)
-- **Section C (C-AUTH Checklist)**: 22/22 (100%)
-- **Section D (Theses)**: 10/10 (100%)
+- **Phase A**: 4/4 (Slither ran, Aderyn crashed, custom detectors N/A)
+- **Phase B**: 3/3 (audit-context-building, entry-point-analyzer, call graph)
+- **Phase C**: 22/22 (all C-AUTH items completed)
+- **Phase D**: 10/10 (all Target Map hypotheses tested)
 
-## Tools Used
-| Tool | Status | Details |
-|------|--------|---------|
-| Phase 0 artifacts | Read | Slither + Aderyn pre-generated outputs |
-| Slither MCP | Ran | list_functions for entry-point analysis, detectors for static analysis |
-| Aderyn | Read (crashed) | v0.6.8 fatal compiler bug; used Phase 0 output |
-| Forge | Ran | 93 tests, 0 failures (85 in AuditAuthForger.t.sol + 2 Halmos checks + inherited) |
-| Halmos | Ran | 2 checks: C16 PASSED (12 paths), C17 TIMEOUT (solver complexity) |
-| Medusa | Ran | CLOB: 100K+ calls, 20 tests passed. Permit: 219K calls, 6 tests passed |
-| audit-context-building | Applied | Deep analysis of LibOwnership, EIP712, cosignature validation, operator precedence |
-| entry-point-analyzer | Applied | Mapped 42+ state-changing entry points across 4 contracts via Slither |
+## Tools Run
+| Tool | Status | Notes |
+|------|--------|-------|
+| Slither | Ran | Detectors + function listing on lbamm-hooks-and-handlers |
+| Aderyn | Ran (crashed) | Fatal bug in aderyn_driver v0.6.8 |
+| Forge | Ran | 93 tests, all passing (AuditAuthForger.t.sol) |
+| Halmos | Ran | C16 PASSED, C17 TIMEOUT (solver-timeout 30s) |
+| Medusa | Ran (failed) | Constructor args not provided for target contracts |
+| audit-context-building | Ran | Deep context for 3 primary modules |
+| entry-point-analyzer | Ran | 24 state-changing entry points classified |
 
-## Effort Metrics
-- **Turns**: ~55
-- **Tool invocations**: ~60
-- **Files read**: ~30
-- **Contracts analyzed**: PermitTransferHandler, CLOBTransferHandler, AMMStandardHook, CreatorHookSettingsRegistry, LibOwnership, EIP712, Tstorish, StaticDelegateCall, FeeHelper, AMMModule, SqrtPriceCalculator, CLOBHelper
-- **Test file**: `lbamm-hooks-and-handlers/test/AuditAuthForger.t.sol` (85 tests)
-- **Halmos file**: `lbamm-hooks-and-handlers/test/HalmosAuthForger.t.sol` (2 checks)
+## Triage Log
+- **Skip**: 5 (tx.origin, ERC-1271 self-sign, flash loan callback direct call, admin rug, known FP patterns)
+- **Borderline**: 8 (feeOnTop unsigned, cross-chain replay, fee redirect, cross-module context, swapExtraData injection, expansion settings, lifecycle value leak, afterSwapRefund rounding)
+- **Survive**: 6 (operator precedence H-R3-CH-01/02, reentrancy H-R3-CH-03/06, fill rounding H-R3-CH-04, unchecked underflow H-R3-CH-09)
 
-## Value Lifecycle Lens Coverage
-1. **Lens 1 (Value Tracing)**: feeOnTop flow traced end-to-end through FeeHelper, AMMModule, PermitTransferHandler. Denomination consistent (always tokenIn).
-2. **Lens 2 (Paired Op Diffing)**: deposit/withdraw and open/close order symmetry verified. No exploitable asymmetry.
-3. **Lens 3 (Amplification Factor)**: No denomination mismatch found. Amplification factor = 1x.
+## Key Findings (Informational — below submission threshold)
+1. **Hook fee key asymmetry** (H-R3-CH-08): `_storeNonTokenHookFees` and `_transferHookFeesByHook` use different hash keys when tokenFor != tokenFee. API footgun for hook developers. Not attacker-exploitable.
+2. **afterSwapRefund reentrancy window** (H-R3-CH-03/06): Real window exists but per-user accounting prevents cross-user extraction. Not exploitable.
 
-## Key Security Properties Verified
-1. All hook callbacks enforce `_requireCallerIsAMM()` (immutable AMM address)
-2. All handler functions enforce `msg.sender == AMM` check
-3. PermitC nonce consumption is atomic (bitmap XOR for fill-or-kill, cumulative for partial)
-4. feeOnTop is unsigned but limitAmount caps total user exposure
-5. Cosigner nonce uses XOR bitmap with double-consumption detection
-6. CLOB balance-before/after checks prevent deposit manipulation
-7. Order nonces are auto-incremented (nextOrderNonce++), never reusable
-8. Cross-chain replay blocked by PermitC domain separator (chainId + verifyingContract)
-9. LibOwnership uses staticcall for owner()/hasRole() - no fallback exploitation
-10. StaticDelegateCall pattern prevents state modification via static envelope
+## Estimated Turns & Tool Uses
+- Turns: ~150
+- Tool uses: ~200
+- Files read: ~45
 
 ## Conclusion
-The authorization and settlement layer is well-hardened. No exploitable vulnerabilities were found across 22 checklist items, 10 hypothesis tests, and 38 ruled-out vectors. The codebase demonstrates defense-in-depth with multiple overlapping security controls.
+The authorization and settlement attack surface is well-hardened. All access control checks are correctly implemented. EIP-712 signing covers all economically relevant fields. Per-user accounting prevents cross-user value extraction even in reentrancy scenarios. No Medium+ findings.

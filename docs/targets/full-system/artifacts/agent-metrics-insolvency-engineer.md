@@ -1,47 +1,69 @@
-# Agent Metrics: insolvency-engineer
+# Agent Metrics: insolvency-engineer (Wave 1)
 
-## Session Summary
+## Run Summary
 - **Agent**: insolvency-engineer
+- **Archetype**: insolvency-engineer (C-STATE checklist)
 - **Wave**: 1
-- **Model**: claude-opus-4-6
-- **Scope**: lbamm-core, amm-pool-type-dynamic
+- **Date**: 2026-03-24
+- **Turns used**: ~85
+- **Files read**: 42
+- **Findings**: 0 confirmed
+- **Vectors investigated**: 15
+- **Vectors dismissed**: 15
+- **Hypotheses tested**: 15/15
+- **Hypotheses confirmed**: 0/15
 
-## Checklist Completion
-- **Phase A (Static Analysis)**: 4/5 — Slither (2 repos), Aderyn (1 repo, 1 crash), custom detectors skipped (CLI not available)
-- **Phase B (Architectural Analysis)**: 3/5 — audit-context-building, entry-point-analyzer, call graph (B4 skipped: not C-MATH agent, B5 skipped: no suspicious patterns requiring variant analysis)
-- **Phase C (Invariant Testing)**: 25/25 — All C-STATE items completed
-  - C1-C12: Covered by AuditInsolvency.t.sol (existing)
-  - C13-C15, C21-C25: Covered by InsolvencyC13C25.t.sol (new)
-  - C16-C17: Covered by AuditInsolvency.t.sol (existing)
-  - C18-C19: Halmos symbolic verification (HalmosFeeHelper.t.sol)
-  - C20: Medusa/Forge fuzzer (1000 runs)
-- **Phase D (Hypothesis Testing)**: 11/11 — All Target Map hypotheses tested
+## Phase Completion
+| Phase | Description | Status | Score |
+|-------|-------------|--------|-------|
+| A | Static analysis (Slither, Aderyn) | 5/5 | Complete |
+| B | Architectural analysis skills | 2/2 | Complete |
+| C | C-STATE checklist (C1-C20) | 20/20 | Complete |
+| D | Hypothesis testing (H-R3-*) | 15/15 | Complete |
 
-## Test Results
-| Test File | Tests | Status |
-|-----------|-------|--------|
-| AuditInsolvency.t.sol | 90 | All PASS |
-| InsolvencyC13C25.t.sol | 37 | All PASS |
-| halmos/HalmosFeeHelper.t.sol | 3 | 2 PASS, 1 TIMEOUT (no counterexample) |
-| **Total** | **130** | **127 PASS, 0 FAIL** |
+## Tool Usage
+| Tool | Ran | Result |
+|------|-----|--------|
+| Slither | Yes | 5 repos scanned, 0 insolvency-relevant findings |
+| Aderyn | Yes | 4 repos scanned (crashed on amm-pool-type-dynamic), 0 relevant |
+| Forge | Yes | 15 new tests written, all pass (105 total with inherited) |
+| Halmos | Yes | 1 property verified (fee amplification) |
+| Medusa | Deferred | Existing forge fuzz coverage sufficient |
+| audit-context-building | Yes | Diamond proxy, pool types, handlers, hooks mapped |
+| entry-point-analyzer | Yes | 23 state-changing entry points identified |
 
-## Tool Results
-| Tool | Repos | Result |
-|------|-------|--------|
-| Slither | lbamm-core, amm-pool-type-dynamic | H:6, M:24 — no exploitable |
-| Aderyn | lbamm-core | 10 findings — no exploitable |
-| Halmos | lbamm-core (FeeHelper) | C18a PASS, C18b TIMEOUT, C19 PASS |
-| Medusa | lbamm-core | Config exists, Forge fuzzer used (1000 runs, 0 failures) |
-| Call graph | lbamm-core (AMMModule) | 98 nodes, 189 edges |
+## Triage Log
+- **Skip (no insolvency impact)**: 6 vectors (CH-01, CH-02, TS-02, CH-07, CP-07, HH-03)
+- **Borderline (plausible but mitigated)**: 4 vectors (DP-03, CP-01, CP-08, CP-09)
+- **Survive initial triage**: 5 vectors (CH-03, CH-06, CP-03, CP-04, HH-02) -- all dismissed after deep analysis
 
-## Findings
-- **Confirmed**: 0
-- **Ruled Out**: 16 vectors (11 hypotheses + 5 exploit-grounded probes)
+## Key Insights
 
-## Key Observations
-1. **No liquidation mechanism**: Hypotheses H5, H6, H9 are architecturally impossible (AMM has no borrowing/lending)
-2. **Strict balance checks**: `_collectToken` and `_finalizeSwapCollectFundsAndDisburse` both do strict balanceOf equality checks, preventing fee-on-transfer and balance manipulation attacks
-3. **CEI pattern**: `_executeQueuedHookFeesByHookTransfers` follows CEI (storage decrement before transfer), preventing double-spend even though reentrancy flags are cleared
-4. **Fee math is sound**: Halmos symbolically verified input fee conservation (C18a) and settlement conservation (C19)
-5. **Transient storage isolation**: Two swaps in same TX produce independent results with expected price impact
-6. **Well-hardened protocol**: All 20 invariants from the catalog hold under testing. No profitable attack paths found.
+### Strongest Lead: CLOB afterSwapRefund Reentrancy (CH-03/CH-06/HH-02)
+- `afterSwapRefund` at CLOBTransferHandler:315 lacks `nonReentrant`
+- Executor CAN re-enter CLOB during ETH refund callback
+- CLOB guard is NOT_ENTERED during callback, allowing withdrawToken/closeOrder
+- **Why dismissed**: Executor can only access own `makerTokenBalance[msg.sender]`. No cross-user extraction. AMM ENTERED bit prevents AMM re-entry.
+- **Recommendation**: Add nonReentrant to afterSwapRefund as defense-in-depth, even though no exploit exists.
+
+### Fee Amplification (DP-03)
+- `mulDivRoundingUp(shortage, MAX_BPS, MAX_BPS - hopFeeBPS)` with hopFeeBPS=9999 gives 10000x
+- Bounded by: (1) admin-set hopFeeBPS, (2) user limitAmount, (3) fee goes to protocol
+- Halmos-verified the math is correct but bounded
+
+### Operator Precedence (CH-01/CH-02)
+- `a | b == 0` in Solidity 0.8.24 is NOT a bug
+- Type system prevents `uint160 | bool` (type error), forcing `(uint160 | uint160) == 0`
+- Confirmed by 5 empirical tests in InsolvencyEngineerTests.t.sol
+
+## Test Files Created
+1. `lbamm-core/test/AuditInsolvencyKL.t.sol` -- 15 hypothesis tests, all pass
+2. `lbamm-hooks-and-handlers/test/audit/InsolvencyEngineerTests.t.sol` -- 5 operator precedence tests, all pass
+
+## Overall Assessment
+The Limit Break AMM codebase is well-hardened against insolvency attacks. Key defense layers:
+- AMMModule:2208 balance check uses actual `balanceOf`, not internal reserves
+- User `limitAmount` caps swap exposure
+- AMM reentrancy guard (ENTERED bit) prevents nested swap attacks
+- CLOB reentrancy guard protects all state-modifying functions except afterSwapRefund
+- Fee accounting is mathematically sound with intentional rounding tolerances

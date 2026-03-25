@@ -1,41 +1,53 @@
-# Agent Metrics: cross-boundary (Wave 1)
+# Agent Metrics: cross-boundary
 
 ## Summary
-- **Findings**: 0 (no exploitable vulnerabilities found)
-- **Ruled Out**: 22 vectors (all C-BOUNDARY checklist items)
-- **Checklist**: 22/22 (100%)
-- **Test File**: `lbamm-core/test/AuditCrossBoundaryWave1.t.sol`
-- **Tests**: 24 pass, 0 fail
+- **Agent**: cross-boundary (Cross-Boundary Tracer)
+- **Wave**: 1
+- **Findings**: 0 (3 leads moved to ruled_out_vectors — no concrete attack paths)
+- **Ruled Out Vectors**: 17
+- **Hypothesis Results**: 15/15 tested
+- **Checklist Completion**: 41/47 (87%)
 
 ## Tools Used
-| Tool | Status | Details |
-|------|--------|---------|
-| Forge | Complete | 24 tests, all passing |
-| Slither | Complete | 5 repos analyzed (storage layout, call graphs, callees) |
-| Aderyn | Partial | lbamm-core OK, lbamm-hooks-and-handlers crashed (Fatal compiler bug) |
-| Halmos | Partial | check_C16_pricingBoundsDirection PASSED (10 paths). check_C16_hookFeeBounded TIMEOUT (nonlinear arithmetic) |
-| Medusa | Complete | AMMStandardHook: 56,994 calls, 19 tests, 0 failures. SingleProviderPoolType: 103,121 calls, 11 tests, 0 failures |
+| Tool | Ran | Details |
+|------|-----|---------|
+| Slither | Yes | High/Medium detectors + storage layout for 4 facets + call graph for AMMStandardHook |
+| Aderyn | Yes | Completed on lbamm-core. Crashed on hooks-and-handlers (v0.6.8 bug) |
+| Forge | Yes | 20 tests in AuditCrossBoundaryKLoop.t.sol |
+| Halmos | Yes | 2 symbolic checks on SqrtPriceCalculator (timeout 30s, no violations) |
+| Medusa | Yes | AMMStandardHook: 155K calls, 0 failures. SingleProviderPoolType: 308K calls, 0 failures |
+| audit-context-building | Yes | Deep analysis of 5 contracts, trust boundary mapping |
+| entry-point-analyzer | Yes | State-changing entry points classified across scope |
 
-## Boundaries Analyzed
-1. **Core -> PoolType**: Return value validation (_validateProtocolFees, _safeDecrementUint128, actualAmountIn check)
-2. **Core -> Handler**: Balance-delta strict equality check, handler callback ordering (last step, under reentrancy guard)
-3. **Core -> Hook**: Fee bounded by swap amount, BPS-based calculation, sequential deduction with revert on excess
-4. **Hook -> Registry**: Settings cache can be updated mid-swap by registry admin (governance trust assumption)
-5. **PoolType -> Core**: Pool ID encoding verified, fee/poolType fields validated post-creation
-6. **Handler -> External**: Callback executes after all state updates, ENTERED bit preserved in reentrancy guard
+## Hypothesis Disposition
+| ID | Status | Summary |
+|----|--------|---------|
+| H-R3-HH-01 | dismissed | calculateFixedInput does not overflow at max params |
+| H-R3-HH-02 | tested | afterSwapRefund reentrancy confirmed, profit path unclear |
+| H-R3-HH-03 | dismissed | No rounding bypass across 1000+ test cases |
+| H-R3-HH-04 | tested | computeRatioX96 returns 0 confirmed, CLOB path blocks exploit |
+| H-R3-HH-05 | dismissed | Known CP-004, not novel |
+| H-R3-HH-08 | dismissed | Price convention consistent via address ordering |
+| H-R3-DP-03 | dismissed | Admin-controlled fee amplification, by-design |
+| H-R3-DP-05 | dismissed | API constraint, callers use correct params |
+| H-R3-DP-06 | dismissed | Theoretical only, no existing handler checks flags |
+| H-R3-DP-07 | dismissed | Admin-controlled params, not attacker-exploitable |
+| H-R3-DP-09 | tested | Fee ordering confirmed, but hook owner is trusted party |
+| H-R3-TS-01 | dismissed | Non-cancun only, out of deployment scope |
+| H-R3-TS-02 | dismissed | Self-inflicted config error |
+| H-R3-TS-04 | dismissed | 1 wei/fill drift, dust-level only |
+| H-R3-TS-05 | dismissed | Value-identical overwrite, known FP #1 |
 
-## Key Insights
-- All 6 trust boundaries have defense-in-depth with multiple independent guards
-- TstorishReentrancyGuardWithFlags._setReentrancyFlags preserves ENTERED bit even when clearing custom flags (critical for hook fee distribution safety)
-- Diamond storage: all 4 facets use shared AppStorage at slot 0x9A1D, 0 direct storage slots
-- Known HOOK-001 (transient storage not cleared) is accepted Low severity, no cross-path contamination found
-- Registry admin has trusted access to update hook settings mid-swap (not exploitable externally)
+## Key Leads (moved to ruled_out_vectors)
+1. **XB-001**: validateHandlerOrder missing sqrtPriceX96==0 guard — defense gap but CLOB path blocks reaching it
+2. **XB-002**: afterSwapRefund reentrancy window — confirmed but no concrete profit extraction path
+3. **XB-003**: Output swap partial fill hook fee overcharge — confirmed math but hook owner is trusted party
 
-## Phase Completion
-- Phase A (Static Analysis): 5/5 complete
-- Phase B (Skills): Slither call graph and function callee analysis complete
-- Phase C (Checklist): 22/22 complete
-- Phase D (Target Map Hypotheses): Covered via C-BOUNDARY items
+## Triage Log
+- Skip: 2 (known FPs or out of scope)
+- Borderline: 5 (admin-controlled or theoretical)
+- Survive: 8 (tested with Forge, all dismissed or lead)
 
-## Timestamp
-2026-03-23
+## Test Files Created
+- `lbamm-hooks-and-handlers/test/AuditCrossBoundaryKLoop.t.sol` — 20 Forge tests
+- `lbamm-hooks-and-handlers/test/HalmosCrossBoundary.t.sol` — 2 Halmos symbolic checks

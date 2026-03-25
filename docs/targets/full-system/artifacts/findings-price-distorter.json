@@ -5,236 +5,140 @@
   "findings": [],
   "ruled_out_vectors": [
     {
-      "vector": "H1: Flash loan -> CLOB self-trade -> AMM reads distorted state",
-      "why_ruled_out": "CLOB and AMM pools have independent pricing state. CLOB is a transfer handler, not a pricing oracle. AMM pool types compute prices from their own state (sqrtPriceX96 per pool). No shared state to distort.",
-      "test_file": "amm-pool-type-dynamic/test/AuditPriceDistorterPhaseD.t.sol",
+      "vector": "H-R3-CP-02: Dust double-spend in FixedHelper._splitAmountsAndFeesByHeight swap-by-output path",
+      "why_ruled_out": "In _splitAmountsAndFeesByHeight line 1704, only the LOCAL variable amountOut is updated to totalAmountOutFilled, NOT swapCache.amountOut. The swapper receives swapCache.amountOut (original requested amount) upstream in AMMModule. Dust is stored in ptrPoolState.dust0/dust1 and only given to withdrawing LPs via _accumulateDustToWithdrawal. No double-spend occurs because the dust never leaves the pool as swap output.",
+      "test_file": "code-analysis: lbamm-pool-type-fixed/src/libraries/FixedHelper.sol:1694-1710",
       "repos": [
-        "lbamm-core",
-        "lbamm-hooks-and-handlers"
+        "lbamm-pool-type-fixed"
       ],
       "contracts": [
-        "AMMModule.sol",
-        "CLOBHelper.sol"
+        "FixedHelper.sol"
       ],
       "functions": [
-        "swapByInput()",
-        "calculateFixedInput()"
+        "_splitAmountsAndFeesByHeight",
+        "_accumulateDustToWithdrawal"
       ],
       "keywords": [
-        "flash-loan",
-        "cross-venue",
-        "price-isolation"
-      ]
+        "dust",
+        "double-spend",
+        "fixed-pool",
+        "rounding"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
     },
     {
-      "vector": "H2: snapPrice in addLiquidity allows arbitrary price movement -> sandwich",
-      "why_ruled_out": "snapPrice reverts with DynamicPool__PriceCannotSnapWithLiquidity if ANY liquidity exists between current and target price (DynamicHelper.sol:246). Sandwich requires liquidity to extract from, contradicting snap requirement. Only called during addLiquidity behind reentrancy guard.",
-      "test_file": "amm-pool-type-dynamic/test/AuditPriceDistorterPhaseD.t.sol",
+      "vector": "H-R3-CP-06: DynamicPoolType no access control allows external state pollution",
+      "why_ruled_out": "DynamicPoolType isolates state via globalState[msg.sender] at every entry point (lines 35, 71, 161, 228, 321, 444, 563). External callers get their own isolated state that cannot affect the AMM's pools. View functions like getCurrentPriceX96 also use msg.sender-scoped state. No cross-caller contamination is possible.",
+      "test_file": "code-analysis: amm-pool-type-dynamic/src/DynamicPoolType.sol:35,71,161,228,321,444,563",
       "repos": [
         "amm-pool-type-dynamic"
       ],
       "contracts": [
-        "DynamicHelper.sol",
         "DynamicPoolType.sol"
       ],
       "functions": [
-        "snapPrice()",
-        "addLiquidity()"
+        "globalState mapping"
       ],
       "keywords": [
-        "snapPrice",
-        "sandwich",
-        "liquidity-guard"
-      ]
+        "access-control",
+        "state-isolation",
+        "msg.sender"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
     },
     {
-      "vector": "H3: SingleProviderPoolType trusts external pricing hook -> oracle spoof",
-      "why_ruled_out": "Hook is set at pool creation by pool creator (who is also the LP). Price bounded by MIN_SQRT_RATIO/MAX_SQRT_RATIO (SingleProviderPoolType.sol:311). A malicious hook only hurts the pool creator's own funds. Users who trade on that pool accept the hook's pricing.",
-      "test_file": "amm-pool-type-dynamic/test/AuditPriceDistorterPhaseD.t.sol",
+      "vector": "H-R3-CP-09: Zero-output swap at extreme prices in SingleProviderPoolType",
+      "why_ruled_out": "At near-MIN_SQRT_RATIO price (4295128740), calculateFixedInput returns 0 for inputs < ~1.84e19 wei due to double mulDiv rounding to zero. However, AMMModule's limitAmount check at line 2156 protects users who set limitAmount > 0. Only exploitable when limitAmount=0 (misconfigured integrator). Tier B - requires external dependency (adversarial hook setting extreme price + misconfigured integrator omitting slippage protection). Not submittable at contest threshold.",
+      "test_file": "lbamm-pool-type-single-provider/test/AuditPriceDistorterHypotheses.t.sol",
       "repos": [
-        "lbamm-pool-type-single-provider"
+        "lbamm-pool-type-single-provider",
+        "lbamm-core"
       ],
       "contracts": [
         "SingleProviderPoolType.sol",
+        "SingleProviderHelper.sol",
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "calculateFixedInput",
+        "swapByInput"
+      ],
+      "keywords": [
+        "zero-output",
+        "rounding",
+        "extreme-price",
+        "slippage"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "H-R3-CP-10: Linked list DoS via corrupted height pointers in FixedHelper",
+      "why_ruled_out": "Code at FixedHelper.sol:809-811 explicitly detects zeroed-out nodes and resets traversal to root. Stale hints degrade insertion from O(1) to O(N) traversal but cannot cause infinite loops. The grief-cost amplification is proportional (attacker pays O(K) gas to seed heights, victim pays O(K) traversal) and falls well below block gas limit for realistic K values. Insufficient economic impact for a griefing finding.",
+      "test_file": "code-analysis: lbamm-pool-type-fixed/src/libraries/FixedHelper.sol:799-811",
+      "repos": [
+        "lbamm-pool-type-fixed"
+      ],
+      "contracts": [
+        "FixedHelper.sol"
+      ],
+      "functions": [
+        "_insertHeight",
+        "_removeLiquidityFromHeight"
+      ],
+      "keywords": [
+        "linked-list",
+        "dos",
+        "gas-griefing",
+        "height-traversal"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "C20: SingleProviderHelper double-mulDiv compound rounding gap",
+      "why_ruled_out": "The sequential mulDiv pattern creates compound rounding gaps up to max(amountIn/1e12, 10000) wei at moderate prices (within 100x of 1:1). At extreme prices the gap can reach ~34% but requires adversarial hook control (Tier B). Rounding always favors the protocol (mulDiv rounds down for output, mulDivRoundingUp for input required). Dust-level impact at normal operating parameters.",
+      "test_file": "lbamm-pool-type-single-provider/test/AuditPriceDistorterHypotheses.t.sol",
+      "repos": [
+        "lbamm-pool-type-single-provider"
+      ],
+      "contracts": [
         "SingleProviderHelper.sol"
       ],
       "functions": [
-        "swapByInput()",
-        "getPoolPriceForSwap()"
+        "calculateFixedInput",
+        "calculateFixedOutput"
       ],
       "keywords": [
-        "hook-pricing",
-        "oracle-spoof",
-        "trust-model"
-      ]
+        "rounding",
+        "mulDiv",
+        "compound-rounding",
+        "precision"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
     },
     {
-      "vector": "H4: Direct swap bypasses pricing bounds checked by hooks",
-      "why_ruled_out": "Direct swap is by design: executor provides swap amount (OTC market-making). Protected by maxAmountOut (AMMModule.sol:1852), minAmountIn (line 1925), reentrancy guard, deadline validation, and before/after swap hooks. Not a bypass - different swap mode.",
-      "test_file": "amm-pool-type-dynamic/test/AuditPriceDistorterPhaseD.t.sol",
-      "repos": [
-        "lbamm-core"
-      ],
-      "contracts": [
-        "AMMModule.sol",
-        "LimitBreakAMM.sol"
-      ],
-      "functions": [
-        "_directSwap()",
-        "directSwap()"
-      ],
-      "keywords": [
-        "direct-swap",
-        "pricing-bypass",
-        "OTC"
-      ]
-    },
-    {
-      "vector": "H5: Oracle returns stale price -> buy cheap",
-      "why_ruled_out": "No external oracle dependency in core AMM math. DynamicPoolType uses internal sqrtPriceX96. FixedPoolType uses constant ratio. SingleProviderPoolType calls hook per-swap (not cached). No staleness vector.",
-      "test_file": "amm-pool-type-dynamic/test/AuditPriceDistorterPhaseD.t.sol",
-      "repos": [
-        "amm-pool-type-dynamic",
-        "lbamm-pool-type-fixed",
-        "lbamm-pool-type-single-provider"
-      ],
-      "contracts": [
-        "DynamicHelper.sol",
-        "FixedHelper.sol",
-        "SingleProviderPoolType.sol"
-      ],
-      "functions": [
-        "computeSwap()",
-        "swapByInput()"
-      ],
-      "keywords": [
-        "oracle",
-        "staleness",
-        "no-external-oracle"
-      ]
-    },
-    {
-      "vector": "H6: Oracle read has no bounds -> feed extreme price",
-      "why_ruled_out": "Same as H3. Only external price source is hook. Price bounded by MIN_SQRT_RATIO/MAX_SQRT_RATIO. At extreme valid prices, math produces bounded outputs (near-zero or reserve-capped).",
-      "test_file": "amm-pool-type-dynamic/test/AuditPriceDistorterPhaseD.t.sol",
-      "repos": [
-        "lbamm-pool-type-single-provider"
-      ],
-      "contracts": [
-        "SingleProviderPoolType.sol"
-      ],
-      "functions": [
-        "swapByInput()"
-      ],
-      "keywords": [
-        "price-bounds",
-        "extreme-price"
-      ]
-    },
-    {
-      "vector": "H7: TWAP window is short -> manipulate cheaply",
-      "why_ruled_out": "No TWAP oracle exists in this protocol. No observation array, no cumulative price tracking, no TWAP computation. Unlike Uniswap V3 which has Oracle.sol, Limit Break AMM has no price accumulator.",
-      "test_file": "amm-pool-type-dynamic/test/AuditPriceDistorterPhaseD.t.sol",
-      "repos": [
-        "amm-pool-type-dynamic",
-        "lbamm-core"
-      ],
-      "contracts": [
-        "DynamicHelper.sol",
-        "AMMModule.sol"
-      ],
-      "functions": [],
-      "keywords": [
-        "TWAP",
-        "oracle",
-        "not-applicable"
-      ]
-    },
-    {
-      "vector": "H8: Read stale oracle -> front-run update",
-      "why_ruled_out": "No external oracle update mechanism. SingleProviderPoolType calls hook.getPoolPriceForSwap() fresh on every swap (not cached). No update transaction to front-run.",
-      "test_file": "amm-pool-type-dynamic/test/AuditPriceDistorterPhaseD.t.sol",
-      "repos": [
-        "lbamm-pool-type-single-provider"
-      ],
-      "contracts": [
-        "SingleProviderPoolType.sol"
-      ],
-      "functions": [
-        "swapByInput()"
-      ],
-      "keywords": [
-        "oracle-update",
-        "front-run",
-        "per-swap-pricing"
-      ]
-    },
-    {
-      "vector": "H9: Controlled hook returns fake sqrtPriceX96",
-      "why_ruled_out": "Hook controlled by pool creator = LP. Attacker cannot change another pool's hook. Creating own pool with malicious hook only drains own funds. Trust model: pool creator sets hook, users opt in.",
-      "test_file": "amm-pool-type-dynamic/test/AuditPriceDistorterPhaseD.t.sol",
-      "repos": [
-        "lbamm-pool-type-single-provider"
-      ],
-      "contracts": [
-        "SingleProviderPoolType.sol"
-      ],
-      "functions": [
-        "swapByInput()",
-        "getPoolPriceForSwap()"
-      ],
-      "keywords": [
-        "malicious-hook",
-        "trust-model",
-        "self-attack"
-      ]
-    },
-    {
-      "vector": "H10: Bypass slippage/deadline params",
-      "why_ruled_out": "Slippage and deadline enforced at AMMModule level (not pool type). Input swaps check amountOut >= limitAmount. Output swaps check amountIn <= limitAmount. Direct swaps check maxAmountOut and minAmountIn. No pool type can bypass these.",
-      "test_file": "amm-pool-type-dynamic/test/AuditPriceDistorterPhaseD.t.sol",
-      "repos": [
-        "lbamm-core"
-      ],
-      "contracts": [
-        "AMMModule.sol",
-        "LimitBreakAMM.sol"
-      ],
-      "functions": [
-        "_finalizeSwapCollectFundsAndDisburse()",
-        "directSwap()"
-      ],
-      "keywords": [
-        "slippage",
-        "deadline",
-        "limit-amount"
-      ]
-    },
-    {
-      "vector": "C26: Cetus precision extraction ($223M) - overflow in computeRatioX96",
-      "why_ruled_out": "computeRatioX96 returns 0 on overflow (not exploitable near-zero). TickMath enforces MIN_TICK/MAX_TICK bounds. getSqrtPriceAtTick reverts on out-of-bounds ticks. getAmount0Delta at MIN_SQRT_RATIO gives bounded amounts.",
-      "test_file": "amm-pool-type-dynamic/test/AuditPriceDistorterCMathExt.t.sol",
-      "repos": [
-        "amm-pool-type-dynamic"
-      ],
-      "contracts": [
-        "SqrtPriceMath.sol",
-        "TickMath.sol"
-      ],
-      "functions": [
-        "computeRatioX96()",
-        "getSqrtPriceAtTick()"
-      ],
-      "keywords": [
-        "precision-extraction",
-        "overflow",
-        "Cetus"
-      ]
-    },
-    {
-      "vector": "C27: Balancer rounding direction ($128M) - dust swaps drain pool",
-      "why_ruled_out": "1000 dust swaps (1 wei each) show pool balance is non-negative after. Rounding consistently favors protocol: input amountOut uses mulDiv (rounds down), output amountIn uses mulDivRoundingUp (rounds up).",
-      "test_file": "amm-pool-type-dynamic/test/AuditPriceDistorterCMathExt.t.sol",
+      "vector": "C23: No profitable round-trip via dynamic pool single-step swap",
+      "why_ruled_out": "Fuzz tested with 5000 runs: swap A->B then B->A always produces amountOut <= amountIn due to fee deduction and protocol-favorable rounding. Invariant INV-SW02 holds.",
+      "test_file": "amm-pool-type-dynamic/test/AuditPriceDistorterHypotheses2.t.sol",
       "repos": [
         "amm-pool-type-dynamic"
       ],
@@ -243,39 +147,105 @@
         "SqrtPriceMath.sol"
       ],
       "functions": [
-        "computeSwapByInputStep()",
-        "getNextSqrtPriceFromInput()"
+        "computeSwapByInputStep"
       ],
       "keywords": [
-        "rounding-direction",
-        "dust-swaps",
-        "Balancer"
-      ]
+        "round-trip",
+        "profit",
+        "invariant"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
     },
     {
-      "vector": "C28: ERC-4626 first depositor inflation ($240K)",
-      "why_ruled_out": "Not applicable to concentrated liquidity. Each position tracks its own liquidity units (not shares). No share inflation possible. getAmount0Delta with liquidity=1 gives small bounded amounts. Second depositor gets proportional amounts.",
-      "test_file": "amm-pool-type-dynamic/test/AuditPriceDistorterCMathExt.t.sol",
+      "vector": "C26: Cetus-pattern tick_index overflow to near-zero price",
+      "why_ruled_out": "TickMath.getSqrtPriceAtTick reverts for tick < -887272 (MIN_TICK). MIN_SQRT_RATIO is correctly bounded. SqrtPriceMath.getAmount1Delta at near-min price produces small bounded amounts. The Cetus overflow pattern does not apply to this codebase.",
+      "test_file": "amm-pool-type-dynamic/test/AuditPriceDistorterHypotheses2.t.sol",
       "repos": [
         "amm-pool-type-dynamic"
       ],
       "contracts": [
+        "TickMath.sol",
         "SqrtPriceMath.sol"
       ],
       "functions": [
-        "getAmount0Delta()",
-        "getAmount1Delta()"
+        "getSqrtPriceAtTick",
+        "getAmount1Delta"
+      ],
+      "keywords": [
+        "cetus",
+        "overflow",
+        "tick",
+        "near-zero-price"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "C27: Balancer rounding direction - FixedHelper 1-wei swap drain",
+      "why_ruled_out": "Fuzz tested with up to 1000 sequential 1-wei swaps: calculateFixedSwapByRatioRoundingDown(1, ratio, true) never produces output > input at 1:1 ratio. Pool balance never decreases. Rounding direction is consistently protocol-favorable (round up for input required, round down for output given).",
+      "test_file": "lbamm-pool-type-fixed/test/price-distorter/FixedMathTests.t.sol",
+      "repos": [
+        "lbamm-pool-type-fixed"
+      ],
+      "contracts": [
+        "FixedHelper.sol"
+      ],
+      "functions": [
+        "calculateFixedSwapByRatio",
+        "calculateFixedSwapByRatioRoundingDown"
+      ],
+      "keywords": [
+        "balancer",
+        "rounding",
+        "1-wei",
+        "drain"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "C28: First depositor inflation (ERC-4626 pattern)",
+      "why_ruled_out": "FixedPoolType uses height-based liquidity tracking, not share-based. There is no share/totalSupply mechanism, so the ERC-4626 inflation attack pattern (donate to inflate share price, dilute second depositor) does not apply. SingleProviderPoolType has a single LP per pool, so the multi-depositor inflation scenario is also inapplicable. DynamicPoolType uses Uniswap V3 concentrated liquidity model where positions are independent.",
+      "test_file": "lbamm-pool-type-fixed/test/price-distorter/FixedMathTests.t.sol",
+      "repos": [
+        "lbamm-pool-type-fixed",
+        "lbamm-pool-type-single-provider",
+        "amm-pool-type-dynamic"
+      ],
+      "contracts": [
+        "FixedHelper.sol",
+        "SingleProviderHelper.sol",
+        "DynamicHelper.sol"
+      ],
+      "functions": [
+        "_addLiquidity"
       ],
       "keywords": [
         "first-depositor",
-        "share-inflation",
-        "ERC4626"
-      ]
+        "inflation",
+        "erc4626",
+        "share-dilution"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
     },
     {
-      "vector": "C29: Hook price manipulation - Balancer rate provider ($128M)",
-      "why_ruled_out": "SingleProviderPoolType validates MIN_SQRT_RATIO <= price < MAX_SQRT_RATIO. At extreme prices: price=0 gives zero output (guarded), price=1 gives zero output, MIN_SQRT_RATIO gives near-zero output. Not exploitable for inflation.",
-      "test_file": "amm-pool-type-dynamic/test/AuditPriceDistorterCMathExt.t.sol",
+      "vector": "C29: Hook price manipulation in SingleProviderPoolType",
+      "why_ruled_out": "SingleProviderPoolType bounds-checks hook-returned price at lines 328-330: MIN_SQRT_RATIO <= price < MAX_SQRT_RATIO. Price=0 or price=type(uint256).max would fail this check. At MIN_SQRT_RATIO+1, swapByInput's reserveOut cap prevents extreme outputs. The hook controller already has full trust over the pool (they set the hook address at pool creation), so manipulating their own pool's price is a self-inflicted config choice, not a vulnerability.",
+      "test_file": "lbamm-pool-type-single-provider/test/AuditPriceDistorterHypotheses.t.sol",
       "repos": [
         "lbamm-pool-type-single-provider"
       ],
@@ -284,216 +254,189 @@
         "SingleProviderHelper.sol"
       ],
       "functions": [
-        "swapByInput()",
-        "calculateFixedInput()"
+        "swapByInput",
+        "calculateFixedInput"
       ],
       "keywords": [
-        "hook-price",
-        "rate-provider",
-        "extreme-price"
-      ]
-    },
-    {
-      "vector": "C23: No profitable round-trip (INV-SW02)",
-      "why_ruled_out": "Fuzz tested with 25 random (amountIn, fee) pairs. SwapMath.computeSwapByInputStep always loses value on round-trip due to fees and rounding. Deterministic test also confirms.",
-      "test_file": "amm-pool-type-dynamic/test/AuditPriceDistorterCMathExt.t.sol",
-      "repos": [
-        "amm-pool-type-dynamic"
+        "hook",
+        "price-manipulation",
+        "oracle",
+        "bounds-check"
       ],
-      "contracts": [
-        "SwapMath.sol"
-      ],
-      "functions": [
-        "computeSwapByInputStep()"
-      ],
-      "keywords": [
-        "round-trip",
-        "arbitrage",
-        "no-profit"
-      ]
-    },
-    {
-      "vector": "C1-C2: FullMath.mulDiv edge cases and rounding direction",
-      "why_ruled_out": "Tested mulDiv(max,max,max), mulDiv(0,x,y), mulDivRoundingUp >= mulDiv for all inputs. phantom overflow handled correctly. Rounding up always >= rounding down.",
-      "test_file": "amm-pool-type-dynamic/test/AuditPriceDistorterWave1.t.sol",
-      "repos": [
-        "lbamm-core"
-      ],
-      "contracts": [
-        "FullMath.sol"
-      ],
-      "functions": [
-        "mulDiv()",
-        "mulDivRoundingUp()"
-      ],
-      "keywords": [
-        "phantom-overflow",
-        "rounding",
-        "edge-cases"
-      ]
-    },
-    {
-      "vector": "C17: FeeHelper fee conservation - input fees can never exceed input",
-      "why_ruled_out": "Fuzz tested: fee = mulDiv(input, BPS, MAX_BPS) always <= input. Conservation holds: remaining + fees == original. Output fee uses mulDivRoundingUp (rounds against user). 100% fee asymmetry is by design.",
-      "test_file": "amm-pool-type-dynamic/test/AuditPriceDistorterFeeAndCLOB.t.sol",
-      "repos": [
-        "lbamm-core"
-      ],
-      "contracts": [
-        "FeeHelper.sol"
-      ],
-      "functions": [
-        "_calculateBPSFeeWithRecipientAndProtocolFeeSwapByInput()",
-        "_calculateBPSFeeWithRecipientAndProtocolFeeSwapByOutput()"
-      ],
-      "keywords": [
-        "fee-conservation",
-        "rounding",
-        "100-pct-asymmetry"
-      ]
-    },
-    {
-      "vector": "C18: CLOBHelper.calculateFixedInput rounding direction",
-      "why_ruled_out": "CLOB uses mulDivRoundingUp (rounds against taker, favoring maker). Max difference from floor is 2 wei. Rounding direction is consistent across fuzz testing.",
-      "test_file": "amm-pool-type-dynamic/test/AuditPriceDistorterFeeAndCLOB.t.sol",
-      "repos": [
-        "lbamm-hooks-and-handlers"
-      ],
-      "contracts": [
-        "CLOBHelper.sol"
-      ],
-      "functions": [
-        "calculateFixedInput()"
-      ],
-      "keywords": [
-        "CLOB",
-        "rounding-up",
-        "maker-favored"
-      ]
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
     }
   ],
   "theft_theses": [
     {
-      "thesis": "Flash loan -> CLOB self-trade at extreme price -> AMM reads distorted CLOB state -> extract on AMM at wrong price",
-      "victim": "AMM liquidity providers",
-      "asset": "Pool tokens",
+      "thesis": "Flash loan to distort CLOB price, exploit distorted state on AMM to extract value",
+      "victim": "LP (liquidity providers in AMM pools)",
+      "asset": "Pool tokens (token0/token1)",
       "estimated_ev": 0,
       "status": "ruled_out"
     },
     {
-      "thesis": "Sandwich around snapPrice to extract value from price movement during addLiquidity",
-      "victim": "Liquidity providers",
-      "asset": "Deposited tokens",
+      "thesis": "Hook returns fake sqrtPriceX96 to SingleProviderPoolType, attacker swaps at rigged price",
+      "victim": "LP in hook-controlled pool",
+      "asset": "Pool reserves",
       "estimated_ev": 0,
       "status": "ruled_out"
     },
     {
-      "thesis": "Deploy malicious hook to SingleProviderPoolType to spoof oracle pricing and extract value",
-      "victim": "Swappers on attacker's pool",
-      "asset": "Swap tokens",
-      "estimated_ev": 0,
-      "status": "ruled_out"
-    },
-    {
-      "thesis": "Use directSwap to bypass pricing bounds and swap at arbitrary prices",
-      "victim": "Counterparty",
-      "asset": "Swap tokens",
-      "estimated_ev": 0,
-      "status": "ruled_out"
-    },
-    {
-      "thesis": "Exploit stale oracle price to buy cheap and sell at real price",
-      "victim": "Liquidity providers",
-      "asset": "Pool tokens",
-      "estimated_ev": 0,
-      "status": "ruled_out"
-    },
-    {
-      "thesis": "Feed extreme price via oracle to extract via arbitrage against bounded venues",
-      "victim": "Liquidity providers",
-      "asset": "Pool tokens",
-      "estimated_ev": 0,
-      "status": "ruled_out"
-    },
-    {
-      "thesis": "Manipulate short TWAP window to profit from contracts using TWAP",
-      "victim": "TWAP consumers",
-      "asset": "Any",
-      "estimated_ev": 0,
-      "status": "ruled_out"
-    },
-    {
-      "thesis": "Front-run oracle update to extract delta between stale and fresh price",
-      "victim": "Liquidity providers",
-      "asset": "Pool tokens",
-      "estimated_ev": 0,
-      "status": "ruled_out"
-    },
-    {
-      "thesis": "Control hook to return fake sqrtPriceX96 and swap at rigged price",
-      "victim": "Pool users",
-      "asset": "Swap tokens",
-      "estimated_ev": 0,
-      "status": "ruled_out"
-    },
-    {
-      "thesis": "Bypass slippage/deadline params to execute swap at worse price and capture difference",
-      "victim": "Swappers",
-      "asset": "Swap tokens",
+      "thesis": "Zero-output swap at extreme price: user pays input for 0 output",
+      "victim": "Swapper with limitAmount=0",
+      "asset": "Swap input tokens",
       "estimated_ev": 0,
       "status": "ruled_out"
     }
   ],
+  "hypothesis_results": [
+    {
+      "id": "H-R3-CP-01",
+      "status": "tested",
+      "test_file": "lbamm-pool-type-fixed/test/price-distorter/FixedMathTests.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If totalAmountInFilled exceeds amountIn by 1 wei at FixedHelper.sol:1680, the fee recalculation uses inflated amount, and AMMModule increments reserves by 1 wei more than user provided. Over 10000 swaps this could compound to material reserve inflation.",
+      "guard_location": "lbamm-core/src/modules/AMMModule.sol:2208 (balance check after token collection), lbamm-pool-type-fixed/src/libraries/FixedHelper.sol:1680 (tolerance check: totalAmountInFilled > amountIn + 1)",
+      "detail": "The +1 tolerance at line 1680 means the maximum per-swap inflation is exactly 1 wei. AMMModule's balance check at line 2208 (balanceOf >= expected) catches any material divergence. At 1 wei per swap, 10000 swaps = 10000 wei = negligible. The amountIn returned to AMMModule is totalAmountInFilled (not original amountIn), but the balance check ensures the user actually paid this amount. No reserve inflation beyond what was actually transferred."
+    },
+    {
+      "id": "H-R3-CP-02",
+      "status": "dismissed",
+      "test_file": "code-analysis: lbamm-pool-type-fixed/src/libraries/FixedHelper.sol:1694-1710",
+      "failure_class": "strategic",
+      "refutation_case": "If _splitAmountsAndFeesByHeight sets amountOut = totalAmountOutFilled (line 1704) and also stores dust = totalAmountOutFilled - amountOut in ptrPoolState.dust1, then the swapper receives totalAmountOutFilled while dust is also tracked \u2014 double counting the overfill amount.",
+      "guard_location": "lbamm-pool-type-fixed/src/libraries/FixedHelper.sol:1704 (local variable amountOut, not swapCache.amountOut)",
+      "detail": "Line 1704 updates a LOCAL variable amountOut, not swapCache.amountOut. The swapper receives swapCache.amountOut (set at line 1676 for swap-by-input, or the originally requested amount for swap-by-output). Dust stays in pool and is correctly given only to withdrawing LPs. No double-spend."
+    },
+    {
+      "id": "H-R3-CP-03",
+      "status": "tested",
+      "test_file": "code-analysis: lbamm-pool-type-fixed/src/libraries/FixedHelper.sol:315,329,349,353",
+      "failure_class": "strategic",
+      "refutation_case": "If addInRange0 and addInRange1 are both true, the side0 computation modifies add0 (line 329: add0 += depth0) but side1 checks originalAdd0 (line 315: saved before modification). The modified add0 at line 353 (add0 -= depth1ValueOf0) operates on the inflated value, potentially allowing LP to get height range coverage beyond their deposited tokens.",
+      "guard_location": "lbamm-pool-type-fixed/src/libraries/FixedHelper.sol:315 (originalAdd0 = add0 saved before modification)",
+      "detail": "The originalAdd0 save at line 315 is intentional design. The side0 computation at line 329 adds depth0 to account for in-range fill. The side1 check at line 349 uses originalAdd0 (pre-modification) to validate the user's original deposit covers the depth1 requirement. The actual subtraction at line 353 on modified add0 is correct because add0 now includes the depth0 bonus which represents actual token0 the user deposited for in-range fill. The math is consistent: user deposits token0 for both in-range fill and side1 coverage."
+    },
+    {
+      "id": "H-R3-CP-04",
+      "status": "tested",
+      "test_file": "code-analysis: lbamm-pool-type-fixed/src/libraries/FixedHelper.sol:490,506,508,516",
+      "failure_class": "strategic",
+      "refutation_case": "If two LPs have overlapping positions and one removes first, the unchecked subtraction at line 508 (consumedLiquidity - (liquidity - sideValue)) could wrap to a massive uint256 if consumedLiquidity has been reduced below the expected level by the first LP's removal.",
+      "guard_location": "lbamm-pool-type-fixed/src/libraries/FixedHelper.sol:508 (unchecked block), lbamm-core/src/modules/AMMModule.sol:579 (_safeDecrementUint128)",
+      "detail": "The unchecked block at line 490 relies on the invariant that consumedLiquidity for each height always tracks the total consumed liquidity correctly. When LP2 removes, their (liquidity - sideValue) is subtracted from height.consumedLiquidity at line 516. The remaining LP1's consumedLiquidity calculation at line 508 operates on the updated (lower) consumedLiquidity, which correctly reflects that LP2's share has been removed. The invariant is maintained: consumedLiquidity = sum of consumed portions across all active positions at that height. No underflow occurs because height.consumedLiquidity >= sum of all positions' consumed portions."
+    },
+    {
+      "id": "H-R3-CP-05",
+      "status": "tested",
+      "test_file": "code-analysis: lbamm-pool-type-fixed/src/libraries/FixedHelper.sol:723,1377,1388",
+      "failure_class": "strategic",
+      "refutation_case": "If addLiquidity allows startHeight < currentHeight without requiring token deposit for the already-consumed range, then consumedLiquidity += (currentHeight - startHeight) at line 723 creates unbacked phantom reserves that inflate expectedReserve and allow extraction.",
+      "guard_location": "lbamm-pool-type-fixed/src/libraries/FixedHelper.sol:723 (consumedLiquidity increment), FixedHelper._addLiquidity entry validation",
+      "detail": "The addLiquidity function requires actual token deposits proportional to the position range. When startHeight < currentHeight, the tokens deposited for that range are already 'consumed' (swapped into the other token). The consumedLiquidity increment at line 723 correctly reflects this \u2014 the deposited tokens back the consumed portion. The upstream addLiquidity entry point validates that deposited amounts match the requested position range. No phantom reserves are created because every consumedLiquidity increment is backed by actual token deposits."
+    },
+    {
+      "id": "H-R3-CP-06",
+      "status": "dismissed",
+      "test_file": "code-analysis: amm-pool-type-dynamic/src/DynamicPoolType.sol:35,71,161,228,321,444,563",
+      "failure_class": "strategic",
+      "refutation_case": "If an external contract calls DynamicPoolType directly and creates a pool with the same poolId as the AMM's pool, the attacker could manipulate price in their copy and then any external reader of getCurrentPriceX96 would see the attacker's manipulated price instead of the real one.",
+      "guard_location": "amm-pool-type-dynamic/src/DynamicPoolType.sol:35 (globalState[msg.sender] mapping)",
+      "detail": "globalState[msg.sender] provides per-caller isolation. Even if poolIds collide, state is segregated by msg.sender. View functions read from the caller's own state space. An external contract calling DynamicPoolType directly gets its own isolated copy with no effect on the AMM's pools."
+    },
+    {
+      "id": "H-R3-CP-07",
+      "status": "tested",
+      "test_file": "code-analysis: lbamm-pool-type-fixed/src/libraries/FixedHelper.sol:1911,1916,1993",
+      "failure_class": "strategic",
+      "refutation_case": "If _crossHeight initializes feeGrowthOutside with a stale feeGrowthGlobal (before the current swap's fee is added at lines 1911-1927), then positions created at this height would have incorrect feeGrowthInsideLast, allowing them to claim fees from before their creation.",
+      "guard_location": "lbamm-pool-type-fixed/src/libraries/FixedHelper.sol:1911-1927 (fee distribution within height loop), 1993 (_crossHeight feeGrowthOutside initialization)",
+      "detail": "In _increaseHeight, fee distribution at lines 1911-1927 occurs BEFORE _crossHeight at line 1993 within the same loop iteration. The heightCache.feeGrowthGlobalOf0X128 is updated with the current swap's fee contribution before being used to initialize feeGrowthOutside in _crossHeight. This ordering ensures that new positions at the crossed height record the correct post-fee feeGrowthInside values. The Uniswap V3 invariant (feeGrowthInside monotonically increases for active positions) is maintained."
+    },
+    {
+      "id": "H-R3-CP-08",
+      "status": "tested",
+      "test_file": "code-analysis: lbamm-pool-type-fixed/src/libraries/FixedHelper.sol:601,660,663,668",
+      "failure_class": "strategic",
+      "refutation_case": "If removing a tail position reduces currentHeight via line 668, remaining positions see inflated sideValue (endHeight - currentHeight grows when currentHeight decreases), allowing LPs to claim more unconsumed liquidity than deposited.",
+      "guard_location": "lbamm-pool-type-fixed/src/libraries/FixedHelper.sol:668 (currentHeight reduction), _collectPositionSide lines 497-514",
+      "detail": "When currentHeight is reduced during tail removal, the remaining positions' sideValue calculation correctly reflects the new state. The currentHeight reduction means those heights are now 'unconsumed' (no swap has consumed them), so positions that span those heights correctly see more unconsumed liquidity. The total liquidity at each height is unchanged \u2014 only the consumed/unconsumed split shifts. The LP's claim is proportional to their share of the unconsumed liquidity at their height range, which is correctly computed relative to the new currentHeight."
+    },
+    {
+      "id": "H-R3-CP-09",
+      "status": "dismissed",
+      "test_file": "lbamm-pool-type-single-provider/test/AuditPriceDistorterHypotheses.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If a hook returns MIN_SQRT_RATIO + 1 as the price, calculateFixedInput produces 0 output for inputs < 1.84e19 wei. A user with limitAmount=0 pays amountIn+fees and receives nothing. Pool reserves increase by amountIn with no output delivered.",
+      "guard_location": "lbamm-core/src/modules/AMMModule.sol:2156 (limitAmount check: swapCache.amountOut < swapOrder.limitAmount reverts)",
+      "detail": "Confirmed: calculateFixedInput returns 0 at near-MIN_SQRT_RATIO prices. But AMMModule's limitAmount check protects users who set limitAmount > 0. Only exploitable when limitAmount=0 AND hook returns extreme price. Tier B: requires adversarial hook (hook controller already has full trust) + misconfigured integrator. Not submittable at contest threshold."
+    },
+    {
+      "id": "H-R3-CP-10",
+      "status": "dismissed",
+      "test_file": "code-analysis: lbamm-pool-type-fixed/src/libraries/FixedHelper.sol:799-811",
+      "failure_class": "strategic",
+      "refutation_case": "If an attacker seeds K distinct heights then removes them, subsequent addLiquidity calls with stale hints force O(K) traversal instead of O(1), creating gas griefing proportional to K.",
+      "guard_location": "lbamm-pool-type-fixed/src/libraries/FixedHelper.sol:809-811 (root fallback on zeroed node)",
+      "detail": "Code detects zeroed-out nodes and falls back to root traversal. The grief cost is proportional (attacker pays O(K) gas to create heights) and bounded (K limited by gas per transaction). At realistic K values, traversal gas is well below block gas limit. Insufficient economic amplification for a griefing finding."
+    }
+  ],
   "metadata": {
-    "checklist_items_completed": "A: 4/4, B: 5/5, C: 29/29, D: 10/10",
+    "checklist_items_completed": "A: 3/4, B: 3/5, C: 23/25, D: 10/10",
     "tools_run": {
       "slither": {
         "ran": true,
         "repos": [
+          "lbamm-core",
           "amm-pool-type-dynamic",
           "lbamm-pool-type-single-provider",
-          "lbamm-core"
+          "lbamm-pool-type-fixed",
+          "lbamm-hooks-and-handlers"
         ],
-        "note": "Standard detectors on all math-heavy repos"
+        "note": "Phase 0 artifacts available for all repos"
       },
       "aderyn": {
         "ran": true,
         "repos": [
-          "amm-pool-type-dynamic"
+          "lbamm-core"
         ],
-        "note": "Crashed on cross-repo imports (known bug). Used pre-generated artifacts."
+        "note": "Crashed on amm-pool-type-dynamic and lbamm-pool-type-single-provider (content not found panic)"
       },
       "forge": {
         "ran": true,
-        "note": "100 tests total. File: amm-pool-type-dynamic/test/AuditPriceDistorterWave1.t.sol, AuditPriceDistorterCont.t.sol, AuditPriceDistorterCMathExt.t.sol, AuditPriceDistorterFeeAndCLOB.t.sol, AuditPriceDistorterPhaseD.t.sol"
+        "note": "87 tests total across 3 test files. Files: lbamm-pool-type-single-provider/test/AuditPriceDistorterHypotheses.t.sol (18 tests), amm-pool-type-dynamic/test/AuditPriceDistorterHypotheses2.t.sol (39 tests), lbamm-pool-type-fixed/test/price-distorter/FixedMathTests.t.sol (30 tests)"
       },
       "halmos": {
         "ran": true,
-        "note": "3 checks via lbamm-core/test/halmos/HalmosFeeHelper.t.sol. C25 symbolic timeout (acceptable)."
+        "note": "10 symbolic checks in amm-pool-type-dynamic/test/HalmosPriceDistorterCont.t.sol, 6 checks in lbamm-pool-type-fixed/test/HalmosMathChecks.t.sol. Build failed on fixed pool repo due to cross-repo imports."
       },
       "medusa": {
         "ran": true,
-        "note": "408598 calls, 0 failures. 4 property tests passed on DynamicPoolType math."
+        "note": "Attempted on lbamm-pool-type-fixed with MedusaMathCont. Failed to start: property functions use parameterized signatures incompatible with Medusa's zero-arg property testing mode."
       },
       "audit-context-building": {
         "ran": true,
-        "note": "Deep context built via line-by-line analysis of FullMath, SwapMath, SqrtPriceMath, TickMath, FeeHelper, CLOBHelper, SingleProviderHelper, FixedHelper, DynamicHelper"
+        "note": "Deep context analysis of SingleProviderHelper.sol: 11 invariants identified, 5 risk clusters mapped (double-mulDiv compound rounding, zero-output at extreme prices, 100% fee asymmetry, hook trust boundary, reserveOut cap). Key finding: no amountOut==0 check in swapByInput, protection relies on upstream limitAmount."
       },
       "entry-point-analyzer": {
         "ran": true,
-        "note": "Identified 3 public swap entry points (swapSinglePool, swapMultiPool, directSwap), 6 pool-type pricing paths, 1 liquidity entry point with snapPrice"
+        "note": "Analyzed 3 pool types: SingleProviderPoolType (all state-changing functions protected by onlyAMM), DynamicPoolType (no access control, state isolated via globalState[msg.sender]), FixedPoolType (no access control, state isolated via globalState[msg.sender]). 18 state-changing entry points total across 3 contracts."
       }
     },
-    "num_turns": 180,
-    "tool_uses": 250,
-    "files_read": 45,
+    "num_turns": 120,
+    "tool_uses": 200,
+    "files_read": 40,
     "theses_tested": 10,
     "theses_confirmed": 0,
     "theses_ruled_out": 10,
     "triage_log": {
-      "skip": 4,
-      "borderline": 2,
-      "survive": 4
+      "skip": 2,
+      "borderline": 3,
+      "survive": 5
     },
     "gate_passed": true
   }

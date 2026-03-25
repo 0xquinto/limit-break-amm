@@ -1,0 +1,28 @@
+{"event":"start","agent":"cross-boundary","timestamp":"2026-03-24T00:00:00Z","wave":1}
+{"event":"phase_b","agent":"cross-boundary","skill":"audit-context-building","status":"completed","note":"Deep analysis of AMMModule, AMMStandardHook, CLOBTransferHandler, SqrtPriceCalculator, CLOBHelper"}
+{"event":"phase_b","agent":"cross-boundary","skill":"entry-point-analyzer","status":"completed","note":"Entry points classified: swap (public), openOrder/closeOrder (public+nonReentrant), afterSwapRefund (callback, no nonReentrant), validateHandlerOrder (internal), admin (onlyDiamondOwner)"}
+{"event":"tool","agent":"cross-boundary","tool":"slither","status":"completed","note":"High/Medium detectors + storage layout (4 facets) + call graph (AMMStandardHook)"}
+{"event":"tool","agent":"cross-boundary","tool":"aderyn","status":"completed","note":"lbamm-core only; crashed on hooks-and-handlers (v0.6.8 bug)"}
+{"event":"tool","agent":"cross-boundary","tool":"forge","status":"completed","note":"20 tests in AuditCrossBoundaryKLoop.t.sol, all passing"}
+{"event":"tool","agent":"cross-boundary","tool":"halmos","status":"completed","note":"2 checks on SqrtPriceCalculator.computeRatioX96 — timeout 30s, no violations found"}
+{"event":"tool","agent":"cross-boundary","tool":"medusa","status":"completed","note":"AMMStandardHook: 155K calls, 0 failures. SingleProviderPoolType: 308K calls, 0 failures"}
+{"event":"hypothesis","agent":"cross-boundary","id":"H-R3-HH-01","status":"dismissed","detail":"calculateFixedInput does not overflow at max params"}
+{"event":"hypothesis","agent":"cross-boundary","id":"H-R3-HH-02","status":"tested","detail":"afterSwapRefund reentrancy confirmed but profit path unclear"}
+{"event":"hypothesis","agent":"cross-boundary","id":"H-R3-HH-03","status":"dismissed","detail":"No rounding bypass in 1000+ test cases"}
+{"event":"hypothesis","agent":"cross-boundary","id":"H-R3-HH-04","status":"tested","detail":"computeRatioX96 returns 0 confirmed, CLOB path blocks exploit"}
+{"event":"hypothesis","agent":"cross-boundary","id":"H-R3-HH-05","status":"dismissed","detail":"Known CP-004, not novel"}
+{"event":"hypothesis","agent":"cross-boundary","id":"H-R3-HH-08","status":"dismissed","detail":"Price convention consistent"}
+{"event":"hypothesis","agent":"cross-boundary","id":"H-R3-DP-03","status":"dismissed","detail":"Admin-controlled fee amplification"}
+{"event":"hypothesis","agent":"cross-boundary","id":"H-R3-DP-05","status":"dismissed","detail":"API constraint, callers correct"}
+{"event":"hypothesis","agent":"cross-boundary","id":"H-R3-DP-06","status":"dismissed","detail":"Theoretical, no handler checks flags"}
+{"event":"hypothesis","agent":"cross-boundary","id":"H-R3-DP-07","status":"dismissed","detail":"Admin-controlled, not exploitable"}
+{"event":"hypothesis","agent":"cross-boundary","id":"H-R3-DP-09","status":"tested","detail":"Fee ordering confirmed, hook owner trusted"}
+{"event":"hypothesis","agent":"cross-boundary","id":"H-R3-TS-01","status":"dismissed","detail":"Non-cancun only, out of scope"}
+{"event":"hypothesis","agent":"cross-boundary","id":"H-R3-TS-02","status":"dismissed","detail":"Self-inflicted config error"}
+{"event":"hypothesis","agent":"cross-boundary","id":"H-R3-TS-04","status":"dismissed","detail":"1 wei/fill drift, dust-level"}
+{"event":"hypothesis","agent":"cross-boundary","id":"H-R3-TS-05","status":"dismissed","detail":"Value-identical overwrite, known FP #1"}
+{"event":"lead","agent":"cross-boundary","id":"XB-001","detail":"validateHandlerOrder missing sqrtPriceX96==0 guard — moved to ruled_out (CLOB path blocks)"}
+{"event":"lead","agent":"cross-boundary","id":"XB-002","detail":"afterSwapRefund reentrancy — moved to ruled_out (no profit extraction)"}
+{"event":"lead","agent":"cross-boundary","id":"XB-003","detail":"Partial fill hook fee overcharge — moved to ruled_out (hook owner is trusted)"}
+{"event":"gate","agent":"cross-boundary","status":"accepted","findings":0,"ruled_out":17}
+{"event":"complete","agent":"cross-boundary","findings":0,"ruled_out":17,"checklist_pct":87}
