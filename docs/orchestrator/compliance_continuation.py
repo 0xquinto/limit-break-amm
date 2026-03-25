@@ -63,6 +63,14 @@ def _identify_gaps(agent: AgentCompliance) -> dict:
     if dp.get("forge_tests", 0) < 5:
         gaps["forge_tests"] = f"Only {dp.get('forge_tests', 0)} forge tests written"
 
+    # Hypothesis evidence gaps (feeds from 6th compliance dimension)
+    hyp = d.get("hypothesis", {})
+    if hyp.get("test_pct", 100) < 50 or hyp.get("coverage_pct", 100) < 100:
+        gaps["hypothesis"] = (
+            f"Hypothesis testing: {hyp.get('tested', 0)}/{hyp.get('entries', 0)} tested "
+            f"({hyp.get('test_pct', 0)}%), coverage {hyp.get('coverage_pct', 0)}%"
+        )
+
     return gaps
 
 
@@ -117,6 +125,15 @@ def build_dimension_feedback(agent: AgentCompliance, gaps: dict) -> str:
             f"You scored {score}/20 on evidence ({evidence_pct}% of vectors "
             f"have test files). Write Forge tests or add code-analysis citations."
         )
+
+    # Hypothesis evidence feedback
+    if "hypothesis" in gaps:
+        lines.append("## Hypothesis Evidence (BLOCKING)")
+        lines.append("Your sidecar was REJECTED for insufficient hypothesis testing evidence:")
+        lines.append(f"  - {gaps['hypothesis']}")
+        lines.append("")
+        lines.append("Focus ONLY on writing Forge tests for untested hypotheses.")
+        lines.append("Update hypothesis_results with actual test results.")
 
     return "\n".join(lines)
 

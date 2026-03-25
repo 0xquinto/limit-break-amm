@@ -578,6 +578,54 @@ async def run_single_wave(
             for issue in smart_issues:
                 print(f"  {agent.name}: {issue}")
 
+    # Stamp hypothesis count into sidecar metadata for compliance scoring
+    if wave.number == 1 and agents_with_hypotheses and pass1_result:
+        for agent in wave.agents:
+            total_h = len(pass1_result.agent_hypotheses.get(agent.name, []))
+            if total_h == 0:
+                continue
+            dir_path = ARTIFACTS_DIR / f"wave{wave.number}-{agent.name}" / "findings.json"
+            flat_path = ARTIFACTS_DIR / f"findings-{agent.name}.json"
+            sidecar_path = dir_path if dir_path.exists() else flat_path
+            if not sidecar_path.exists():
+                continue
+            try:
+                sidecar = json.loads(sidecar_path.read_text())
+                sidecar.setdefault("metadata", {})["_total_hypotheses"] = total_h
+                sidecar_path.write_text(json.dumps(sidecar, indent=2))
+            except (json.JSONDecodeError, OSError):
+                continue
+
+    # Evidence-coverage blocking gate (EviBound pattern)
+    evidence_failures: dict[str, list[str]] = {}
+    if wave.number == 1 and agents_with_hypotheses:
+        from .sidecar_gate import check_evidence_coverage, verify_test_artifacts
+        repo_roots = [r["path"] for r in REPOS.values()]
+        for agent in wave.agents:
+            if agent.name not in agents_with_hypotheses:
+                continue
+            dir_path = ARTIFACTS_DIR / f"wave{wave.number}-{agent.name}" / "findings.json"
+            flat_path = ARTIFACTS_DIR / f"findings-{agent.name}.json"
+            sidecar_path = dir_path if dir_path.exists() else flat_path
+            if not sidecar_path.exists():
+                continue
+            try:
+                sidecar = json.loads(sidecar_path.read_text())
+            except (json.JSONDecodeError, OSError):
+                continue
+            total_h = len(pass1_result.agent_hypotheses.get(agent.name, [])) if pass1_result else 0
+            if total_h == 0:
+                continue
+            passes, coverage_issues = check_evidence_coverage(sidecar, total_h)
+            artifact_issues = verify_test_artifacts(sidecar, repo_roots)
+            all_issues = coverage_issues + artifact_issues
+            if not passes or artifact_issues:
+                evidence_failures[agent.name] = all_issues
+                for issue in all_issues:
+                    print(f"  EVIDENCE GATE FAIL {agent.name}: {issue}")
+        if evidence_failures:
+            print(f"\n  Evidence gate: {len(evidence_failures)} agents failed — will enter continuation")
+
     # Run regression check (cumulative across all waves)
     run_regression_check(wave.number)
 
