@@ -271,3 +271,69 @@ def test_smart_goals_too_few_forge_tests():
     from docs.orchestrator.sidecar_gate import validate_smart_goals
     errors = validate_smart_goals(sidecar, total_hypotheses=3)
     assert any("3" in e and "test" in e.lower() for e in errors)
+
+
+# ── Artifact-Existence Verification (Layer 2) ───────────────────────────────
+
+def test_verify_test_artifacts_existing_file(tmp_path):
+    """test_file pointing to existing file → no issues."""
+    from docs.orchestrator.sidecar_gate import verify_test_artifacts
+    test_file = tmp_path / "test" / "TestHyp.t.sol"
+    test_file.parent.mkdir(parents=True)
+    test_file.write_text("// test")
+    sidecar = {
+        "hypothesis_results": [
+            {"id": "H-001", "status": "tested", "test_file": "test/TestHyp.t.sol"},
+        ]
+    }
+    issues = verify_test_artifacts(sidecar, [tmp_path])
+    assert issues == []
+
+
+def test_verify_test_artifacts_missing_file(tmp_path):
+    """test_file pointing to non-existent file → error."""
+    from docs.orchestrator.sidecar_gate import verify_test_artifacts
+    sidecar = {
+        "hypothesis_results": [
+            {"id": "H-001", "status": "tested", "test_file": "test/DoesNotExist.t.sol"},
+        ]
+    }
+    issues = verify_test_artifacts(sidecar, [tmp_path])
+    assert len(issues) == 1
+    assert "does not exist" in issues[0]
+
+
+def test_verify_test_artifacts_code_analysis_skipped(tmp_path):
+    """code-analysis: prefix → skipped (no file check needed)."""
+    from docs.orchestrator.sidecar_gate import verify_test_artifacts
+    sidecar = {
+        "hypothesis_results": [
+            {"id": "H-001", "status": "dismissed", "test_file": "code-analysis: line 42 guards it"},
+        ]
+    }
+    issues = verify_test_artifacts(sidecar, [tmp_path])
+    assert issues == []
+
+
+def test_verify_test_artifacts_not_applicable_skipped(tmp_path):
+    """not-applicable: prefix → skipped."""
+    from docs.orchestrator.sidecar_gate import verify_test_artifacts
+    sidecar = {
+        "hypothesis_results": [
+            {"id": "H-001", "status": "dismissed", "test_file": "not-applicable: informational only"},
+        ]
+    }
+    issues = verify_test_artifacts(sidecar, [tmp_path])
+    assert issues == []
+
+
+def test_verify_test_artifacts_not_tested_skipped(tmp_path):
+    """Entry with no test_file → skipped."""
+    from docs.orchestrator.sidecar_gate import verify_test_artifacts
+    sidecar = {
+        "hypothesis_results": [
+            {"id": "H-001", "status": "not_tested"},
+        ]
+    }
+    issues = verify_test_artifacts(sidecar, [tmp_path])
+    assert issues == []

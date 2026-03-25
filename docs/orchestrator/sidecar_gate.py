@@ -415,6 +415,28 @@ def validate_smart_goals(sidecar: dict, total_hypotheses: int) -> list[str]:
     return issues
 
 
+# ── Artifact-Existence Verification (EviBound Layer 2) ───────────────────────
+
+def verify_test_artifacts(sidecar: dict, repo_roots: list) -> list[str]:
+    """Verify that test_file references point to real files on disk.
+
+    Machine-checkable artifact verification (EviBound pattern).
+    Skips entries with no test_file, code-analysis:, or not-applicable: prefixes.
+    """
+    issues = []
+    for entry in sidecar.get("hypothesis_results", []):
+        tf = entry.get("test_file", "")
+        if not tf or tf.startswith("code-analysis:") or tf.startswith("not-applicable"):
+            continue
+        found = any((Path(root) / tf).exists() for root in repo_roots)
+        if not found:
+            issues.append(
+                f"{entry.get('id', '?')}: test_file '{tf}' does not exist on disk. "
+                "Write the actual Forge test before claiming it exists."
+            )
+    return issues
+
+
 def main():
     if len(sys.argv) < 2:
         print("Usage: python3 sidecar_gate.py <draft-path>", file=sys.stderr)
