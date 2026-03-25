@@ -126,14 +126,25 @@ def build_dimension_feedback(agent: AgentCompliance, gaps: dict) -> str:
             f"have test files). Write Forge tests or add code-analysis citations."
         )
 
-    # Hypothesis evidence feedback
+    # Hypothesis evidence feedback — include specific mechanisms for re-testing
     if "hypothesis" in gaps:
         lines.append("## Hypothesis Evidence (BLOCKING)")
         lines.append("Your sidecar was REJECTED for insufficient hypothesis testing evidence:")
         lines.append(f"  - {gaps['hypothesis']}")
         lines.append("")
-        lines.append("Focus ONLY on writing Forge tests for untested hypotheses.")
-        lines.append("Update hypothesis_results with actual test results.")
+        lines.append("You MUST write REAL Forge tests for the following hypotheses.")
+        lines.append("Each test must: (1) compile, (2) execute, (3) contain real assertions.")
+        lines.append("The orchestrator will independently run `forge test` to verify.")
+        lines.append("Fabricated test paths WILL be detected — the file must EXIST and COMPILE.")
+        lines.append("")
+        # Include untested hypothesis details if available
+        hyp_details = gaps.get("_untested_hypotheses", [])
+        for h in hyp_details[:10]:
+            lines.append(f"### {h.get('id', '?')}: {h.get('mechanism', '')[:200]}")
+            test = h.get("suggested_test", "")
+            if test:
+                lines.append(f"```solidity\n{test}\n```")
+            lines.append("")
 
     return "\n".join(lines)
 

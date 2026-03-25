@@ -852,9 +852,25 @@ async def run_single_wave(
                 rc_cont = _sw_cont(wave.number)
                 for ac in rc_cont.agents:
                     if ac.name in evidence_failures and ac.name not in failing_names:
-                        gaps = {"hypothesis": f"Evidence gate failed: {'; '.join(evidence_failures[ac.name][:3])}"}
+                        # Enrich with specific untested hypotheses for targeted re-prompt
+                        untested = []
+                        if pass1_result:
+                            agent_hyps = pass1_result.agent_hypotheses.get(ac.name, [])
+                            _sc_path = ARTIFACTS_DIR / f"findings-{ac.name}.json"
+                            if _sc_path.exists():
+                                try:
+                                    _sc = json.loads(_sc_path.read_text())
+                                    tested_ids = {hr.get("id") for hr in _sc.get("hypothesis_results", [])
+                                                  if hr.get("status") in ("tested", "confirmed")}
+                                    untested = [h for h in agent_hyps if h.get("id") not in tested_ids]
+                                except (json.JSONDecodeError, OSError):
+                                    untested = agent_hyps
+                        gaps = {
+                            "hypothesis": f"Evidence gate failed: {'; '.join(evidence_failures[ac.name][:3])}",
+                            "_untested_hypotheses": untested[:10],
+                        }
                         failing.append((ac, gaps))
-                        print(f"  {ac.name}: forced into continuation (evidence gate failure)")
+                        print(f"  {ac.name}: forced into continuation ({len(untested)} untested hypotheses)")
 
             if not failing:
                 print(f"  Round {cont_round}: all agents above threshold")
