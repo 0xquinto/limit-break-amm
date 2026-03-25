@@ -55,7 +55,8 @@ class AgentCompliance:
     evidence_score: float = 0.0       # 0-20: ruled_out vectors with test evidence
     depth_score: float = 0.0          # 0-20: turns, files read, tests written
     thesis_score: float = 0.0         # 0-10: thesis progression
-    total: float = 0.0                # sum of above (0-100)
+    hypothesis_score: float = 0.0    # 0-20: hypothesis investigation quality
+    total: float = 0.0                # sum of above (0-120)
     grade: str = "F"                  # letter grade
     details: dict = field(default_factory=dict)  # per-dimension breakdown
 
@@ -317,14 +318,75 @@ def _score_thesis(sidecar: dict) -> tuple[float, dict]:
     return score, details
 
 
+# --- Hypothesis compliance dimension ---
+
+def _score_hypothesis_compliance(
+    sidecar: dict, total_hypotheses: int,
+) -> tuple[float, dict]:
+    """Dimension 6: Hypothesis investigation quality (0-20 pts).
+
+    Rubric:
+    - Coverage: entries / total_hypotheses * 5 points (0-5)
+    - Testing ratio: (tested + confirmed) / entries * 5 points (0-5)
+    - Evidence quality: entries_with_test_file / entries * 5 points (0-5)
+    - Classification quality: dismissed_with_failure_class / dismissed * 5 points (0-5)
+    """
+    if total_hypotheses == 0:
+        return 20.0, {"skipped": True, "reason": "no hypotheses injected"}
+
+    results = sidecar.get("hypothesis_results", [])
+    if not results:
+        return 0.0, {"entries": 0, "total_hypotheses": total_hypotheses}
+
+    # Coverage (0-5)
+    coverage_pct = min(1.0, len(results) / total_hypotheses) if total_hypotheses > 0 else 0.0
+    coverage_pts = round(coverage_pct * 5, 1)
+
+    # Testing ratio (0-5)
+    tested = sum(1 for r in results if r.get("status") in ("tested", "confirmed"))
+    test_pct = tested / len(results) if results else 0.0
+    test_pts = round(test_pct * 5, 1)
+
+    # Evidence quality (0-5)
+    with_file = sum(1 for r in results if r.get("test_file")
+                    and not r["test_file"].startswith("code-analysis:")
+                    and not r["test_file"].startswith("not-applicable"))
+    evidence_pct = with_file / len(results) if results else 0.0
+    evidence_pts = round(evidence_pct * 5, 1)
+
+    # Classification quality (0-5) — only counts dismissed entries
+    dismissed = [r for r in results if r.get("status") == "dismissed"]
+    if dismissed:
+        with_class = sum(1 for r in dismissed if r.get("failure_class") in ("tactical", "strategic"))
+        class_pct = with_class / len(dismissed)
+    else:
+        class_pct = 1.0  # no dismissed = nothing to classify = full marks
+    class_pts = round(class_pct * 5, 1)
+
+    score = round(coverage_pts + test_pts + evidence_pts + class_pts, 1)
+    details = {
+        "total_hypotheses": total_hypotheses,
+        "entries": len(results),
+        "coverage_pct": round(coverage_pct * 100, 1),
+        "tested": tested,
+        "test_pct": round(test_pct * 100, 1),
+        "with_test_file": with_file,
+        "evidence_pct": round(evidence_pct * 100, 1),
+        "dismissed": len(dismissed),
+        "with_failure_class": sum(1 for r in dismissed if r.get("failure_class") in ("tactical", "strategic")),
+        "class_pct": round(class_pct * 100, 1),
+    }
+    return score, details
+
+
 # --- Grade assignment ---
 
 def _assign_grade(score: float) -> str:
-    """Map 0-100 score to letter grade."""
-    if score >= 90: return "A"
-    if score >= 80: return "B"
-    if score >= 70: return "C"
-    if score >= 60: return "D"
+    """Map 0-120 score to letter grade."""
+    if score >= 108: return "A"  # 90% of 120
+    if score >= 96: return "B"   # 80% of 120
+    if score >= 84: return "C"   # 70% of 120
+    if score >= 72: return "D"   # 60% of 120
     return "F"
 
 
@@ -356,8 +418,13 @@ def score_agent(sidecar: dict, agent_name: str, num_repos: int, num_turns: int =
     c.depth_score, d4 = _score_depth(sidecar, num_turns)
     c.thesis_score, d5 = _score_thesis(sidecar)
 
+    # Dimension 6: Hypothesis compliance (only for agents that received hypotheses)
+    total_h = meta.get("_total_hypotheses", 0)
+    c.hypothesis_score, d6 = _score_hypothesis_compliance(sidecar, total_h)
+
     c.total = round(c.checklist_score + c.tool_breadth_score +
-                    c.evidence_score + c.depth_score + c.thesis_score, 1)
+                    c.evidence_score + c.depth_score + c.thesis_score +
+                    c.hypothesis_score, 1)
     c.grade = _assign_grade(c.total)
     c.details = {
         "checklist": d1,
@@ -365,6 +432,7 @@ def score_agent(sidecar: dict, agent_name: str, num_repos: int, num_turns: int =
         "evidence": d3,
         "depth": d4,
         "thesis": d5,
+        "hypothesis": d6,
     }
     return c
 
