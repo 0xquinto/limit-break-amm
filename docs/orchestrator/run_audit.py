@@ -540,6 +540,24 @@ async def run_single_wave(
     print(f"\nSpawning {len(wave.agents)} agents...")
     results = await run_wave(wave, prompts)
 
+    # Clean up orphaned heavy processes (Halmos, yices-smt2)
+    import subprocess as _sp
+    for _pattern in ["halmos.*--function", "yices-smt2"]:
+        try:
+            _pgrep = _sp.run(["pgrep", "-f", _pattern], capture_output=True, text=True)
+            for _pid in _pgrep.stdout.strip().split("\n"):
+                if _pid:
+                    _ps = _sp.run(["ps", "-o", "etime=", "-p", _pid], capture_output=True, text=True)
+                    _etime = _ps.stdout.strip()
+                    if _etime and ":" in _etime:
+                        _parts = _etime.replace("-", ":").split(":")
+                        _mins = int(_parts[-2]) if len(_parts) >= 2 else 0
+                        _hrs = int(_parts[-3]) if len(_parts) >= 3 else 0
+                        if _hrs * 60 + _mins < 90:  # only kill processes < 90min old
+                            _sp.run(["kill", "-9", _pid], capture_output=True)
+        except Exception:
+            pass  # Non-critical
+
     # Collect disk artifacts (markdown)
     print(f"\nCollecting artifacts...")
     artifacts = collect_artifacts(wave)
@@ -625,6 +643,34 @@ async def run_single_wave(
                     print(f"  EVIDENCE GATE FAIL {agent.name}: {issue}")
         if evidence_failures:
             print(f"\n  Evidence gate: {len(evidence_failures)} agents failed — will enter continuation")
+
+    # Independent test verification (observer-class evidence)
+    if wave.number == 1 and agents_with_hypotheses:
+        from .test_verifier import verify_agent_tests
+        print("\n  Independent test verification...")
+        for agent in wave.agents:
+            if agent.name not in agents_with_hypotheses:
+                continue
+            dir_path = ARTIFACTS_DIR / f"wave{wave.number}-{agent.name}" / "findings.json"
+            flat_path = ARTIFACTS_DIR / f"findings-{agent.name}.json"
+            sidecar_path = dir_path if dir_path.exists() else flat_path
+            if not sidecar_path.exists():
+                continue
+            try:
+                sidecar = json.loads(sidecar_path.read_text())
+            except (json.JSONDecodeError, OSError):
+                continue
+            verification = verify_agent_tests(sidecar, agent.name, timeout_per_test=60)
+            # Stamp results into sidecar
+            sidecar["_verified_tests"] = verification
+            sidecar_path.write_text(json.dumps(sidecar, indent=2))
+            # Report
+            total = sum(1 for v in verification.values() if not v.get("skipped"))
+            compiled = sum(1 for v in verification.values() if v.get("compiled"))
+            executed = sum(1 for v in verification.values() if v.get("executed"))
+            fabricated = total - compiled
+            if total > 0:
+                print(f"    {agent.name}: {compiled}/{total} compiled, {executed}/{total} executed, {fabricated} fabricated")
 
     # Run regression check (cumulative across all waves)
     run_regression_check(wave.number)
@@ -773,8 +819,23 @@ async def run_single_wave(
         generate_gotchas(wave.number)
         print(f"  Gotchas regenerated for wave {wave.number}")
 
+    # ── Cost guard: check budget before continuation ────────────────────────
+    usage_path = RESULTS_DIR / f"wave{wave.number}-usage.json"
+    run_cost_so_far = 0.0
+    if usage_path.exists():
+        try:
+            usage_data = json.loads(usage_path.read_text())
+            run_cost_so_far = usage_data.get("total_cost", 0.0)
+        except (json.JSONDecodeError, OSError):
+            pass
+    MAX_RUN_COST = 200.0
+    continuation_budget = MAX_RUN_COST - run_cost_so_far
+    skip_continuation = continuation_budget < 20
+    if skip_continuation:
+        print(f"  Cost guard: ${run_cost_so_far:.0f} spent, <$20 remaining — skipping continuation")
+
     # ── Compliance continuation (wave 1 only — bounded retry loop) ──────────
-    if wave.number == 1:
+    if wave.number == 1 and not skip_continuation:
         from .compliance_continuation import (
             identify_failing_agents, build_continuation_prompt,
             build_continuation_wave, merge_continuation_sidecars,
