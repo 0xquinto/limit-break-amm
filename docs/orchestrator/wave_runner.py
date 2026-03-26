@@ -52,6 +52,11 @@ if _dotenv_path.exists():
 _STAGGER_DELAY_SECONDS = 2.0
 
 
+def _log(msg: str) -> None:
+    """Print with immediate flush — ensures visibility when stdout is piped."""
+    print(msg, flush=True)
+
+
 @dataclass
 class AgentResult:
     """Result from a single agent run."""
@@ -74,7 +79,7 @@ def log_safety_event(agent_name: str, event_type: str, detail: object) -> dict:
         "event": event_type,
         "detail": str(detail)[:500],
     }
-    print(f"  SAFETY [{agent_name}]: {event_type} — {str(detail)[:100]}")
+    _log(f"  SAFETY [{agent_name}]: {event_type} — {str(detail)[:100]}")
     return event
 
 
@@ -122,7 +127,7 @@ async def _run_agent(
         thinking=thinking,
     )
 
-    print(f"  [{agent.name}] Spawning ({agent.resolved_model}, "
+    _log(f"  [{agent.name}] Spawning ({agent.resolved_model}, "
           f"max_turns={agent.max_turns}, "
           f"thinking={'enabled' if thinking else 'disabled'})...")
 
@@ -135,7 +140,7 @@ async def _run_agent(
             turn_count += 1
             if turn_count % 25 == 0:
                 elapsed_s = int(time.monotonic() - agent_start)
-                print(f"  [{agent.name}] Turn {turn_count} ({elapsed_s}s elapsed)...")
+                _log(f"  [{agent.name}] Turn {turn_count} ({elapsed_s}s elapsed)...")
         elif isinstance(message, ResultMessage):
             result_msg = message
 
@@ -156,9 +161,9 @@ async def _run_agent(
                            + result_msg.usage.get("cache_creation_input_tokens", 0))
             if total_input > 0:
                 parts.append(f"cache={int(cache_read / total_input * 100)}%")
-        print(f"  [{agent.name}] {status} ({', '.join(parts)})")
+        _log(f"  [{agent.name}] {status} ({', '.join(parts)})")
     else:
-        print(f"  [{agent.name}] ERROR (no ResultMessage)")
+        _log(f"  [{agent.name}] ERROR (no ResultMessage)")
 
     return result_msg
 
@@ -189,7 +194,7 @@ async def run_wave(
         archive_wave(wave.number)
 
     # 2. Write prompts to disk (audit trail + fallback)
-    print(f"  Writing {len(prompts)} prompts to disk...")
+    _log(f"  Writing {len(prompts)} prompts to disk...")
     _write_prompts_to_disk(wave, prompts)
 
     for agent in wave.agents:
@@ -197,7 +202,7 @@ async def run_wave(
         artifact_dir.mkdir(parents=True, exist_ok=True)
 
     # 3. Spawn all agents with staggered start
-    print(f"  Spawning {len(wave.agents)} agents ({_STAGGER_DELAY_SECONDS}s stagger)...")
+    _log(f"  Spawning {len(wave.agents)} agents ({_STAGGER_DELAY_SECONDS}s stagger)...")
     start_time = time.monotonic()
 
     tasks = [
@@ -207,7 +212,7 @@ async def run_wave(
     raw_results = await asyncio.gather(*tasks, return_exceptions=True)
 
     elapsed_ms = int((time.monotonic() - start_time) * 1000)
-    print(f"  All agents finished ({elapsed_ms}ms wall time)")
+    _log(f"  All agents finished ({elapsed_ms}ms wall time)")
 
     # 4. Collect per-agent SDK metadata, log failures, print summary
     safety_events: list[dict] = []
@@ -216,7 +221,7 @@ async def run_wave(
     for i, raw in enumerate(raw_results):
         agent = wave.agents[i]
         if isinstance(raw, Exception):
-            print(f"  FAILED: {agent.name} — {raw}")
+            _log(f"  FAILED: {agent.name} — {raw}")
             event = log_safety_event(agent.name, "agent_exception", str(raw))
             safety_events.append(event)
             agent_usage.append({"agent": agent.name, "error": str(raw)})
@@ -243,7 +248,7 @@ async def run_wave(
     total_cost = sum((a.get("total_cost_usd") or 0) for a in agent_usage)
     total_turns = sum((a.get("num_turns") or 0) for a in agent_usage)
     failed = sum(1 for a in agent_usage if "error" in a)
-    print(f"  Summary: {len(agent_usage)} agents, {total_turns} turns, "
+    _log(f"  Summary: {len(agent_usage)} agents, {total_turns} turns, "
           f"${total_cost:.2f} total, {failed} failed")
 
     # 5. Build results from disk artifacts
@@ -266,7 +271,7 @@ async def run_wave(
         usage_path = RESULTS_DIR / f"wave{wave.number}-usage.json"
         usage_path.parent.mkdir(parents=True, exist_ok=True)
         usage_path.write_text(json.dumps(agent_usage, indent=2))
-        print(f"  SDK usage: {usage_path}")
+        _log(f"  SDK usage: {usage_path}")
 
     # 8. Write safety events to JSONL log
     if safety_events:
@@ -275,7 +280,7 @@ async def run_wave(
         with open(safety_log, "a") as f:
             for event in safety_events:
                 f.write(json.dumps(event) + "\n")
-        print(f"  Safety log: {len(safety_events)} events → {safety_log}")
+        _log(f"  Safety log: {len(safety_events)} events → {safety_log}")
 
     return results
 
@@ -340,7 +345,7 @@ def _build_results_from_disk(
         # Detect stale sidecars: sidecar exists but agent had 0 turns (likely from prior run)
         if has_sidecar and num_turns == 0 and not has_report:
             stop_reason = "stale"
-            print(f"  WARNING: {agent.name} has sidecar but 0 turns and no report — likely stale artifact")
+            _log(f"  WARNING: {agent.name} has sidecar but 0 turns and no report — likely stale artifact")
         else:
             stop_reason = "completed" if (has_report or has_sidecar) else ("missing" if wave_complete else "unknown")
 
@@ -372,7 +377,7 @@ def collect_artifacts(wave: WaveConfig) -> dict[str, str]:
         elif flat_path.exists():
             artifacts[agent.name] = flat_path.read_text()
         else:
-            print(f"  WARNING: No artifact found for {agent.name} "
+            _log(f"  WARNING: No artifact found for {agent.name} "
                   f"at {report_path} or {flat_path}")
             artifacts[agent.name] = ""
     return artifacts
@@ -385,7 +390,7 @@ def populate_wave2_agents(wave: WaveConfig, synthesis_json: dict) -> WaveConfig:
 
     from .synthesizer import should_run_wave2, generate_leads_for_wave2
     decision, reason = should_run_wave2(synthesis_json)
-    print(f"  Wave 2 decision: {decision} — {reason}")
+    _log(f"  Wave 2 decision: {decision} — {reason}")
 
     if decision == "stop":
         return wave  # empty agents = wave is skipped
