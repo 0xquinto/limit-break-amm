@@ -24,6 +24,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
 from claude_agent_sdk import (
+    AssistantMessage,
     ClaudeAgentOptions,
     ResultMessage,
     query,
@@ -126,14 +127,38 @@ async def _run_agent(
           f"thinking={'enabled' if thinking else 'disabled'})...")
 
     result_msg = None
+    turn_count = 0
+    agent_start = time.monotonic()
+
     async for message in query(prompt=prompt, options=options):
-        if isinstance(message, ResultMessage):
+        if isinstance(message, AssistantMessage):
+            turn_count += 1
+            if turn_count % 25 == 0:
+                elapsed_s = int(time.monotonic() - agent_start)
+                print(f"  [{agent.name}] Turn {turn_count} ({elapsed_s}s elapsed)...")
+        elif isinstance(message, ResultMessage):
             result_msg = message
 
-    status = "error" if (result_msg and result_msg.is_error) else "done"
-    cost_str = f", cost=${result_msg.total_cost_usd:.4f}" if (result_msg and result_msg.total_cost_usd) else ""
-    turns_str = f", turns={result_msg.num_turns}" if result_msg else ""
-    print(f"  [{agent.name}] {status}{turns_str}{cost_str}")
+    if result_msg:
+        status = "ERROR" if result_msg.is_error else "done"
+        parts = [f"turns={result_msg.num_turns}"]
+        if result_msg.duration_ms:
+            parts.append(f"wall={result_msg.duration_ms // 1000}s")
+        if result_msg.duration_api_ms and result_msg.duration_ms:
+            api_pct = int(result_msg.duration_api_ms / max(result_msg.duration_ms, 1) * 100)
+            parts.append(f"api={api_pct}%")
+        if result_msg.total_cost_usd:
+            parts.append(f"cost=${result_msg.total_cost_usd:.2f}")
+        if result_msg.usage:
+            cache_read = result_msg.usage.get("cache_read_input_tokens", 0)
+            total_input = (cache_read
+                           + result_msg.usage.get("input_tokens", 0)
+                           + result_msg.usage.get("cache_creation_input_tokens", 0))
+            if total_input > 0:
+                parts.append(f"cache={int(cache_read / total_input * 100)}%")
+        print(f"  [{agent.name}] {status} ({', '.join(parts)})")
+    else:
+        print(f"  [{agent.name}] ERROR (no ResultMessage)")
 
     return result_msg
 
@@ -184,7 +209,7 @@ async def run_wave(
     elapsed_ms = int((time.monotonic() - start_time) * 1000)
     print(f"  All agents finished ({elapsed_ms}ms wall time)")
 
-    # 4. Collect per-agent SDK metadata and log failures
+    # 4. Collect per-agent SDK metadata, log failures, print summary
     safety_events: list[dict] = []
     agent_usage: list[dict] = []
 
@@ -199,13 +224,27 @@ async def run_wave(
             if raw.is_error:
                 event = log_safety_event(agent.name, "session_error", raw.result or "unknown")
                 safety_events.append(event)
-            agent_usage.append({
+            usage_entry: dict = {
                 "agent": agent.name,
-                "usage": raw.usage,
                 "total_cost_usd": raw.total_cost_usd,
                 "num_turns": raw.num_turns,
                 "stop_reason": raw.stop_reason,
-            })
+                "duration_ms": raw.duration_ms,
+                "duration_api_ms": raw.duration_api_ms,
+            }
+            if raw.usage:
+                usage_entry["input_tokens"] = raw.usage.get("input_tokens", 0)
+                usage_entry["output_tokens"] = raw.usage.get("output_tokens", 0)
+                usage_entry["cache_read_input_tokens"] = raw.usage.get("cache_read_input_tokens", 0)
+                usage_entry["cache_creation_input_tokens"] = raw.usage.get("cache_creation_input_tokens", 0)
+            agent_usage.append(usage_entry)
+
+    # Wave summary
+    total_cost = sum((a.get("total_cost_usd") or 0) for a in agent_usage)
+    total_turns = sum((a.get("num_turns") or 0) for a in agent_usage)
+    failed = sum(1 for a in agent_usage if "error" in a)
+    print(f"  Summary: {len(agent_usage)} agents, {total_turns} turns, "
+          f"${total_cost:.2f} total, {failed} failed")
 
     # 5. Build results from disk artifacts
     if skip_artifact_collection:
