@@ -825,7 +825,14 @@ async def run_single_wave(
     if usage_path.exists():
         try:
             usage_data = json.loads(usage_path.read_text())
-            run_cost_so_far = usage_data.get("total_cost", 0.0)
+            if isinstance(usage_data, list):
+                # New format: per-agent array [{agent, total_cost_usd, ...}, ...]
+                run_cost_so_far = sum(
+                    (a.get("total_cost_usd") or 0.0) for a in usage_data
+                )
+            elif isinstance(usage_data, dict):
+                # Legacy format: aggregate {total_cost_usd: ...}
+                run_cost_so_far = usage_data.get("total_cost_usd") or usage_data.get("total_cost", 0.0)
         except (json.JSONDecodeError, OSError):
             pass
     MAX_RUN_COST = 200.0
