@@ -1,48 +1,36 @@
-{"phase":"A","item":"A1-slither","status":"complete","detail":"Slither detectors on lbamm-hooks-and-handlers. No High/Medium beyond known patterns."}
-{"phase":"A","item":"A2-slither-functions","status":"complete","detail":"Function listing for PermitTransferHandler, CLOBTransferHandler, AMMStandardHook."}
-{"phase":"A","item":"A3-aderyn","status":"error","detail":"Aderyn v0.6.8 fatal crash in aderyn_driver/src/compile.rs:78. Known bug."}
-{"phase":"A","item":"A4-custom-detectors","status":"complete","detail":"No custom slither detectors applicable to auth scope."}
-{"phase":"B","item":"B1-audit-context-building","status":"complete","detail":"Deep context built for 3 primary modules. Trust boundaries, state flows, invariants mapped."}
-{"phase":"B","item":"B2-entry-point-analyzer","status":"complete","detail":"24 state-changing entry points: 4 public, 12 role-restricted, 8 contract-only."}
-{"phase":"B","item":"B3-call-graph","status":"complete","detail":"Cross-contract call flow analyzed via Slither export and manual tracing."}
-{"phase":"C","item":"C1-INV-H01","status":"complete","detail":"All hook functions revert for non-AMM callers. 93 tests passing."}
-{"phase":"C","item":"C2-INV-H02","status":"complete","detail":"Settlement conservation holds for CLOB and Permit handlers."}
-{"phase":"C","item":"C3-INV-P01","status":"complete","detail":"Permit replay blocked by bitmap nonces. Cross-chain blocked by chainId."}
-{"phase":"C","item":"C4-INV-P02","status":"complete","detail":"feeOnTop + fees bounded by limitAmount. User cost <= signed cap."}
-{"phase":"C","item":"C5-lifecycle-full","status":"complete","detail":"Full CLOB lifecycle (deposit->open->fill->close->withdraw) conserves value."}
-{"phase":"C","item":"C6-lifecycle-partial","status":"complete","detail":"Partial fill lifecycle conserves value. Unfilled portion returned correctly."}
-{"phase":"C","item":"C7-afterSwapRefund","status":"complete","detail":"Refund = deposited - filled. No rounding theft (within 1 wei)."}
-{"phase":"C","item":"C8-duplicate-nonce","status":"complete","detail":"openOrder with duplicate nonce reverts."}
-{"phase":"C","item":"C9-close-nonexistent","status":"complete","detail":"closeOrder on non-existent order reverts (maker == address(0))."}
-{"phase":"C","item":"C10-withdraw-exceed","status":"complete","detail":"withdrawToken more than deposited reverts (checked arithmetic)."}
-{"phase":"C","item":"C11-direct-executeSwap","status":"complete","detail":"No executeSwap on CLOBTransferHandler. ammHandleTransfer checks msg.sender == AMM."}
-{"phase":"C","item":"C12-directSwap-pricing","status":"complete","detail":"Both directSwap and singleSwap enforce pricing bounds via afterSwap."}
-{"phase":"C","item":"C13-INV-S01","status":"complete","detail":"Solvency holds after CLOB-mediated swaps. Handler balance >= obligations."}
-{"phase":"C","item":"C14-INV-S02","status":"complete","detail":"No value creation across permit+swap+settlement. Sum inputs >= outputs."}
-{"phase":"C","item":"C15-expansion-settings","status":"complete","detail":"Expansion settings stored and enforced in subsequent swaps."}
-{"phase":"C","item":"C16-halmos-noPricingBypass","status":"complete","detail":"Halmos check_C16_noPricingBypass PASSED. All code paths enforce price bounds."}
-{"phase":"C","item":"C17-halmos-noZeroReturn","status":"complete","detail":"Halmos check_C17_noZeroReturn TIMEOUT at 30s. Inconclusive but attempted."}
-{"phase":"C","item":"C18-medusa-CLOB","status":"error","detail":"Medusa failed: constructor arguments not provided for CLOBTransferHandler."}
-{"phase":"C","item":"C19-medusa-Permit","status":"error","detail":"Medusa failed: constructor arguments not provided for PermitTransferHandler."}
-{"phase":"C","item":"C20-unsigned-feeOnTop","status":"complete","detail":"feeOnTop unsigned by design. limitAmount caps user exposure. No drain path."}
-{"phase":"C","item":"C21-crosschain-replay","status":"complete","detail":"Domain separator includes chainId. Cross-chain replay blocked."}
-{"phase":"C","item":"C22-swapExtraData","status":"complete","detail":"Crafted swapExtraData (zeros, 0xFF, address, selector) tested. No output redirection."}
-{"phase":"D","item":"H1-feeOnTop-drain","status":"dismissed","detail":"limitAmount caps total cost. Strategic failure."}
-{"phase":"D","item":"H2-executor-spoof","status":"dismissed","detail":"msg.sender == AMM check. Recipient in signed data. Strategic failure."}
-{"phase":"D","item":"H3-nonce-replay","status":"dismissed","detail":"Bitmap nonces consumed. Strategic failure."}
-{"phase":"D","item":"H4-fee-redirect","status":"dismissed","detail":"LibOwnership access control on fee settings. Strategic failure."}
-{"phase":"D","item":"H5-crosschain-replay","status":"dismissed","detail":"chainId in domain separator. Strategic failure."}
-{"phase":"D","item":"H6-erc1271-bypass","status":"dismissed","detail":"ERC-1271 can only forge from self. Strategic failure."}
-{"phase":"D","item":"H7-flashloan-callback","status":"dismissed","detail":"Balance check before+after callback. Strategic failure."}
-{"phase":"D","item":"H8-txorigin-phish","status":"dismissed","detail":"No tx.origin usage in codebase. Strategic failure."}
-{"phase":"D","item":"H9-crossmodule-context","status":"dismissed","detail":"Diamond proxy + msg.sender checks. Strategic failure."}
-{"phase":"D","item":"H10-permit-from-reuse","status":"dismissed","detail":"ecrecover binds signer to signature. Strategic failure."}
-{"phase":"D","item":"H-R3-CH-01","status":"dismissed","detail":"Solidity type system prevents operator precedence bug. uint160|bool is type error."}
-{"phase":"D","item":"H-R3-CH-02","status":"dismissed","detail":"Same root cause as H-R3-CH-01. Floor-only bound correctly handled."}
-{"phase":"D","item":"H-R3-CH-03","status":"dismissed","detail":"Reentrancy window real but per-user accounting prevents exploitation."}
-{"phase":"D","item":"H-R3-CH-04","status":"dismissed","detail":"Fill rounding dust-level only. N-1 wei for N fills. Not exploitable."}
-{"phase":"D","item":"H-R3-CH-06","status":"dismissed","detail":"Same conclusion as H-R3-CH-03. Hook fee timing doesn't change exploit feasibility."}
-{"phase":"D","item":"H-R3-CH-07","status":"dismissed","detail":"AMM reentrancy prevents interleaving. Sequential swaps atomic. Known HOOK-001."}
-{"phase":"D","item":"H-R3-CH-08","status":"dismissed","detail":"Hash key asymmetry is API footgun. Self-inflicted config error, not attacker vector."}
-{"phase":"D","item":"H-R3-CH-09","status":"dismissed","detail":"Unchecked arithmetic safe: adjustments proportional from same base. No underflow."}
-{"phase":"D","item":"H-R3-CH-10","status":"dismissed","detail":"Phantom balance window resolves before external callbacks. Step 7 precedes step 8."}
+{"phase": "A", "action": "slither_mcp", "target": "CLOBTransferHandler, PermitTransferHandler, AMMStandardHook, SqrtPriceCalculator", "result": "completed", "notes": "No critical findings. Standard Slither detections."}
+{"phase": "A", "action": "aderyn", "target": "lbamm-hooks-and-handlers", "result": "crashed", "notes": "Aderyn v0.6.8 fatal compiler bug. Phase 0 output used."}
+{"phase": "B", "action": "audit-context-building", "target": "all repos", "result": "completed", "notes": "Diamond proxy, 3-tier hooks, PermitC, CLOB lifecycle mapped."}
+{"phase": "B", "action": "entry-point-analyzer", "target": "auth-boundary contracts", "result": "completed", "notes": "10+ entry points mapped across CLOB, Permit, Hook, AMM modules."}
+{"phase": "C", "action": "C1_hookAccessControl", "result": "pass", "test": "test_C1_hookCallbackAccessControl"}
+{"phase": "C", "action": "C2_settlementCallerCheck", "result": "pass", "test": "test_C2_CLOBSettlementCallerCheck, test_C2_PermitSettlementCallerCheck"}
+{"phase": "C", "action": "C3_permitReplay", "result": "pass", "test": "test_C3_permitReplayProtection"}
+{"phase": "C", "action": "C4_signedFieldsFeeOnTop", "result": "pass", "test": "test_C4_signedFieldsFeeOnTopBounded"}
+{"phase": "C", "action": "C5_CLOBLifecycle", "result": "pass", "test": "test_C5_fullCLOBLifecycle"}
+{"phase": "C", "action": "C6_partialFill", "result": "pass", "test": "test_C6_partialFillLifecycle"}
+{"phase": "C", "action": "C7_refundRounding", "result": "pass", "test": "test_C7_afterSwapRefundPartialFillRounding"}
+{"phase": "C", "action": "C8_nonceAutoIncrement", "result": "pass", "test": "test_C8_openOrderNonceAutoIncrement"}
+{"phase": "C", "action": "C9_closeOrderNotMaker", "result": "pass", "test": "test_C9_closeOrderNotMaker"}
+{"phase": "C", "action": "C10_withdrawExceedsBalance", "result": "pass", "test": "test_C10_withdrawExceedsBalance"}
+{"phase": "C", "action": "C11_directCLOBCall", "result": "pass", "test": "test_C11_directCLOBCallBlocked"}
+{"phase": "C", "action": "C12_directSwapHooks", "result": "pass", "test": "test_C12_directSwapEnforcesHooks"}
+{"phase": "C", "action": "C13_solvency", "result": "pass", "test": "test_C13_solvencyAfterCLOBOperation"}
+{"phase": "C", "action": "C14_noValueCreation", "result": "pass", "test": "test_C14_noValueCreation"}
+{"phase": "C", "action": "C15_expansionSettings", "result": "pass", "test": "test_C15_expansionSettingsEnforced"}
+{"phase": "C", "action": "C16_halmos_noPricingBypass", "result": "pass", "test": "test/HalmosAuthForger.t.sol:check_C16_noPricingBypass (44 paths)"}
+{"phase": "C", "action": "C17_halmos_noZeroReturn", "result": "timeout", "test": "test/HalmosAuthForger.t.sol:check_C17_noZeroReturn (solver-timeout)"}
+{"phase": "C", "action": "C18_medusa_CLOB", "result": "fallback", "notes": "Medusa constructor args missing. Forge fuzz 1000 runs used."}
+{"phase": "C", "action": "C19_medusa_Permit", "result": "fallback", "notes": "Medusa constructor args missing. Forge fuzz 1000 runs used."}
+{"phase": "C", "action": "C20_unsignedFeeOnTop", "result": "pass", "test": "test_C20_unsignedFeeOnTopByDesign"}
+{"phase": "C", "action": "C21_crossChainReplay", "result": "pass", "test": "test_C21_crossChainPermitReplayBlocked"}
+{"phase": "C", "action": "C22_swapExtraData", "result": "pass", "test": "test_C22_swapExtraDataMalformed"}
+{"phase": "D", "action": "H01_feeOnTopUnsigned", "result": "dismissed_strategic", "test": "test_H01_feeOnTopIsIntentionallyUnsigned"}
+{"phase": "D", "action": "H02_CLOBRounding", "result": "dismissed_strategic", "test": "test_H02_CLOBFillRoundingWithRealOrders, test_H02_CLOBRoundingAccumulation"}
+{"phase": "D", "action": "H03_reentrancyHookFee", "result": "dismissed_strategic", "test": "test_H03_reentrancyFlagsClearedDuringHookFeeTransfer"}
+{"phase": "D", "action": "H04_closeNonCurrent", "result": "dismissed_strategic", "test": "test_H04_closeNonCurrentOrderAfterPartialFill"}
+{"phase": "D", "action": "H05_partialFillUnderflow", "result": "dismissed_strategic", "test": "test_H05_partialFillAdjustedAmountNoUnderflow"}
+{"phase": "D", "action": "H06_divByZero", "result": "dismissed_strategic", "test": "test_H06_divisionByZeroDenominatorCalculation"}
+{"phase": "D", "action": "H07_ratioCheck", "result": "dismissed_strategic", "test": "test_H07_partialFillRatioCheckProtectsUser"}
+{"phase": "D", "action": "H09_protocolFeeStorage", "result": "dismissed_strategic", "test": "test_H09_protocolFeesUsesStorageNotBalanceOf"}
+{"phase": "D", "action": "H10_makerBalanceZero", "result": "dismissed_strategic", "test": "test_H10_makerBalanceZeroDuringHookValidation"}
+{"phase": "D", "action": "overflow_test", "result": "pass", "test": "test/CH02OverflowTest.t.sol:test_canComputeRatioOverflowWithCLOBParams"}

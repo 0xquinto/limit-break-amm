@@ -1,53 +1,56 @@
-# Agent Metrics: cross-boundary
+# Agent Metrics: cross-boundary (Wave 1)
 
 ## Summary
 - **Agent**: cross-boundary (Cross-Boundary Tracer)
 - **Wave**: 1
-- **Findings**: 0 (3 leads moved to ruled_out_vectors — no concrete attack paths)
-- **Ruled Out Vectors**: 17
-- **Hypothesis Results**: 15/15 tested
-- **Checklist Completion**: 41/47 (87%)
+- **Date**: 2026-03-26
+- **Turns used**: ~120
+- **Total tool uses**: ~85
+- **Files read**: ~40
 
-## Tools Used
-| Tool | Ran | Details |
-|------|-----|---------|
-| Slither | Yes | High/Medium detectors + storage layout for 4 facets + call graph for AMMStandardHook |
-| Aderyn | Yes | Completed on lbamm-core. Crashed on hooks-and-handlers (v0.6.8 bug) |
-| Forge | Yes | 20 tests in AuditCrossBoundaryKLoop.t.sol |
-| Halmos | Yes | 2 symbolic checks on SqrtPriceCalculator (timeout 30s, no violations) |
-| Medusa | Yes | AMMStandardHook: 155K calls, 0 failures. SingleProviderPoolType: 308K calls, 0 failures |
-| audit-context-building | Yes | Deep analysis of 5 contracts, trust boundary mapping |
-| entry-point-analyzer | Yes | State-changing entry points classified across scope |
+## Findings
+| ID | Title | Severity | Status | Confidence |
+|----|-------|----------|--------|------------|
+| CB-001 | Output swap partial fill hook fee overcrediting | medium | lead | 55 |
 
-## Hypothesis Disposition
-| ID | Status | Summary |
-|----|--------|---------|
-| H-R3-HH-01 | dismissed | calculateFixedInput does not overflow at max params |
-| H-R3-HH-02 | tested | afterSwapRefund reentrancy confirmed, profit path unclear |
-| H-R3-HH-03 | dismissed | No rounding bypass across 1000+ test cases |
-| H-R3-HH-04 | tested | computeRatioX96 returns 0 confirmed, CLOB path blocks exploit |
-| H-R3-HH-05 | dismissed | Known CP-004, not novel |
-| H-R3-HH-08 | dismissed | Price convention consistent via address ordering |
-| H-R3-DP-03 | dismissed | Admin-controlled fee amplification, by-design |
-| H-R3-DP-05 | dismissed | API constraint, callers use correct params |
-| H-R3-DP-06 | dismissed | Theoretical only, no existing handler checks flags |
-| H-R3-DP-07 | dismissed | Admin-controlled params, not attacker-exploitable |
-| H-R3-DP-09 | tested | Fee ordering confirmed, but hook owner is trusted party |
-| H-R3-TS-01 | dismissed | Non-cancun only, out of deployment scope |
-| H-R3-TS-02 | dismissed | Self-inflicted config error |
-| H-R3-TS-04 | dismissed | 1 wei/fill drift, dust-level only |
-| H-R3-TS-05 | dismissed | Value-identical overwrite, known FP #1 |
+## Hypothesis Results
+| ID | Status | Class | Detail |
+|----|--------|-------|--------|
+| H-R6-DP-02 | dismissed | strategic | ENTERED bit preserved by bitwise masking |
+| H-R6-DP-01 | dismissed | strategic | Keys match when tokenFor==tokenFee (always the case) |
+| H-R6-DP-03 | tested | - | LEAD: 25 token excess on partial fill with 5% fee |
+| H-R6-DP-11 | dismissed | strategic | maxHookFee guard protects provider |
+| H-R6-TS-02 | tested | - | Direct swaps have no healing tolerance (informational) |
+| H-R6-HH-05 | tested | - | 2x price discrepancy at 50% fee (self-inflicted) |
+| H-R6-HH-02 | dismissed | strategic | Reverts before reading slot 0 |
+| H-R6-HH-07 | dismissed | strategic | openOrder sets currentOrderId for nonce 0 |
+| H-R6-HH-10 | dismissed | strategic | AMM guard active, CLOB ops only affect own state |
+| H-R6-DP-07 | dismissed | strategic | tokensOwed tracks debt, accounting consistent |
+| H-R6-DP-10 | dismissed | strategic | Old hook can still claim via collectHookFeesByHook |
+| H-R6-TS-01 | dismissed | strategic | Self-inflicted config (FP pattern #4) |
+| H-R6-TS-03 | dismissed | strategic | Same root cause as HH-05 |
+| H-R6-HH-01 | dismissed | strategic | Linked list maintenance correct |
+| H-R6-TS-04 | dismissed | strategic | Same as HH-10, AMM guard active |
 
-## Key Leads (moved to ruled_out_vectors)
-1. **XB-001**: validateHandlerOrder missing sqrtPriceX96==0 guard — defense gap but CLOB path blocks reaching it
-2. **XB-002**: afterSwapRefund reentrancy window — confirmed but no concrete profit extraction path
-3. **XB-003**: Output swap partial fill hook fee overcharge — confirmed math but hook owner is trusted party
+## Checklist Completion
+- **Phase A**: 5/5 (Slither, Aderyn, function lists, custom detectors, storage layout)
+- **Phase B**: 3/5 (audit-context, entry-point-analyzer, call graph)
+- **Phase C**: 22/22 (C1-C22 all completed with Forge tests or tool runs)
+- **Phase D**: 15/15 (all hypotheses tested)
+
+## Tools Run
+| Tool | Status | Details |
+|------|--------|---------|
+| Slither | OK | 5 repos, detectors + functions + storage + call graph |
+| Aderyn | Partial | 4 repos OK, hooks-and-handlers crashed (v0.6.8 bug) |
+| Forge | OK | 47 tests (27 + 20), all passing |
+| Halmos | OK | 2 symbolic checks on operator precedence |
+| Medusa | OK | AMMStandardHook 148K calls, SingleProvider 282K calls, 0 failures |
 
 ## Triage Log
-- Skip: 2 (known FPs or out of scope)
-- Borderline: 5 (admin-controlled or theoretical)
-- Survive: 8 (tested with Forge, all dismissed or lead)
+- **skip**: 5 (known FP patterns, safe patterns)
+- **borderline**: 4 (investigated briefly, demoted)
+- **survive**: 6 (full investigation + Forge tests)
 
-## Test Files Created
-- `lbamm-hooks-and-handlers/test/AuditCrossBoundaryKLoop.t.sol` — 20 Forge tests
-- `lbamm-hooks-and-handlers/test/HalmosCrossBoundary.t.sol` — 2 Halmos symbolic checks
+## Ruled Out Vectors: 19 total
+All documented with test files and specific code evidence.

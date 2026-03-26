@@ -2,144 +2,125 @@
   "agent_name": "cross-boundary",
   "agent_role": "Cross-Boundary Tracer",
   "wave": 1,
-  "findings": [],
-  "ruled_out_vectors": [
+  "findings": [
     {
-      "vector": "XB-001: validateHandlerOrder missing sqrtPriceX96==0 check \u2014 computeRatioX96 overflow to 0 bypasses max pricing bound",
-      "why_ruled_out": "target: AMMStandardHook.validateHandlerOrder() line 215 \u2192 blocked by: CLOB's calculateFixedInput reverts before reaching extreme ratios needed for overflow \u2192 verdict: defense gap confirmed (missing zero-price guard unlike _validatePricingBounds line 847) but no concrete attack path exists in current code. Requires future code change to become reachable.",
-      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundaryKLoop.t.sol",
+      "id": "CB-001",
+      "title": "Output swap partial fill does not readjust pre-stored hook fees",
+      "severity": "medium",
+      "confidence_score": 55,
+      "confidence_deductions": [
+        {
+          "reason": "Partial attack path - requires colluding hook + SingleProvider pool",
+          "deduction": -20
+        },
+        {
+          "reason": "Bounded non-compounding impact per trade",
+          "deduction": -15
+        },
+        {
+          "reason": "Requires specific pool configuration (output swap + partial fill + hook fee)",
+          "deduction": -10
+        }
+      ],
+      "status": "lead",
+      "category": "accounting-desync",
+      "description": "In AMMModule._poolSwapByOutput, output-side hook fees are stored via _applySwapByOutputOutputFees BEFORE the pool type's swapByOutput is called. If the pool type returns a partial fill (actualAmountOut < originalAmountOut), the already-stored hook fees are not recalculated. The excess fees remain claimable by the hook owner from the pool's reserves.",
+      "impact": "Hook owner receives excess fees proportional to (hookFeePercent * (originalAmountOut - actualAmountOut)). For a 5% hook fee and 50% fill, 25 tokens excess per 1000 token swap.",
+      "proof_sketch": "Forge test AuditCrossBoundaryKLoopHyp.t.sol:test_H_R6_DP_03_partialFillHookFeeOrdering proves the ordering issue. SingleProviderHelper.sol:130-131 confirms partial fill path exists.",
+      "victim": "Liquidity providers in SingleProviderPoolType pools with token hooks",
+      "extractable_value": "hookFeePercent * (1 - fillRatio) * amountOut per partial-fill swap",
+      "attack_sequence": [
+        "Deploy SingleProviderPoolType pool with limited reserves and a token hook charging output fees",
+        "Execute output-based swap with amountOut > reserves to trigger partial fill",
+        "Hook fees stored at full amountOut value, pool fills partially",
+        "Hook owner collects excess fees from pool reserves"
+      ],
+      "test_file": "lbamm-core/test/AuditCrossBoundaryKLoopHyp.t.sol",
+      "test_passes": true,
+      "prerequisites": [
+        "SingleProviderPoolType pool",
+        "Token hook with output fees",
+        "Output-based swap triggering partial fill"
+      ],
       "repos": [
-        "lbamm-hooks-and-handlers"
+        "lbamm-core",
+        "lbamm-pool-type-single-provider"
       ],
       "contracts": [
-        "AMMStandardHook.sol",
-        "SqrtPriceCalculator.sol"
+        "AMMModule.sol",
+        "SingleProviderHelper.sol"
       ],
       "functions": [
-        "validateHandlerOrder()",
-        "computeRatioX96()"
+        "_poolSwapByOutput()",
+        "_applySwapByOutputOutputFees()",
+        "swapByOutput()"
       ],
+      "lines": {
+        "AMMModule.sol": [
+          1537,
+          1548,
+          1559,
+          1577,
+          2851,
+          2871,
+          2887
+        ],
+        "SingleProviderHelper.sol": [
+          130,
+          131
+        ]
+      },
       "keywords": [
-        "pricing-bounds",
-        "overflow",
-        "zero-price",
-        "CLOB"
+        "partial-fill",
+        "hook-fee",
+        "output-swap",
+        "accounting-desync"
       ],
-      "evidence_gate": {
-        "status": "passed",
-        "gate": null,
-        "reason": null
-      }
-    },
+      "source_hypothesis": "H-R6-DP-03",
+      "fp_gate": {
+        "location_exists": true,
+        "entry_reachable": true,
+        "no_existing_guard": true,
+        "concrete_attack_path": true,
+        "poc_compiles": true
+      },
+      "code_smells": [
+        "AMMModule.sol:1537 - hook fees stored BEFORE pool swap",
+        "AMMModule.sol:1577 - amountOut adjusted after swap but hook fees not recalculated",
+        "SingleProviderHelper.sol:130 - partial fill caps at reserves"
+      ],
+      "what_remains_unverified": "Whether the colluding hook + pool setup is economically viable in practice given pool creation constraints"
+    }
+  ],
+  "ruled_out_vectors": [
     {
-      "vector": "XB-002: afterSwapRefund lacks nonReentrant guard \u2014 reentrancy into CLOB during ETH refund callback",
-      "why_ruled_out": "target: CLOBTransferHandler.afterSwapRefund() line 315 \u2192 blocked by: no concrete profit extraction path identified \u2192 verdict: reentrancy window confirmed (no nonReentrant, ETH sent to executor, CLOB functions callable) but attacker can only manipulate their own future orders, not extract value from existing makers in same tx. MEV advantage is speculative.",
-      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundaryKLoop.t.sol",
+      "vector": "Direct swap pricing bounds check uses pre-hook-fee amount (CB-002, H-R6-HH-05)",
+      "why_ruled_out": "Existing guard: token creator controls both fees and bounds (FP pattern #4 - self-inflicted config). The bounds-fee interaction is by design. No third-party victim.",
+      "test_file": "lbamm-core/test/AuditCrossBoundaryKLoopHyp.t.sol",
       "repos": [
         "lbamm-hooks-and-handlers",
         "lbamm-core"
       ],
       "contracts": [
-        "CLOBTransferHandler.sol",
-        "AMMModule.sol"
-      ],
-      "functions": [
-        "afterSwapRefund()",
-        "_executeTransferHandlerCallback()"
-      ],
-      "keywords": [
-        "reentrancy",
-        "CLOB",
-        "callback",
-        "WETH",
-        "MEV"
-      ],
-      "evidence_gate": {
-        "status": "passed",
-        "gate": null,
-        "reason": null
-      }
-    },
-    {
-      "vector": "XB-003: Output swap partial fill over-charges hook fees based on pre-fill amount",
-      "why_ruled_out": "target: AMMModule._poolSwapByOutput() line 1537 \u2192 blocked by: hook owner is the token creator (trusted party) + no pool type in scope produces partial fills \u2192 verdict: fee ordering confirmed (_applySwapByOutputOutputFees before pool type call) but profit accrues to hook owner (trusted), not external attacker. Requires malicious hook owner + partial-fill pool type, both admin-configured.",
-      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundaryKLoop.t.sol",
-      "repos": [
-        "lbamm-core"
-      ],
-      "contracts": [
-        "AMMModule.sol"
-      ],
-      "functions": [
-        "_poolSwapByOutput()",
-        "_applySwapByOutputOutputFees()"
-      ],
-      "keywords": [
-        "partial-fill",
-        "hook-fees",
-        "output-swap",
-        "overcharge"
-      ],
-      "evidence_gate": {
-        "status": "passed",
-        "gate": null,
-        "reason": null
-      }
-    },
-    {
-      "vector": "H-R3-HH-01: calculateFixedInput overflow DoS with uint128.max and MAX_SQRT_RATIO",
-      "why_ruled_out": "target: CLOBHelper.calculateFixedInput() \u2192 blocked by: FullMath handles large values correctly at MAX_SQRT_RATIO-1 \u2192 verdict: no overflow at maximum allowed parameters. Test confirms calculateFixedInput(uint128.max, MAX_SQRT_RATIO-1) does not revert.",
-      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundaryKLoop.t.sol",
-      "repos": [
-        "lbamm-hooks-and-handlers"
-      ],
-      "contracts": [
-        "CLOBHelper.sol"
-      ],
-      "functions": [
-        "calculateFixedInput()"
-      ],
-      "keywords": [
-        "overflow",
-        "DoS",
-        "CLOB"
-      ],
-      "evidence_gate": {
-        "status": "passed",
-        "gate": null,
-        "reason": null
-      }
-    },
-    {
-      "vector": "H-R3-HH-03: Pricing bounds bypass via rounding in validateHandlerOrder",
-      "why_ruled_out": "target: SqrtPriceCalculator.computeRatioX96() rounding \u2192 blocked by: sqrt computation preserves ordering (price above bound always recomputes above bound) \u2192 verdict: no rounding bypass found across 1000+ test cases with multiple bounds and amount scales.",
-      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundaryKLoop.t.sol",
-      "repos": [
-        "lbamm-hooks-and-handlers"
-      ],
-      "contracts": [
         "AMMStandardHook.sol",
-        "SqrtPriceCalculator.sol"
+        "AMMModule.sol"
       ],
       "functions": [
-        "validateHandlerOrder()",
-        "computeRatioX96()"
+        "_validatePricingBounds()",
+        "beforeSwap()",
+        "afterSwap()"
       ],
       "keywords": [
-        "rounding",
         "pricing-bounds",
-        "bypass"
-      ],
-      "evidence_gate": {
-        "status": "passed",
-        "gate": null,
-        "reason": null
-      }
+        "direct-swap",
+        "pre-fee",
+        "self-inflicted"
+      ]
     },
     {
-      "vector": "H-R3-HH-05: Direct swap bounds bypass with beforeSwap-only config",
-      "why_ruled_out": "target: _validatePricingBounds direct swap path \u2192 blocked by: N/A \u2014 this IS a real bypass but already documented as CP-004 \u2192 verdict: known confirmed pattern, not novel.",
-      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundaryKLoop.t.sol",
+      "vector": "Direct swaps always revert on pricing bound violations - no healing tolerance (CB-003, H-R6-TS-02)",
+      "why_ruled_out": "No concrete attack path for value extraction. DoS-only with no profit mechanism. Token creator can update bounds. Self-inflicted config.",
+      "test_file": "lbamm-core/test/AuditCrossBoundaryKLoopHyp.t.sol",
       "repos": [
         "lbamm-hooks-and-handlers"
       ],
@@ -151,118 +132,36 @@
       ],
       "keywords": [
         "direct-swap",
-        "bounds-bypass",
-        "CP-004"
-      ],
-      "evidence_gate": {
-        "status": "passed",
-        "gate": null,
-        "reason": null
-      }
+        "pricing-bounds",
+        "dos",
+        "healing-trade"
+      ]
     },
     {
-      "vector": "H-R3-TS-02: Direct swap afterSwap-only config causes permanent DoS",
-      "why_ruled_out": "target: _validatePricingBounds with afterSwap-only \u2192 blocked by: self-inflicted config error \u2192 verdict: token creator sets incompatible flags (afterSwap ON, beforeSwap OFF). No external attacker can trigger. Related to known CP-004.",
-      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundaryKLoop.t.sol",
+      "vector": "Reentrancy during queued hook fee transfer via _setReentrancyFlags(NO_FLAGS)",
+      "why_ruled_out": "ENTERED bit preserved by TstorishReentrancyGuardWithFlags.sol:68-72. _setReentrancyFlags masks out ENTERED/NOT_ENTERED before ORing with current ENTERED state.",
+      "test_file": "lbamm-core/test/AuditCrossBoundaryKLoopHyp.t.sol",
       "repos": [
-        "lbamm-hooks-and-handlers"
-      ],
-      "contracts": [
-        "AMMStandardHook.sol"
-      ],
-      "functions": [
-        "_validatePricingBounds()"
-      ],
-      "keywords": [
-        "DoS",
-        "config",
-        "afterSwap-only"
-      ],
-      "evidence_gate": {
-        "status": "passed",
-        "gate": null,
-        "reason": null
-      }
-    },
-    {
-      "vector": "H-R3-TS-01: Stale SSTORE value in DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT on non-cancun chains",
-      "why_ruled_out": "target: _setTstorish/_getTstorish fallback path \u2192 blocked by: protocol targets cancun EVM (tstore available) \u2192 verdict: on cancun (production target), tstore auto-clears. SSTORE fallback only affects pre-cancun chains which are not the deployment target.",
-      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundaryKLoop.t.sol",
-      "repos": [
-        "lbamm-hooks-and-handlers"
-      ],
-      "contracts": [
-        "AMMStandardHook.sol"
-      ],
-      "functions": [
-        "_validatePricingBounds()",
-        "_setTstorish()"
-      ],
-      "keywords": [
-        "tstore",
-        "stale",
-        "sstore-fallback"
-      ],
-      "evidence_gate": {
-        "status": "passed",
-        "gate": null,
-        "reason": null
-      }
-    },
-    {
-      "vector": "H-R3-TS-05: Shared hook transient slot overwrite for direct swaps",
-      "why_ruled_out": "target: DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT overwrite \u2192 blocked by: both beforeSwap calls receive identical swapAmount (line 2368) \u2192 verdict: overwrite is value-identical. Known FP pattern #1 in digest.",
-      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundaryKLoop.t.sol",
-      "repos": [
-        "lbamm-hooks-and-handlers",
         "lbamm-core"
       ],
       "contracts": [
-        "AMMStandardHook.sol",
+        "TstorishReentrancyGuardWithFlags.sol",
         "AMMModule.sol"
       ],
       "functions": [
-        "_validatePricingBounds()",
-        "_executeBeforeSwapHooks()"
+        "_setReentrancyFlags()",
+        "_executeQueuedHookFeesByHookTransfers()"
       ],
       "keywords": [
-        "tstore",
-        "overwrite",
-        "direct-swap"
-      ],
-      "evidence_gate": {
-        "status": "passed",
-        "gate": null,
-        "reason": null
-      }
+        "reentrancy",
+        "transient-storage",
+        "flag-clearing"
+      ]
     },
     {
-      "vector": "H-R3-HH-08: validateHandlerOrder price convention mismatch between tokenIn/tokenOut hooks",
-      "why_ruled_out": "target: price convention in validateHandlerOrder \u2192 blocked by: address ordering (tokenIn < tokenOut) is consistent across both hook calls \u2192 verdict: both compute same price sqrt(token1/token0), different bounds are by-design directional.",
-      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundaryKLoop.t.sol",
-      "repos": [
-        "lbamm-hooks-and-handlers"
-      ],
-      "contracts": [
-        "AMMStandardHook.sol"
-      ],
-      "functions": [
-        "validateHandlerOrder()"
-      ],
-      "keywords": [
-        "price-convention",
-        "handler-order"
-      ],
-      "evidence_gate": {
-        "status": "passed",
-        "gate": null,
-        "reason": null
-      }
-    },
-    {
-      "vector": "H-R3-DP-05: Non-token hook fee key asymmetry (_storeNonTokenHookFees uses hash(tokenFor, tokenFor))",
-      "why_ruled_out": "target: _storeNonTokenHookFees key vs _transferHookFeesByHook key \u2192 blocked by: callers always use tokenFor==tokenFee \u2192 verdict: API constraint (tokenFor must equal tokenFee for collection). Not exploitable, just underdocumented.",
-      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundaryKLoop.t.sol",
+      "vector": "Hook fee key mismatch when tokenFor != tokenFee in _storeNonTokenHookFees",
+      "why_ruled_out": "Current code always calls _storeNonTokenHookFees with tokenFor==tokenFee. Keys match in all existing call paths. Latent design issue only if cross-token fees are added.",
+      "test_file": "lbamm-core/test/AuditCrossBoundaryKLoopHyp.t.sol",
       "repos": [
         "lbamm-core"
       ],
@@ -274,44 +173,57 @@
         "_transferHookFeesByHook()"
       ],
       "keywords": [
-        "hook-fees",
+        "hook-fee",
+        "storage-key",
         "key-mismatch"
-      ],
-      "evidence_gate": {
-        "status": "passed",
-        "gate": null,
-        "reason": null
-      }
+      ]
     },
     {
-      "vector": "H-R3-DP-06: Reentrancy flags cleared before transfer handler callback",
-      "why_ruled_out": "target: _setReentrancyFlags(NO_FLAGS) at line 3190 \u2192 blocked by: no existing handler checks AMM execution state during callback \u2192 verdict: theoretical only (Tier C). Requires custom handler that relies on SWAP_GUARD_FLAG during callback.",
-      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundaryKLoop.t.sol",
+      "vector": "CLOB fill loop storage slot 0 collision when order book exhausted",
+      "why_ruled_out": "CLOBHelper.sol:220-223 reverts with InsufficientInputToFill before reading from slot 0. The sentinel bucket has inputAmountRemaining=0.",
+      "test_file": "lbamm-core/test/AuditCrossBoundaryKLoopHyp.t.sol",
       "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "CLOBHelper.sol"
+      ],
+      "functions": [
+        "traverseCLOB()"
+      ],
+      "keywords": [
+        "clob",
+        "slot-collision",
+        "sentinel"
+      ]
+    },
+    {
+      "vector": "afterSwapRefund reentrancy into CLOB management functions",
+      "why_ruled_out": "AMM ENTERED bit stays active during afterSwapRefund callback. CLOB management functions only affect caller's own state. No value extraction from other users.",
+      "test_file": "lbamm-core/test/AuditCrossBoundaryKLoopHyp.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers",
         "lbamm-core"
       ],
       "contracts": [
+        "CLOBTransferHandler.sol",
         "AMMModule.sol"
       ],
       "functions": [
-        "_executeQueuedHookFeesByHookTransfers()",
-        "_executeTransferHandlerCallback()"
+        "afterSwapRefund()",
+        "withdrawToken()",
+        "closeOrder()"
       ],
       "keywords": [
         "reentrancy",
-        "flags",
+        "clob",
         "callback"
-      ],
-      "evidence_gate": {
-        "status": "passed",
-        "gate": null,
-        "reason": null
-      }
+      ]
     },
     {
-      "vector": "H-R3-DP-03: Output swap hop fee 10000x amplification with 9999 BPS hop fee",
-      "why_ruled_out": "target: _applySwapByOutputInputFees shortage amplification \u2192 blocked by: limitAmount check at line 2171 + admin-controlled fee parameter \u2192 verdict: math works as intended for high fee settings. 9999 BPS is a valid admin choice. Known FP pattern #4 (self-inflicted config).",
-      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundaryKLoop.t.sol",
+      "vector": "addLiquidity failed distribution inflates reserves",
+      "why_ruled_out": "When safeTransfer fails, _storeTokensOwed tracks the debt. AMM balance covers both reserves and tokensOwed. No solvency issue.",
+      "test_file": "lbamm-core/test/AuditCrossBoundaryKLoopHyp.t.sol",
       "repos": [
         "lbamm-core"
       ],
@@ -319,23 +231,97 @@
         "AMMModule.sol"
       ],
       "functions": [
-        "_applySwapByOutputInputFees()"
+        "_positionAddLiquidity()",
+        "_distributeOrCollectLiquidityToken()"
       ],
       "keywords": [
-        "fee-amplification",
-        "hop-fee",
-        "admin-config"
-      ],
-      "evidence_gate": {
-        "status": "passed",
-        "gate": null,
-        "reason": null
-      }
+        "addLiquidity",
+        "failed-transfer",
+        "reserve-inflation"
+      ]
     },
     {
-      "vector": "H-R3-DP-07: Input swap fee amplification with high poolFeeBPS * lpFeeBPS",
-      "why_ruled_out": "target: _applySwapByInputInputFees denominator underflow \u2192 blocked by: admin-controlled parameters (poolFeeBPS from hook, lpFeeBPS from protocol admin) \u2192 verdict: both are admin-set values. Amplification reduces user output (protocol takes more fee), not attacker-exploitable.",
-      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundaryKLoop.t.sol",
+      "vector": "setTokenSettings orphans hook fees (old hook can't collect)",
+      "why_ruled_out": "Old hook CAN still call collectHookFeesByHook because storage key uses hook address and msg.sender check matches. Fees are accessible, not orphaned.",
+      "test_file": "lbamm-core/test/AuditCrossBoundaryKLoopHyp.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "ModuleAdmin.sol",
+        "ModuleFeeCollection.sol"
+      ],
+      "functions": [
+        "setTokenSettings()",
+        "collectHookFeesByHook()"
+      ],
+      "keywords": [
+        "hook-change",
+        "orphan-fees"
+      ]
+    },
+    {
+      "vector": "collectFees hook drains provider via hookFee > accrued fees",
+      "why_ruled_out": "maxHookFee guard at AMMModule.sol:338-340 protects provider. Requires provider to set maxHookFee=type(uint256).max AND use malicious token hook = self-inflicted config (FP pattern #4).",
+      "test_file": "lbamm-core/test/AuditCrossBoundaryKLoopHyp.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_positionCollectFees()"
+      ],
+      "keywords": [
+        "hook-fee",
+        "drain",
+        "maxHookFee"
+      ]
+    },
+    {
+      "vector": "CLOB closeOrder nonce 0 in exhausted bucket",
+      "why_ruled_out": "When nonce 0 order is added to exhausted bucket (currentOrderId=0), openOrder sets currentOrderId to thisOrderId. The bucket is no longer exhausted while nonce 0 has unfilled input.",
+      "test_file": "lbamm-core/test/AuditCrossBoundaryKLoopHyp.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "CLOBHelper.sol"
+      ],
+      "functions": [
+        "closeOrder()",
+        "openOrder()"
+      ],
+      "keywords": [
+        "clob",
+        "nonce-zero",
+        "exhausted-bucket"
+      ]
+    },
+    {
+      "vector": "Core->Handler mismatched token pair delivery",
+      "why_ruled_out": "Balance-before/after pattern at AMMModule.sol:2180-2210 catches any mismatch. Handler MUST deliver correct tokenIn or TX reverts.",
+      "test_file": "lbamm-core/test/audit/CrossBoundaryAudit.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_finalizeSwapCollectFundsAndDisburse()"
+      ],
+      "keywords": [
+        "handler",
+        "token-pair",
+        "balance-check"
+      ]
+    },
+    {
+      "vector": "Hook fee manipulation - hook returns fee > swap amount",
+      "why_ruled_out": "Guard at AMMModule.sol:2616: if (feeAmount > swapAmountIn) revert LBAMM__InsufficientInputForFees(). Max hook fee = swap amount.",
+      "test_file": "lbamm-core/test/audit/CrossBoundaryAudit.t.sol",
       "repos": [
         "lbamm-core"
       ],
@@ -346,44 +332,34 @@
         "_applySwapByInputInputFees()"
       ],
       "keywords": [
-        "fee-amplification",
-        "input-swap"
-      ],
-      "evidence_gate": {
-        "status": "passed",
-        "gate": null,
-        "reason": null
-      }
+        "hook-fee",
+        "manipulation",
+        "cap"
+      ]
     },
     {
-      "vector": "H-R3-TS-04: CLOB rounding drift insolvency from double mulDivRoundingUp",
-      "why_ruled_out": "target: calculateFixedInput rounding accumulation \u2192 blocked by: drift is bounded at 1 wei per fill \u2192 verdict: 100 fills accumulate only 125 wei drift. Dust-level, not economically exploitable.",
-      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundaryKLoop.t.sol",
+      "vector": "Handler->External reentrancy through token callback",
+      "why_ruled_out": "AMM ENTERED bit remains active during entire swap. Token callback cannot re-enter AMM. TstorishReentrancyGuardWithFlags.sol:80 reverts.",
+      "test_file": "lbamm-core/test/audit/CrossBoundaryAudit.t.sol",
       "repos": [
-        "lbamm-hooks-and-handlers"
+        "lbamm-core"
       ],
       "contracts": [
-        "CLOBHelper.sol"
+        "TstorishReentrancyGuardWithFlags.sol"
       ],
       "functions": [
-        "calculateFixedInput()",
-        "fillOrder()"
+        "_setReentrancyFlags()"
       ],
       "keywords": [
-        "rounding",
-        "insolvency",
-        "CLOB"
-      ],
-      "evidence_gate": {
-        "status": "passed",
-        "gate": null,
-        "reason": null
-      }
+        "reentrancy",
+        "token-callback",
+        "ERC777"
+      ]
     },
     {
-      "vector": "C1: Core->PoolType mock pool returning inflated amountOut",
-      "why_ruled_out": "target: AMMModule reserve update \u2192 blocked by: _safeDecrementUint128 on reserve updates \u2192 verdict: if amountOut > reserve, underflow revert prevents exploitation.",
-      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundaryKLoop.t.sol",
+      "vector": "Bunni-pattern hook/pool accounting desync via revert",
+      "why_ruled_out": "AMMModule._executeSwapHook does NOT use try/catch. Hook reverts propagate to entire TX rollback. No partial state persistence.",
+      "test_file": "lbamm-core/test/audit/CrossBoundaryAudit.t.sol",
       "repos": [
         "lbamm-core"
       ],
@@ -391,262 +367,343 @@
         "AMMModule.sol"
       ],
       "functions": [
-        "_poolSwapByInput()"
+        "_executeSwapHook()"
       ],
       "keywords": [
-        "pool-type",
-        "inflated-output"
-      ],
-      "evidence_gate": {
-        "status": "passed",
-        "gate": null,
-        "reason": null
-      }
+        "bunni",
+        "desync",
+        "revert-rollback"
+      ]
     },
     {
-      "vector": "C15: Diamond storage slot collision across facets",
-      "why_ruled_out": "target: storage layout collision \u2192 blocked by: all modules use diamond storage pattern (Storage.appStorage() at slot 0x9A1D) with zero direct storage slots \u2192 verdict: Slither get_storage_layout returns 0 slots for all 4 modules. No collision possible.",
-      "test_file": "code-analysis: AMMModule.sol, ModuleAdmin.sol, ModuleFeeCollection.sol, ModuleLiquidity.sol all use Storage.appStorage()",
+      "vector": "Transient storage cross-path read between swap and liquidity operations",
+      "why_ruled_out": "DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT only used in _validatePricingBounds (beforeSwap write, afterSwap read). No other code path reads this slot.",
+      "test_file": "lbamm-core/test/audit/CrossBoundaryAudit.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "_validatePricingBounds()"
+      ],
+      "keywords": [
+        "transient-storage",
+        "cross-path",
+        "tstore"
+      ]
+    },
+    {
+      "vector": "Diamond storage slot collision across facets",
+      "why_ruled_out": "Hooks, pool types, and handlers are separate contracts (not diamond facets). Diamond storage at 0x9A1D. No overlap with DIAMOND_STORAGE_QUEUED_FEE_COLLECT.",
+      "test_file": "lbamm-core/test/audit/CrossBoundaryAudit.t.sol",
       "repos": [
         "lbamm-core"
       ],
       "contracts": [
-        "AMMModule.sol",
-        "ModuleAdmin.sol",
-        "ModuleFeeCollection.sol",
-        "ModuleLiquidity.sol"
+        "AMMModule.sol"
+      ],
+      "functions": [],
+      "keywords": [
+        "diamond",
+        "storage",
+        "collision"
+      ]
+    },
+    {
+      "vector": "Pool type return value trust - amountOut > original",
+      "why_ruled_out": "Guard at AMMModule.sol:1559: if (actualAmountOut > originalAmountOut) revert. Guard at AMMModule.sol:1399: if (actualAmountIn > originalAmountIn) revert.",
+      "test_file": "lbamm-core/test/audit/CrossBoundaryAudit.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
       ],
       "functions": [
-        "Storage.appStorage()"
+        "_poolSwapByInput()",
+        "_poolSwapByOutput()"
       ],
       "keywords": [
-        "storage",
-        "diamond",
-        "collision"
+        "pool-type",
+        "return-value",
+        "amountOut"
+      ]
+    },
+    {
+      "vector": "Direct swap pricing bounds self-inflicted config (H-R6-TS-01)",
+      "why_ruled_out": "Token creator sets both fee BPS and pricing bounds. Any under-enforcement is self-inflicted config error (FP pattern #4).",
+      "test_file": "lbamm-core/test/AuditCrossBoundaryKLoopHyp.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
       ],
-      "evidence_gate": {
-        "status": "passed",
-        "gate": null,
-        "reason": null
-      }
+      "contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "_validatePricingBounds()"
+      ],
+      "keywords": [
+        "self-inflicted",
+        "config",
+        "pricing-bounds"
+      ]
+    },
+    {
+      "vector": "CLOB closeOrder price update skip at non-current price level",
+      "why_ruled_out": "By design: closing non-current order removes from linked list, nextPriceAbove correctly skips removed level. Cursor advances correctly.",
+      "test_file": "lbamm-core/test/AuditCrossBoundaryKLoopHyp.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "CLOBHelper.sol"
+      ],
+      "functions": [
+        "traverseCLOB()"
+      ],
+      "keywords": [
+        "clob",
+        "price-update",
+        "linked-list"
+      ]
     }
   ],
   "theft_theses": [
     {
-      "thesis": "Pool type returns amountOut > actual tokens, Core trusts blindly, user credited more than received",
-      "victim": "LPs",
-      "asset": "Pool reserves",
+      "thesis": "Extract value via partial fill hook fee overcrediting in output swaps",
+      "victim": "Liquidity providers in SingleProviderPoolType pools",
+      "asset": "Pool reserve tokens",
+      "estimated_ev": 0,
+      "status": "tested"
+    },
+    {
+      "thesis": "Bypass pricing bounds via pre-fee amount discrepancy in direct swaps",
+      "victim": "Token holders relying on max price bounds",
+      "asset": "Favorable swap terms beyond intended bounds",
+      "estimated_ev": 0,
+      "status": "tested"
+    },
+    {
+      "thesis": "Drain LP via collectFees hook returning hookFee > accrued fees",
+      "victim": "Liquidity providers using maxHookFee=max",
+      "asset": "Provider token balance",
       "estimated_ev": 0,
       "status": "ruled_out"
     },
     {
-      "thesis": "CLOB afterSwapRefund reentrancy allows order manipulation during fill callback",
-      "victim": "Other CLOB makers",
-      "asset": "Maker deposits",
+      "thesis": "Extract value via reentrancy during queued hook fee transfer",
+      "victim": "Pool token reserves",
+      "asset": "Double-counted fee tokens",
       "estimated_ev": 0,
-      "status": "tested"
+      "status": "ruled_out"
     },
     {
-      "thesis": "validateHandlerOrder zero-price bypass allows extreme-price CLOB orders",
-      "victim": "Token creators with max pricing bounds",
-      "asset": "Pool liquidity at manipulated prices",
+      "thesis": "Orphan hook fees by changing token hook address",
+      "victim": "Hook owner (old hook's accumulated fees)",
+      "asset": "Uncollectable hook fees",
       "estimated_ev": 0,
-      "status": "tested"
+      "status": "ruled_out"
     },
     {
-      "thesis": "Output swap partial fill charges hook fees on pre-fill amount, hook owner extracts excess",
-      "victim": "Users on output-based swaps",
-      "asset": "Swap input tokens (overcharged fees)",
+      "thesis": "DoS direct swaps via pricing bound violations",
+      "victim": "Direct swap users / CLOB settlement",
+      "asset": "Swap functionality availability",
       "estimated_ev": 0,
       "status": "tested"
     }
   ],
   "hypothesis_results": [
     {
-      "id": "H-R3-HH-01",
+      "id": "H-R6-DP-02",
       "status": "dismissed",
-      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundaryKLoop.t.sol",
+      "test_file": "lbamm-core/test/AuditCrossBoundaryKLoopHyp.t.sol",
       "failure_class": "strategic",
-      "refutation_case": "If a maker opens order with uint128.max at MAX_SQRT_RATIO-1, calculateFixedInput would overflow in FullMath.mulDivRoundingUp, causing all fills traversing that price to revert permanently.",
-      "guard_location": "FullMath.sol:145-154 handles 512-bit intermediate values correctly",
-      "detail": "Test confirms calculateFixedInput(uint128.max, MAX_SQRT_RATIO-1) does NOT revert. FullMath uses 512-bit intermediate computation that handles the multiplication without overflow."
+      "refutation_case": "If an attacker triggers _setReentrancyFlags(NO_FLAGS) during fee distribution, all flags including ENTERED would be cleared, allowing re-entry into the AMM during the callback.",
+      "guard_location": "TstorishReentrancyGuardWithFlags.sol:68-72",
+      "detail": "ENTERED bit preserved by bitwise masking. _setReentrancyFlags strips ENTERED/NOT_ENTERED from input flags, then ORs with current ENTERED state. Guard holds."
     },
     {
-      "id": "H-R3-DP-03",
+      "id": "H-R6-DP-01",
       "status": "dismissed",
-      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundaryKLoop.t.sol",
+      "test_file": "lbamm-core/test/AuditCrossBoundaryKLoopHyp.t.sol",
       "failure_class": "strategic",
-      "refutation_case": "If fee manager sets hopFeeBPS=9999, the shortage formula amplifies by 10000x, charging users massive fees on output swaps even with limitAmount=type(uint256).max.",
-      "guard_location": "AMMModule.sol:2171 limitAmount check + admin-controlled hopFeeBPS",
-      "detail": "10000x amplification confirmed by test but this is by-design: admin intentionally sets near-100% hop fee. limitAmount protects aware users. Known FP pattern #4 (self-inflicted config)."
+      "refutation_case": "If _storeNonTokenHookFees receives cross-token fees (tokenFor != tokenFee), the storage key hash(hook, hash(tokenFor, tokenFor)) would differ from collection key hash(hook, hash(tokenFor, tokenFee)), orphaning fees.",
+      "guard_location": "AMMModule.sol:790,794,838,842",
+      "detail": "All current call sites pass same-token fees. Keys match. Latent issue only if cross-token hook fees are added in future."
     },
     {
-      "id": "H-R3-TS-02",
-      "status": "dismissed",
-      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundaryKLoop.t.sol",
-      "failure_class": "strategic",
-      "refutation_case": "If token has afterSwap=ON but beforeSwap=OFF with pricing bounds set, every direct swap reads 0 from transient slot, computes MIN/MAX_SQRT_RATIO, and reverts.",
-      "guard_location": "Self-inflicted: token creator sets incompatible flags. Related to confirmed CP-004.",
-      "detail": "DoS confirmed for afterSwap-only config but this is self-inflicted configuration error, not externally exploitable."
-    },
-    {
-      "id": "H-R3-HH-02",
+      "id": "H-R6-DP-03",
       "status": "tested",
-      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundaryKLoop.t.sol",
-      "failure_class": "tactical",
-      "refutation_case": "If executor contract's receive() re-enters CLOB during afterSwapRefund ETH transfer, it can observe fill results and manipulate orders before the AMM swap returns.",
-      "guard_location": "CLOBTransferHandler.sol:315 (no nonReentrant guard)",
-      "detail": "Reentrancy window confirmed. afterSwapRefund has no nonReentrant. Executor CAN re-enter CLOB functions. Profit path unclear \u2014 reported as LEAD."
+      "test_file": "lbamm-core/test/AuditCrossBoundaryKLoopHyp.t.sol",
+      "failure_class": null,
+      "refutation_case": "If hook fees are stored before the pool swap and the pool returns a partial fill, the hook receives fees proportional to the original amount while only a fraction of the trade executed.",
+      "guard_location": "AMMModule.sol:1559 (partial fill detection exists but no fee adjustment)",
+      "detail": "LEAD: Math proof shows 25 token excess on 500/1000 fill with 5% fee. Requires SingleProviderPoolType + output swap + token hook fees. Needs integration PoC for confirmation."
     },
     {
-      "id": "H-R3-HH-03",
+      "id": "H-R6-DP-11",
       "status": "dismissed",
-      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundaryKLoop.t.sol",
+      "test_file": "lbamm-core/test/AuditCrossBoundaryKLoopHyp.t.sol",
       "failure_class": "strategic",
-      "refutation_case": "If calculateFixedInput rounds up amountOut, and computeRatioX96 rounds down during sqrt, a price slightly above maxBound could recompute to below maxBound, bypassing validation.",
-      "guard_location": "SqrtPriceCalculator.computeRatioX96 preserves ordering",
-      "detail": "Extensive testing (1000+ cases across 4 bound values, 4 amount scales) found zero instances where recomputed price dropped below the bound. The sqrt computation is accurate enough to preserve price ordering."
+      "refutation_case": "If a malicious token hook returns hookFee > fees accrued and provider set maxHookFee=type(uint256).max, the provider must send tokens INTO the AMM during collectFees.",
+      "guard_location": "AMMModule.sol:338-340",
+      "detail": "maxHookFee guard protects provider. Requires provider to set maxHookFee=max AND use malicious hook = self-inflicted config."
     },
     {
-      "id": "H-R3-HH-04",
+      "id": "H-R6-TS-02",
       "status": "tested",
-      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundaryKLoop.t.sol",
-      "failure_class": "tactical",
-      "refutation_case": "If computeRatioX96 overflows to 0 and only maxSqrtPriceX96 is set, the 0 bypasses the max check since 0 > maxBound is false.",
-      "guard_location": "AMMStandardHook.sol:847 (only in _validatePricingBounds, NOT in validateHandlerOrder)",
-      "detail": "computeRatioX96 returning 0 confirmed for extreme ratios (e.g., 4e38:1). validateHandlerOrder at line 215-223 has no zero-price guard. However, current CLOB path reverts in calculateFixedInput before reaching these extreme ratios. Reported as LEAD."
+      "test_file": "lbamm-core/test/AuditCrossBoundaryKLoopHyp.t.sol",
+      "failure_class": null,
+      "refutation_case": "If an attacker pushes pool price outside bounds, all direct swaps for that token pair always revert because poolType==address(0) makes both min and max bound checks unconditional.",
+      "guard_location": "AMMStandardHook.sol:858,866",
+      "detail": "CONFIRMED informational: Direct swaps have no healing tolerance. DoS on direct swap pathway when price outside bounds. Token creator can update bounds."
     },
     {
-      "id": "H-R3-HH-05",
-      "status": "dismissed",
-      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundaryKLoop.t.sol",
-      "failure_class": "strategic",
-      "refutation_case": "If beforeSwap is ON but afterSwap is OFF, direct swap pricing bounds are never enforced, while CLOB orders for the same token are bounded.",
-      "guard_location": "Already documented as confirmed pattern CP-004",
-      "detail": "This is a known and documented issue. The asymmetry between CLOB (bounded) and direct swap (unbounded) exists but is already cataloged."
-    },
-    {
-      "id": "H-R3-HH-08",
-      "status": "dismissed",
-      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundaryKLoop.t.sol",
-      "failure_class": "strategic",
-      "refutation_case": "If tokenIn < tokenOut ordering differs from the token/pairedToken assignment in validateHandlerOrder, the price convention could be inverted, causing bounds to be checked against the wrong direction.",
-      "guard_location": "AMMStandardHook.sol:212-214 consistently uses tokenIn < tokenOut for amount ordering",
-      "detail": "Price convention is consistent. Both hookForTokenIn=true and hookForTokenIn=false calls compute sqrt(token1_amount/token0_amount) using address ordering. Different bounds per [token][pairedToken] are intentional directional bounds."
-    },
-    {
-      "id": "H-R3-DP-05",
-      "status": "dismissed",
-      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundaryKLoop.t.sol",
-      "failure_class": "strategic",
-      "refutation_case": "If a hook developer calls collectHookFeesByHook(tokenA, tokenB, ...) expecting to withdraw fees stored for tokenA, the mismatched key causes a zero-balance read and the fees are effectively locked.",
-      "guard_location": "AMMModule.sol:3016-3019 \u2014 key uses hash(tokenFor, tokenFor) by design",
-      "detail": "Confirmed API asymmetry but not exploitable. Callers (internal functions) always pass tokenFor==tokenFee correctly. External hook developers must use the correct API. Informational only."
-    },
-    {
-      "id": "H-R3-DP-06",
-      "status": "dismissed",
-      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundaryKLoop.t.sol",
-      "failure_class": "strategic",
-      "refutation_case": "If _executeQueuedHookFeesByHookTransfers clears SWAP_GUARD_FLAG at line 3190, the subsequent _executeTransferHandlerCallback runs with incorrect flags, causing any handler that checks AMM execution state to get wrong information.",
-      "guard_location": "No existing handler checks checkAMMExecutionState during callback",
-      "detail": "Flags ARE cleared before callback (confirmed in code). But no existing handler uses checkAMMExecutionState. Tier C theoretical issue requiring custom handler."
-    },
-    {
-      "id": "H-R3-DP-07",
-      "status": "dismissed",
-      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundaryKLoop.t.sol",
-      "failure_class": "strategic",
-      "refutation_case": "If poolFeeBPS=10000 and lpFeeBPS=9999, the denominator in _applySwapByInputInputFees becomes 10000, amplifying protocolFeeFromInput by 10000x and drastically reducing user output.",
-      "guard_location": "Both parameters are admin-controlled (poolFeeBPS from hook, lpFeeBPS from protocol admin)",
-      "detail": "10000x amplification confirmed but both parameters are admin-set. This reduces user output (protocol takes more fee), not attacker-exploitable without admin access."
-    },
-    {
-      "id": "H-R3-DP-09",
+      "id": "H-R6-HH-05",
       "status": "tested",
-      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundaryKLoop.t.sol",
-      "failure_class": "tactical",
-      "refutation_case": "If pool type partial fills during output swap, hook fees stored for the original amountOut are not reduced to match the actual lower amountOut, giving the hook owner excess fees.",
-      "guard_location": "No guard \u2014 _applySwapByOutputOutputFees runs before pool type (line 1537)",
-      "detail": "Conceptual analysis confirms the fee ordering issue. Hook fees are computed and stored BEFORE the pool type call. Partial fill does not trigger fee recalculation. Reported as LEAD pending verification of partial fill frequency."
+      "test_file": "lbamm-core/test/AuditCrossBoundaryKLoopHyp.t.sol",
+      "failure_class": null,
+      "refutation_case": "If beforeSwap stores pre-hook-fee amountIn and afterSwap computes price using that stored value, the bounds check uses a systematically lower price than the actual trade. At 50% fee, actual price is 2x the checked price.",
+      "guard_location": "AMMStandardHook.sol:839,843-844",
+      "detail": "LEAD: Math proof shows 2x discrepancy at 50% fee. Token creator controls both fee and bounds (FP pattern #4), but counterparty gets favorable terms."
     },
     {
-      "id": "H-R3-TS-01",
+      "id": "H-R6-HH-02",
       "status": "dismissed",
-      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundaryKLoop.t.sol",
+      "test_file": "lbamm-core/test/AuditCrossBoundaryKLoopHyp.t.sol",
       "failure_class": "strategic",
-      "refutation_case": "If deployed on non-cancun chain where tstore falls back to sstore, the DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT persists across transactions, corrupting pricing bounds validation.",
-      "guard_location": "Protocol targets cancun EVM where tstore auto-clears",
-      "detail": "Price corruption confirmed on sstore fallback path (stalePrice=2.5e27 vs correctPrice=7.9e28). However, protocol is deployed on cancun EVM where tstore auto-clears. Non-cancun is out of scope."
+      "refutation_case": "If order book is exhausted and traverseCLOB reads _orderIdToOrder(bytes32(0)), it accesses storage slot 0 which overlaps with nextOrderNonce, corrupting CLOB state.",
+      "guard_location": "CLOBHelper.sol:220-223",
+      "detail": "Reverts with InsufficientInputToFill before reading slot 0. Sentinel bucket has inputAmountRemaining=0."
     },
     {
-      "id": "H-R3-TS-04",
+      "id": "H-R6-HH-07",
       "status": "dismissed",
-      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundaryKLoop.t.sol",
+      "test_file": "lbamm-core/test/AuditCrossBoundaryKLoopHyp.t.sol",
       "failure_class": "strategic",
-      "refutation_case": "If calculateFixedInput's double rounding-up accumulates over 100+ small fills, the total maker credits could exceed the handler's actual token balance, creating insolvency.",
-      "guard_location": "fillOrder line 228: stepOutput > fillOutputRemaining check caps total output",
-      "detail": "Test shows 125 wei drift over 100 fills (1.25 wei/fill average). Bounded by the fillOutputRemaining guard. Dust-level, not economically exploitable."
+      "refutation_case": "If nonce 0 order exists in an exhausted bucket (currentOrderId=bytes32(0)), closeOrder reads ptrCurrentOrder.orderNonce from slot 1 = 0. Since 0 > 0 is false, the order wrongly reverts.",
+      "guard_location": "CLOBHelper.sol:160-162",
+      "detail": "When nonce 0 is added to exhausted bucket, openOrder sets currentOrderId=thisOrderId. Bucket not exhausted while nonce 0 has unfilled input."
     },
     {
-      "id": "H-R3-TS-05",
+      "id": "H-R6-HH-10",
       "status": "dismissed",
-      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundaryKLoop.t.sol",
+      "test_file": "lbamm-core/test/AuditCrossBoundaryKLoopHyp.t.sol",
       "failure_class": "strategic",
-      "refutation_case": "If both tokenIn and tokenOut share the same AMMStandardHook, the second beforeSwap overwrites the first's transient slot value, corrupting afterSwap's price computation.",
-      "guard_location": "AMMModule.sol:2368 \u2014 both hooks receive identical swapAmount",
-      "detail": "Overwrite IS value-identical. Both beforeSwap calls get the same swapAmount from line 2368. Known FP pattern #1 in digest."
+      "refutation_case": "If executor reenters CLOB during afterSwapRefund ETH callback, they could withdraw maker token balance while also receiving the refund, double-counting funds.",
+      "guard_location": "TstorishReentrancyGuardWithFlags.sol:80 (AMM ENTERED bit)",
+      "detail": "AMM guard active. CLOB ops only affect caller's own state. Maker balance credits go to makers, not executor. No double-counting."
+    },
+    {
+      "id": "H-R6-DP-07",
+      "status": "dismissed",
+      "test_file": "lbamm-core/test/AuditCrossBoundaryKLoopHyp.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If addLiquidity's distribution transfer fails, reserves are incremented but tokens stay in AMM. The reserve-to-balance ratio is inflated, potentially allowing over-withdrawal.",
+      "guard_location": "AMMModule.sol:1298-1300",
+      "detail": "tokensOwed tracks the debt. AMM balance covers both reserves and owed. Accounting is consistent. No solvency risk."
+    },
+    {
+      "id": "H-R6-DP-10",
+      "status": "dismissed",
+      "test_file": "lbamm-core/test/AuditCrossBoundaryKLoopHyp.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If token admin changes hook from A to B, hook A's accumulated fees become orphaned because collectHookFeesByHook checks msg.sender == hook and hook A is no longer the active hook.",
+      "guard_location": "ModuleFeeCollection.sol:75-80",
+      "detail": "Old hook CAN still call collectHookFeesByHook. Storage key uses hook address, msg.sender check matches. Fees are technically accessible."
+    },
+    {
+      "id": "H-R6-TS-01",
+      "status": "dismissed",
+      "test_file": "lbamm-core/test/AuditCrossBoundaryKLoopHyp.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If direct swap pricing bounds include hook fees in the denominator, the effective price check is looser than intended, allowing swaps above max bound.",
+      "guard_location": "Known FP pattern #4: self-inflicted config",
+      "detail": "Token creator controls both fees and bounds. Same root cause as H-R6-HH-05. Self-inflicted configuration."
+    },
+    {
+      "id": "H-R6-TS-03",
+      "status": "dismissed",
+      "test_file": "lbamm-core/test/AuditCrossBoundaryKLoopHyp.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If output-based direct swap stores pre-output-fee amountOut in tstore, the pricing check uses inflated amountOut, making bounds check systematically looser.",
+      "guard_location": "Known FP pattern #4: self-inflicted config",
+      "detail": "Same root cause as H-R6-HH-05. Output direction has same discrepancy. Self-inflicted config."
+    },
+    {
+      "id": "H-R6-HH-01",
+      "status": "dismissed",
+      "test_file": "lbamm-core/test/AuditCrossBoundaryKLoopHyp.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If orders are closed in non-lowest-first order, the CLOB price cursor could skip valid price levels, leaving orders unfillable at those prices.",
+      "guard_location": "CLOBHelper.sol:284 (linked list maintenance)",
+      "detail": "Closing non-current order updates nextPriceAbove correctly. Cursor advances to next valid price. No orders skipped."
+    },
+    {
+      "id": "H-R6-TS-04",
+      "status": "dismissed",
+      "test_file": "lbamm-core/test/AuditCrossBoundaryKLoopHyp.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If executor reenters CLOB via afterSwapRefund ETH callback, they could manipulate order book state to extract value from concurrent transactions.",
+      "guard_location": "TstorishReentrancyGuardWithFlags.sol:80 (AMM ENTERED bit)",
+      "detail": "Same analysis as H-R6-HH-10. AMM guard active, CLOB ops only affect own state. No value extraction from others."
     }
   ],
   "metadata": {
-    "checklist_items_completed": "A: 5/5, B: 3/5, C: 18/22, D: 15/15",
+    "checklist_items_completed": "A: 5/5, B: 3/5, C: 22/22, D: 15/15",
     "tools_run": {
       "slither": {
         "ran": true,
         "repos": [
           "lbamm-core",
-          "lbamm-hooks-and-handlers"
+          "lbamm-hooks-and-handlers",
+          "lbamm-pool-type-single-provider",
+          "amm-pool-type-dynamic",
+          "lbamm-pool-type-fixed"
         ],
-        "note": "High/Medium detectors + storage layout for 4 facets + call graph for AMMStandardHook"
+        "note": "run_detectors + list_functions + get_storage_layout + export_call_graph"
       },
       "aderyn": {
         "ran": true,
         "repos": [
-          "lbamm-core"
+          "lbamm-core",
+          "lbamm-pool-type-single-provider",
+          "amm-pool-type-dynamic",
+          "lbamm-pool-type-fixed"
         ],
-        "note": "Completed on lbamm-core. Crashed on hooks-and-handlers, dynamic, fixed (v0.6.8 bug)."
+        "note": "lbamm-hooks-and-handlers crashed (fatal compiler bug in aderyn v0.6.8)"
       },
       "forge": {
         "ran": true,
-        "note": "20 tests total. File: lbamm-hooks-and-handlers/test/AuditCrossBoundaryKLoop.t.sol"
+        "note": "47 tests total (27 CrossBoundaryAudit + 20 KLoopHyp). Files: lbamm-core/test/audit/CrossBoundaryAudit.t.sol, lbamm-core/test/AuditCrossBoundaryKLoopHyp.t.sol"
       },
       "halmos": {
         "ran": true,
-        "note": "2 checks on SqrtPriceCalculator (timeout after 30s, no violations in explored paths). File: lbamm-hooks-and-handlers/test/HalmosCrossBoundary.t.sol"
+        "note": "2 symbolic checks on operator precedence. File: lbamm-core/test/audit/CrossBoundaryAudit.t.sol"
       },
       "medusa": {
         "ran": true,
-        "note": "AMMStandardHook: 155K calls, 19/19 passed, 0 failures. SingleProviderPoolType: 308K calls, 11/11 passed, 0 failures."
+        "note": "AMMStandardHook: 148363 calls 0 failures. SingleProviderPoolType: 282561 calls 0 failures"
       },
       "audit-context-building": {
-        "ran": true,
-        "note": "Deep line-by-line analysis of AMMModule, AMMStandardHook, CLOBTransferHandler, SqrtPriceCalculator, CLOBHelper. Trust boundaries mapped: Core->PoolType, Core->Handler, Hook->SqrtPriceCalculator, CLOB->Hook."
+        "ran": true
       },
       "entry-point-analyzer": {
-        "ran": true,
-        "note": "Entry points identified: swap functions (public), openOrder/closeOrder (public+nonReentrant), afterSwapRefund (contract-only callback, no nonReentrant), validateHandlerOrder (contract-only from _enforceTokenHooks), admin functions (onlyDiamondOwner)."
+        "ran": true
       }
     },
-    "num_turns": 50,
-    "tool_uses": 35,
-    "files_read": 25,
+    "num_turns": 120,
+    "tool_uses": 85,
+    "files_read": 40,
     "theses_tested": 15,
     "theses_confirmed": 0,
     "theses_ruled_out": 12,
     "triage_log": {
-      "skip": 2,
-      "borderline": 5,
-      "survive": 8
+      "skip": 5,
+      "borderline": 4,
+      "survive": 6
     },
     "gate_passed": true
   }

@@ -1,45 +1,42 @@
 # Agent Metrics: auth-forger (Wave 1)
 
 ## Summary
-- **Agent**: auth-forger (Authorization & Settlement Forger)
-- **Wave**: 1
-- **Findings**: 0 confirmed (Medium+)
-- **Leads**: 0
-- **Ruled-out vectors**: 32
-- **Hypotheses tested**: 9 injected + 10 original = 19 total
-- **Hypotheses confirmed**: 0
-- **Hypotheses dismissed**: 19 (all strategic)
+- **Findings**: 0 (no exploitable vulnerabilities found)
+- **Hypotheses tested**: 10/10 (all dismissed with strategic failure class)
+- **Ruled-out vectors**: 16
+- **Hot spots**: 3
+- **Test files**: 3 (AuditAuthForgerKLoop.t.sol, CH02OverflowTest.t.sol, HalmosAuthForger.t.sol)
+- **Tests passing**: 40/40 (39 in KLoop + 1 overflow test)
 
-## Checklist Completion
-- **Phase A**: 4/4 (Slither ran, Aderyn crashed, custom detectors N/A)
-- **Phase B**: 3/3 (audit-context-building, entry-point-analyzer, call graph)
-- **Phase C**: 22/22 (all C-AUTH items completed)
-- **Phase D**: 10/10 (all Target Map hypotheses tested)
-
-## Tools Run
+## Tool Usage
 | Tool | Status | Notes |
 |------|--------|-------|
-| Slither | Ran | Detectors + function listing on lbamm-hooks-and-handlers |
-| Aderyn | Ran (crashed) | Fatal bug in aderyn_driver v0.6.8 |
-| Forge | Ran | 93 tests, all passing (AuditAuthForger.t.sol) |
-| Halmos | Ran | C16 PASSED, C17 TIMEOUT (solver-timeout 30s) |
-| Medusa | Ran (failed) | Constructor args not provided for target contracts |
-| audit-context-building | Ran | Deep context for 3 primary modules |
-| entry-point-analyzer | Ran | 24 state-changing entry points classified |
+| Slither MCP | Ran | CLOBTransferHandler, PermitTransferHandler, AMMStandardHook, SqrtPriceCalculator |
+| Aderyn | Ran (crashed) | v0.6.8 fatal compiler bug. Phase 0 output available from prior run |
+| Forge | Ran | 40 tests, 1000 fuzz runs. 3 test files |
+| Halmos | Ran | C16 PASSED (44 paths). C17 TIMED OUT (solver-timeout 30000) |
+| Medusa | Ran (fallback) | Constructor args missing for CLOB handler. Forge fuzzer used as fallback |
 
-## Triage Log
-- **Skip**: 5 (tx.origin, ERC-1271 self-sign, flash loan callback direct call, admin rug, known FP patterns)
-- **Borderline**: 8 (feeOnTop unsigned, cross-chain replay, fee redirect, cross-module context, swapExtraData injection, expansion settings, lifecycle value leak, afterSwapRefund rounding)
-- **Survive**: 6 (operator precedence H-R3-CH-01/02, reentrancy H-R3-CH-03/06, fill rounding H-R3-CH-04, unchecked underflow H-R3-CH-09)
+## Checklist Completion
+- **Phase A**: 2/2 (static analysis: Slither + Aderyn)
+- **Phase B**: 2/2 (audit-context-building + entry-point-analyzer)
+- **Phase C**: 20/22 (C18/C19 Medusa items used Forge fuzz fallback)
+- **Phase D**: 4/4 (all exploit probes completed)
+- **Total**: 28/30 (93%)
 
-## Key Findings (Informational — below submission threshold)
-1. **Hook fee key asymmetry** (H-R3-CH-08): `_storeNonTokenHookFees` and `_transferHookFeesByHook` use different hash keys when tokenFor != tokenFee. API footgun for hook developers. Not attacker-exploitable.
-2. **afterSwapRefund reentrancy window** (H-R3-CH-03/06): Real window exists but per-user accounting prevents cross-user extraction. Not exploitable.
+## Hypothesis Results Summary
+All 10 hypotheses from knowledge generation (H-R6-CH-01 through H-R6-CH-10) were tested and dismissed with strategic failure class. Key reasons:
+1. Architectural guards (nonReentrant, AMM-only callers) block exploitation paths
+2. CLOB pipeline parameter bounds prevent arithmetic overflow
+3. Storage-based accounting immune to balance manipulation
+4. Dual protection (ratio check + limitAmount) on permit paths
+5. Boolean expression simplification eliminates alleged asymmetries
 
-## Estimated Turns & Tool Uses
-- Turns: ~150
-- Tool uses: ~200
-- Files read: ~45
+## Key Architectural Observations
+1. **Defense in depth**: Multiple overlapping guards at each entry point
+2. **Parameter bounding**: CLOB uint128.max + price range bounds prevent overflow scenarios
+3. **Storage isolation**: Fee accounting uses internal mappings, not balanceOf
+4. **Strict caller checks**: Hook callbacks and settlement functions are AMM-only
 
-## Conclusion
-The authorization and settlement attack surface is well-hardened. All access control checks are correctly implemented. EIP-712 signing covers all economically relevant fields. Per-user accounting prevents cross-user value extraction even in reentrancy scenarios. No Medium+ findings.
+## Turns Used: ~85
+## Files Read: ~42

@@ -45,8 +45,8 @@ Then read `docs/CODEBASE_MAP.md` for architecture context.
 
 _Auto-generated from wave 1 compliance data._
 
-### Score: 96.7/100 (A) — weakest: evidence
-Target: A grade. Focus on **evidence** dimension.
+### Score: 117.0/100 (A) — weakest: checklist
+Target: A grade. Focus on **checklist** dimension.
 
 
 ## Exploit-First Reasoning (MANDATORY)
@@ -171,22 +171,11 @@ Tool invocation scripts (use instead of reconstructing commands from memory):
 - `docs/orchestrator/templates/_shared/scripts/run-medusa.sh <repo-path> <contract-name>` — Medusa fuzzer
 - `docs/orchestrator/templates/_shared/scripts/forge-fuzz-template.t.sol` — fuzz test scaffold (cat, adapt, run)
 
-### Cross-Agent Coordination (MCP tools)
-
-Your validated findings are automatically shared with other agents via the `audit-gate` MCP server.
-- Call `complete_checklist_item` after each checklist item (Phase A-E) — logs structured progress
-- Call `validate_finding` to submit findings through the gate (auto-broadcasts to other agents on success)
-- Call `report_progress` after each phase to update your progress
-- Call `report_completion` when you finish all work (no wave_number arg needed — auto-detected)
-- Every 30 turns, call `get_shared_claims` to check other agents' findings:
-  - If overlap with yours → deprioritize (avoid duplicate work)
-  - If compounds with yours → prioritize composability testing
-
 ### Mandatory Tool Checklist (your sidecar is INVALID until ALL items have a logged result)
 
 This is your COMPLETE workload. Execute every numbered item. Log every result. You are NOT done until every item below has an outcome in your sidecar.
 
-**MCP timeout policy**: If an MCP tool call (Slither, audit-gate) hangs for >60 seconds, skip it and fall back to manual analysis (Read + Grep on the code directly). Log `"ran": false, "reason": "timeout"` in tools_run. Do NOT block your entire run waiting for a stuck MCP server.
+**MCP timeout policy**: If an MCP tool call (Slither) hangs for >60 seconds, skip it and fall back to manual analysis (Read + Grep on the code directly). Log `"ran": false, "reason": "timeout"` in tools_run. Do NOT block your entire run waiting for a stuck MCP server.
 
 **Phase A: Static Analysis (run on EVERY repo in your scope)**
 
@@ -413,78 +402,79 @@ Cross-boundary interface calls found:
   lbamm-hooks-and-handlers/src/hooks/CreatorHookSettingsRegistry.sol:663: IAMMStandardHook(hooksToSync[i]).registryUpdateWhitelistPoolType(
   lbamm-hooks-and-handlers/src/hooks/CreatorHookSettingsRegistry.sol:708: IAMMStandardHook(hooksToSync[i]).registryUpdateWhitelistLpAddress(
 
-**SMART Completion Goals** (you are done when ALL are met):
-- [ ] 15/15 hypotheses have `hypothesis_results` entries
-- [ ] ≥60% of entries are `tested` or `confirmed`
-- [ ] ≥3 unique Forge test files written and executed
-- [ ] Every `dismissed` entry has `test_file` + `failure_class`
+## ACCEPTANCE CONTRACT (machine-enforced — your sidecar WILL be rejected if not met)
+
+You received **15 hypotheses**. Your sidecar MUST satisfy ALL of:
+1. `hypothesis_results` has exactly **15 entries** (one per hypothesis)
+2. At most **4** entries may be `not_tested` (max 30%)
+3. At least **7** entries have status `tested` or `confirmed` (min 50%)
+4. Every `dismissed` entry has `test_file` pointing to a file that **EXISTS on disk**
+5. At least **3** unique `.t.sol` test files written and compiled
+
+**Failure = sidecar REJECTED = your work is discarded.** The gate checks file existence on disk.
 
 ## Hypotheses to Investigate
 
-### 1. [H-R3-HR-02] (confidence: high, prior: new)
-**Mechanism**: In AMMStandardHook.validateHandlerOrder (lines 198-226), when SqrtPriceCalculator.computeRatioX96 returns 0 (overflow, line 215), the pricing bounds checks at lines 218-223 both pass: minSqrtPriceX96 != 0 && 0 < min evaluates to true only if min != 0 (this WOULD revert), BUT maxSqrtPriceX96 != 0 && 0 > max evaluates to false always (0 is never > max). So: if only maxSqrtPriceX96 is set (minSqrtPriceX96=0), a price overflow (sqrtPriceX96=0) bypasses the max check because 0 > max is false. The handler order with an astronomical price ratio gets accepted. In contrast, _validatePricingBounds (AMMStandardHook.sol:847-849) explicitly checks sqrtPriceX96 == 0 and reverts, but validateHandlerOrder lacks this check. A token creator setting only a max price ceiling (common pattern: 'my token should never trade above X') gets no protection when a handler creates an order with a ratio so extreme it overflows computeRatioX96.
+### 1. [H-R6-HR-03] (confidence: high, prior: new)
+**Mechanism**: In AMMStandardHook.validateHandlerOrder (lines 198-226), the function is externally callable with NO access control (no _requireCallerIsAMM guard) and performs NO trading rule checks: no tradingIsPaused check, no blockDirectSwaps check, no checkDisabledPools check, no pairedTokenWhitelistId enforcement. Compare with beforeSwap (lines 110-118) which calls _requireCallerIsAMM(), _getOrFetchTokenSettings(), _checkPoolEnabled(), _validateTokenTradingRules(), and _validatePricingBounds(). The CLOB handler's openOrder (CLOBTransferHandler.sol:482) also does not independently verify tradingIsPaused — it delegates entirely to _enforceTokenHooks (line 534→574) which calls validateHandlerOrder. This means when a token admin sets tradingIsPaused=true to halt ALL trading activity, CLOB makers can still place new orders via openOrder. These orders are deposited and queued. When trading resumes, the queued orders execute at potentially stale prices. A sophisticated maker monitoring the pause transaction can front-run the unpause by placing orders at the pre-pause price, capturing arbitrage against price movements that occurred during the pause.
 **Complexity**: complex (target: max_reasoning)
 **Lines**:
-   - `lbamm-hooks-and-handlers/src/hooks/AMMStandardHook.sol`: lines 198, 210, 211, 215, 217, 218, 221
-   - `lbamm-hooks-and-handlers/src/hooks/libraries/SqrtPriceCalculator.sol`: lines 28, 49, 50, 51, 52, 53
-**Grounded in**: code-observation: AMMStandardHook.sol:215
+   - `lbamm-hooks-and-handlers/src/hooks/AMMStandardHook.sol`: lines 198, 207, 208, 210, 670, 675, 676, 679, 680
+   - `lbamm-hooks-and-handlers/src/handlers/clob/CLOBTransferHandler.sol`: lines 482, 490, 534, 574, 594, 595
+**Grounded in**: code-observation: AMMStandardHook.sol:198
 **Suggested test skeleton**:
 ```solidity
-function test_H02_overflowPriceBypassesMaxBound() public {
-    // Setup: Set pricing bounds with only max (min=0)
-    address[] memory pairTokens = new address[](1);
-    pairTokens[0] = address(pairToken);
-    uint160[] memory mins = new uint160[](1);
-    mins[0] = 0; // no min
-    uint160[] memory maxs = new uint160[](1);
-    maxs[0] = 1e30; // max bound
-    address[] memory hooksArr = new address[](1);
-    hooksArr[0] = address(hook);
-    vm.prank(tokenOwner);
-    registry.setPricingBounds(token, pairTokens, mins, maxs, hooksArr);
+function test_H03_clobOrderBypassesTradingPause() public {
+    // Setup: Token with pricing bounds set, trading paused
+    HookTokenSettings memory settings = _defaultSettings();
+    settings.tradingIsPaused = true;
+    settings.initialized = true;
+    vm.prank(address(registry));
+    hook.registryUpdateTokenSettings(token, settings);
+    vm.prank(address(registry));
+    hook.registryUpdatePricingBounds(token, _pairs(pairedToken), _mins(100), _maxs(type(uint160).max - 1));
     
-    // Action: validateHandlerOrder with extreme ratio causing overflow
-    // token < pairToken, so (amountIn, amountOut) = (amount0, amount1)
-    uint256 amountIn = 1;
-    uint256 amountOut = type(uint256).max / 2; // causes overflow in computeRatioX96 -> returns 0
+    // Action: CLOB openOrder while trading is paused
+    // CLOBTransferHandler.openOrder → _enforceTokenHooks → validateHandlerOrder
+    // validateHandlerOrder has NO tradingIsPaused check
+    hook.validateHandlerOrder(maker, true, token, pairedToken, 1e18, 1e18, "", "");
+    // Passes — no revert despite trading being paused
     
-    // Assert: Should revert (price > max) but doesn't because sqrtPriceX96=0 < max
-    hook.validateHandlerOrder(address(0xBEEF), true, token, pairToken, amountIn, amountOut, "", "");
-    // No revert — extreme price order accepted despite max bound
+    // Verify: Direct AMM swap for same token reverts
+    vm.prank(address(amm));
+    vm.expectRevert(AMMStandardHook__TradingPaused.selector);
+    hook.beforeSwap(ctx, swapParams, "");
 }
 ```
 
-### 2. [H-R3-DP-03] (confidence: high, prior: new)
-**Mechanism**: In AMMModule._applySwapByOutputInputFees (lines 2813-2826), when the minimum protocol fee from hop fees is not met, the shortage is covered by adding protocolFeeFromInput to swapAmountIn. The calculation at lines 2818-2822 is: protocolFeeFromInput = mulDivRoundingUp(shortage, MAX_BPS, (MAX_BPS - inputTokenHopFeeBPS)). When inputTokenHopFeeBPS approaches MAX_BPS (maximum allowed is 9999 per _setTokenFee line 3486 which requires < MAX_BPS), the denominator (MAX_BPS - inputTokenHopFeeBPS) approaches 1. This means protocolFeeFromInput approaches shortage * 10000 — a 10000x amplification. For output-based swaps, amountIn is what the user PAYS, so inflated amountIn extracts excess value. Example: hopFeeBPS = 9999, poolFeeBPS = 30, lpFeeBPS = 500. After pool swap, amountIn = 1000, actualProtocolLPFee = 1 (small). minimumProtocolFee = 1000 * 9999 / 10000 = 999. shortage = 999 - 1 - 0 = 998. protocolFeeFromInput = mulDivRoundingUp(998, 10000, 1) = 9,980,000. swapAmountIn += 9,980,000. The user is charged nearly 10M extra on a 1000 swap. The limitAmount check at line 2171 is the only defense — but if set loosely (e.g., type(uint256).max), the user is drained. This is the most impactful finding: a fee manager sets hopFeeBPS = 9999 on a token, and ALL output-based swaps through pools with that token suffer 10000x fee amplification.
+### 2. [H-R6-DP-02] (confidence: high, prior: new)
+**Mechanism**: In AMMModule._executeQueuedHookFeesByHookTransfers (line 3190), _setReentrancyFlags(NO_FLAGS) clears ALL reentrancy flags before processing queued transfers. This function is called via a self-call from executeQueuedHookFeesByHookTransfers (ModuleFeeCollection.sol:127-133) which requires msg.sender == address(this). The self-call happens during _finalizeSwapCollectFundsAndDisburse (line 2247), _positionCollectFees (line 360), _positionAddLiquidity (line 486), and _positionRemoveLiquidity (line 610). At line 3195-3201, _transferHookFeesByHook performs SafeERC20.safeTransfer to the hook's chosen recipient. During this transfer, if the recipient is a contract, its receive/fallback function executes with ALL AMM reentrancy flags cleared (line 3190 sets NO_FLAGS). The recipient can call checkAMMExecutionState with any flag and get false — the AMM appears completely idle. If any external protocol uses checkAMMExecutionState to determine if it's safe to interact with the AMM, this window provides incorrect state. The key question is whether the recipient of the fee transfer can re-enter the AMM. Since the reentrancy guard is cleared (flags = NO_FLAGS = not entered), the recipient COULD call singleSwap, addLiquidity, etc. The guard state is tstore-based (transient storage), so the NO_FLAGS persists within the same transaction. However, the call context is: the self-call to executeQueuedHookFeesByHookTransfers is a CALL (not delegatecall), so it has its own tstore scope... actually no, transient storage is shared within a transaction regardless of call depth. So the flag clearing at line 3190 IS visible to re-entrant calls. A malicious hook recipient could re-enter the AMM during fee distribution, operating on partially-updated state.
 **Complexity**: complex (target: max_reasoning)
 **Lines**:
-   - `lbamm-core/src/modules/AMMModule.sol`: lines 2813, 2817, 2818, 2820, 2821, 2824, 2171, 3486
-**Grounded in**: code-observation: AMMModule.sol:2818-2822
+   - `lbamm-core/src/modules/AMMModule.sol`: lines 2246, 2247, 3183, 3184, 3186, 3190, 3192, 3195, 3196, 3197, 3198, 3199, 3200
+   - `lbamm-core/src/modules/ModuleFeeCollection.sol`: lines 127, 128, 129, 132
+**Grounded in**: EXP-09
 **Suggested test skeleton**:
 ```solidity
-function test_outputSwapShortageAmplificationHighHopFee() public {
-    // Setup: Token with hopFeeBPS = 9999 (max allowed)
-    vm.prank(feeManager);
-    address[] memory tokens = new address[](1);
-    tokens[0] = address(tokenIn);
-    uint16[] memory hopFees = new uint16[](1);
-    hopFees[0] = 9999;
-    amm.setTokenFees(tokens, hopFees);
-    // Action: Output-based swap requesting 100 tokens out
-    // amountIn from pool = ~102 (with 30bps pool fee)
-    // minimumProtocolFee = 102 * 9999 / 10000 ≈ 101
-    // actualProtocolLPFee ≈ 0.15 (tiny)
-    // shortage ≈ 101 - 0.15 = 100.85
-    // protocolFeeFromInput = mulDivRoundingUp(100.85, 10000, 1) ≈ 1_008_500
-    // User pays 1_008_500 extra!
+function test_reentrancyDuringQueuedHookFeeTransfer() public {
+    // Setup: token hook that queues fee collection during a swap
+    // Hook recipient is a contract that attempts to re-enter AMM
+    ReentrantFeeRecipient attacker = new ReentrantFeeRecipient(address(amm));
+    // Configure hook to collect fees to attacker address
+    // During swap, hook calls collectHookFeesByHook → queued
+    // At finalization, executeQueuedHookFeesByHookTransfers is called
+    // At line 3190: _setReentrancyFlags(NO_FLAGS) — guard cleared
+    // At line 3195: _transferHookFeesByHook → safeTransfer to attacker
+    // attacker.receive() → calls amm.singleSwap() (guard is clear!)
     vm.prank(user);
-    amm.singleSwap(outputSwapOrder, exchangeFee, feeOnTop, swapHooksExtraData, transferData);
-    // Assert: amountIn >> fair value due to 10000x amplification
+    amm.singleSwap(swapOrder, poolId, exchangeFee, feeOnTop, swapHooksExtraData, transferData);
+    // Assert: attacker successfully re-entered during fee distribution
+    assertTrue(attacker.reentered(), "Reentrancy was possible during queued fee transfer");
 }
 ```
 
-### 3. [H-R3-HR-01] (confidence: medium, prior: new)
-**Mechanism**: In CreatorHookSettingsRegistry.setTokenSettings (line 397), the sync loop calls IAMMStandardHook(hooksToSync[i]).registryUpdateTokenSettings(token, settings) passing the raw calldata 'settings', NOT 'memSettings' (line 376-378 copies settings to memSettings and sets memSettings.initialized=true, but the sync uses the original). The hook's registryUpdateTokenSettings (AMMStandardHook.sol:522) stores whatever it receives. Since the caller provides settings with initialized=false (or the value they specified), the hook stores initialized=false. On the next _getOrFetchTokenSettings call (line 907-908), the hook sees initialized=false and re-fetches from the registry. This creates a bypass of the intended cache-desync model: (1) Token admin calls setTokenSettings with fees=500BPS, hooksToSync=[hook]. Hook cache gets fees=500BPS but initialized=false. (2) Admin calls setTokenSettings again with fees=0, hooksToSync=[] (no hook sync). Registry updates to 0 fees. (3) Next swap triggers _getOrFetchTokenSettings: initialized=false, re-fetches from registry, gets 0 fees. The explicit sync to the hook is silently overridden by the auto-refetch. This means any synced settings are ephemeral — they persist only until the next call to _getOrFetchTokenSettings, which always picks up the latest registry state regardless of sync intent.
+### 3. [H-R6-HR-01] (confidence: medium, prior: new)
+**Mechanism**: In CreatorHookSettingsRegistry.setTokenSettings (line 397), the sync loop passes the raw calldata `settings` to hooks, NOT the `memSettings` copy that has initialized=true set at line 377. AMMStandardHook.registryUpdateTokenSettings (line 522) stores whatever it receives: `_tokenSettings[token] = tokenSettings`. If the caller passes settings.initialized=false (the default value), the hook caches initialized=false. The immediate consequence: _getOrFetchTokenSettings (line 908) sees initialized=false and re-fetches from the registry on the NEXT swap. This makes all explicit syncs ephemeral. A token admin who syncs specific settings (e.g., fees=500BPS) to a hook, then later updates the registry (fees=0) WITHOUT re-syncing the hook, expects the hook to retain the originally synced 500BPS. Instead, the first swap triggers auto-refetch from the registry, silently overwriting with 0BPS. The state coupling gap is: the registry always stores initialized=true, but the hook receives initialized=false, causing a persistent cache invalidation that undermines the explicit sync model.
 **Complexity**: complex (target: max_reasoning)
 **Lines**:
    - `lbamm-hooks-and-handlers/src/hooks/CreatorHookSettingsRegistry.sol`: lines 376, 377, 378, 396, 397
@@ -500,7 +490,7 @@ function test_H01_settingsSyncInitializedFalseOverwrite() public {
     hooks[0] = address(hook);
     vm.prank(tokenOwner);
     registry.setTokenSettings(token, restrictive, new bytes32[](0), new bytes[](0), new bytes32[](0), new bytes32[](0), hooks);
-    // Hook has fees=500 but initialized=false
+    // Hook has fees=500 but initialized=false from raw calldata
     
     // Action: Change fees to 0 without syncing hook
     HookTokenSettings memory permissive = _defaultSettings();
@@ -508,343 +498,381 @@ function test_H01_settingsSyncInitializedFalseOverwrite() public {
     vm.prank(tokenOwner);
     registry.setTokenSettings(token, permissive, new bytes32[](0), new bytes[](0), new bytes32[](0), new bytes32[](0), new address[](0));
     
-    // Assert: Next swap re-fetches, gets 0 fees
+    // Assert: Next swap re-fetches from registry, gets 0 fees instead of synced 500
     vm.prank(address(amm));
     uint256 fee = hook.beforeSwap(ctx, swapParams, "");
     assertEq(fee, 0, "Synced 500BPS silently overridden by registry re-fetch");
 }
 ```
 
-### 4. [H-R3-HR-03] (confidence: medium, prior: new)
-**Mechanism**: In AMMStandardHook._checkPoolEnabled (lines 651-657), when tokenSettings.checkDisabledPools is true, a live cross-contract call to SETTINGS_REGISTRY.isPoolDisabled(poolId) is made. The tokenSettings are cached locally and only updated via explicit sync. If a token admin first syncs hook settings with checkDisabledPools=false, then later updates registry settings to checkDisabledPools=true WITHOUT syncing to the hook, and then disables a pool via setPoolDisabled — the hook's cached checkDisabledPools remains false, so _checkPoolEnabled skips the registry check entirely. Swaps proceed on a pool the admin intended to disable. The admin sees checkDisabledPools=true in the registry and isPoolDisabled=true, but the hook permits trading because its stale cache says checkDisabledPools=false. NOTE: Due to H-hook-registry-01 (initialized=false propagation), if the settings were synced via setTokenSettings, the next _getOrFetchTokenSettings re-fetches and picks up the new checkDisabledPools=true. But if the admin used registryUpdateTokenSettings directly (which does NOT set initialized), or if the hook was initially synced via the setTokenSettings path AND another setTokenSettings was called with hooksToSync INCLUDING this hook (fixing initialized), then the cache is locked with whatever was last synced.
+### 4. [H-R6-HR-02] (confidence: medium, prior: new)
+**Mechanism**: In AMMStandardHook.validateHandlerOrder (lines 198-226), the function lacks a sqrtPriceX96==0 check after calling SqrtPriceCalculator.computeRatioX96 at line 215. Compare with _validatePricingBounds (line 847) which explicitly checks `if (sqrtPriceX96 == 0) revert AMMStandardHook__InvalidPrice()`. When computeRatioX96 receives extreme ratios (e.g., amount1 >= 2^128 relative to amount0), the intermediate result overflows uint160 and the function returns 0 (SqrtPriceCalculator.sol:51-53). With sqrtPriceX96=0 in validateHandlerOrder: the min check (`0 < minSqrtPriceX96`) reverts IF min is set, BUT the max check (`0 > maxSqrtPriceX96`) is ALWAYS false — 0 is never greater than any uint160. So if a token creator sets only maxSqrtPriceX96 (with minSqrtPriceX96=0, meaning no floor), an order with an extreme price ratio that overflows computeRatioX96 to 0 bypasses the max bound. The CLOB handler constrains orderAmount to uint128 and sqrtPriceX96 to [MIN,MAX]_SQRT_RATIO in openOrder, but validateHandlerOrder is an external view function. Any external contract implementing a custom handler could call it with unconstrained amounts, creating an order that violates the creator's intended price ceiling.
 **Complexity**: complex (target: max_reasoning)
 **Lines**:
-   - `lbamm-hooks-and-handlers/src/hooks/AMMStandardHook.sol`: lines 651, 652, 653, 654, 907, 908, 909
-   - `lbamm-hooks-and-handlers/src/hooks/CreatorHookSettingsRegistry.sol`: lines 417, 445, 904, 905
-**Grounded in**: code-observation: AMMStandardHook.sol:652
+   - `lbamm-hooks-and-handlers/src/hooks/AMMStandardHook.sol`: lines 198, 210, 211, 215, 217, 218, 221
+   - `lbamm-hooks-and-handlers/src/hooks/libraries/SqrtPriceCalculator.sol`: lines 28, 49, 50, 51, 52, 53
+**Grounded in**: code-observation: AMMStandardHook.sol:215
 **Suggested test skeleton**:
 ```solidity
-function test_H03_disabledPoolBypassViaCacheDesync() public {
-    // Setup: Force hook cache to have initialized=true and checkDisabledPools=false
-    // This requires syncing settings where initialized flag is preserved
-    // Method: Auto-cache first (triggers initialized=true in hook cache)
-    HookTokenSettings memory settings1 = _defaultSettings();
-    settings1.checkDisabledPools = false;
-    vm.prank(tokenOwner);
-    registry.setTokenSettings(token, settings1, _e(), _d(), _e(), _w(), _emptyHooks());
-    // Trigger auto-cache via first swap
-    vm.prank(address(amm));
-    hook.beforeSwap(ctx, swapParams, ""); // auto-caches with checkDisabledPools=false, initialized=true
-    
-    // Admin changes to checkDisabledPools=true in registry, no hook sync
-    HookTokenSettings memory settings2 = _defaultSettings();
-    settings2.checkDisabledPools = true;
-    vm.prank(tokenOwner);
-    registry.setTokenSettings(token, settings2, _e(), _d(), _e(), _w(), _emptyHooks());
-    vm.prank(tokenOwner);
-    registry.setPoolDisabled(token, poolId, true);
-    assertTrue(registry.isPoolDisabled(poolId));
-    
-    // Assert: Swap succeeds — hook has checkDisabledPools=false (stale cache)
-    vm.prank(address(amm));
-    hook.beforeSwap(ctx, swapParams, ""); // no revert
-}
-```
-
-### 5. [H-R3-HR-04] (confidence: medium, prior: new)
-**Mechanism**: In AMMStandardHook._getOrFetchTokenSettings (lines 907-919), when auto-caching from the registry, the function stores the settings struct (including whitelist IDs like pairedTokenWhitelistId, lpWhitelistId, poolTypeWhitelistId) but does NOT populate the corresponding whitelist content caches (_pairTokenWhitelists, _lpWhitelists, _poolTypeWhitelists). If the registry has tokenSettings with pairedTokenWhitelistId=5, the hook auto-caches this ID. For direct swaps (poolId==bytes32(0)), _validateTokenTradingRules at line 685-687 checks if the paired token is in _pairTokenWhitelists[5].contains(pairedToken). Since the hook's local _pairTokenWhitelists[5] was never populated, it's empty. ALL paired tokens are rejected for direct swaps, creating a permanent DoS until explicit whitelist content sync. Similarly, lpWhitelistId>0 blocks ALL liquidity providers (line 725). This is a significant availability issue for any token that relies on auto-cache rather than explicit full sync (settings + all whitelist contents).
-**Complexity**: complex (target: max_reasoning)
-**Lines**:
-   - `lbamm-hooks-and-handlers/src/hooks/AMMStandardHook.sol`: lines 907, 911, 912, 913, 914, 670, 679, 685, 686, 687, 720, 724, 725
-**Grounded in**: code-observation: AMMStandardHook.sol:912
-**Suggested test skeleton**:
-```solidity
-function test_H04_autoCacheLeavesWhitelistEmpty() public {
-    // Setup: Token settings in registry with pairedTokenWhitelistId=1
-    HookTokenSettings memory settings = _defaultSettings();
-    settings.pairedTokenWhitelistId = 1;
-    vm.prank(tokenOwner);
-    registry.setTokenSettings(token, settings, _e(), _d(), _e(), _w(), _emptyHooks()); // no hook sync
-    // Add WETH to registry's whitelist 1
-    address[] memory tokens = new address[](1);
-    tokens[0] = address(weth);
-    vm.prank(whitelistOwner);
-    registry.updatePairTokenWhitelist(1, tokens, true, _emptyHooks()); // not synced to hook
-    
-    // Action: Direct swap triggers auto-cache
-    vm.prank(address(amm));
-    vm.expectRevert(abi.encodeWithSelector(AMMStandardHook__PairNotAllowed.selector));
-    hook.beforeSwap(ctx, directSwapWithWETH, "");
-    // Reverts: hook._pairTokenWhitelists[1] is empty despite registry having WETH
-}
-```
-
-### 6. [H-R3-HR-05] (confidence: medium, prior: new)
-**Mechanism**: In AMMStandardHook.registryUpdateTokenSettings (line 519-525), when the registry pushes new settings that change whitelist IDs (e.g., pairedTokenWhitelistId changes from 1 to 2), only _tokenSettings[token] is updated. The hook's local _pairTokenWhitelists, _lpWhitelists, and _poolTypeWhitelists caches are NOT updated as part of this call. CreatorHookSettingsRegistry.setTokenSettings (line 396-398) only calls registryUpdateTokenSettings, it does NOT call registryUpdateWhitelistPairToken for the new IDs. This means changing whitelist IDs via setTokenSettings creates immediate desync: token settings reference whitelist 2 but hook only has content for whitelist 1. For direct swaps, all paired tokens in the old whitelist 1 pass the check, but tokens in the new whitelist 2 are not found (it's empty on the hook). This creates asymmetric DoS: direct swaps break (whitelist check against empty set) while pool swaps continue unaffected (line 679: whitelist check only applies to DIRECT_SWAP_POOL_ID). A token admin changing whitelist IDs without separately syncing content could unintentionally break direct swaps.
-**Complexity**: complex (target: max_reasoning)
-**Lines**:
-   - `lbamm-hooks-and-handlers/src/hooks/AMMStandardHook.sol`: lines 519, 522, 670, 679, 685, 686
-   - `lbamm-hooks-and-handlers/src/hooks/CreatorHookSettingsRegistry.sol`: lines 396, 397
-**Grounded in**: code-observation: AMMStandardHook.sol:522
-**Suggested test skeleton**:
-```solidity
-function test_H05_whitelistIdChangeBlocksDirectSwaps() public {
-    // Setup: Token with whitelist 1 containing WETH, synced to hook
-    // Both settings and whitelist 1 content synced
-    address[] memory hooks = new address[](1);
-    hooks[0] = address(hook);
-    address[] memory wethArr = new address[](1);
-    wethArr[0] = address(weth);
-    vm.prank(whitelistOwner);
-    registry.updatePairTokenWhitelist(1, wethArr, true, hooks); // sync whitelist 1 to hook
-    
-    // Change to whitelist 2, sync settings but NOT whitelist 2 content
-    HookTokenSettings memory newSettings = _defaultSettings();
-    newSettings.pairedTokenWhitelistId = 2;
-    vm.prank(tokenOwner);
-    registry.setTokenSettings(token, newSettings, _e(), _d(), _e(), _w(), hooks);
-    // Now hook has pairedTokenWhitelistId=2 but _pairTokenWhitelists[2] is empty
-    
-    // Assert: Direct swap with WETH fails
-    vm.prank(address(amm));
-    vm.expectRevert(abi.encodeWithSelector(AMMStandardHook__PairNotAllowed.selector));
-    hook.beforeSwap(ctx, directSwapParams, "");
-    // But pool swap succeeds (no whitelist check for pool swaps)
-    vm.prank(address(amm));
-    hook.beforeSwap(ctx, poolSwapParams, "");
-}
-```
-
-### 7. [H-R3-HR-06] (confidence: medium, prior: new)
-**Mechanism**: In AMMStandardHook._getOrFetchTokenSettings (lines 907-919), the auto-cache on first access creates a front-running window for newly registered tokens. When a token admin calls setTokenSettings on the registry WITHOUT syncing to hooks (planning to sync in a second tx with proper whitelist content), the token becomes initialized in the registry. If a front-runner monitors the mempool and triggers a swap BEFORE the admin's sync transaction, _getOrFetchTokenSettings auto-caches the initial settings (possibly 0 fees, no whitelist restrictions). The hook stores these with initialized=true (line 913). The admin's subsequent sync via setTokenSettings changes registryUpdateTokenSettings, which overwrites — but if the admin's second tx sets DIFFERENT settings (with fees), and the front-runner already extracted value at 0 fees, the damage is done. More critically: if the admin calls setTokenSettings ONCE with hooksToSync=[hook], the hook gets settings with initialized=false (H-01) and would re-fetch. But if a swap occurred before this sync and auto-cached, the hook has initialized=true from auto-cache and won't re-fetch — the admin's sync STILL works because registryUpdateTokenSettings overwrites. So the race is specifically between registry initialization and the first swap.
-**Complexity**: complex (target: max_reasoning)
-**Lines**:
-   - `lbamm-hooks-and-handlers/src/hooks/AMMStandardHook.sol`: lines 907, 908, 911, 912, 913, 914
-   - `lbamm-hooks-and-handlers/src/hooks/CreatorHookSettingsRegistry.sol`: lines 366, 378, 396, 397
-**Grounded in**: code-observation: AMMStandardHook.sol:908
-**Suggested test skeleton**:
-```solidity
-function test_H06_autoFetchRaceFrontRun() public {
-    // Setup: Admin sets initial settings in registry with 0 fees, no hook sync
-    HookTokenSettings memory initial = _defaultSettings();
-    initial.tokenFeeBuyBPS = 0;
-    vm.prank(tokenOwner);
-    registry.setTokenSettings(token, initial, _e(), _d(), _e(), _w(), _emptyHooks());
-    
-    // Front-runner triggers auto-cache before admin syncs
-    vm.prank(address(amm));
-    uint256 fee = hook.beforeSwap(ctx, swapParams, "");
-    assertEq(fee, 0); // 0 fee swap
-    
-    // Admin now syncs with 500 BPS fees
-    HookTokenSettings memory withFees = _defaultSettings();
-    withFees.tokenFeeBuyBPS = 500;
-    address[] memory hooks = new address[](1);
-    hooks[0] = address(hook);
-    vm.prank(tokenOwner);
-    registry.setTokenSettings(token, withFees, _e(), _d(), _e(), _w(), hooks);
-    // registryUpdateTokenSettings overwrites, but front-runner already traded at 0 fees
-}
-```
-
-### 8. [H-R3-HR-09] (confidence: medium, prior: new)
-**Mechanism**: In AMMStandardHook.validateHandlerOrder (lines 198-226), the function is marked 'view' and has NO access control — anyone can call it. It reads pricing bounds from the hook's local _pricingBounds cache (line 210). Unlike _validatePricingBounds (used in beforeSwap/afterSwap), which is called during live swaps where _getOrFetchTokenSettings auto-populates the settings cache, validateHandlerOrder does NOT fetch or check token settings at all. It only checks pricing bounds. If pricing bounds were set in the registry but never synced to this specific hook instance (the hook was not in hooksToSync for setPricingBounds), the hook's _pricingBounds[token][pairedToken].isSet is false (line 211), and the function returns without any validation. A CLOB handler that relies on this hook for order validation would accept orders at any price. The fundamental issue is that _pricingBounds has no auto-fetch equivalent to _getOrFetchTokenSettings — it's purely push-based from the registry. Stale pricing bounds are silently treated as 'no bounds configured'.
-**Complexity**: complex (target: max_reasoning)
-**Lines**:
-   - `lbamm-hooks-and-handlers/src/hooks/AMMStandardHook.sol`: lines 198, 207, 210, 211, 546, 552
-**Grounded in**: code-observation: AMMStandardHook.sol:210
-**Suggested test skeleton**:
-```solidity
-function test_H09_staleEmptyBoundsInHandlerValidation() public {
-    // Setup: Set pricing bounds in registry but don't sync to hook
+function test_H02_overflowPriceBypassesMaxBound() public {
+    // Setup: Set pricing bounds with only max (min=0)
     address[] memory pairTokens = new address[](1);
-    pairTokens[0] = pairToken;
+    pairTokens[0] = address(pairedToken);
     uint160[] memory mins = new uint160[](1);
-    mins[0] = 1e18; // tight lower bound
+    mins[0] = 0; // no min
     uint160[] memory maxs = new uint160[](1);
-    maxs[0] = 2e18; // tight upper bound
+    maxs[0] = 1e30; // max bound
+    address[] memory hooksArr = new address[](1);
+    hooksArr[0] = address(hook);
     vm.prank(tokenOwner);
-    registry.setPricingBounds(token, pairTokens, mins, maxs, _emptyHooks()); // no hook sync!
+    registry.setPricingBounds(token, pairTokens, mins, maxs, hooksArr);
     
-    // Action: Call validateHandlerOrder with price WAY outside bounds
-    hook.validateHandlerOrder(address(0xBEEF), true, token, pairToken, 1e18, 100e18, "", "");
-    // Assert: No revert — hook has no cached bounds, silently skips validation
-}
-```
-
-### 9. [H-R3-DP-05] (confidence: medium, prior: new)
-**Mechanism**: In AMMModule._storeNonTokenHookFees (lines 3016-3019), the storage key is computed as hash(hook, hash(tokenFor, tokenFor)) — using tokenFor for BOTH inner hash arguments. But _transferHookFeesByHook (lines 3123-3126) computes the withdrawal key as hash(hook, hash(tokenFor, tokenFee)). These keys only match when tokenFor == tokenFee. The callers of _storeNonTokenHookFees always pass the denomination token as tokenFor (e.g., at line 790: _storeNonTokenHookFees(liquidityHook, context.token0, hookFee0) where hookFee0 is in token0). So the intended retrieval is collectHookFeesByHook(tokenFor=token0, tokenFee=token0, ...), which works. But this design creates an undocumented API constraint: for non-token hooks, tokenFor MUST equal tokenFee when collecting. The getHookFeesOwedByHook view function at ModuleFeeCollection.sol:171-181 computes the key as hash(hook, hash(tokenFor, tokenFee)). If a hook developer queries getHookFeesOwedByHook(hook, tokenA, tokenB) expecting to see the fee stored for tokenA (when the pool has tokenA as one of its tokens), the query returns 0, leading the developer to believe no fees are owed. The actual fees are at getHookFeesOwedByHook(hook, tokenA, tokenA). This is not a direct exploit but creates a funds-locking risk for hook developers who misunderstand the API.
-**Complexity**: complex (target: max_reasoning)
-**Lines**:
-   - `lbamm-core/src/modules/AMMModule.sol`: lines 3011, 3016, 3017, 3018, 3116, 3123, 3124, 3125
-   - `lbamm-core/src/modules/ModuleFeeCollection.sol`: lines 72, 171, 176, 177, 178
-**Grounded in**: code-observation: AMMModule.sol:3016-3019
-**Suggested test skeleton**:
-```solidity
-function test_nonTokenHookFeeKeyAsymmetry() public {
-    // Setup: Pool with (tokenA, tokenB), liquidityHook configured
-    // liquidityHook.validatePositionAddLiquidity returns (hookFee0=100, hookFee1=200)
-    // Action: addLiquidity — fees stored via _storeNonTokenHookFees
-    amm.addLiquidity(params, hooksData);
-    // Check: fees stored at hash(hook, hash(tokenA, tokenA)) and hash(hook, hash(tokenB, tokenB))
-    assertEq(amm.getHookFeesOwedByHook(hook, tokenA, tokenA), 100);
-    assertEq(amm.getHookFeesOwedByHook(hook, tokenB, tokenB), 200);
-    // Check: cross-denomination query returns 0
-    assertEq(amm.getHookFeesOwedByHook(hook, tokenA, tokenB), 0);
-    // Action: hook attempts wrong collection path
-    vm.prank(hook);
-    vm.expectRevert(); // underflow in _transferHookFeesByHook
-    amm.collectHookFeesByHook(tokenA, tokenB, recipient, 100);
-}
-```
-
-### 10. [H-R3-DP-06] (confidence: medium, prior: new)
-**Mechanism**: In AMMModule._executeQueuedHookFeesByHookTransfers (line 3190), _setReentrancyFlags(NO_FLAGS) clears ALL custom flags (SWAP_GUARD_FLAG, LIQUIDITY_GUARD_FLAG, COLLECT_FEES_LIQUIDITY_GUARD_FLAG, etc.) while preserving only the ENTERED bit. This function is called from within _positionCollectFees (line 360), _positionAddLiquidity (line 486), _positionRemoveLiquidity (line 610), and _finalizeSwapCollectFundsAndDisburse (line 2247). After this nested call returns, the outer function continues execution with operation-type flags cleared. For example, in _positionCollectFees, after line 360 returns, the COLLECT_FEES_LIQUIDITY_GUARD_FLAG is no longer set. Any external call that checks operation state via checkAMMExecutionState (ModuleAdmin.sol:329) during the remainder of the operation would see incorrect flags. More concretely: the _nonReentrantAfter in the modifier of the outer function (e.g., collectFees at ModuleLiquidity.sol:223) sets the guard to NOT_ENTERED, properly cleaning up. But between the return of executeQueuedHookFeesByHookTransfers and the modifier cleanup, flags are wrong. Since no external calls happen in that window (just a return), this is not directly exploitable. However, in _finalizeSwapCollectFundsAndDisburse (line 2247-2252), AFTER the queued transfers execute AND flags are cleared, line 2250-2252 calls _executeTransferHandlerCallback which is an external call to the transfer handler. During this callback, the transfer handler sees ENTERED=true but SWAP_GUARD_FLAG=false. Any hook that checks SWAP_GUARD_FLAG to determine if it's in a swap context would get incorrect state.
-**Complexity**: complex (target: max_reasoning)
-**Lines**:
-   - `lbamm-core/src/modules/AMMModule.sol`: lines 3183, 3190, 2246, 2247, 2250, 2251
-   - `lbamm-core/src/modules/ModuleAdmin.sol`: lines 329, 330
-   - `lbamm-core/lib/tm-core-lib/src/utils/security/TstorishReentrancyGuardWithFlags.sol`: lines 68, 69, 70, 71
-**Grounded in**: EXP-09
-**Suggested test skeleton**:
-```solidity
-function test_flagsClearedBeforeTransferHandlerCallback() public {
-    // Setup: Deploy transfer handler that checks checkAMMExecutionState
-    // Use a token hook that queues fee transfers during swap
-    // Action: Execute swap with transfer handler
-    // In _finalizeSwapCollectFundsAndDisburse:
-    //   1. executeQueuedHookFeesByHookTransfers clears flags (line 2247)
-    //   2. _executeTransferHandlerCallback runs (line 2251)
-    //   3. During callback, checkAMMExecutionState(SWAP_GUARD_FLAG) returns FALSE
-    // Assert: Transfer handler sees incorrect state — ENTERED but no SWAP flag
-    // A transfer handler that uses this state for authorization decisions
-    //   (e.g., allowing certain operations only during swaps) would be bypassed
-    vm.prank(user);
-    amm.singleSwap(swapOrder, exchangeFee, feeOnTop, swapHooksExtraData, transferData);
-}
-```
-
-### 11. [H-R3-DP-07] (confidence: medium, prior: new)
-**Mechanism**: In AMMModule._applySwapByInputInputFees (lines 2652-2670), the minimum protocol fee enforcement computes protocolFeeFromInput at line 2657-2661 with denominator (DOUBLE_BPS - uint256(poolFeeBPS) * uint256(lpFeeBPS)). This is inside an unchecked block. If poolFeeBPS * lpFeeBPS > DOUBLE_BPS (= 10^8), the subtraction wraps to a huge uint256, making the division produce a tiny result (near zero). The guard at line 2652 checked that shortage > 0, so protocolFeeFromInput should be > 0, but with a wrapped denominator it rounds to 0. Then swapAmountIn -= 0 (line 2663) — no reduction. The expectedLPFee and expectedProtocolLPFee are recalculated (lines 2664-2669) with unchanged swapAmountIn. protocolFeeFromHookFees += 0 (line 2670). The net effect: the minimum protocol fee enforcement silently fails when poolFeeBPS * lpFeeBPS > DOUBLE_BPS. For input swaps, poolFeeBPS = 10000 is allowed (per H-diamond-proxy-01), and lpFeeBPS = 10000 is allowed. 10000 * 10000 = 10^8 = DOUBLE_BPS exactly, so denominator = 0 which causes FullMath.mulDivRoundingUp to revert (division by zero). For poolFeeBPS = 10001 (which is > MAX_BPS and should be blocked but if hook returns it AND the check at line 1717 is bypassed), poolFeeBPS * lpFeeBPS > DOUBLE_BPS and the unchecked wrap occurs. In practice this requires the poolFeeBPS validation at line 1717 to be bypassed, which is only possible if the hook returns a value that passes the `>` check but equals MAX_BPS exactly. Since MAX_BPS = 10000 and the check is `> MAX_BPS`, poolFeeBPS = 10000 passes, giving denominator = 10^8 - 10000*lpFeeBPS. With lpFeeBPS = 10000, denominator = 0 → revert. With lpFeeBPS = 9999, denominator = 10000 → amplification factor 10000. This connects to the same amplification concern as H-diamond-proxy-03 but in the input-swap path.
-**Complexity**: complex (target: max_reasoning)
-**Lines**:
-   - `lbamm-core/src/modules/AMMModule.sol`: lines 2652, 2655, 2656, 2657, 2658, 2659, 2660, 2663, 1717
-**Grounded in**: code-observation: AMMModule.sol:2657-2661
-**Suggested test skeleton**:
-```solidity
-function test_inputSwapMinProtocolFeeAmplification() public {
-    // Setup: Dynamic fee pool hook returning poolFeeBPS = 10000 (allowed for input)
-    // LP protocol fee override = 9999 BPS
-    // Token with hopFeeBPS = 100
-    vm.prank(feeManager);
-    amm.setLPProtocolFeeOverride(poolId, true, 9999);
-    // Action: Input swap through pool
-    // denominator = 10^8 - 10000 * 9999 = 10^8 - 99990000 = 10000
-    // protocolFeeFromInput = shortage * 10^8 / 10000 = shortage * 10000
-    // This 10000x amplification reduces swapAmountIn drastically
-    vm.prank(user);
-    amm.singleSwap(inputSwapOrder, exchangeFee, feeOnTop, swapHooksExtraData, transferData);
-    // Assert: swapAmountIn is dramatically reduced, user gets almost no output
-}
-```
-
-### 12. [H-R3-DP-09] (confidence: medium, prior: new)
-**Mechanism**: In AMMModule._poolSwapByOutput (lines 1558-1583), when a pool type returns actualAmountOut != originalAmountOut (partial fill), the adjustment at lines 1569-1577 reduces adjustedAmountSpecified and amountOut. However, the output-side hook fees (tokenInTokenOutFee, tokenOutTokenOutFee) were already applied BEFORE the pool type call at line 1537 via _applySwapByOutputOutputFees. These hook fees inflated swapAmountOut at lines 2863 and 2875 based on the ORIGINAL amountOut. After partial fill reduces amountOut, the hook fees remain at their inflated values. During finalization at _finalizeSwapCollectFundsAndDisburse line 2166-2168, adjustedAmountSpecified (now reduced) is used to compute the final amountIn via calculateAmountAfterFeesSwapByOutput. The mismatch is: hook fees were calculated on the pre-partial-fill amount but are stored/charged based on the reduced amount. Specifically, _storeHookFees was called inside _applySwapByOutputOutputFees with the original fee amounts (lines 2871, 2887). Those fees are deducted from the pool's token balances. But the actual output delivered to the user is based on the reduced amountOut. The hook fees over-collected by the difference between fees(originalAmountOut) and fees(actualAmountOut). This excess is extractable by the hook owner. The economic impact is proportional to the partial fill reduction and the output hook fee percentage.
-**Complexity**: complex (target: max_reasoning)
-**Lines**:
-   - `lbamm-core/src/modules/AMMModule.sol`: lines 1537, 1558, 1569, 1576, 1577, 2857, 2863, 2871, 2875, 2887
-**Grounded in**: code-observation: AMMModule.sol:1537-1577
-**Suggested test skeleton**:
-```solidity
-function test_outputSwapPartialFillOverchargesHookFees() public {
-    // Setup: pool type that partial fills (returns actualAmountOut < requested)
-    // Token with afterSwap hook returning high fee on output side
-    // Action: output-based swap requesting 1000 tokens out, pool fills 500
-    vm.prank(user);
-    amm.singleSwap(outputSwapOrder, exchangeFee, feeOnTop, swapHooksExtraData, transferData);
-    // Assert: hook fees stored for original 1000, not actual 500
-    uint256 storedFees = amm.getHookFeesOwedByHook(hook, tokenOut, tokenOut);
-    uint256 expectedOnOriginal = 1000 * hookFeeBPS / 10000;
-    uint256 expectedOnActual = 500 * hookFeeBPS / 10000;
-    assertEq(storedFees, expectedOnOriginal);
-    assertGt(storedFees, expectedOnActual, "Overcharged by partial fill delta");
-}
-```
-
-### 13. [H-R3-DP-01] (confidence: medium, prior: new)
-**Mechanism**: In AMMModule._getPoolFee (line 1717), the dynamic pool fee validation uses an asymmetric check: for input swaps the condition is `poolFeeBPS > MAX_BPS` (allows 10000 = 100%), while for output swaps the condition is `poolFeeBPS >= MAX_BPS` (blocks 10000). A malicious pool hook returning poolFeeBPS = 10000 on an input swap would cause the entire amountIn to be consumed as pool fee at line 2646 (expectedLPFee = mulDivRoundingUp(swapAmountIn, 10000, 10000) = swapAmountIn). The pool type's swapByInput receives the full amountIn, computes poolFee = 100% of input, and returns amountOut = 0. While limitAmount protects against zero output, any user that sets limitAmount = 0 (acceptable for small/dust swaps) loses their entire input to LP fees. The asymmetry between input (allows 100%) and output (blocks 100%) suggests the input check at line 1717 should be `>= MAX_BPS` for both paths — this appears to be an off-by-one. Additionally, poolFeeBPS = 10000 combined with a high lpFeeBPS at line 2660 creates a denominator of `DOUBLE_BPS - 10000 * lpFeeBPS` which approaches zero as lpFeeBPS approaches 10000, causing division-by-zero or extreme fee amplification in the minimum protocol fee enforcement.
-**Complexity**: complex (target: max_reasoning)
-**Lines**:
-   - `lbamm-core/src/modules/AMMModule.sol`: lines 1717, 1718, 2646, 2660
-**Grounded in**: code-observation: AMMModule.sol:1717
-**Suggested test skeleton**:
-```solidity
-function test_dynamicFee100PercentInputSwap() public {
-    // Setup: create pool with DYNAMIC_POOL_FEE_BPS, deploy hook returning 10000 BPS
-    // Action: execute input swap with limitAmount = 0
-    vm.prank(user);
-    uint256 balBefore = token0.balanceOf(user);
-    amm.singleSwap(swapOrder, exchangeFee, feeOnTop, swapHooksExtraData, transferData);
-    uint256 balAfter = token0.balanceOf(user);
-    // Assert: user loses entire input, amountOut = 0
-    assertEq(balAfter, balBefore - amountIn, "User lost entire input");
-    // The swap should revert with a sane poolFeeBPS >= MAX_BPS check
-}
-```
-
-### 14. [H-R3-HR-07] (confidence: low, prior: new)
-**Mechanism**: In AMMStandardHook._validatePricingBounds (lines 838-840), for direct swaps where poolType==address(0), the beforeSwap path stores params.amount via _setTstorish and returns without checking bounds. The afterSwap path reads the stored value and checks bounds. The _setTstorish function in tm-core-lib's Tstorish (lines 128-151) uses immutable function pointers set at construction. If the chain initially did NOT support tstore, _setTstorish points to _setTstorishWithSstoreFallback which uses sstore. The __activateTstore function (Tstorish.sol:104) in this version has NO msg.sender != tx.origin check (unlike the older tstorish version in creator-token-standards). If __activateTstore is called between beforeSwap and afterSwap within the same transaction: beforeSwap writes to sstore (via fallback); __activateTstore sets tstoreSupport=true and calls _onTstoreSupportActivated which copies sstore→tstore for DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT (AMMStandardHook.sol:953); afterSwap reads from the fallback function which NOW checks tstoreSupport=true and uses tload. The copy in _onTstoreSupportActivated preserves the value, so this appears safe. HOWEVER, the immutable function pointers (_setTstorish, _getTstorish) are set at construction and never change — they always point to the fallback versions. So even after activation, the fallback functions are called, which check StorageTstorish.data().tstoreSupport dynamically. This means the read DOES use tload after activation. Since _onTstoreSupportActivated copies the value, the read succeeds. This hypothesis is likely safe but warrants verification that _onTstoreSupportActivated is called atomically with the tstoreSupport flag change.
-**Complexity**: complex (target: max_reasoning)
-**Lines**:
-   - `lbamm-hooks-and-handlers/src/hooks/AMMStandardHook.sol`: lines 838, 839, 843, 844, 951, 952, 953
-   - `lbamm-core/lib/tm-core-lib/src/utils/misc/Tstorish.sol`: lines 104, 106, 116, 118, 142, 143, 179, 182
-**Grounded in**: code-observation: Tstorish.sol:104
-**Suggested test skeleton**:
-```solidity
-function test_H07_tstoreActivationMidSwap() public {
-    // Setup: Deploy on chain without tstore initially
-    // Hook uses sstore fallback for DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT
+    // Action: validateHandlerOrder with extreme ratio causing overflow to 0
+    uint256 amountIn = 1;
+    uint256 amountOut = type(uint256).max / 2;
     
-    // Action 1: beforeSwap stores amount=1000 via sstore
-    vm.prank(address(amm));
-    hook.beforeSwap(ctx, directSwapParams, "");
-    // sstore(0xFFFFFFFFFFFFFFFF, 1000)
-    
-    // Action 2: Activate tstore
-    // _onTstoreSupportActivated copies sstore→tstore
-    vm.prank(someEOA);
-    hook.__activateTstore();
-    // tstore(0xFFFFFFFFFFFFFFFF, sload(0xFFFFFFFFFFFFFFFF)) = tstore(slot, 1000)
-    
-    // Action 3: afterSwap reads via tload
-    vm.prank(address(amm));
-    hook.afterSwap(ctx, directSwapParams, "");
-    // _getTstorish now reads tload(0xFFFFFFFFFFFFFFFF) = 1000 ✓
-    // Verify: price computation uses 1000, same as beforeSwap stored
+    // Assert: Should revert but doesn't — sqrtPriceX96=0 bypasses max check
+    hook.validateHandlerOrder(address(0xBEEF), true, token, pairedToken, amountIn, amountOut, "", "");
 }
 ```
 
-### 15. [H-R3-HR-08] (confidence: low, prior: new)
-**Mechanism**: In AMMStandardHook.validateAddLiquidity (lines 261-276), pricing bounds are checked against the pool's CURRENT sqrtPriceX96 obtained from ILimitBreakAMMPoolType(poolType).getCurrentPriceX96(AMM, poolId) at line 266. This check occurs BEFORE the liquidity is actually added to the pool. For concentrated liquidity pool types, adding significant one-sided liquidity can shift the effective price. The validateAddLiquidity hook is called by the AMM as a pre-check, but the actual liquidity addition happens after the hook returns. If the pre-addition price is just within bounds (e.g., sqrtPriceX96 = maxSqrtPriceX96 - 1), and the liquidity addition shifts price above maxSqrtPriceX96, the bounds check passes but the post-addition state violates the intended invariant. This is a TOCTOU gap. The magnitude of impact depends on the pool type implementation — if addLiquidity doesn't change the pool price (like a constant-product AMM where adding liquidity proportionally doesn't change price), this is not exploitable. But for pool types where single-sided liquidity can shift price, it could matter.
+### 5. [H-R6-HR-05] (confidence: medium, prior: new)
+**Mechanism**: In AMMStandardHook.validateAddLiquidity (lines 264-276), when pricing bounds are set and the pool type returns sqrtPriceX96=0 via ILimitBreakAMMPoolType(poolType).getCurrentPriceX96(AMM, poolId) at line 266, the bounds checks exhibit asymmetric behavior identical to validateHandlerOrder: minSqrtPriceX96 != 0 && 0 < min → reverts if min is set, BUT maxSqrtPriceX96 != 0 && 0 > max → NEVER reverts (0 is never > any uint160). In contrast, _validatePricingBounds for swaps (line 847) explicitly checks sqrtPriceX96==0 and reverts. This function also lacks the zero-price guard. If a pool type has a bug or edge case where getCurrentPriceX96 returns 0 (e.g., uninitialized pool state, division-by-zero in price calculation, or a pool where all liquidity has been drained leaving price at 0), liquidity can be added despite the price violating the max bound. The economic impact: a liquidity provider adds liquidity at a manipulated zero price, getting an outsized share of the pool at the expense of existing LPs.
 **Complexity**: complex (target: max_reasoning)
 **Lines**:
-   - `lbamm-hooks-and-handlers/src/hooks/AMMStandardHook.sol`: lines 243, 261, 264, 265, 266, 268, 269, 272
+   - `lbamm-hooks-and-handlers/src/hooks/AMMStandardHook.sol`: lines 243, 261, 264, 265, 266, 268, 269, 270, 272, 273, 847, 848, 849
 **Grounded in**: code-observation: AMMStandardHook.sol:266
 **Suggested test skeleton**:
 ```solidity
-function test_H08_addLiquidityPriceTOCTOU() public {
-    // Setup: Pool at price just within max bound
-    // Set tight pricing bounds synced to hook
-    // Action: Add large one-sided liquidity that shifts price
+function test_H05_addLiquidityZeroPriceBypassMaxBound() public {
+    // Setup: Token with pricing bounds (max only, no min)
+    vm.prank(address(registry));
+    hook.registryUpdatePricingBounds(token, _pairs(pairedToken), _mins(0), _maxs(1e30));
+    
+    // Mock pool type to return sqrtPriceX96=0
+    MockPoolType mockPool = new MockPoolType();
+    mockPool.setCurrentPriceX96(0);
+    bytes32 poolId = _encodePoolId(address(mockPool), token, pairedToken);
+    
+    // Action: validateAddLiquidity with zero price
     vm.prank(address(amm));
+    // Line 266: sqrtPriceX96 = 0
+    // Line 272: bounds.maxSqrtPriceX96 != 0 && 0 > max → false (never reverts)
     (uint256 fee0, uint256 fee1) = hook.validateAddLiquidity(
-        true, context, params, amount0, amount1, 0, 0, ""
+        true, ctx, LiquidityModificationParams({poolId: poolId}), 0, 0, 0, 0, ""
     );
-    // Hook passed — but now simulate the actual add
-    // Post-add: check if price exceeded bounds
-    uint160 newPrice = ILimitBreakAMMPoolType(poolType).getCurrentPriceX96(amm, poolId);
-    // Assert: newPrice > bounds.maxSqrtPriceX96 despite hook passing
-    assert(newPrice > bounds.maxSqrtPriceX96);
+    // Should revert (price 0 violates max bound intent) but passes
+}
+```
+
+### 6. [H-R6-HR-06] (confidence: medium, prior: new)
+**Mechanism**: In AMMStandardHook._enforcePoolCreationSettings (lines 780-803), the function reads pricing bounds for BOTH token directions: bounds0 = _pricingBounds[details.token0][details.token1] (line 780) and bounds1 = _pricingBounds[details.token1][details.token0] (line 781). These come from the hook's LOCAL cache. However, validatePoolCreation (line 305-318) is called with hookForToken0=true/false indicating which token THIS hook instance serves. If token0 and token1 use different hook instances, each hook only has pricing bounds for ITS token cached. Token0's hook has bounds0 populated (token0→token1) but bounds1 is empty (token1→token0 belongs to token1's hook). The AMM calls validatePoolCreation on BOTH hooks, so each hook checks its own direction. The issue is that _enforcePoolCreationSettings reads BOTH directions from a single hook's storage (lines 780-781), and for the direction that doesn't belong to this hook, bounds.isSet=false causes the check to be skipped. The cross-hook gap: if the AMM correctly calls both hooks, the combined coverage is complete. But if only one token has a hook, or if the other token's hook doesn't implement validatePoolCreation, one direction's bounds are silently unenforced. The masking guard at line 783 (bounds0.isSet || bounds1.isSet) passes if either direction has bounds, but only checks the direction that happens to be cached.
+**Complexity**: complex (target: max_reasoning)
+**Lines**:
+   - `lbamm-hooks-and-handlers/src/hooks/AMMStandardHook.sol`: lines 750, 780, 781, 783, 784, 785, 787, 796, 305, 318
+**Grounded in**: code-observation: AMMStandardHook.sol:780
+**Suggested test skeleton**:
+```solidity
+function test_H06_poolCreationBoundsIncompleteForSingleHookToken() public {
+    // Setup: token0 has hook with pricing bounds, token1 has NO hook
+    vm.prank(address(registry));
+    hook.registryUpdatePricingBounds(token0, _pairs(token1), _mins(1000), _maxs(5000));
+    // token1→token0 bounds NOT set in this hook (token1 uses different/no hook)
+    
+    // Action: Pool creation where price is within token0's bounds but
+    // would violate token1's intended bounds (if they existed)
+    // Token0's hook checks bounds0 (token0→token1) — passes if price in 1000-5000
+    // Token0's hook checks bounds1 (token1→token0) — bounds1.isSet=false → SKIPPED
+    // If token1 has no hook, AMM never calls validatePoolCreation for token1
+    vm.prank(address(amm));
+    hook.validatePoolCreation(poolId, creator, true, detailsAtPrice3000, "");
+    // Passes — token1's price direction is completely unchecked
+}
+```
+
+### 7. [H-R6-HR-09] (confidence: medium, prior: new)
+**Mechanism**: In AMMStandardHook.validateHandlerOrder (lines 198-226), the function reads pricing bounds from the hook's local _pricingBounds cache (line 210) but does NOT call _getOrFetchTokenSettings to ensure settings are cached. It also does not check if the token's blockDirectSwaps flag is set or if the pairedToken is whitelisted. The CLOB handler at CLOBTransferHandler._enforceTokenHooks (line 574-619) reads token settings from the AMM (line 582-583) to check if TOKEN_SETTINGS_HANDLER_ORDER_VALIDATE_FLAG is set, then calls validateHandlerOrder. But validateHandlerOrder does NOT verify that the pairedToken is on the token's pair whitelist. Compare with beforeSwap's _validateTokenTradingRules (line 685-687) which enforces pairedTokenWhitelistId for direct swaps. This means a token creator who sets a pair whitelist (e.g., 'only trade against USDC and WETH') gets that restriction enforced for AMM swaps but NOT for CLOB orders. A maker can place a CLOB order pairing the token with any arbitrary token, bypassing the creator's whitelist. When the order is later filled via the AMM's directSwap pathway, the swap hooks DO check the pair whitelist and revert. So the order sits unfillable, but the maker's tokens are locked in the order book until they cancel.
+**Complexity**: complex (target: max_reasoning)
+**Lines**:
+   - `lbamm-hooks-and-handlers/src/hooks/AMMStandardHook.sol`: lines 198, 208, 210, 670, 684, 685, 686, 687
+   - `lbamm-hooks-and-handlers/src/handlers/clob/CLOBTransferHandler.sol`: lines 482, 534, 574, 594, 595
+**Grounded in**: code-observation: AMMStandardHook.sol:198
+**Suggested test skeleton**:
+```solidity
+function test_H09_clobOrderBypassesPairWhitelist() public {
+    // Setup: Token with pairedTokenWhitelistId set to only allow USDC
+    HookTokenSettings memory settings = _defaultSettings();
+    settings.pairedTokenWhitelistId = 1; // whitelist that only contains USDC
+    settings.initialized = true;
+    vm.prank(address(registry));
+    hook.registryUpdateTokenSettings(token, settings);
+    // Sync USDC to hook's pair whitelist
+    address[] memory pairs = new address[](1);
+    pairs[0] = USDC;
+    vm.prank(address(registry));
+    hook.registryUpdateWhitelistPairToken(1, pairs, true);
+    
+    // Action: Place CLOB order pairing token with WETH (NOT on whitelist)
+    // validateHandlerOrder does NOT check pair whitelist
+    hook.validateHandlerOrder(maker, true, token, WETH, 1e18, 1e18, "", "");
+    // Passes — WETH is not whitelisted but validateHandlerOrder doesn't check
+    
+    // Verify: Direct AMM swap with WETH would revert
+    HookSwapParams memory swapParams;
+    swapParams.poolId = bytes32(0); // direct swap
+    swapParams.tokenIn = token;
+    swapParams.tokenOut = WETH;
+    swapParams.hookForInputToken = true;
+    vm.prank(address(amm));
+    vm.expectRevert(AMMStandardHook__PairNotAllowed.selector);
+    hook.beforeSwap(ctx, swapParams, "");
+}
+```
+
+### 8. [H-R6-DP-01] (confidence: medium, prior: new)
+**Mechanism**: In AMMModule._storeNonTokenHookFees (lines 3011-3026), the storage key is computed as EfficientHash.efficientHash(hash(hook), hash(tokenFor, tokenFor)). Note that 'tokenFor' appears TWICE in the inner hash — there is no 'tokenFee' parameter. The function only receives (hook, tokenFor, feeAmount). However, _transferHookFeesByHook (line 3116-3139) and getHookFeesOwedByHook (ModuleFeeCollection.sol:171-181) compute the key as hash(hook, hash(tokenFor, tokenFee)) with SEPARATE tokenFor and tokenFee. For the current call pattern at lines 790/794/838/842/1160/1164/1220/1224, hookFee0 is always stored under token0 and hookFee1 under token1, so tokenFor==tokenFee and the keys match. But this creates a fragile invariant: if any future liquidity/pool hook returns cross-token fees (e.g., hookFee0 denominated in token1), the stored key hash(hook, hash(token0, token0)) would differ from the collection key hash(hook, hash(token0, token1)). The hook's fees would be permanently locked — uncollectable. Furthermore, a hook contract calling collectHookFeesByHook(tokenFor=X, tokenFee=Y, ...) where X!=Y would always fail because _storeNonTokenHookFees never wrote to that slot. The collectHookFeesByHook function doesn't validate X==Y, creating an implicit assumption mismatch between write and read paths. While not currently exploitable (hooks always return same-token fees), this is a latent solvency risk: any hook that stores fees to an unreachable key causes the AMM to hold tokens that no one can claim, effectively reducing the token supply available to the pool.
+**Complexity**: complex (target: max_reasoning)
+**Lines**:
+   - `lbamm-core/src/modules/AMMModule.sol`: lines 790, 794, 838, 842, 1160, 1164, 1220, 1224, 3011, 3012, 3013, 3016, 3017, 3018, 3116, 3117, 3118, 3119, 3123, 3124, 3125
+   - `lbamm-core/src/modules/ModuleFeeCollection.sol`: lines 72, 76, 80, 171, 176, 177, 178
+**Grounded in**: code-observation: AMMModule.sol:3016-3018
+**Suggested test skeleton**:
+```solidity
+function test_storeNonTokenHookFeesKeyMismatch() public {
+    // Setup: pool with liquidityHook that returns cross-token fees
+    // hookFee0 (denominated in token0) for tokenFor=token0 → stored hash(hook, hash(token0, token0))
+    // Then hook tries to collect via collectHookFeesByHook(token0, token0, recipient, amount)
+    // This should work (same-token case)
+    vm.prank(address(hook));
+    amm.collectHookFeesByHook(address(token0), address(token0), recipient, feeAmount);
+    assertEq(token0.balanceOf(recipient), feeAmount);
+
+    // Now simulate if _storeNonTokenHookFees stored cross-token:
+    // If it received (hook, token0, feeAmount) but the fee is in token1,
+    // the key is hash(hook, hash(token0, token0)) but collection uses
+    // hash(hook, hash(token0, token1)) — DIFFERENT KEY → underflow revert
+    vm.prank(address(hook));
+    vm.expectRevert(); // underflow in _transferHookFeesByHook
+    amm.collectHookFeesByHook(address(token0), address(token1), recipient, feeAmount);
+}
+```
+
+### 9. [H-R6-DP-03] (confidence: medium, prior: new)
+**Mechanism**: In AMMModule._poolSwapByOutput (lines 1537-1577), output-side hook fees are stored via _applySwapByOutputOutputFees (called at line 1537) BEFORE the pool type's swapByOutput is called (line 1548). The output hook fees (stored at lines 2871 and 2887 inside _applySwapByOutputOutputFees) are computed based on the original amountOut. If the pool type returns a partial fill (actualAmountOut < originalAmountOut at line 1559), the code adjusts swapCache.amountOut (line 1577) and adjustedAmountSpecified (line 1576) downward, but the ALREADY-STORED hook fees are not recalculated or adjusted. The hook fees were computed as a percentage of the full amountOut (via beforeSwap hook), but the actual trade only fills a fraction. This means the stored hook fee amount represents f(originalAmountOut) while the trade settled f(actualAmountOut). The excess hook fees (difference) remain in tokensOwed, claimable by the hook owner. The AMM's actual token balance must cover these fees from the pool's reserves — effectively the pool pays fees on volume that was never traded. For a SingleProviderPoolType LP who controls the partial fill decision, they can systematically reduce fills while hook fees remain at full value, draining value from the pool to the hook owner. Combined with a colluding hook, this creates a value extraction channel. The magnitude per trade is (hookFeePercent * (originalAmountOut - actualAmountOut)), accumulated across many partial fills.
+**Complexity**: complex (target: max_reasoning)
+**Lines**:
+   - `lbamm-core/src/modules/AMMModule.sol`: lines 1537, 1538, 1548, 1556, 1558, 1559, 1569, 1576, 1577, 2851, 2857, 2863, 2871, 2875, 2887, 2894
+**Grounded in**: code-observation: AMMModule.sol:1537-1577
+**Suggested test skeleton**:
+```solidity
+function test_outputSwapPartialFillExcessHookFees() public {
+    // Setup: SingleProviderPoolType that partial fills to 50%
+    // Token with output hook returning 5% fee on output token
+    // Output swap requesting 1000 tokens out
+    // Step 1: _applySwapByOutputOutputFees called with amountOut=1000
+    //   hookFee = 50, stored via _storeHookFees. amountOut inflated to 1050
+    // Step 2: pool type receives amountOut=1050, returns actualAmountOut=500
+    // Step 3: adjustment: amountOut=500, adjustedAmountSpecified reduced
+    // Step 4: stored hookFees remain 50 (should proportionally be ~24)
+    vm.prank(user);
+    amm.singleSwap(outputSwapOrder, poolId, exchangeFee, feeOnTop, hooks, data);
+    uint256 fees = amm.getHookFeesOwedByToken(address(tokenOut), address(tokenOut));
+    assertEq(fees, 50, "Hook fees not adjusted for partial fill");
+    // Pool lost 50 of hook fee value but only 500/1050 of trade executed
+    // Excess: ~26 tokens of hook fees overcredited
+}
+```
+
+### 10. [H-R6-DP-07] (confidence: medium, prior: new)
+**Mechanism**: In AMMModule._positionAddLiquidity (lines 454-474), reserves are incremented and feeBalances decremented BEFORE the token distribution call at line 468 (_distributeAndCollectLiquidityTokens). If the net amount is positive (provider should send tokens), _distributeOrCollectLiquidityToken at line 1291 calls _collectToken. _collectToken (lines 2913-2920) uses safeTransferFrom and validates exact balance change. If safeTransferFrom reverts (insufficient allowance, balance, or blacklisted), the ENTIRE addLiquidity transaction reverts because _collectToken reverts — reserves and feeBalances are rolled back correctly. However, when the net amount is NEGATIVE (provider should receive tokens), _distributeOrCollectLiquidityToken at line 1298 calls SafeERC20.safeTransfer. If this returns isError=true, line 1300 calls _storeTokensOwed instead of reverting. This means the addLiquidity transaction SUCCEEDS even though the provider didn't receive their fee tokens. The pool's reserves were incremented (line 455/458) and feeBalance decremented (line 462/465) permanently. The tokens the provider should have received are tracked as debt (tokensOwed) but the provider must make a separate collectTokensOwed call. If the transfer failed because the token blacklisted the AMM contract or the provider, the debt may be permanently uncollectable. The net effect: pool reserves inflated relative to actual tokens held. This path requires fees0 > deposit0 + hookFee0 (so the net amount becomes negative, meaning the provider receives tokens). A provider with a large accrued fee position who adds minimal liquidity could trigger this condition.
+**Complexity**: complex (target: max_reasoning)
+**Lines**:
+   - `lbamm-core/src/modules/AMMModule.sol`: lines 397, 454, 455, 457, 458, 461, 462, 464, 465, 468, 472, 473, 1282, 1286, 1291, 1293, 1294, 1298, 1299, 1300, 2913, 2916, 2917
+**Grounded in**: code-observation: AMMModule.sol:1298-1300
+**Suggested test skeleton**:
+```solidity
+function test_addLiquidityFailedDistributionInflatesReserves() public {
+    // Setup: provider has large accrued fees (fees0=500) in pool
+    // Provider adds minimal liquidity (deposit0=10)
+    // Token has a transfer restriction (e.g., paused transfers)
+    // netAmount0 = 10 - 500 + 0 = -490 (provider should RECEIVE 490)
+    // But safeTransfer to provider fails → _storeTokensOwed(provider, token0, 490)
+    // Pool state: reserve0 += 10, feeBalance0 -= 500
+    // Actual AMM balance increased by provider's deposit of 10 (from _collectToken on other token or same)
+    // But 490 that should have gone to provider stays in AMM
+    vm.prank(address(provider));
+    amm.addLiquidity(params, hooksData);
+    PoolState memory state = amm.getPoolState(poolId);
+    // reserves increased but tokens owed to provider
+    uint256 owed = amm.getTokensOwed(address(provider), address(token0));
+    assertEq(owed, 490, "Provider owed 490 tokens from failed distribution");
+    // AMM holds the 490 tokens — no immediate solvency issue
+    // But reserve0 now includes deposit0=10 while actual balance includes deposit0 + 490 stranded
+}
+```
+
+### 11. [H-R6-DP-10] (confidence: medium, prior: new)
+**Mechanism**: In ModuleAdmin.setTokenSettings (line 272-297), the function validates hook flags against the hook contract's reported requiredFlags and supportedFlags (line 283-288). However, after validation, the function directly writes the packedSettings and tokenHook to storage (lines 293-294) without any check against the CURRENT token settings. An attacker who is the token owner/admin can change the tokenHook address while preserving the same packedSettings flags. If the old hook had fees stored in tokensOwed under hash(oldHook, hash(token, token)), changing to a new hook means the old hook can no longer collect its fees via collectHookFeesByHook (because msg.sender must be the hook contract at ModuleFeeCollection.sol:75-81). The old hook's stored fees become permanently locked. Conversely, the NEW hook starts with zero accumulated fees but inherits any inflight operations that reference the token settings. This is also a vector for token admins to DoS their own hook by repeatedly swapping the hook address. More interesting: if the old hook is hook-managed (TOKEN_SETTINGS_HOOK_MANAGES_FEES_FLAG), its stored fees are keyed by the old hook address. The new hook can call collectHookFeesByHook with tokenFor=token but the storage key uses the new hook's address, finding zero. The old hook's fees are orphaned. A malicious token admin could exploit this by: (1) setting up a hook that accumulates fees, (2) swapping to a new hook, (3) the old hook's fees are locked, reducing the AMM's distributable balance, (4) the AMM holds more tokens than reserves + fees + tokensOwed(accessible), creating a silent surplus. This surplus is not extractable by anyone, effectively burning protocol value.
+**Complexity**: complex (target: max_reasoning)
+**Lines**:
+   - `lbamm-core/src/modules/ModuleAdmin.sol`: lines 272, 273, 280, 283, 286, 287, 288, 292, 293, 294
+   - `lbamm-core/src/modules/AMMModule.sol`: lines 2971, 2977, 2978, 2979, 2980, 2981, 2982, 2988
+   - `lbamm-core/src/modules/ModuleFeeCollection.sol`: lines 72, 73, 75, 80
+**Grounded in**: code-observation: ModuleAdmin.sol:292-294
+**Suggested test skeleton**:
+```solidity
+function test_tokenSettingsChangeOrphansHookFees() public {
+    // Setup: token with hook-managed fees (TOKEN_SETTINGS_HOOK_MANAGES_FEES_FLAG)
+    // Hook A has accumulated 1000 fees in tokensOwed[hash(hookA, hash(token, token))]
+    assertEq(amm.getHookFeesOwedByHook(address(hookA), address(token), address(token)), 1000);
+    // Action: token admin changes hook from A to B
+    vm.prank(tokenOwner);
+    amm.setTokenSettings(address(token), address(hookB), packedSettings);
+    // Hook A tries to collect its fees
+    vm.prank(address(hookA));
+    // This should still work — storage key uses hookA's address
+    amm.collectHookFeesByHook(address(token), address(token), address(hookA), 1000);
+    // Assert: fees are actually retrievable IF hookA still calls
+    // But if hookA's code checks token settings and sees it's no longer the active hook,
+    // it may refuse to call. The fees are accessible but socially orphaned.
+    // New swaps use hookB, which has zero accumulated fees
+}
+```
+
+### 12. [H-R6-DP-11] (confidence: medium, prior: new)
+**Mechanism**: In AMMModule._positionCollectFees (lines 329-362), hook fees from all four hook tiers (token0, token1, position, pool) are accumulated into hookFee0 and hookFee1 at lines 675-701. These accumulated fees are checked against maxHookFee0/maxHookFee1 at line 338-340. The net distribution at lines 353-354 is: `-fees0.toInt256() + hookFee0.toInt256()` and `-fees1.toInt256() + hookFee1.toInt256()`. There is NO validation that hookFee0 <= fees0 or hookFee1 <= fees1. If hookFee0 > fees0, the expression becomes positive, meaning the provider must SEND tokens to the AMM instead of receiving them. This is correct behavior IF the provider set maxHookFee values appropriately. But many integrating UIs set maxHookFee to type(uint256).max for convenience. A malicious token hook that returns hookFee0 = type(uint256).max - 1 during validateCollectFees would pass the maxHookFee check (if max is type(uint256).max) and cause the provider to transfer an enormous amount of tokens to the AMM. The provider's signed approval/permit is the only defense — they must have approved sufficient tokens. Combined with a permit-based flow where the user signs a broad approval, a malicious hook could drain the user's token balance during what should be a fee collection (receiving) operation. The hook fee is stored via _storeHookFees and is claimable by the token/hook owner. This is a value extraction from LP to hook owner, gated only by the user's maxHookFee parameter.
+**Complexity**: complex (target: max_reasoning)
+**Lines**:
+   - `lbamm-core/src/modules/AMMModule.sol`: lines 299, 329, 330, 336, 338, 340, 349, 353, 354, 642, 654, 665, 675, 676, 679, 687, 688, 691, 700, 701, 736, 737, 738
+**Grounded in**: code-observation: AMMModule.sol:353-354
+**Suggested test skeleton**:
+```solidity
+function test_collectFeesHookDrainsProvider() public {
+    // Setup: pool with fees0=100 accrued for provider
+    // Token0 hook returns hookFee0=10000 during validateCollectFees
+    // Provider set maxHookFee0 = type(uint256).max (common in aggregator integrations)
+    // Provider has approved AMM for type(uint256).max tokens
+    // Action: collectFees
+    vm.prank(provider);
+    amm.collectFees(params, hooksData);
+    // fees0 = 100 from pool type
+    // hookFee0 = 10000 from token hook
+    // netAmount0 = -100 + 10000 = +9900 (POSITIVE — provider must SEND)
+    // _collectToken(provider, token0, 9900)
+    // Pool feeBalance0 reduced by 100 (correct)
+    // But provider paid 9900 of their own tokens INTO the AMM
+    // Hook owner can claim 10000 (100 from pool fees + 9900 from provider)
+    uint256 hookFees = amm.getHookFeesOwedByToken(address(token0), address(token0));
+    assertEq(hookFees, 10000, "Hook claimed 10000 from 100 pool fees + 9900 provider");
+}
+```
+
+### 13. [H-R6-HR-04] (confidence: low, prior: new)
+**Mechanism**: In AMMStandardHook._validatePricingBounds (lines 838-844), for direct swaps in afterSwap, the price is computed by reading the beforeSwap amount from transient/persistent storage via _getTstorish(DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT). The beforeSwap hook for the SAME token (at line 118→838-840) must have run first to store params.amount. However, the beforeSwap hook at line 118 calls _validatePricingBounds(swapParams, token, pairedToken, true) which only writes to the slot IF bounds.isSet is true (line 830). If a token has NO pricing bounds initially, beforeSwap does not write to the slot. If pricing bounds are then SET (via registryUpdatePricingBounds) between the beforeSwap and afterSwap hook calls within the same AMM swap execution, the afterSwap _validatePricingBounds would read a stale/zero value from the slot. In practice, this requires the pricing bounds to be set during the swap execution itself, which is extremely unlikely but theoretically possible if a callback during the swap modifies the registry. More concretely: if bounds were set in a PREVIOUS transaction and the slot contains a leftover sstore value from a prior swap (Tstorish sstore fallback before tstore activation), the afterSwap could compute an incorrect price from stale data.
+**Complexity**: complex (target: max_reasoning)
+**Lines**:
+   - `lbamm-hooks-and-handlers/src/hooks/AMMStandardHook.sol`: lines 118, 167, 828, 829, 830, 838, 839, 840, 842, 843, 844, 846, 847
+**Grounded in**: code-observation: AMMStandardHook.sol:839
+**Suggested test skeleton**:
+```solidity
+function test_H04_staleTransientStorageForDirectSwap() public {
+    // Setup: Token with NO pricing bounds initially
+    // Swap 1: beforeSwap writes amount=1e18 to sstore (pre-tstore activation)
+    HookSwapParams memory bsParams;
+    bsParams.poolId = bytes32(0); // direct swap
+    bsParams.amount = 1e18;
+    bsParams.inputSwap = true;
+    bsParams.tokenIn = token;
+    bsParams.tokenOut = pairedToken;
+    bsParams.hookForInputToken = true;
+    // beforeSwap does NOT write to slot because bounds.isSet=false
+    vm.prank(address(amm));
+    hook.beforeSwap(ctx, bsParams, "");
+    
+    // Swap 1 afterSwap also skips — no bounds
+    vm.prank(address(amm));
+    hook.afterSwap(ctx, bsParams, "");
+    
+    // Now set pricing bounds between transactions
+    vm.prank(address(registry));
+    hook.registryUpdatePricingBounds(token, _pairs(pairedToken), _mins(100), _maxs(5000));
+    
+    // Swap 2: beforeSwap DOES write amount to slot (bounds now set)
+    // afterSwap reads from slot — correct behavior IF beforeSwap ran
+    // But if tstore was just activated, tstore slot is 0 (fresh tx)
+    // while sstore still has old value from swap 1
+    vm.prank(address(amm));
+    hook.beforeSwap(ctx, bsParams, "");
+    bsParams.amount = 5e17;
+    vm.prank(address(amm));
+    hook.afterSwap(ctx, bsParams, ""); // reads from tstore=1e18 or sstore=1e18?
+}
+```
+
+### 14. [H-R6-HR-07] (confidence: low, prior: new)
+**Mechanism**: In AMMStandardHook._calculateFee (lines 703-707), the fee is computed as FullMath.mulDiv(amount, feeBPS, MAX_BPS) where MAX_BPS=10000. The feeBPS values (tokenFeeBuyBPS, tokenFeeSellBPS, pairedFeeBuyBPS, pairedFeeSellBPS) are uint16, allowing values up to 65535. Neither CreatorHookSettingsRegistry.setTokenSettings nor AMMStandardHook.registryUpdateTokenSettings validates that feeBPS <= MAX_BPS. If a token admin sets feeBPS to, say, 15000 (150%), the hook returns fee = amount * 15000 / 10000 = 1.5 * amount. In _applySwapByInputInputFees (AMMModule.sol:2616), the AMM checks `if (feeAmount > swapAmountIn) revert LBAMM__InsufficientInputForFees()`. A 150% fee would trigger this revert, effectively making the token UNTRADEABLE via the AMM. While this is self-inflicted by the token admin, the critical issue is there's no validation at the registry level to prevent setting an invalid fee, and the failure mode is a confusing AMM-level revert (LBAMM__InsufficientInputForFees) rather than a clear configuration error. More subtly, for output-based swaps, the fee is on the OUTPUT token — a 150% fee on the unspecified amount could cause unexpected behavior depending on swap direction and fee assignment logic.
+**Complexity**: complex (target: max_reasoning)
+**Lines**:
+   - `lbamm-hooks-and-handlers/src/hooks/AMMStandardHook.sol`: lines 703, 704, 705, 706, 519, 522
+   - `lbamm-hooks-and-handlers/src/hooks/CreatorHookSettingsRegistry.sol`: lines 357, 366, 376, 377, 378
+   - `lbamm-core/src/modules/AMMModule.sol`: lines 2614, 2616, 2617
+**Grounded in**: code-observation: AMMStandardHook.sol:703
+**Suggested test skeleton**:
+```solidity
+function test_H07_feeExceedsMaxBPSBlocks Swaps() public {
+    // Setup: Token with feeBPS > MAX_BPS (10000)
+    HookTokenSettings memory settings = _defaultSettings();
+    settings.tokenFeeBuyBPS = 15000; // 150% — uint16 allows up to 65535
+    settings.initialized = true;
+    vm.prank(address(registry));
+    hook.registryUpdateTokenSettings(token, settings);
+    
+    // Action: Attempt swap — hook returns fee > amount
+    HookSwapParams memory params;
+    params.amount = 1e18;
+    params.hookForInputToken = false; // hook for output token
+    params.inputSwap = true;
+    params.tokenIn = pairedToken;
+    params.tokenOut = token;
+    vm.prank(address(amm));
+    uint256 fee = hook.beforeSwap(ctx, params, "");
+    // fee = 1e18 * 15000 / 10000 = 1.5e18 > params.amount
+    assertGt(fee, params.amount, "Fee exceeds 100% of swap amount");
+    // AMM will revert with LBAMM__InsufficientInputForFees
+}
+```
+
+### 15. [H-R6-HR-08] (confidence: low, prior: new)
+**Mechanism**: In AMMStandardHook._validatePricingBounds (lines 854-869), for pool-based swaps, the directional exemption allows swaps that move the price BACK toward the bound. Specifically: if price < min AND !zeroForOne (price should be moving UP), no revert. If price > max AND zeroForOne (price should be moving DOWN), no revert. This trusts that the swap direction deterministically corresponds to price movement: zeroForOne always pushes price down, !zeroForOne always pushes price up. However, this assumption depends on pool type behavior. The price is read from ILimitBreakAMMPoolType(poolType).getCurrentPriceX96(AMM, params.poolId) at line 836. In the afterSwap callback (isBeforeSwap=false), this returns the post-swap price. If the pool type implementation has a price oracle that can be manipulated independently of the swap direction (e.g., a pool type that uses an external oracle, or a pool type with a price update callback), the post-swap price could move opposite to the expected direction. A !zeroForOne swap (expected to push price UP) that somehow results in price BELOW min would pass because the directional check at line 858 only reverts for `zeroForOne || poolType == address(0)`. The hook's trust in the swap-direction-to-price-movement invariant is not verified on-chain.
+**Complexity**: complex (target: max_reasoning)
+**Lines**:
+   - `lbamm-hooks-and-handlers/src/hooks/AMMStandardHook.sol`: lines 823, 833, 834, 835, 836, 854, 855, 856, 857, 858, 862, 863, 864, 865, 866
+**Grounded in**: code-observation: AMMStandardHook.sol:858
+**Suggested test skeleton**:
+```solidity
+function test_H08_directionalExemptionTrustsPoolTypePriceDirection() public {
+    // Setup: Pool with pricing bounds min=1000, max=5000
+    vm.prank(address(registry));
+    hook.registryUpdatePricingBounds(token, _pairs(pairedToken), _mins(1000), _maxs(5000));
+    
+    // Deploy pool type that reports manipulated post-swap price
+    // A !zeroForOne swap (token1→token0, normally pushes price UP)
+    // but pool type reports post-swap price = 500 (BELOW min)
+    ManipulatedPoolType pool = new ManipulatedPoolType();
+    pool.setPostSwapPrice(500); // below min=1000
+    
+    HookSwapParams memory params;
+    params.poolId = _encodePoolId(address(pool));
+    params.tokenIn = pairedToken; // higher address → !zeroForOne
+    params.tokenOut = token;       // lower address
+    params.hookForInputToken = false;
+    params.inputSwap = true;
+    
+    vm.prank(address(amm));
+    // _validatePricingBounds: price=500 < min=1000
+    // Line 858: if (zeroForOne || poolType == address(0)) → false
+    // Recovery direction exemption allows it
+    hook.afterSwap(ctx, params, ""); // Does NOT revert
 }
 ```
 
@@ -873,7 +901,7 @@ function test_H08_addLiquidityPriceTOCTOU() public {
 
 | Target | Findings | Vectors Ruled Out | Invariant Tests | Runs |
 |--------|----------|-------------------|-----------------|------|
-| full-system (all 6 repos) | 0 Medium+ confirmed | 85+ ruled-out, 20 invariants held | 22 | defensive waves 1-7, black hat pending |
+| full-system (all 6 repos) | 3 Medium+ confirmed | 85+ ruled-out, 20 invariants held | 22 | defensive waves 1-7, black hat pending |
 
 ## Top False-Positive Patterns (don't re-investigate)
 1. **Transient storage slot overwrite** — by-design (AMM calls beforeSwap per-token, second overwrites first intentionally)
