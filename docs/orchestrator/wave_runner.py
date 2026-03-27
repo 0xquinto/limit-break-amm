@@ -144,11 +144,15 @@ async def _run_agent(
 
     profile = agent.resolved_profile
     thinking = None
-    if profile and profile.extended_thinking and profile.thinking_budget_tokens > 0:
-        thinking = {
-            "type": "enabled",
-            "budget_tokens": profile.thinking_budget_tokens,
-        }
+    if profile and profile.extended_thinking:
+        if profile.thinking_budget_tokens > 0:
+            thinking = {
+                "type": "enabled",
+                "budget_tokens": profile.thinking_budget_tokens,
+            }
+        else:
+            # Adaptive: Opus self-regulates thinking depth per turn
+            thinking = {"type": "adaptive"}
 
     options = ClaudeAgentOptions(
         cwd=str(PROJECT_ROOT),

@@ -1226,7 +1226,7 @@ async def run_pass1(
             role="black-hat",
             template="knowledge-gen-prompt",
             scope=BOUNDARY_CONTRACTS.get(slug, []),
-            profile="max_reasoning",
+            profile="fast_reasoning",  # Sonnet — hypothesis generation doesn't need Opus
             max_turns=75,
         ))
 

@@ -170,7 +170,7 @@ WAVE_BH1 = WaveConfig(
             role="black-hat",
             template="composability-exploiter",
             scope=list(REPOS.keys()),
-            profile="max_reasoning",
+            profile="fast_reasoning",  # Sonnet — broad scope, lower yield; saves ~$10/run
         ),
         # --- 3 original archetypes (restored for coverage) ---
         AgentConfig(
@@ -178,7 +178,7 @@ WAVE_BH1 = WaveConfig(
             role="black-hat",
             template="price-distorter",
             scope=list(REPOS.keys()),
-            profile="max_reasoning",
+            profile="fast_reasoning",  # Sonnet — broad scope, 0 findings in best runs; saves ~$10/run
         ),
         AgentConfig(
             name="insolvency-engineer",

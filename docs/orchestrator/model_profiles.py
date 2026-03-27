@@ -27,19 +27,19 @@ PROFILES: dict[str, ModelProfile] = {
         model="claude-opus-4-6",
         effort="max",
         extended_thinking=True,
-        thinking_budget_tokens=128000,
+        thinking_budget_tokens=0,  # 0 = adaptive thinking (Opus self-regulates depth)
         max_tokens=16384,
         temperature=1.0,
-        description="Maximum reasoning depth — black hat agents, exploit construction",
+        description="Maximum reasoning depth — adaptive thinking, black hat agents",
     ),
     "audit_balanced": ModelProfile(
         model="claude-opus-4-6",
         effort="high",
         extended_thinking=True,
-        thinking_budget_tokens=32000,
+        thinking_budget_tokens=0,  # 0 = adaptive thinking
         max_tokens=12288,
         temperature=1.0,
-        description="Balanced audit — lower thinking budget for agents with narrower scope",
+        description="Balanced audit — adaptive thinking, narrower scope agents",
     ),
     "deep_reasoning": ModelProfile(
         model="claude-opus-4-6",

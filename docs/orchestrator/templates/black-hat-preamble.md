@@ -114,19 +114,9 @@ Your Phase C checklist includes exploit-grounded probes — attack patterns from
 
 DO NOT write directly to the final findings JSON — the gate is the only path to the final sidecar. If you skip the gate, your work will not be scored.
 
-### Reference Files (read when you reach the relevant phase)
+### Reference Files & Tool Scripts
 
-Your reference directory contains detailed schemas and scaffolds. Read them at the right time, not now:
-- `docs/orchestrator/templates/_shared/references/output-schema.md` — sidecar JSON schema, gate validation instructions, test_file format rules. **Read before writing your sidecar** (after Phase C/D work is done).
-- `docs/orchestrator/templates/_shared/references/fp-gate-and-scoring.md` — FP 5-gate check + confidence score deduction rubric. **Read before finalizing findings** (after Phase C/D work is done).
-- `docs/orchestrator/templates/_shared/references/exploit-scaffolds.md` — flash loan Forge pattern + reusable exploit harness imports. **Read in Phase D** when writing exploit tests.
-
-Tool invocation scripts (use instead of reconstructing commands from memory):
-- `docs/orchestrator/templates/_shared/scripts/run-slither.sh <repo-path>` — Slither with build-info fix
-- `docs/orchestrator/templates/_shared/scripts/run-halmos.sh <repo-path> <contract-name>` — Halmos symbolic execution
-- `docs/orchestrator/templates/_shared/scripts/run-aderyn.sh <repo-path>` — Aderyn static analysis
-- `docs/orchestrator/templates/_shared/scripts/run-medusa.sh <repo-path> <contract-name>` — Medusa fuzzer
-- `docs/orchestrator/templates/_shared/scripts/forge-fuzz-template.t.sol` — fuzz test scaffold (cat, adapt, run)
+Read `docs/orchestrator/templates/_shared/references/` for output schema, FP gate rubric, and exploit scaffolds — consult at Phase C/D, not now. Tool scripts are in `docs/orchestrator/templates/_shared/scripts/` (slither, halmos, aderyn, medusa, forge-fuzz-template).
 
 <mandatory_tools>
 ### Mandatory Tool Checklist (your sidecar is INVALID until ALL items have a logged result)
