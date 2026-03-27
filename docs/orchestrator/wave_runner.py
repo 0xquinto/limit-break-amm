@@ -95,13 +95,21 @@ def _write_prompts_to_disk(wave: WaveConfig, prompts: dict[str, str]) -> dict[st
     return paths
 
 
+@dataclass
+class _AgentRunResult:
+    """Internal result combining SDK metadata with our turn counting."""
+    result_msg: ResultMessage | None
+    turn_count: int
+    wall_time_s: float
+
+
 async def _run_agent(
     agent: AgentConfig,
     prompt: str,
     wave_number: int,
     start_delay: float,
-) -> ResultMessage | None:
-    """Spawn one agent via query(), return its ResultMessage.
+) -> _AgentRunResult:
+    """Spawn one agent via query(), return combined result.
 
     The agent receives the full prompt directly as the initial user message.
     Artifacts are written to disk by the agent. The ResultMessage provides
@@ -135,23 +143,26 @@ async def _run_agent(
     turn_count = 0
     agent_start = time.monotonic()
 
-    async for message in query(prompt=prompt, options=options):
-        if isinstance(message, AssistantMessage):
-            turn_count += 1
-            if turn_count % 25 == 0:
-                elapsed_s = int(time.monotonic() - agent_start)
-                _log(f"  [{agent.name}] Turn {turn_count} ({elapsed_s}s elapsed)...")
-        elif isinstance(message, ResultMessage):
-            result_msg = message
+    try:
+        async for message in query(prompt=prompt, options=options):
+            if isinstance(message, AssistantMessage):
+                turn_count += 1
+                if turn_count % 25 == 0:
+                    elapsed_s = int(time.monotonic() - agent_start)
+                    _log(f"  [{agent.name}] Turn {turn_count} ({elapsed_s}s elapsed)...")
+            elif isinstance(message, ResultMessage):
+                result_msg = message
+    except Exception as e:
+        wall_s = time.monotonic() - agent_start
+        _log(f"  [{agent.name}] CRASHED after {turn_count} turns ({wall_s:.0f}s): {e}")
+        raise
+
+    wall_s = time.monotonic() - agent_start
 
     if result_msg:
         status = "ERROR" if result_msg.is_error else "done"
-        parts = [f"turns={result_msg.num_turns}"]
-        if result_msg.duration_ms:
-            parts.append(f"wall={result_msg.duration_ms // 1000}s")
-        if result_msg.duration_api_ms and result_msg.duration_ms:
-            api_pct = int(result_msg.duration_api_ms / max(result_msg.duration_ms, 1) * 100)
-            parts.append(f"api={api_pct}%")
+        parts = [f"turns={turn_count}"]
+        parts.append(f"wall={int(wall_s)}s")
         if result_msg.total_cost_usd:
             parts.append(f"cost=${result_msg.total_cost_usd:.2f}")
         if result_msg.usage:
@@ -163,9 +174,9 @@ async def _run_agent(
                 parts.append(f"cache={int(cache_read / total_input * 100)}%")
         _log(f"  [{agent.name}] {status} ({', '.join(parts)})")
     else:
-        _log(f"  [{agent.name}] ERROR (no ResultMessage)")
+        _log(f"  [{agent.name}] ERROR (no ResultMessage, {turn_count} turns, {int(wall_s)}s)")
 
-    return result_msg
+    return _AgentRunResult(result_msg=result_msg, turn_count=turn_count, wall_time_s=wall_s)
 
 
 async def run_wave(
@@ -225,23 +236,24 @@ async def run_wave(
             event = log_safety_event(agent.name, "agent_exception", str(raw))
             safety_events.append(event)
             agent_usage.append({"agent": agent.name, "error": str(raw)})
-        elif isinstance(raw, ResultMessage):
-            if raw.is_error:
-                event = log_safety_event(agent.name, "session_error", raw.result or "unknown")
+        elif isinstance(raw, _AgentRunResult):
+            rm = raw.result_msg
+            if rm and rm.is_error:
+                event = log_safety_event(agent.name, "session_error", rm.result or "unknown")
                 safety_events.append(event)
             usage_entry: dict = {
                 "agent": agent.name,
-                "total_cost_usd": raw.total_cost_usd,
-                "num_turns": raw.num_turns,
-                "stop_reason": raw.stop_reason,
-                "duration_ms": raw.duration_ms,
-                "duration_api_ms": raw.duration_api_ms,
+                "total_cost_usd": rm.total_cost_usd if rm else None,
+                "num_turns": raw.turn_count,  # our count, not SDK's
+                "stop_reason": rm.stop_reason if rm else "unknown",
+                "wall_time_s": round(raw.wall_time_s, 1),
+                "duration_api_ms": rm.duration_api_ms if rm else 0,
             }
-            if raw.usage:
-                usage_entry["input_tokens"] = raw.usage.get("input_tokens", 0)
-                usage_entry["output_tokens"] = raw.usage.get("output_tokens", 0)
-                usage_entry["cache_read_input_tokens"] = raw.usage.get("cache_read_input_tokens", 0)
-                usage_entry["cache_creation_input_tokens"] = raw.usage.get("cache_creation_input_tokens", 0)
+            if rm and rm.usage:
+                usage_entry["input_tokens"] = rm.usage.get("input_tokens", 0)
+                usage_entry["output_tokens"] = rm.usage.get("output_tokens", 0)
+                usage_entry["cache_read_input_tokens"] = rm.usage.get("cache_read_input_tokens", 0)
+                usage_entry["cache_creation_input_tokens"] = rm.usage.get("cache_creation_input_tokens", 0)
             agent_usage.append(usage_entry)
 
     # Wave summary
