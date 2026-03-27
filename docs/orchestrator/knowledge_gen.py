@@ -30,18 +30,54 @@ logger = logging.getLogger(__name__)
 _CURATED_PATTERNS_PATH = PROJECT_ROOT / "docs" / "references" / "2026-03-18-curated-exploit-context.md"
 
 
+# ── Hypothesis Coercion ──────────────────────────────────────────────────────
+
+def _ensure_hypothesis_dict(obj: object) -> dict:
+    """Coerce a hypothesis to dict form.
+
+    Handles: dict (passthrough), str (try JSON parse first, then wrap),
+    other (str-convert and wrap). Strips whitespace and markdown fences
+    before parsing. Pattern from agent-zero #1236 and StructuredRAG failures.
+    """
+    if isinstance(obj, dict):
+        return obj
+    if isinstance(obj, str):
+        text = obj.strip()
+        # Strip markdown code fences that agents sometimes emit around JSON
+        if text.startswith("```"):
+            text = "\n".join(text.split("\n")[1:])  # remove opening fence line
+        if text.endswith("```"):
+            text = "\n".join(text.split("\n")[:-1])  # remove closing fence line
+        text = text.strip()
+        if text:
+            try:
+                parsed = json.loads(text)
+                if isinstance(parsed, dict):
+                    return parsed
+            except (ValueError, TypeError):
+                pass
+        return {"mechanism": obj, "lines": {}, "functions": [], "confidence": "low", "id": "?"}
+    return {"mechanism": str(obj), "lines": {}, "functions": [], "confidence": "low", "id": "?"}
+
+
 # ── Jaccard Similarity ───────────────────────────────────────────────────────
 
-def _jaccard_lines(h1: dict, h2: dict) -> float:
+def _jaccard_lines(h1, h2) -> float:
     """Compute Jaccard similarity over flattened (contract, line_num) tuple sets.
 
     Each hypothesis has a ``lines`` field: {contract_path: [line_numbers]}.
     We flatten to a set of (contract, line) tuples and compute
     |intersection| / |union|.
     """
+    h1 = _ensure_hypothesis_dict(h1)
+    h2 = _ensure_hypothesis_dict(h2)
+
     def _flatten(h: dict) -> set[tuple[str, int]]:
         result: set[tuple[str, int]] = set()
-        for contract, line_nums in h.get("lines", {}).items():
+        lines = h.get("lines", {})
+        if not isinstance(lines, dict):
+            return result
+        for contract, line_nums in lines.items():
             for ln in line_nums:
                 result.add((contract, ln))
         return result
@@ -80,9 +116,11 @@ def deduplicate_hypotheses(
     for i, (idx_a, ha) in enumerate(indexed):
         if idx_a in dropped:
             continue
+        ha = _ensure_hypothesis_dict(ha)
         for idx_b, hb in indexed[i + 1:]:
             if idx_b in dropped:
                 continue
+            hb = _ensure_hypothesis_dict(hb)
             # Check Jaccard > 0.5
             jaccard = _jaccard_lines(ha, hb)
             if jaccard <= 0.5:
@@ -106,12 +144,13 @@ def deduplicate_hypotheses(
 
 # ── Routing ──────────────────────────────────────────────────────────────────
 
-def _is_state_coupling(hypothesis: dict) -> bool:
+def _is_state_coupling(hypothesis) -> bool:
     """Determine if a hypothesis implies state coupling routing.
 
     Explicit: category == "state_coupling".
     Derived from source_category: starts with "2b", "2.5", or "2g".
     """
+    hypothesis = _ensure_hypothesis_dict(hypothesis)
     category = hypothesis.get("category")
     if category == "state_coupling":
         return True
@@ -138,6 +177,7 @@ def route_hypotheses(hypotheses: list[dict]) -> dict[str, list[dict]]:
     result: dict[str, list[dict]] = {}
 
     for h in hypotheses:
+        h = _ensure_hypothesis_dict(h)
         boundary = h.get("boundary", "")
         target_agents: set[str] = set()
 
@@ -172,7 +212,7 @@ _PRIOR_RESULT_ORDER = {
 }
 
 
-def _hypothesis_quality_score(h: dict) -> float:
+def _hypothesis_quality_score(h) -> float:
     """Compute a quality score for Elo pairwise comparison.
 
     Dimensions (each 0-1, summed):
@@ -182,6 +222,7 @@ def _hypothesis_quality_score(h: dict) -> float:
     - Confidence: high=1.0, medium=0.6, low=0.3
     - Mechanism depth: len(mechanism) > 100 chars → 1.0
     """
+    h = _ensure_hypothesis_dict(h)
     score = 0.0
 
     # Grounding
@@ -265,7 +306,7 @@ def apply_volume_cap(
 
 # ── Complexity Classification (Resource-Aware Routing) ───────────────────────
 
-def classify_hypothesis_complexity(h: dict) -> str:
+def classify_hypothesis_complexity(h) -> str:
     """Classify hypothesis as simple/medium/complex based on scope.
 
     Based on Resource-Aware Optimization (Ch. 16, Agentic Design Patterns):
@@ -276,6 +317,7 @@ def classify_hypothesis_complexity(h: dict) -> str:
     - complex: 3+ contracts OR has coupled_pair OR mechanism > 300 chars
     - medium: everything else
     """
+    h = _ensure_hypothesis_dict(h)
     num_contracts = len(h.get("lines", {}))
     num_functions = len(h.get("functions", []))
     has_coupling = h.get("coupled_pair") is not None
@@ -516,6 +558,7 @@ def format_hypotheses_block(
     parts.append("")
 
     for i, h in enumerate(hypotheses, 1):
+        h = _ensure_hypothesis_dict(h)
         mechanism = _sanitize_hypothesis_text(h.get("mechanism", ""))
         hyp_id = h.get("id", f"H-{i}")
         confidence = h.get("confidence", "unknown")

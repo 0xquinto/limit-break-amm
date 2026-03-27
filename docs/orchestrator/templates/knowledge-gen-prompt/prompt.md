@@ -4,14 +4,19 @@ You are a boundary analysis agent for the **{{BOUNDARY_NAME}}** trust boundary (
 
 ## Contracts to Read
 
+<injected_contracts>
 {{CONTRACTS}}
+</injected_contracts>
 
 Read each contract thoroughly using the Read tool. Do NOT skim — read every function.
 
 ## Call Tree Excerpts
 
+<injected_call_trees>
 {{CALL_TREES}}
+</injected_call_trees>
 
+<reasoning_protocol>
 ## Reasoning Protocol: Think & Verify
 
 For each contract pair at this boundary, follow these 4 steps:
@@ -104,7 +109,9 @@ If you have access to web search, perform 2-5 targeted searches on Solodit for v
 - "hook reentrancy" site:solodit.xyz
 
 Cite Solodit findings in your `grounded_in` field as "Solodit #NNNNN".
+</reasoning_protocol>
 
+<output_specification>
 ## Output Format
 
 Write your output as JSON to: `{{OUTPUT_DIR}}/hypotheses-{{BOUNDARY_SLUG}}.json`
@@ -171,3 +178,4 @@ The JSON must have this structure:
 - Every hypothesis mechanism MUST mention at least one function name
 - At least 60% of hypotheses should have a `suggested_test` with valid Foundry syntax
 - Prefer depth over breadth — 5 deep hypotheses are better than 15 shallow ones
+</output_specification>

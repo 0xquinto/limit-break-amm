@@ -19,9 +19,11 @@ Safety controls: max_turns per agent, per-agent error isolation, safety event lo
 import asyncio
 import json
 import os
+import random
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from enum import Enum
 
 from claude_agent_sdk import (
     AssistantMessage,
@@ -39,6 +41,10 @@ from .model_profiles import resolve_profile, AUDIT_SYSTEM_PROMPT
 os.environ.pop("CLAUDECODE", None)
 os.environ.pop("CLAUDE_CODE_ENTRYPOINT", None)
 
+# Increase stream-close timeout to 1 hour (default 60s kills long-running agents)
+# See: https://github.com/anthropics/claude-agent-sdk-python/issues/730
+os.environ["CLAUDE_CODE_STREAM_CLOSE_TIMEOUT"] = "3600000"
+
 # Load secrets from .env (CERTORAKEY, etc.) so spawned agents inherit them
 _dotenv_path = PROJECT_ROOT / ".env"
 if _dotenv_path.exists():
@@ -50,6 +56,27 @@ if _dotenv_path.exists():
 
 # Stagger delay between agent launches to avoid concurrent TLS handshake issues
 _STAGGER_DELAY_SECONDS = 2.0
+
+
+class StopReason(str, Enum):
+    COMPLETED = "completed"
+    CRASHED = "crashed"
+    TIMEOUT = "timeout"
+    STALE = "stale"          # produced sidecar but 0 turns
+    PARTIAL = "partial"      # >0 turns but no ResultMessage
+    CANCELLED = "cancelled"
+    UNKNOWN = "unknown"
+
+
+class WaveAbortError(Exception):
+    """Raised when too few agents succeed to produce a viable result."""
+    def __init__(self, message: str, agent_usage: list[dict], safety_events: list[dict]):
+        super().__init__(message)
+        self.agent_usage = agent_usage  # partial results still accessible
+        self.safety_events = safety_events
+
+
+_MIN_SUCCESS_RATIO = 0.5  # abort wave if fewer than 50% agents succeed
 
 
 def _log(msg: str) -> None:
@@ -103,18 +130,16 @@ class _AgentRunResult:
     wall_time_s: float
 
 
+_MAX_AGENT_RETRIES = 2
+_RETRY_BASE_DELAY = 5.0  # seconds
+
 async def _run_agent(
     agent: AgentConfig,
     prompt: str,
     wave_number: int,
     start_delay: float,
 ) -> _AgentRunResult:
-    """Spawn one agent via query(), return combined result.
-
-    The agent receives the full prompt directly as the initial user message.
-    Artifacts are written to disk by the agent. The ResultMessage provides
-    SDK-level metadata (usage, cost, stop_reason).
-    """
+    """Spawn one agent via query() with retry on transient failure."""
     await asyncio.sleep(start_delay)
 
     profile = agent.resolved_profile
@@ -135,48 +160,66 @@ async def _run_agent(
         thinking=thinking,
     )
 
-    _log(f"  [{agent.name}] Spawning ({agent.resolved_model}, "
-          f"max_turns={agent.max_turns}, "
-          f"thinking={'enabled' if thinking else 'disabled'})...")
+    last_error = None
+    for attempt in range(_MAX_AGENT_RETRIES + 1):
+        if attempt > 0:
+            delay = _RETRY_BASE_DELAY * (2 ** (attempt - 1)) + random.uniform(0, 2)
+            _log(f"  [{agent.name}] Retry {attempt}/{_MAX_AGENT_RETRIES} after {delay:.1f}s...")
+            await asyncio.sleep(delay)
 
-    result_msg = None
-    turn_count = 0
-    agent_start = time.monotonic()
+        _log(f"  [{agent.name}] Spawning (attempt {attempt + 1}, "
+              f"{agent.resolved_model}, max_turns={agent.max_turns}, "
+              f"thinking={'enabled' if thinking else 'disabled'})...")
 
-    try:
-        async for message in query(prompt=prompt, options=options):
-            if isinstance(message, AssistantMessage):
-                turn_count += 1
-                if turn_count % 25 == 0:
-                    elapsed_s = int(time.monotonic() - agent_start)
-                    _log(f"  [{agent.name}] Turn {turn_count} ({elapsed_s}s elapsed)...")
-            elif isinstance(message, ResultMessage):
-                result_msg = message
-    except Exception as e:
-        wall_s = time.monotonic() - agent_start
-        _log(f"  [{agent.name}] CRASHED after {turn_count} turns ({wall_s:.0f}s): {e}")
-        raise
+        result_msg = None
+        turn_count = 0
+        agent_start = time.monotonic()
 
-    wall_s = time.monotonic() - agent_start
+        try:
+            async for message in query(prompt=prompt, options=options):
+                if isinstance(message, AssistantMessage):
+                    turn_count += 1
+                    if turn_count % 25 == 0:
+                        elapsed_s = int(time.monotonic() - agent_start)
+                        _log(f"  [{agent.name}] Turn {turn_count} ({elapsed_s}s elapsed)...")
+                elif isinstance(message, ResultMessage):
+                    result_msg = message
 
-    if result_msg:
-        status = "ERROR" if result_msg.is_error else "done"
-        parts = [f"turns={turn_count}"]
-        parts.append(f"wall={int(wall_s)}s")
-        if result_msg.total_cost_usd:
-            parts.append(f"cost=${result_msg.total_cost_usd:.2f}")
-        if result_msg.usage:
-            cache_read = result_msg.usage.get("cache_read_input_tokens", 0)
-            total_input = (cache_read
-                           + result_msg.usage.get("input_tokens", 0)
-                           + result_msg.usage.get("cache_creation_input_tokens", 0))
-            if total_input > 0:
-                parts.append(f"cache={int(cache_read / total_input * 100)}%")
-        _log(f"  [{agent.name}] {status} ({', '.join(parts)})")
-    else:
-        _log(f"  [{agent.name}] ERROR (no ResultMessage, {turn_count} turns, {int(wall_s)}s)")
+            wall_s = time.monotonic() - agent_start
 
-    return _AgentRunResult(result_msg=result_msg, turn_count=turn_count, wall_time_s=wall_s)
+            if result_msg:
+                status = "ERROR" if result_msg.is_error else "done"
+                parts = [f"turns={turn_count}", f"wall={int(wall_s)}s"]
+                if result_msg.total_cost_usd:
+                    parts.append(f"cost=${result_msg.total_cost_usd:.2f}")
+                if result_msg.usage:
+                    cache_read = result_msg.usage.get("cache_read_input_tokens", 0)
+                    total_input = (cache_read
+                                   + result_msg.usage.get("input_tokens", 0)
+                                   + result_msg.usage.get("cache_creation_input_tokens", 0))
+                    if total_input > 0:
+                        parts.append(f"cache={int(cache_read / total_input * 100)}%")
+                _log(f"  [{agent.name}] {status} ({', '.join(parts)})")
+            else:
+                _log(f"  [{agent.name}] WARNING: no ResultMessage ({turn_count} turns, {int(wall_s)}s)")
+
+            return _AgentRunResult(result_msg=result_msg, turn_count=turn_count, wall_time_s=wall_s)
+
+        except Exception as e:
+            wall_s = time.monotonic() - agent_start
+            last_error = e
+            _log(f"  [{agent.name}] CRASHED (attempt {attempt + 1}) after {turn_count} turns "
+                  f"({wall_s:.0f}s): {type(e).__name__}: {e}")
+
+            # If agent did meaningful work (>10 turns), don't retry — artifacts may be on disk
+            if turn_count > 10:
+                _log(f"  [{agent.name}] Agent completed {turn_count} turns before crash — "
+                      f"accepting partial result (artifacts may be on disk)")
+                return _AgentRunResult(result_msg=None, turn_count=turn_count, wall_time_s=wall_s)
+
+    # All retries exhausted
+    _log(f"  [{agent.name}] FAILED after {_MAX_AGENT_RETRIES + 1} attempts: {last_error}")
+    raise last_error  # type: ignore[misc]  # always set in except block above
 
 
 async def run_wave(
@@ -216,26 +259,55 @@ async def run_wave(
     _log(f"  Spawning {len(wave.agents)} agents ({_STAGGER_DELAY_SECONDS}s stagger)...")
     start_time = time.monotonic()
 
+    # Circuit breaker: abort wave if 3+ agents crash within 60s of spawning
+    _FAST_FAIL_THRESHOLD = 3
+    _FAST_FAIL_WINDOW_S = 60.0
+    fast_failures: list[float] = []
+
+    async def _safe_run(agent, prompt, delay):
+        try:
+            return await _run_agent(agent, prompt, wave.number, start_delay=delay)
+        except Exception as e:
+            elapsed = time.monotonic() - start_time - delay
+            if elapsed < _FAST_FAIL_WINDOW_S:
+                fast_failures.append(elapsed)
+                if len(fast_failures) >= _FAST_FAIL_THRESHOLD:
+                    _log(f"  CIRCUIT BREAKER: {len(fast_failures)} agents crashed within "
+                          f"{_FAST_FAIL_WINDOW_S}s — aborting wave")
+            return e
+
     tasks = [
-        _run_agent(agent, prompts[agent.name], wave.number, start_delay=i * _STAGGER_DELAY_SECONDS)
+        asyncio.create_task(
+            _safe_run(agent, prompts[agent.name], i * _STAGGER_DELAY_SECONDS)
+        )
         for i, agent in enumerate(wave.agents)
     ]
-    raw_results = await asyncio.gather(*tasks, return_exceptions=True)
+    raw_results = await asyncio.gather(*tasks)
 
     elapsed_ms = int((time.monotonic() - start_time) * 1000)
-    _log(f"  All agents finished ({elapsed_ms}ms wall time)")
 
-    # 4. Collect per-agent SDK metadata, log failures, print summary
+    # Count outcomes
+    completed = sum(1 for r in raw_results if isinstance(r, _AgentRunResult) and r.result_msg)
+    partial = sum(1 for r in raw_results if isinstance(r, _AgentRunResult) and not r.result_msg)
+    failed = sum(1 for r in raw_results if isinstance(r, Exception))
+    _log(f"  All agents finished ({elapsed_ms}ms): "
+          f"{completed} completed, {partial} partial, {failed} failed")
+
+    # 4. Collect per-agent SDK metadata, log failures
     safety_events: list[dict] = []
     agent_usage: list[dict] = []
 
     for i, raw in enumerate(raw_results):
         agent = wave.agents[i]
         if isinstance(raw, Exception):
-            _log(f"  FAILED: {agent.name} — {raw}")
+            _log(f"  FAILED: {agent.name} — {type(raw).__name__}: {raw}")
             event = log_safety_event(agent.name, "agent_exception", str(raw))
             safety_events.append(event)
-            agent_usage.append({"agent": agent.name, "error": str(raw)})
+            agent_usage.append({
+                "agent": agent.name,
+                "error": f"{type(raw).__name__}: {raw}",
+                "recoverable": False,
+            })
         elif isinstance(raw, _AgentRunResult):
             rm = raw.result_msg
             if rm and rm.is_error:
@@ -244,8 +316,10 @@ async def run_wave(
             usage_entry: dict = {
                 "agent": agent.name,
                 "total_cost_usd": rm.total_cost_usd if rm else None,
-                "num_turns": raw.turn_count,  # our count, not SDK's
-                "stop_reason": rm.stop_reason if rm else "unknown",
+                "num_turns": raw.turn_count,
+                "stop_reason": (rm.stop_reason if rm
+                               else (StopReason.PARTIAL if raw.turn_count > 0
+                                     else StopReason.UNKNOWN)),
                 "wall_time_s": round(raw.wall_time_s, 1),
                 "duration_api_ms": rm.duration_api_ms if rm else 0,
             }
@@ -259,9 +333,23 @@ async def run_wave(
     # Wave summary
     total_cost = sum((a.get("total_cost_usd") or 0) for a in agent_usage)
     total_turns = sum((a.get("num_turns") or 0) for a in agent_usage)
-    failed = sum(1 for a in agent_usage if "error" in a)
-    _log(f"  Summary: {len(agent_usage)} agents, {total_turns} turns, "
-          f"${total_cost:.2f} total, {failed} failed")
+    # Minimum viability check
+    n_total = len(wave.agents)
+    success_ratio = completed / n_total if n_total else 0
+    degraded = success_ratio < 1.0 and success_ratio >= _MIN_SUCCESS_RATIO
+
+    if success_ratio < _MIN_SUCCESS_RATIO:
+        _log(f"  ABORT: Only {completed}/{n_total} agents succeeded "
+              f"({success_ratio:.0%} < {_MIN_SUCCESS_RATIO:.0%} minimum)")
+        raise WaveAbortError(
+            f"Only {completed}/{n_total} agents succeeded ({success_ratio:.0%})",
+            agent_usage=agent_usage,
+            safety_events=safety_events,
+        )
+
+    status_label = "DEGRADED" if degraded else "OK"
+    _log(f"  Summary [{status_label}]: {len(agent_usage)} agents, {total_turns} turns, "
+          f"${total_cost:.2f} total, {failed} failed, {partial} partial")
 
     # 5. Build results from disk artifacts
     if skip_artifact_collection:

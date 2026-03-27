@@ -13,8 +13,20 @@ cache/
 node_modules/
 __pycache__/
 
+# Python
+.venv/
+.pytest_cache/
+*.py[cod]
+*$py.class
+
+# Foundry broadcast (can contain RPC URLs / API keys — see Foundry issue #2190)
+broadcast/
+
 # Run archives (large, generated)
 docs/targets/full-system/artifacts/archive/
+
+# Experiment data (generated, large)
+docs/targets/full-system/experiments.tsv
 
 # Secrets
 .env

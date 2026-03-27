@@ -9,7 +9,8 @@ Ensures re-runs don't pollute prior results:
 
 import json
 import shutil
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
+from pathlib import Path
 from .config import ARTIFACTS_DIR, RESULTS_DIR, ARCHIVE_DIR
 MANIFEST_PATH = ARTIFACTS_DIR / "manifest.json"
 
@@ -220,3 +221,73 @@ def mark_run_complete() -> None:
 def get_run_info() -> dict | None:
     """Get current run info for inclusion in synthesis."""
     return _read_manifest()
+
+
+# ---------------------------------------------------------------------------
+# Archive pruning
+# ---------------------------------------------------------------------------
+
+RETENTION_DAYS = 7
+MAX_UNTAGGED_KEEP = 5
+
+# Column index for 'status' in experiments.tsv (0-indexed)
+_TSV_STATUS_COL = 9
+
+
+def _log(msg: str) -> None:
+    print(msg)
+
+
+def prune_archive(archive_dir: Path, experiments_tsv: Path, dry_run: bool = False) -> list[str]:
+    """Three-tier retention: keep landmarks forever, recent discards 7 days, delete rest.
+
+    Tier 1 (forever): runs with status=keep in experiments.tsv (score improvement landmarks)
+    Tier 2 (7 days): recent discards — useful for debugging regressions
+    Tier 3 (delete): old discards — superseded, experiments.tsv captures provenance
+    """
+    cutoff = datetime.now(timezone.utc) - timedelta(days=RETENTION_DAYS)
+    keep_ids: set[str] = set()
+    if experiments_tsv.exists():
+        for line in experiments_tsv.read_text().splitlines()[1:]:  # skip header
+            parts = line.split("\t")
+            if len(parts) > _TSV_STATUS_COL and parts[_TSV_STATUS_COL].strip() == "keep":
+                keep_ids.add(parts[0].strip())
+
+    if not archive_dir.exists():
+        return []
+
+    pruned: list[str] = []
+    untagged: list[Path] = []
+    for run_dir in sorted(archive_dir.iterdir()):
+        if not run_dir.is_dir() or not run_dir.name.startswith("run-"):
+            continue
+        run_id = run_dir.name
+        if run_id in keep_ids:
+            continue  # Tier 1: landmark — never prune
+        # Try parse timestamp from run ID
+        try:
+            ts = datetime.strptime(run_id, "run-%Y-%m-%dT%H-%M-%SZ").replace(tzinfo=timezone.utc)
+            if ts > cutoff:
+                continue  # Tier 2: recent — keep for debugging
+        except ValueError:
+            untagged.append(run_dir)
+            continue
+        # Tier 3: old discard — remove
+        if dry_run:
+            _log(f"  [dry-run] Would delete {run_dir}")
+        else:
+            shutil.rmtree(run_dir)
+            _log(f"  Pruned: {run_id}")
+        pruned.append(run_id)
+
+    # Handle pre-experiment untagged runs: keep last MAX_UNTAGGED_KEEP
+    if len(untagged) > MAX_UNTAGGED_KEEP:
+        for run_dir in untagged[:-MAX_UNTAGGED_KEEP]:
+            if dry_run:
+                _log(f"  [dry-run] Would delete untagged {run_dir.name}")
+            else:
+                shutil.rmtree(run_dir)
+                _log(f"  Pruned untagged: {run_dir.name}")
+            pruned.append(run_dir.name)
+
+    return pruned

@@ -25,6 +25,7 @@ from .regression import check_regression
 from .run_manager import (
     ensure_run, archive_wave, check_stale_synthesis,
     mark_wave_complete, mark_run_complete, get_run_info,
+    prune_archive,
 )
 
 
@@ -1041,6 +1042,8 @@ def main():
                         help="Triage verdict: 'real' (add to regression) or 'fp' (add to false-positives)")
     parser.add_argument("--review-suggestions", action="store_true",
                         help="Interactively review pending suggestions from reflection reports")
+    parser.add_argument("--prune", action="store_true",
+                        help="Prune old archive runs before starting")
     args = parser.parse_args()
 
     if args.status:
@@ -1069,6 +1072,13 @@ def main():
     if args.review_suggestions:
         _review_suggestions()
         return
+
+    if args.prune:
+        experiments_tsv = RESULTS_DIR.parent / "experiments.tsv"
+        pruned = prune_archive(ARCHIVE_DIR, experiments_tsv)
+        print(f"Pruned {len(pruned)} archive runs")
+        if not args.wave:
+            return
 
     if args.wave:
         if args.dry_run:

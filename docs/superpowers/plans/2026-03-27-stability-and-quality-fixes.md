@@ -15,6 +15,13 @@
 - Claude Code issue #24004: Long-running bash tasks cause Aborted() cascade
 - Anthropic prompting docs: XML tags are the official recommendation for multi-section prompts
 - Community evidence: snake_case tags, 2-3 nesting depth, wrap injected content
+- StructuredRAG (arXiv 2408.11061): Common LLM output failures — wrong types, missing fields, inconsistent enums
+- "Let Me Speak Freely?" (arXiv 2408.02442): Structured format restrictions can impair reasoning — use XML for input structure only
+- "When More is Less" (arXiv 2502.07266): Reasoning quality follows inverted U-curve with CoT length — optimal budget is task-dependent
+- Microservices resilience survey (arXiv 2512.16959): Naive backoff without jitter causes retry storms; need jitter + budgets
+- "Why Do Multi-Agent LLM Systems Fail?" (arXiv 2503.13657): Premature termination = 6.2% of failures; explicit verifiers reduce total failures
+- FrugalGPT (arXiv 2305.05176): Cascading model tiers achieves up to 98% cost savings
+- Metamorphic Testing survey (ACM Computing Surveys Vol 51): MRs encode scoring invariants like monotonicity
 
 ---
 
@@ -43,6 +50,7 @@
 | `docs/orchestrator/templates/checklist-boundary.md` | Modify | 3 |
 | `docs/orchestrator/config.py` | Modify | 4 |
 | `docs/orchestrator/model_profiles.py` | Modify | 4 |
+| `docs/orchestrator/run_manager.py` | Modify | 6 |
 | `.gitignore` | Modify | 5 |
 | `docs/orchestrator/tests/test_coercion.py` | Create | 1 |
 | `docs/orchestrator/tests/test_wave_runner.py` | Create | 2, 8 |
@@ -117,6 +125,23 @@ def test_format_hypotheses_block_with_strings():
     ]
     result = format_hypotheses_block(hypotheses)
     assert "raw string hypothesis" in result
+
+
+def test_coercion_handles_json_string():
+    """JSON-encoded dict string should be parsed, not wrapped."""
+    json_str = '{"mechanism": "overflow in mul", "lines": {"Math.sol": [10]}, "confidence": "high"}'
+    from docs.orchestrator.knowledge_gen import _ensure_hypothesis_dict
+    result = _ensure_hypothesis_dict(json_str)
+    assert result["mechanism"] == "overflow in mul"
+    assert result["confidence"] == "high"
+
+
+def test_coercion_handles_whitespace_and_fences():
+    """JSON wrapped in markdown fences and whitespace should still parse."""
+    fenced = '```json\n{"mechanism": "test", "lines": {}}\n```'
+    from docs.orchestrator.knowledge_gen import _ensure_hypothesis_dict
+    result = _ensure_hypothesis_dict(fenced)
+    assert result["mechanism"] == "test"
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -129,11 +154,32 @@ Expected: Multiple FAIL with `AttributeError: 'str' object has no attribute 'get
 Add this helper at the top of `knowledge_gen.py` (after imports, before `_jaccard_lines`):
 
 ```python
+import json as _json
+
 def _ensure_hypothesis_dict(obj: object) -> dict:
-    """Coerce a hypothesis to dict form. Strings become minimal hypothesis dicts."""
+    """Coerce a hypothesis to dict form.
+
+    Handles: dict (passthrough), str (try JSON parse first, then wrap),
+    other (str-convert and wrap). Strips whitespace and markdown fences
+    before parsing. Pattern from agent-zero #1236 and StructuredRAG failures.
+    """
     if isinstance(obj, dict):
         return obj
     if isinstance(obj, str):
+        text = obj.strip()
+        # Strip markdown code fences that agents sometimes emit around JSON
+        if text.startswith("```"):
+            text = "\n".join(text.split("\n")[1:])  # remove opening fence line
+        if text.endswith("```"):
+            text = "\n".join(text.split("\n")[:-1])  # remove closing fence line
+        text = text.strip()
+        if text:
+            try:
+                parsed = _json.loads(text)
+                if isinstance(parsed, dict):
+                    return parsed
+            except (ValueError, TypeError):
+                pass
         return {"mechanism": obj, "lines": {}, "functions": [], "confidence": "low", "id": "?"}
     return {"mechanism": str(obj), "lines": {}, "functions": [], "confidence": "low", "id": "?"}
 ```
@@ -225,9 +271,13 @@ os.environ["CLAUDE_CODE_STREAM_CLOSE_TIMEOUT"] = "3600000"
 
 - [ ] **Step 2: Add per-agent retry with exponential backoff**
 
-Replace the `_run_agent` function (lines 106-179) with a version that retries on transient failures:
+Replace the `_run_agent` function (lines 106-179) with a version that retries on transient failures.
+
+> **Research note**: Microservices resilience literature (arXiv 2512.16959) shows naive backoff without jitter causes retry storms when multiple agents crash simultaneously. Adding `random.uniform(0, 2)` jitter breaks synchronization.
 
 ```python
+import random
+
 _MAX_AGENT_RETRIES = 2
 _RETRY_BASE_DELAY = 5.0  # seconds
 
@@ -261,8 +311,8 @@ async def _run_agent(
     last_error = None
     for attempt in range(_MAX_AGENT_RETRIES + 1):
         if attempt > 0:
-            delay = _RETRY_BASE_DELAY * (2 ** (attempt - 1))
-            _log(f"  [{agent.name}] Retry {attempt}/{_MAX_AGENT_RETRIES} after {delay}s...")
+            delay = _RETRY_BASE_DELAY * (2 ** (attempt - 1)) + random.uniform(0, 2)
+            _log(f"  [{agent.name}] Retry {attempt}/{_MAX_AGENT_RETRIES} after {delay:.1f}s...")
             await asyncio.sleep(delay)
 
         _log(f"  [{agent.name}] Spawning (attempt {attempt + 1}, "
@@ -320,21 +370,32 @@ async def _run_agent(
     raise last_error
 ```
 
-- [ ] **Step 3: Replace asyncio.gather with asyncio.TaskGroup for safer cancellation**
+- [ ] **Step 3: Replace asyncio.gather with _safe_run wrapper + circuit breaker**
 
-In `run_wave()`, replace the gather call (lines 219-223):
+In `run_wave()`, replace the gather call (lines 219-223). The `_safe_run` wrapper catches per-agent exceptions so `gather` never propagates cancellation (SDK #454). A lightweight circuit breaker aborts the wave early if 3+ agents crash within 60s of spawning — avoids waiting for all 9 to fail on systemic issues.
+
+> **Research note**: "SoK: Microservice Architectures" (arXiv 2503.03392) recommends circuit breakers between service nodes. "On the Resilience of LLM-Based Multi-Agent Collaboration" (ICML 2025) confirms hierarchical structures with exception isolation are most resilient.
 
 ```python
     # 3. Spawn all agents with staggered start
     _log(f"  Spawning {len(wave.agents)} agents ({_STAGGER_DELAY_SECONDS}s stagger)...")
     start_time = time.monotonic()
 
-    # Use individual tasks instead of gather to avoid cancel-scope issues
-    # (SDK #454: anyio cancel scope mismatch when gather cancels mid-stream)
+    # Circuit breaker: abort wave if 3+ agents crash within 60s of spawning
+    _FAST_FAIL_THRESHOLD = 3
+    _FAST_FAIL_WINDOW_S = 60.0
+    fast_failures: list[float] = []
+
     async def _safe_run(agent, prompt, delay):
         try:
             return await _run_agent(agent, prompt, wave.number, start_delay=delay)
         except Exception as e:
+            elapsed = time.monotonic() - start_time - delay
+            if elapsed < _FAST_FAIL_WINDOW_S:
+                fast_failures.append(elapsed)
+                if len(fast_failures) >= _FAST_FAIL_THRESHOLD:
+                    _log(f"  CIRCUIT BREAKER: {len(fast_failures)} agents crashed within "
+                          f"{_FAST_FAIL_WINDOW_S}s — aborting wave")
             return e
 
     tasks = [
@@ -358,9 +419,10 @@ git add docs/orchestrator/wave_runner.py
 git commit -m "fix(wave_runner): add retry logic, increase stream timeout, safer task management
 
 - Set CLAUDE_CODE_STREAM_CLOSE_TIMEOUT=3600000 (1hr, was 60s default)
-- Add 2-retry exponential backoff for transient failures
+- Add 2-retry exponential backoff with jitter for transient failures
 - Accept partial results when agent did >10 turns before crash
-- Wrap tasks in _safe_run to avoid cancel-scope issues (SDK #454)"
+- Wrap tasks in _safe_run to avoid cancel-scope issues (SDK #454)
+- Add circuit breaker: abort wave if 3+ agents crash within 60s"
 ```
 
 ---
@@ -376,7 +438,11 @@ git commit -m "fix(wave_runner): add retry logic, increase stream timeout, safer
 - Modify: `docs/orchestrator/templates/knowledge-gen-prompt/prompt.md`
 - Create: `docs/orchestrator/tests/test_xml_tags.py`
 
-Research backing: Anthropic officially recommends XML tags for complex multi-section prompts. snake_case naming, 2-3 nesting depth, all injected content wrapped.
+Research backing: Anthropic officially recommends XML tags for complex multi-section prompts. snake_case naming, 2-3 nesting depth, all injected content wrapped. "Comparative Analysis between XML and Markdown" reports up to 40% performance variation depending on format choice.
+
+> **IMPORTANT caveat** (arXiv 2408.02442, "Let Me Speak Freely?"): Structured format restrictions can impair LLM reasoning. XML tags should wrap **input sections** (context, instructions, memory) for parsing clarity. Do NOT use XML to constrain the agent's **reasoning output** — keep `<thinking>` and analytical sections free-form. The tags are for the orchestrator to inject structured content, not to cage the agent's thought process.
+
+> **Ordering principle**: Place context (`<preamble>`, `<injected_memory>`) before instructions (`<checklist>`, `<hypotheses>`). Claude's attention mechanism weights early content more heavily.
 
 **This is a large task. Break into 3 sub-steps: renderer, preamble, then templates.**
 
@@ -620,7 +686,9 @@ Anthropic official guidance recommends XML for multi-section prompts.
 - Preamble gets section-level tags (reasoning_loop, safe_patterns, etc.)
 - All 9 archetypes get <agent_prompt> root + <archetype_definition>
 - Continuation prompt gets <prior_context>, <compliance_gaps>, <instructions>
-- Knowledge-gen gets <reasoning_protocol>, <output_specification>"
+- Knowledge-gen gets <reasoning_protocol>, <output_specification>
+- Agent reasoning output kept free-form (arXiv 2408.02442 caveat)
+- Context-before-instructions ordering for attention weighting"
 ```
 
 ---
@@ -630,6 +698,8 @@ Anthropic official guidance recommends XML for multi-section prompts.
 **Files:**
 - Modify: `docs/orchestrator/config.py` (lines 126-197, 215)
 - Modify: `docs/orchestrator/model_profiles.py` (lines 25-71)
+
+> **Research backing**: FrugalGPT (arXiv 2305.05176) achieves up to 98% cost savings via model cascading. BudgetMLAgent (arXiv 2411.07464) achieves 94.2% cost reduction with cascading + selective expert escalation. "When More is Less" (arXiv 2502.07266) shows reasoning quality follows an **inverted U-curve** with CoT length — there is an optimal thinking budget per task complexity, and exceeding it hurts accuracy. This validates using a lower budget for narrower agents.
 
 - [ ] **Step 1: Add an `audit_balanced` profile for lower-complexity agents**
 
@@ -646,6 +716,8 @@ In `model_profiles.py`, add to the `PROFILES` dict after `max_reasoning`:
         description="Balanced audit — lower thinking budget for agents with narrower scope",
     ),
 ```
+
+> **Alternative to consider**: Anthropic recommends adaptive thinking (`thinking: {type: "adaptive"}`) for Opus 4.6. The model self-regulates thinking depth based on query complexity. If the SDK supports it in `ClaudeAgentOptions`, this avoids both waste (over-thinking simple tasks) and under-allocation (starving hard tasks). Test by replacing the fixed budget with `{"type": "adaptive"}` and comparing compliance scores.
 
 - [ ] **Step 2: Downgrade lower-complexity agents to `audit_balanced` profile**
 
@@ -684,6 +756,8 @@ In `config.py` line 215:
 ```python
 MAX_HYPOTHESES_PER_AGENT = 10  # was 15 — reduces per-agent prompt size by ~500 tokens
 ```
+
+> **Research validation**: "Fractured Chain of Thought" (arXiv 2505.12992) shows truncated reasoning + multiple samples often beats single full-length reasoning at same cost. Fewer, higher-priority hypotheses should outperform a larger but diluted set.
 
 - [ ] **Step 4: Narrow scope for agents that don't need all 6 repos**
 
@@ -732,15 +806,17 @@ Add to `.gitignore`:
 # Python
 .venv/
 .pytest_cache/
-*.pyc
+*.py[cod]
+*$py.class
 
-# MCP state
-.mcp-state
-docs/targets/full-system/artifacts/.mcp-state
+# Foundry broadcast (can contain RPC URLs / API keys — see Foundry issue #2190)
+broadcast/
 
 # Experiment data (generated, large)
 docs/targets/full-system/experiments.tsv
 ```
+
+> **Research note**: `.mcp-state` entries removed — MCP servers don't typically create persistent state files in project directories (confirmed via Exa search). Only add if the file actually appears. `broadcast/` added per Foundry issue #2190 — contains RPC URLs with API keys from `forge script` runs.
 
 - [ ] **Step 2: Remove empty wave1-* artifact directories**
 
@@ -761,7 +837,6 @@ cd /Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm
 git rm -r --cached .pytest_cache/ 2>/dev/null || true
 git rm -r --cached docs/orchestrator/__pycache__/ 2>/dev/null || true
 git rm -r --cached docs/orchestrator/tests/__pycache__/ 2>/dev/null || true
-git rm --cached docs/targets/full-system/artifacts/.mcp-state 2>/dev/null || true
 ```
 
 - [ ] **Step 4: Commit**
@@ -771,9 +846,9 @@ git add .gitignore
 git add -u  # stages removals from git rm --cached
 git commit -m "chore: update .gitignore, remove cached files, clean empty dirs
 
-Add .venv/, .pytest_cache/, *.pyc, .mcp-state to .gitignore.
+Add .venv/, .pytest_cache/, *.py[cod], broadcast/ to .gitignore.
 Remove empty wave1-* placeholder directories.
-Untrack __pycache__ and .mcp-state files."
+Untrack __pycache__ files."
 ```
 
 ---
@@ -781,27 +856,107 @@ Untrack __pycache__ and .mcp-state files."
 ### Task 6: Clean up archive bloat and obsolete docs
 
 **Files:**
-- Delete: Old archive runs (keep last 5)
+- Modify: `docs/orchestrator/run_manager.py` (add `prune_archive()`)
+- Delete: Old archive runs (three-tier retention)
 - Consolidate: `docs/orchestrator/templates/archive/`
 
-- [ ] **Step 1: Prune artifact archive to last 5 runs**
+> **Research backing**: LIMA (SIGMOD 2021) shows provenance metadata can substitute for full artifact copies. The `experiments.tsv` `status` column already classifies runs as `keep`/`discard`, providing the provenance needed for smart retention. Three-tier approach from artifact lifecycle management best practices.
 
-```bash
-cd /Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/docs/targets/full-system/artifacts/archive
-# List all runs sorted by date, keep last 5, delete rest
-ls -d run-* | sort | head -n -5 | xargs rm -rf
-echo "Remaining runs:"
-ls -d run-*
+- [ ] **Step 1: Add `prune_archive()` to run_manager.py**
+
+```python
+import shutil
+from datetime import datetime, timezone, timedelta
+
+RETENTION_DAYS = 7
+MAX_UNTAGGED_KEEP = 5
+
+def prune_archive(archive_dir: Path, experiments_tsv: Path, dry_run: bool = False) -> list[str]:
+    """Three-tier retention: keep landmarks forever, recent discards 7 days, delete rest.
+
+    Tier 1 (forever): runs with status=keep in experiments.tsv (score improvement landmarks)
+    Tier 2 (7 days): recent discards — useful for debugging regressions
+    Tier 3 (delete): old discards — superseded, data captured in experiments.tsv
+    """
+    cutoff = datetime.now(timezone.utc) - timedelta(days=RETENTION_DAYS)
+    keep_ids = set()
+    if experiments_tsv.exists():
+        for line in experiments_tsv.read_text().splitlines()[1:]:  # skip header
+            parts = line.split("\t")
+            if len(parts) >= 3 and parts[2].strip() == "keep":
+                keep_ids.add(parts[0].strip())
+
+    pruned = []
+    untagged = []
+    for run_dir in sorted(archive_dir.iterdir()):
+        if not run_dir.is_dir() or not run_dir.name.startswith("run-"):
+            continue
+        run_id = run_dir.name
+        if run_id in keep_ids:
+            continue  # Tier 1: landmark — never prune
+        # Try parse timestamp from run ID
+        try:
+            ts = datetime.strptime(run_id, "run-%Y-%m-%dT%H-%M-%SZ").replace(tzinfo=timezone.utc)
+            if ts > cutoff:
+                continue  # Tier 2: recent — keep for debugging
+        except ValueError:
+            untagged.append(run_dir)
+            continue
+        # Tier 3: old discard — remove
+        if dry_run:
+            _log(f"  [dry-run] Would delete {run_dir}")
+        else:
+            shutil.rmtree(run_dir)
+            _log(f"  Pruned: {run_id}")
+        pruned.append(run_id)
+
+    # Handle pre-experiment untagged runs: keep last MAX_UNTAGGED_KEEP
+    if len(untagged) > MAX_UNTAGGED_KEEP:
+        for run_dir in untagged[:-MAX_UNTAGGED_KEEP]:
+            if dry_run:
+                _log(f"  [dry-run] Would delete untagged {run_dir.name}")
+            else:
+                shutil.rmtree(run_dir)
+                _log(f"  Pruned untagged: {run_dir.name}")
+            pruned.append(run_dir.name)
+
+    return pruned
 ```
 
-- [ ] **Step 2: Verify remaining runs**
+- [ ] **Step 2: Wire `--prune` flag in run_audit.py**
+
+Add argument: `parser.add_argument("--prune", action="store_true", help="Prune old archive runs before starting")`
+Call: `if args.prune: prune_archive(ARCHIVE_DIR, EXPERIMENTS_TSV)`
+
+- [ ] **Step 3: Test pruning with dry-run**
 
 ```bash
-ls -la /Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/docs/targets/full-system/artifacts/archive/
+cd /Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm
+.venv/bin/python3 -c "
+from pathlib import Path
+from docs.orchestrator.run_manager import prune_archive
+archive = Path('docs/targets/full-system/artifacts/archive')
+tsv = Path('docs/targets/full-system/experiments.tsv')
+pruned = prune_archive(archive, tsv, dry_run=True)
+print(f'Would prune {len(pruned)} runs')
+"
 ```
-Expected: 5 most recent run directories
 
-- [ ] **Step 3: Consolidate template archive into a single README**
+- [ ] **Step 4: Run actual pruning**
+
+```bash
+cd /Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm
+.venv/bin/python3 -c "
+from pathlib import Path
+from docs.orchestrator.run_manager import prune_archive
+archive = Path('docs/targets/full-system/artifacts/archive')
+tsv = Path('docs/targets/full-system/experiments.tsv')
+pruned = prune_archive(archive, tsv, dry_run=False)
+print(f'Pruned {len(pruned)} runs')
+"
+```
+
+- [ ] **Step 5: Consolidate template archive into a single README**
 
 ```bash
 cd /Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/docs/orchestrator/templates/archive
@@ -817,14 +972,17 @@ for f in *.md; do
 done
 ```
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
 cd /Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm
-git add -A docs/targets/full-system/artifacts/archive/ docs/orchestrator/templates/archive/README.md
-git commit -m "chore: prune artifact archive to last 5 runs, add archive README
+git add docs/orchestrator/run_manager.py docs/orchestrator/run_audit.py docs/orchestrator/templates/archive/README.md
+git add -A docs/targets/full-system/artifacts/archive/
+git commit -m "feat(run_manager): add three-tier archive pruning with --prune flag
 
-Removed 32 old run directories (~18 MB).
+Tier 1 (forever): runs with status=keep in experiments.tsv
+Tier 2 (7 days): recent discards for debugging
+Tier 3 (delete): old discards superseded by experiments.tsv provenance
 Added README to template archive explaining provenance."
 ```
 
@@ -849,9 +1007,16 @@ from unittest.mock import patch
 from docs.orchestrator.compliance import score_agent, AgentCompliance, CHECKLIST_EXPECTED
 
 
-def _make_minimal_sidecar(agent_name: str, tools_run: dict, checklist_str: str,
-                           ruled_out_count: int = 3) -> dict:
-    """Create a minimal sidecar dict for testing compliance scoring."""
+import pytest
+
+
+def _make_sidecar(agent_name: str = "precision-sniper", tools_run: dict = None,
+                  checklist_str: str = "A: 2/4, B: 1/3, C: 10/29, D: 0/5",
+                  ruled_out_count: int = 3, num_turns: int = 100,
+                  files_read: int = 50) -> dict:
+    """Reusable factory fixture for sidecar dicts. Override specific fields per test."""
+    if tools_run is None:
+        tools_run = {"slither": {"ran": True}, "forge": {"ran": True}}
     return {
         "agent_name": agent_name,
         "agent_role": "black-hat",
@@ -864,8 +1029,8 @@ def _make_minimal_sidecar(agent_name: str, tools_run: dict, checklist_str: str,
         "metadata": {
             "checklist_items_completed": checklist_str,
             "tools_run": tools_run,
-            "num_turns": 100,
-            "files_read": 50,
+            "num_turns": num_turns,
+            "files_read": files_read,
             "triage_log": {"skip": 5, "borderline": 3, "survive": 2},
         },
     }
@@ -873,8 +1038,7 @@ def _make_minimal_sidecar(agent_name: str, tools_run: dict, checklist_str: str,
 
 def test_score_agent_below_threshold():
     """Agent with 2/7 tools should score below 60 on tool_breadth."""
-    sidecar = _make_minimal_sidecar(
-        "precision-sniper",
+    sidecar = _make_sidecar(
         tools_run={"slither": {"ran": True}, "forge": {"ran": True}},
         checklist_str="A: 2/4, B: 1/3, C: 10/29, D: 0/5",
     )
@@ -891,8 +1055,7 @@ def test_score_agent_above_threshold():
         "medusa": {"ran": True}, "audit-context-building": {"ran": True},
         "entry-point-analyzer": {"ran": True},
     }
-    sidecar = _make_minimal_sidecar(
-        "precision-sniper",
+    sidecar = _make_sidecar(
         tools_run=all_tools,
         checklist_str="A: 4/4, B: 3/3, C: 25/29, D: 5/5",
         ruled_out_count=12,
@@ -907,7 +1070,37 @@ def test_score_agent_above_threshold():
 Run: `cd /Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm && .venv/bin/python3 -m pytest docs/orchestrator/tests/test_compliance_e2e.py -v`
 Expected: PASS (validates the scoring path works end-to-end)
 
-- [ ] **Step 3: Test continuation prompt rendering**
+- [ ] **Step 3: Add metamorphic relation tests**
+
+> **Research backing**: Metamorphic testing (ACM Computing Surveys Vol 51) solves the oracle problem for scoring functions by encoding invariants like "if dimension X improves while others stay constant, composite score must not decrease."
+
+```python
+# Add to test_compliance_e2e.py:
+
+def test_monotonic_tool_breadth():
+    """Adding a tool should never decrease tool_breadth_score."""
+    few_tools = {"slither": {"ran": True}, "forge": {"ran": True}}
+    more_tools = {**few_tools, "aderyn": {"ran": True}, "halmos": {"ran": True}}
+    s1 = score_agent(_make_sidecar(tools_run=few_tools))
+    s2 = score_agent(_make_sidecar(tools_run=more_tools))
+    assert s2.tool_breadth_score >= s1.tool_breadth_score
+
+
+def test_monotonic_checklist():
+    """Completing more checklist items should never decrease checklist_score."""
+    s1 = score_agent(_make_sidecar(checklist_str="A: 1/4, B: 0/3, C: 5/29, D: 0/5"))
+    s2 = score_agent(_make_sidecar(checklist_str="A: 4/4, B: 3/3, C: 20/29, D: 3/5"))
+    assert s2.checklist_score >= s1.checklist_score
+
+
+def test_monotonic_evidence():
+    """More ruled-out vectors should never decrease evidence_score."""
+    s1 = score_agent(_make_sidecar(ruled_out_count=2))
+    s2 = score_agent(_make_sidecar(ruled_out_count=15))
+    assert s2.evidence_score >= s1.evidence_score
+```
+
+- [ ] **Step 4: Test continuation prompt rendering**
 
 ```python
 # Add to test_compliance_e2e.py:
@@ -916,8 +1109,7 @@ from docs.orchestrator.compliance_continuation import build_continuation_prompt
 
 def test_continuation_prompt_renders():
     """Continuation prompt should render without errors."""
-    sidecar = _make_minimal_sidecar(
-        "precision-sniper",
+    sidecar = _make_sidecar(
         tools_run={"slither": {"ran": True}},
         checklist_str="A: 1/4, B: 0/3, C: 5/29, D: 0/5",
     )
@@ -932,19 +1124,21 @@ def test_continuation_prompt_renders():
     assert "precision-sniper" in prompt
 ```
 
-- [ ] **Step 4: Run full test suite**
+- [ ] **Step 5: Run full test suite**
 
 Run: `cd /Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm && .venv/bin/python3 -m pytest docs/orchestrator/tests/test_compliance_e2e.py -v`
-Expected: All PASS
+Expected: All PASS (including metamorphic relation tests)
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
 git add docs/orchestrator/tests/test_compliance_e2e.py
-git commit -m "test(compliance): add end-to-end validation for scoring and continuation
+git commit -m "test(compliance): add E2E validation with metamorphic relation tests
 
 Validates score_agent returns correct tool_breadth and total scores.
-Validates build_continuation_prompt renders without errors."
+Validates build_continuation_prompt renders without errors.
+Metamorphic tests: tool_breadth, checklist, evidence monotonicity.
+Factory fixture _make_sidecar() for reuse across tests."
 ```
 
 ---
@@ -955,6 +1149,27 @@ Validates build_continuation_prompt renders without errors."
 - Modify: `docs/orchestrator/wave_runner.py` (lines 259-297)
 
 This task extends Task 2's retry logic with partial-result recovery and structured error reporting.
+
+> **Research backing**: "Why Do Multi-Agent LLM Systems Fail?" (arXiv 2503.13657) documents premature termination at 6.2% failure rate and confirms explicit verifiers reduce total failures. "Exploring Autonomous Agents" (arXiv 2508.13143) develops a three-tier failure taxonomy. Structured classification via enum enables automated diagnosis and recovery decisions.
+
+- [ ] **Step 0: Add StopReason enum for structured classification**
+
+At the top of `wave_runner.py` (after imports):
+
+```python
+from enum import Enum
+
+class StopReason(str, Enum):
+    COMPLETED = "completed"
+    CRASHED = "crashed"
+    TIMEOUT = "timeout"
+    STALE = "stale"          # produced sidecar but 0 turns
+    PARTIAL = "partial"      # >0 turns but no ResultMessage
+    CANCELLED = "cancelled"
+    UNKNOWN = "unknown"
+
+_MIN_SUCCESS_RATIO = 0.5  # abort wave if fewer than 50% agents succeed
+```
 
 - [ ] **Step 1: Add partial result recovery after gather**
 
@@ -994,7 +1209,9 @@ In `run_wave()`, after `raw_results = await asyncio.gather(*tasks)`, enhance the
                 "agent": agent.name,
                 "total_cost_usd": rm.total_cost_usd if rm else None,
                 "num_turns": raw.turn_count,
-                "stop_reason": rm.stop_reason if rm else ("partial" if raw.turn_count > 0 else "unknown"),
+                "stop_reason": (rm.stop_reason if rm
+                               else (StopReason.PARTIAL if raw.turn_count > 0
+                                     else StopReason.UNKNOWN)),
                 "wall_time_s": round(raw.wall_time_s, 1),
                 "duration_api_ms": rm.duration_api_ms if rm else 0,
             }
@@ -1008,25 +1225,53 @@ In `run_wave()`, after `raw_results = await asyncio.gather(*tasks)`, enhance the
     # Wave summary
     total_cost = sum((a.get("total_cost_usd") or 0) for a in agent_usage)
     total_turns = sum((a.get("num_turns") or 0) for a in agent_usage)
-    _log(f"  Summary: {len(agent_usage)} agents, {total_turns} turns, "
+    # Minimum viability check
+    n_total = len(wave.agents)
+    success_ratio = completed / n_total if n_total else 0
+    degraded = success_ratio < 1.0 and success_ratio >= _MIN_SUCCESS_RATIO
+
+    if success_ratio < _MIN_SUCCESS_RATIO:
+        _log(f"  ABORT: Only {completed}/{n_total} agents succeeded "
+              f"({success_ratio:.0%} < {_MIN_SUCCESS_RATIO:.0%} minimum)")
+        raise WaveAbortError(
+            f"Only {completed}/{n_total} agents succeeded ({success_ratio:.0%})",
+            agent_usage=agent_usage,
+            safety_events=safety_events,
+        )
+
+    status_label = "DEGRADED" if degraded else "OK"
+    _log(f"  Summary [{status_label}]: {len(agent_usage)} agents, {total_turns} turns, "
           f"${total_cost:.2f} total, {failed} failed, {partial} partial")
+```
+
+Add the exception class after `StopReason`:
+
+```python
+class WaveAbortError(Exception):
+    """Raised when too few agents succeed to produce a viable result."""
+    def __init__(self, message: str, agent_usage: list[dict], safety_events: list[dict]):
+        super().__init__(message)
+        self.agent_usage = agent_usage  # partial results still accessible
+        self.safety_events = safety_events
 ```
 
 The rest of the function (build results from disk, write safety events, write usage) stays unchanged.
 
 - [ ] **Step 2: Verify import**
 
-Run: `cd /Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm && .venv/bin/python3 -c "from docs.orchestrator.wave_runner import run_wave; print('import OK')"`
+Run: `cd /Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm && .venv/bin/python3 -c "from docs.orchestrator.wave_runner import run_wave, StopReason, WaveAbortError; print('import OK')"`
 Expected: `import OK`
 
 - [ ] **Step 3: Commit**
 
 ```bash
 git add docs/orchestrator/wave_runner.py
-git commit -m "feat(wave_runner): add partial-result recovery and structured error reporting
+git commit -m "feat(wave_runner): add StopReason enum, partial-result recovery, min viability
 
-- Track completed/partial/failed counts in wave summary
-- Partial results (>0 turns, no ResultMessage) get stop_reason='partial'
+- Add StopReason enum (COMPLETED, CRASHED, TIMEOUT, STALE, PARTIAL, CANCELLED)
+- Add WaveAbortError raised when <50% agents succeed
+- Track completed/partial/failed counts, degraded flag in wave summary
+- Partial results (>0 turns, no ResultMessage) get StopReason.PARTIAL
 - Error entries include exception type for diagnosis"
 ```
 
@@ -1036,13 +1281,35 @@ git commit -m "feat(wave_runner): add partial-result recovery and structured err
 
 | Task | Description | Estimated effort | Risk |
 |------|-------------|-----------------|------|
-| 1 | knowledge_gen coercion | 5 min | Low — identical pattern to existing fix |
-| 2 | CLI crash + retry | 15 min | Medium — changes core spawning logic |
-| 3 | XML tags | 30 min | Low — additive changes to templates |
-| 4 | Cost reduction | 10 min | Low — config-only changes |
-| 5 | .gitignore cleanup | 5 min | Low — no code changes |
-| 6 | Archive pruning | 5 min | Low — deletions only |
-| 7 | Compliance E2E test | 10 min | Low — test-only |
-| 8 | Error recovery | 10 min | Low — extends Task 2 |
+| 1 | knowledge_gen coercion + JSON parse fallback | 5 min | Low — identical pattern to existing fix |
+| 2 | CLI crash + retry + jitter + circuit breaker | 15 min | Medium — changes core spawning logic |
+| 3 | XML tags (with reasoning caveat) | 30 min | Low — additive changes to templates |
+| 4 | Cost reduction + adaptive thinking option | 10 min | Low — config-only changes |
+| 5 | .gitignore cleanup + broadcast/ | 5 min | Low — no code changes |
+| 6 | Three-tier archive pruning | 15 min | Low — new function + wiring |
+| 7 | Compliance E2E + metamorphic tests | 15 min | Low — test-only |
+| 8 | StopReason enum + min viability + error recovery | 15 min | Low — extends Task 2 |
 
-**Total: ~90 min across 8 tasks. All tasks are independent and can be dispatched to parallel agents.**
+**Total: ~110 min across 8 tasks. All tasks are independent and can be dispatched to parallel agents.**
+
+---
+
+## Research References
+
+| Paper / Source | Key Finding | Tasks |
+|---|---|---|
+| StructuredRAG (arXiv 2408.11061) | Common LLM output failures: wrong types, missing fields, inconsistent enums | 1 |
+| agent-zero #1236 | LLM models return tool args as JSON strings instead of dicts — identical coercion pattern | 1 |
+| Microservices resilience survey (arXiv 2512.16959) | Naive backoff without jitter causes retry storms; need jitter + circuit breakers | 2 |
+| "SoK: Microservice Architectures" (arXiv 2503.03392) | Circuit breakers between nodes prevent cascading failures | 2 |
+| "On the Resilience of LLM-Based Multi-Agent Collaboration" (ICML 2025) | Hierarchical structures with exception isolation are most resilient (5.5% perf drop) | 2, 8 |
+| Anthropic XML tag docs + "Comparative Analysis between XML and Markdown" | XML tags for Claude: up to 40% performance variation; snake_case, 2-3 nesting depth | 3 |
+| "Let Me Speak Freely?" (arXiv 2408.02442) | Structured format restrictions can impair reasoning — use XML for input structure only | 3 |
+| FrugalGPT (arXiv 2305.05176) | Cascading model tiers achieves up to 98% cost savings | 4 |
+| BudgetMLAgent (arXiv 2411.07464) | 94.2% cost reduction via cascading cheap models + selective expert escalation | 4 |
+| "When More is Less" (arXiv 2502.07266) | Reasoning quality follows inverted U-curve with CoT length — optimal budget is task-dependent | 4 |
+| "Fractured Chain of Thought" (arXiv 2505.12992) | Truncated reasoning + multiple samples often beats single full-length reasoning at same cost | 4 |
+| Foundry issue #2190 | `broadcast/` can contain RPC URLs with API keys — must be gitignored | 5 |
+| LIMA (SIGMOD 2021) | Provenance metadata can substitute for full artifact copies — experiments.tsv is sufficient | 6 |
+| Metamorphic Testing survey (ACM Computing Surveys Vol 51) | MRs encode scoring invariants: monotonicity, boundary conditions, dimension independence | 7 |
+| "Why Do Multi-Agent LLM Systems Fail?" (arXiv 2503.13657) | Premature termination = 6.2% of failures; explicit verifiers reduce total failures | 8 |

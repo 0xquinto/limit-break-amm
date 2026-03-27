@@ -32,6 +32,15 @@ PROFILES: dict[str, ModelProfile] = {
         temperature=1.0,
         description="Maximum reasoning depth — black hat agents, exploit construction",
     ),
+    "audit_balanced": ModelProfile(
+        model="claude-opus-4-6",
+        effort="high",
+        extended_thinking=True,
+        thinking_budget_tokens=32000,
+        max_tokens=12288,
+        temperature=1.0,
+        description="Balanced audit — lower thinking budget for agents with narrower scope",
+    ),
     "deep_reasoning": ModelProfile(
         model="claude-opus-4-6",
         effort="max",

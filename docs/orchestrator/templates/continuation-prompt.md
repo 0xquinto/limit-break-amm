@@ -1,7 +1,10 @@
+<continuation_prompt agent="{{AGENT_NAME}}" wave="{{WAVE_NUMBER}}">
+
 # {{AGENT_NAME}} — Compliance Continuation (Wave {{WAVE_NUMBER}})
 
 You are continuing the work of a previous agent that did not complete its full checklist. Your job is to complete ONLY the uncompleted items.
 
+<prior_context>
 ## What Was Already Done
 
 The previous agent completed this work:
@@ -12,13 +15,17 @@ The previous agent completed this work:
 
 Their sidecar is at: `{{SIDECAR_PATH}}`
 Read it first to understand what was already investigated.
+</prior_context>
 
+<compliance_gaps>
 ## What You Must Complete
 
 The compliance scorer identified these gaps:
 
 {{COMPLIANCE_GAPS}}
+</compliance_gaps>
 
+<mandatory_tools>
 ## MANDATORY TOOL RUNS
 
 The following tools were NOT run by the original agent. You MUST run each one:
@@ -31,6 +38,7 @@ For each tool:
 3. If it errors, log the error — that counts as completed
 
 DO NOT SKIP THESE. Your sidecar will be scored on tool_breadth.
+</mandatory_tools>
 
 ## Your Checklist
 
@@ -38,6 +46,7 @@ Complete every numbered item below that the previous agent did NOT complete. Ski
 
 {{CHECKLIST}}
 
+<instructions>
 ## Instructions
 
 1. Read the previous agent's sidecar from `{{SIDECAR_PATH}}`
@@ -65,3 +74,6 @@ If any required tool shows ran=false without an error logged, you are NOT done.
 ## Tools Available
 
 You have access to Forge, Halmos, Medusa, Slither MCP, Aderyn, and all Skills. Use them.
+</instructions>
+
+</continuation_prompt>

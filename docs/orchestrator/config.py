@@ -146,7 +146,7 @@ WAVE_BH1 = WaveConfig(
             name="auth-forger",
             role="black-hat",
             template="auth-forger",
-            scope=list(REPOS.keys()),
+            scope=["lbamm-hooks-and-handlers", "lbamm-core"],
             profile="max_reasoning",
         ),
         # --- 3 new specialized archetypes (deep + composability) ---
@@ -156,7 +156,7 @@ WAVE_BH1 = WaveConfig(
             template="math-deep-diver",
             scope=["lbamm-pool-type-fixed", "amm-pool-type-dynamic",
                    "lbamm-core", "lbamm-hooks-and-handlers"],
-            profile="max_reasoning",
+            profile="audit_balanced",
         ),
         AgentConfig(
             name="cross-boundary",
@@ -184,15 +184,16 @@ WAVE_BH1 = WaveConfig(
             name="insolvency-engineer",
             role="black-hat",
             template="insolvency-engineer",
-            scope=list(REPOS.keys()),
-            profile="max_reasoning",
+            scope=["lbamm-core", "amm-pool-type-dynamic",
+                   "lbamm-pool-type-fixed", "lbamm-hooks-and-handlers"],
+            profile="audit_balanced",
         ),
         AgentConfig(
             name="extension-hijacker",
             role="black-hat",
             template="extension-hijacker",
             scope=["lbamm-hooks-and-handlers", "lbamm-core"],
-            profile="max_reasoning",
+            profile="audit_balanced",
         ),
     ],
 )
@@ -212,7 +213,7 @@ WAVES_BLACK_HAT = [WAVE_BH1, WAVE_BH2]
 # Active wave configuration — switch between models here
 WAVES = WAVES_BLACK_HAT
 
-MAX_HYPOTHESES_PER_AGENT = 15
+MAX_HYPOTHESES_PER_AGENT = 10
 MAX_RUN_COST = 200  # USD hard cap
 
 BOUNDARY_SLUGS = {
