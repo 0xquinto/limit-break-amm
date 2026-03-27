@@ -2,5 +2,5 @@
 
 _Auto-generated from wave 1 compliance data._
 
-### Score: 117.0/100 (A) — weakest: checklist
-Target: A grade. Focus on **checklist** dimension.
+### Score: 104.1/100 (B) — weakest: thesis
+Target: A grade. Focus on **thesis** dimension.

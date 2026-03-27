@@ -2,5 +2,5 @@
 
 _Auto-generated from wave 1 compliance data._
 
-### Score: 105.4/100 (B) — weakest: evidence
-Target: A grade. Focus on **evidence** dimension.
+### Score: 102.0/100 (B) — weakest: thesis
+Target: A grade. Focus on **thesis** dimension.

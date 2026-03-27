@@ -194,6 +194,55 @@
       "source_category": "2g",
       "coupled_pair": null,
       "masking_code": null
+    },
+    {
+      "id": "H-core-handler-11",
+      "mechanism": "CLOB order pricing bounds are validated only at openOrder time via _enforceTokenHooks→validateHandlerOrder, never re-checked at fill time. If a token creator tightens pricing bounds (via registryUpdatePricingBounds) after orders are already placed, existing CLOB orders execute at prices outside the new bounds. The fill path (ammHandleTransfer→CLOBHelper.fillOrder) performs zero pricing-bounds validation. A token creator who tightens bounds to protect their token from extreme-price trades discovers that pre-existing CLOB orders bypass the tightened bounds entirely.",
+      "functions": ["CLOBTransferHandler.openOrder", "CLOBTransferHandler._enforceTokenHooks", "CLOBTransferHandler.ammHandleTransfer", "AMMStandardHook.validateHandlerOrder", "CLOBHelper.fillOrder"],
+      "lines": {
+        "lbamm-hooks-and-handlers/src/handlers/clob/CLOBTransferHandler.sol": [534, 574, 590, 599, 614, 221, 275],
+        "lbamm-hooks-and-handlers/src/hooks/AMMStandardHook.sol": [198, 210, 215, 221, 546, 567]
+      },
+      "confidence": "medium",
+      "grounded_in": "code-observation: CLOBTransferHandler.sol:534 calls _enforceTokenHooks only in openOrder; ammHandleTransfer at line 275 calls CLOBHelper.fillOrder with no pricing bounds re-validation. AMMStandardHook.validateHandlerOrder (line 198) is a view function checking minSqrtPriceX96/maxSqrtPriceX96 from _validatePricingBounds. Once an order is placed, the stored sqrtPriceX96 is never re-validated against updated bounds. registryUpdatePricingBounds (line 546) can modify bounds at any time but has no mechanism to invalidate existing CLOB orders.",
+      "suggested_test": "function test_stalePricingBoundsOnCLOBFill() public {\n    // Setup: deploy AMM, hook, CLOB handler, two tokens\n    // 1. Set wide pricing bounds (min=MIN_SQRT_RATIO, max=MAX_SQRT_RATIO)\n    // 2. Open a CLOB order at an extreme price (e.g., very low sqrtPriceX96)\n    // 3. Tighten pricing bounds via registryUpdatePricingBounds\n    //    to reject that extreme price\n    // 4. Verify new openOrder at same price reverts (bounds enforced)\n    // 5. Execute a swap that fills the pre-existing stale order\n    // 6. Assert: fill succeeds despite price being outside new bounds\n    //    This demonstrates bounds are only checked at open, not fill\n    function test_stalePricingBoundsOnCLOBFill() external {\n        // Step 1: wide bounds\n        _setPricingBounds(token0, token1, MIN_SQRT_RATIO, MAX_SQRT_RATIO);\n        // Step 2: open order at extreme price\n        uint160 extremePrice = MIN_SQRT_RATIO + 1;\n        vm.prank(maker);\n        clobHandler.openOrder(poolId, true, extremePrice, 1000e18, \"\");\n        // Step 3: tighten bounds\n        uint160 newMin = uint160(1e20);\n        _setPricingBounds(token0, token1, newMin, MAX_SQRT_RATIO);\n        // Step 4: new order at same price reverts\n        vm.prank(maker2);\n        vm.expectRevert();\n        clobHandler.openOrder(poolId, true, extremePrice, 1000e18, \"\");\n        // Step 5: fill the stale order\n        vm.prank(executor);\n        amm.singleSwap(swapOrder, ...);\n        // Step 6: fill succeeded — bounds bypassed\n        assertGt(token1.balanceOf(executor), 0);\n    }\n}",
+      "category": "state_coupling",
+      "source_category": "2.5",
+      "coupled_pair": {
+        "state_a": "AMMStandardHook pricing bounds storage (minSqrtPriceX96, maxSqrtPriceX96) updated by registryUpdatePricingBounds",
+        "state_b": "CLOB order.sqrtPriceX96 stored at openOrder time, read by fillOrder without re-checking bounds",
+        "invariant": "Active orders must respect current pricing bounds at execution time, not just at creation time",
+        "gap_contract": "CLOBTransferHandler.sol",
+        "gap_function": "ammHandleTransfer→CLOBHelper.fillOrder",
+        "gap_line": 275
+      },
+      "masking_code": {
+        "file": "CLOBTransferHandler.sol",
+        "line": 534,
+        "pattern": "validation_at_wrong_lifecycle_point",
+        "masks_invariant": "_enforceTokenHooks is called at openOrder (line 534) creating false confidence that pricing bounds are always enforced. The validation exists but at the wrong lifecycle point — it should also be checked at fill time."
+      }
+    },
+    {
+      "id": "H-core-handler-12",
+      "mechanism": "CLOBHelper.calculateFixedInput applies two sequential mulDivRoundingUp operations to convert input amount to output amount at a given sqrtPriceX96: amountOut = mulDivRoundingUp(amountIn, sqrtPriceX96, Q96) then amountOut = mulDivRoundingUp(amountOut, sqrtPriceX96, Q96). Each rounding-up step adds 0-1 wei of error, compounding to 0-2 wei per fill step. The rounding direction ALWAYS favors the maker (more output per input). In CLOBHelper.fillOrder, this is called per order step during traversal. An attacker who places many minimum-sized orders at sequential price ticks forces executors to fill hundreds of separate orders per swap, accumulating the rounding error into a measurable maker surplus at the executor's expense. With 18-decimal tokens, the absolute value is small per order but with high-frequency automated fills it compounds over time.",
+      "functions": ["CLOBHelper.calculateFixedInput", "CLOBHelper.fillOrder", "CLOBTransferHandler.ammHandleTransfer"],
+      "lines": {
+        "lbamm-hooks-and-handlers/src/handlers/clob/libraries/CLOBHelper.sol": [313, 314, 200, 230, 240, 260],
+        "lbamm-hooks-and-handlers/src/handlers/clob/CLOBTransferHandler.sol": [275]
+      },
+      "confidence": "low",
+      "grounded_in": "code-observation: CLOBHelper.sol:313-314. Two mulDivRoundingUp calls: first amountOut = mulDivRoundingUp(amountIn, sqrtPriceX96, Q96), then amountOut = mulDivRoundingUp(amountOut, sqrtPriceX96, Q96). Each rounds up independently, adding 0-1 wei. Over N fill steps in a single swap, total over-payment by executor is up to 2N wei. With min-sized orders forcing many steps, this is a systematic micro-extraction.",
+      "suggested_test": "function test_clobDoubleRoundingAccumulation() public {\n    // Setup: Place 200 minimum-size orders at sequential price ticks\n    uint256 orderSize = 1000; // minimum order size in wei\n    for (uint i = 0; i < 200; i++) {\n        uint160 price = uint160(MIN_SQRT_RATIO + 1 + i);\n        vm.prank(maker);\n        clobHandler.openOrder(poolId, true, price, orderSize, \"\");\n    }\n    // Execute single fill consuming all 200 orders\n    uint256 totalInput = 200 * orderSize;\n    vm.prank(executor);\n    (uint256 amountOut) = amm.singleSwap(\n        SwapOrder({amountSpecified: int256(totalInput), ...}),\n        ...\n    );\n    // Calculate exact output using infinite-precision math\n    uint256 exactOutput = _computeExactOutputNRounding(totalInput, prices);\n    // Assert: actual output > exact output by measurable amount\n    // (output goes to makers; executor gets remainder)\n    // The rounding error should be approximately 200-400 wei\n    assertGt(amountOut + 400, exactOutput); // executor overpaid\n}",
+      "category": "precision",
+      "source_category": "2a",
+      "coupled_pair": null,
+      "masking_code": {
+        "file": "CLOBHelper.sol",
+        "line": 313,
+        "pattern": "standard_rounding_pattern",
+        "masks_invariant": "mulDivRoundingUp is the standard safe-rounding pattern, but applying it TWICE in sequence compounds the rounding error beyond the expected 0-1 wei tolerance per operation"
+      }
     }
   ]
 }

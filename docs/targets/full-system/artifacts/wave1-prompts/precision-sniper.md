@@ -414,10 +414,10 @@ Cross-boundary interface calls found:
 
 ## ACCEPTANCE CONTRACT (machine-enforced — your sidecar WILL be rejected if not met)
 
-You received **10 hypotheses**. Your sidecar MUST satisfy ALL of:
-1. `hypothesis_results` has exactly **10 entries** (one per hypothesis)
-2. At most **3** entries may be `not_tested` (max 30%)
-3. At least **5** entries have status `tested` or `confirmed` (min 50%)
+You received **14 hypotheses**. Your sidecar MUST satisfy ALL of:
+1. `hypothesis_results` has exactly **14 entries** (one per hypothesis)
+2. At most **4** entries may be `not_tested` (max 30%)
+3. At least **7** entries have status `tested` or `confirmed` (min 50%)
 4. Every `dismissed` entry has `test_file` pointing to a file that **EXISTS on disk**
 5. At least **3** unique `.t.sol` test files written and compiled
 
@@ -425,7 +425,7 @@ You received **10 hypotheses**. Your sidecar MUST satisfy ALL of:
 
 ## Hypotheses to Investigate
 
-### 1. [H-R6-CP-01] (confidence: medium, prior: new)
+### 1. [H-R7-CP-01] (confidence: medium, prior: new)
 **Mechanism**: In DynamicHelper.snapPrice (lines 237-291), the function validates there is no active liquidity between the current price and the snap target. However, the check for initialized ticks when moving downward (lte=true) at line 264 uses `if (next > targetTick)` — strict greater-than. When an initialized tick with positive liquidityNet falls EXACTLY at the target tick (next == targetTick), this check is FALSE. The loop continues to lines 274-276 where `next <= targetTick` is TRUE, breaking out of the loop. The price is then set at line 289 without reverting. This means snapPrice can move the pool price TO an initialized tick boundary where liquidity would become active, but since the current pool liquidity is checked to be 0 at line 245 (before the snap), the next swap will cross that tick and activate the pending liquidity at a price the snapper chose. An LP who (1) adds liquidity in a tick range, (2) removes their own active liquidity at the current price leaving liquidity=0, (3) snaps price to an initialized tick at the boundary of someone else's range could manipulate which liquidity becomes active at which price. The attack requires the victim LP's tick boundary to be at an initialized tick that the attacker can snap to.
 **Complexity**: complex (target: max_reasoning)
 **Lines**:
@@ -457,7 +457,7 @@ function test_snapPriceToExactInitializedTick() public {
 }
 ```
 
-### 2. [H-R6-CP-02] (confidence: medium, prior: new)
+### 2. [H-R7-CP-02] (confidence: medium, prior: new)
 **Mechanism**: In SingleProviderHelper.swapByInput (lines 29-56), when the computed amountOut exceeds reserveOut (line 43), the code falls back to swapByOutput with `swapCache.amountOut = reserveOut` (line 45). The swapByOutput call at line 47 internally calls `calculateFixedOutput` which uses `mulDivRoundingUp` twice (lines 198-199 or 201-202), then `_calculateOutputLPAndProtocolFee` (line 143) which computes fees as `mulDivRoundingUp(reserveAmountIn, poolFeeBPS, MAX_BPS - poolFeeBPS)` (line 169). This denominator `MAX_BPS - poolFeeBPS` is SMALLER than the input path's `MAX_BPS`, meaning the output fee formula produces a LARGER fee for the same reserve amount. Combined with rounding-up in calculateFixedOutput, the total amountIn computed via the fallback path could be HIGHER than the original amountIn the user submitted. The check at line 49 `if (swapCache.amountIn > initialAmountIn) revert` catches this case. But note the revert triggers a complete transaction failure — the user's swap just fails entirely rather than partially filling. If the price from the hook is set such that amountOut barely exceeds reserveOut (by 1 wei), the fallback path computes a higher amountIn and reverts, whereas a direct swapByInput with an amountIn calibrated for exactly reserveOut of output would succeed. This creates a narrow DoS band: for any price where output is 1-2 wei above reserves, swapByInput reverts. An oracle manipulation attack that sets the hook price to this narrow band causes user swap failures (griefing).
 **Complexity**: complex (target: max_reasoning)
 **Lines**:
@@ -492,7 +492,7 @@ function test_swapByInputPartialFillRevertDoS() public {
 }
 ```
 
-### 3. [H-R6-CP-03] (confidence: medium, prior: new)
+### 3. [H-R7-CP-03] (confidence: medium, prior: new)
 **Mechanism**: In FixedHelper._splitAmountsAndFeesByHeight (lines 1559-1736), the output dust handling at lines 1694-1710 stores excess output as pool dust. When `totalAmountOutFilled > amountOut` (line 1695), the excess is computed and validated against `potentialDustForOneInput` (line 1699). The dust is then ADDED to pool state via `ptrPoolState.dust0 += dust` or `ptrPoolState.dust1 += dust` (lines 1706-1708). This dust is later GIVEN to the next LP who withdraws (via `_accumulateDustToWithdrawal` at line 78/151). The problem: dust accumulation is ADDITIVE — multiple swaps can each contribute dust. The individual dust amounts are validated to be small (at most the output of 1 input unit), but there is NO cap on the TOTAL accumulated dust. If a pool has a ratio where every swap-by-output produces 1 unit of dust, after N swaps the dust grows to N units. When an LP withdraws via `withdrawAll` at line 151, they receive `withdraw0 + dust0` tokens. The dust was never backed by any LP deposit — it comes from output rounding gaps. This means the LP receiving the dust gets tokens that belong to the pool's reserves, potentially making the pool insolvent if dust exceeds reserves - deposits. The dust is bounded per-swap but unbounded in aggregate.
 **Complexity**: complex (target: max_reasoning)
 **Lines**:
@@ -529,7 +529,7 @@ function test_dustAccumulationUnbounded() public {
 }
 ```
 
-### 4. [H-R6-CP-04] (confidence: medium, prior: new)
+### 4. [H-R7-CP-04] (confidence: medium, prior: new)
 **Mechanism**: In FixedHelper.swapByInput (lines 898-931), when amountOut exceeds expectedReserve (line 910), the code switches to swapByOutput at line 915 with `swapCache.amountOut = expectedReserve`. Inside swapByOutput (line 1019-1020), amountOut is further capped by expectedReserve again. The swapByOutput path calculates `reserveAmountIn` via `calculateFixedSwapByRatio` (line 1024, rounding UP), then computes fees via `_calculateOutputLPAndProtocolFee` (line 1030). Line 1032 sets `swapCache.amountIn = swapAmountIn` — the TOTAL cost including fees. Line 917 then checks `swapCache.amountIn > initialAmountIn` and reverts if true. If the check passes, the user's swap succeeds but with the OUTPUT-path fee formula. The critical observation: on the OUTPUT path, the fee formula at line 1066 uses denominator `MAX_BPS - poolFeeBPS` instead of `MAX_BPS`. For a 1% fee (poolFeeBPS=100): input path fee = amountIn * 100 / 10000 = 1%. Output path fee = reserveAmountIn * 100 / 9900 ≈ 1.0101%. The difference is 0.01% per swap — the user pays 0.01% MORE in fees when the partial-fill fallback triggers. Over many such swaps, this is a systematic fee overcharge that benefits LPs at the expense of swappers. The trigger condition (amountOut > expectedReserve by at least 1 wei) can be reliably hit by choosing amountIn values that straddle the boundary.
 **Complexity**: complex (target: max_reasoning)
 **Lines**:
@@ -571,7 +571,7 @@ function test_feePathDivergenceOnPartialFillFallback() public {
 }
 ```
 
-### 5. [H-R6-CP-05] (confidence: medium, prior: new)
+### 5. [H-R7-CP-05] (confidence: medium, prior: new)
 **Mechanism**: In FixedHelper._calculateLiquidityStartAndEndHeights (lines 304-390), the `addInRange1` logic at lines 343-357 computes `depth1ValueOf0` using `calculateFixedSwapByRatioRoundingDown` at lines 346-348. This value is subtracted from `add0` at line 353: `add0 -= depth1ValueOf0`. However, `add0` at this point might have ALREADY been increased by the `addInRange0` logic at line 329: `add0 += depth0`. The check at line 349 uses `originalAdd0` (captured at line 315 BEFORE the depth0 increase): `if (originalAdd0 < depth1ValueOf0)`. This check prevents underflow of the ORIGINAL add0 but does NOT prevent an inconsistent state where the total add0 includes both the depth0 increase AND the depth1ValueOf0 decrease. Specifically, if addInRange0 AND addInRange1 are BOTH true: (1) add0 becomes `originalAdd0 + depth0` at line 329. (2) add0 becomes `originalAdd0 + depth0 - depth1ValueOf0` at line 353. But the check at line 349 only verifies `originalAdd0 >= depth1ValueOf0`, not `originalAdd0 + depth0 >= depth1ValueOf0`. If `depth1ValueOf0 > originalAdd0` but `depth1ValueOf0 < originalAdd0 + depth0`, the check reverts when it shouldn't — this is actually OVERLY conservative. Conversely, the value consumed from add1 at line 330 (`add1 -= depth0ValueOf1`) does not account for the depth1 increase at line 352 (`add1 += depth1`). The ordering means add1 is first decreased (for in-range-0), then increased (for in-range-1). If depth0ValueOf1 > original add1, the subtraction at line 330 reverts. But if both addInRange flags are true and the amounts are carefully chosen, the user can add liquidity with less actual deposit than expected because the depth values overlap.
 **Complexity**: complex (target: max_reasoning)
 **Lines**:
@@ -613,7 +613,7 @@ function test_bothAddInRangeInteraction() public {
 }
 ```
 
-### 6. [H-R6-CP-06] (confidence: medium, prior: new)
+### 6. [H-R7-CP-06] (confidence: medium, prior: new)
 **Mechanism**: In AMMModule._validateProtocolFees (lines 1654-1677), for input swaps (inputSwap=true), at lines 1666-1669, when `totalFees < swapCache.expectedLPFee`, the expectedProtocolFee is OVERRIDDEN to `swapCache.expectedProtocolLPFee`. This is the pre-calculated expected protocol fee from the INPUT fee path. Then at line 1671, `poolProtocolFees < expectedProtocolFee` causes a revert. The `expectedLPFee` is set during `_applySwapByInputInputFees` based on the token hook fees BEFORE the pool type swap. If a pool type (e.g., FixedPoolType) performs a partial fill (returning actualAmountIn < original amountIn), the code at lines 1415-1416 adjusts expectedLPFee: `swapCache.expectedLPFee = mulDivRoundingUp(expectedLPFee, actualAmountIn, originalAmountIn)`. This proportional adjustment uses rounding UP, which means the adjusted expectedLPFee could be slightly higher per unit of input than the original. Meanwhile, the pool type's actual fees are computed on the actual amounts using a different formula (input vs output depending on partial fill path). The combination: if the pool type's actual protocol fees (computed on the output path due to partial fill fallback) are slightly LOWER than the adjusted expectedProtocolLPFee (computed on the input path with rounding up), the _validateProtocolFees check at line 1671 reverts the entire swap. This is a DoS vector where legitimate swaps fail validation due to fee path divergence during partial fills.
 **Complexity**: complex (target: max_reasoning)
 **Lines**:
@@ -647,7 +647,7 @@ function test_protocolFeeValidationFailsOnPartialFill() public {
 }
 ```
 
-### 7. [H-R6-CP-10] (confidence: medium, prior: new)
+### 7. [H-R7-CP-10] (confidence: medium, prior: new)
 **Mechanism**: In FixedHelper.withdrawLiquidity (lines 38-124), at line 69, the check `if (redeposited0 | redeposited1 == 0)` determines whether the partial withdrawal leaves a non-zero position. Due to Solidity operator precedence (bitwise OR `|` has higher precedence than equality `==`), this is correctly parsed as `(redeposited0 | redeposited1) == 0`. However, at line 73-76, the unchecked subtraction `withdraw0 = value0 - redeposited0` assumes `redeposited0 <= value0`. This is guaranteed by the flow: value0 is computed by _collectPosition (line 47), then redeposited0 is computed from `value0 - liquidityParams.amount0` passed to _calculateLiquidityStartAndEndHeights (lines 54-55). But the _calculateLiquidityStartAndEndHeights function modifies the amounts via precision alignment (lines 360-363: `add0 -= precisionAddLoss0`) and the addInRange logic (lines 329, 353). After alignment, `amountAdded0 = liquidityCache.amountAddedOf0To0 + liquidityCache.amountAddedOf0To1` (line 66) could be LESS than the original `value0 - amount0` if precision truncation removed tokens. Then `redeposited0 = amountAdded0` which could be less than what was intended. The withdraw amount at line 74 becomes `value0 - redeposited0` which would be MORE than the requested `liquidityParams.amount0`. The user withdraws MORE than they asked for. Combined with dust accumulation at line 78, the total withdrawal could exceed what the pool can support. This is bounded by the precision alignment loss (at most `precision0 - 1` wei) but if precision is large (e.g., 1000), the over-withdrawal per operation is up to 999 wei.
 **Complexity**: complex (target: max_reasoning)
 **Lines**:
@@ -691,7 +691,117 @@ function test_withdrawalExceedsRequestedDueToPrecisionTruncation() public {
 }
 ```
 
-### 8. [H-R6-CP-07] (confidence: low, prior: new)
+### 8. [H-R7-CP-12] (confidence: medium, prior: new)
+**Mechanism**: In FixedHelper._collectPositionSide (line 516), `height.consumedLiquidity -= (liquidity - sideValue)` executes inside an unchecked block opened at line 490. The subtracted value `(liquidity - sideValue)` represents the consumed portion attributed to THIS SPECIFIC position. However, consumedLiquidity is a GLOBAL counter tracking total consumption across ALL positions on this height side. When multiple LPs have overlapping height ranges and withdraw in sequence, the per-position consumed calculation depends on the currentHeight at collection time. Critically, _removeLiquidity (called at line 537 AFTER the consumedLiquidity subtraction) adjusts the height linked list, which changes the effective liquidity per height. This means the currentHeight semantics change between LP_A's withdrawal and LP_B's withdrawal: with LP_A removed, the same consumedLiquidity value now represents a DIFFERENT position on the height curve (because the liquidity-per-height changed). When LP_B's _collectPositionSide runs, the sideValue calculation (lines 497-513) uses the NEW currentHeight, which may have shifted due to LP_A's _removeLiquidity. If currentHeight moved to a position where LP_B's sideValue is smaller than expected, the subtraction `(liquidity_B - sideValue_B)` becomes larger, and the cumulative subtraction across all LPs can exceed the original consumedLiquidity. In the unchecked block, this wraps to a very large value, corrupting all subsequent pairValue calculations for the height side.
+**Complexity**: complex (target: max_reasoning)
+**Lines**:
+   - `lbamm-pool-type-fixed/src/libraries/FixedHelper.sol`: lines 474, 490, 491, 492, 495, 496, 497, 498, 500, 501, 502, 503, 504, 505, 506, 507, 508, 509, 510, 511, 512, 513, 516, 537
+**Grounded in**: code-observation: FixedHelper.sol:516 — unchecked subtraction from storage. Line 490 opens unchecked block. Line 537 calls _removeLiquidity AFTER the subtraction, modifying height structure that subsequent collectors will read. The ordering (subtract-then-restructure) means each collection sees a slightly different height topology, and the per-position consumed amounts are not guaranteed to sum to the global consumedLiquidity.
+**Suggested test skeleton**:
+```solidity
+function test_consumedLiquidity_underflow_multiLP_overlap() public {
+    // 1. Create fixed pool with ratio 1:1, precision=1
+    // 2. LP_A deposits: 100 token0, 100 token1 -> height0 range [0, 100)
+    // 3. LP_B deposits: 100 token0, 100 token1 -> same range [0, 100)
+    //    Now liquidityGross=2 at heights 0 and 100
+    // 4. Execute swap: 60 token0 -> token1
+    //    height0.consumedLiquidity += 60
+    //    With liquidity=2, currentHeight moves to ~30
+    // 5. LP_A calls withdrawAll:
+    //    _collectPositionSide for height0:
+    //      liquidity = 100, currentHeight = 30
+    //      sideValue = 100 - 30 = 70, --sideValue = 69 (if partial height)
+    //      subtracted = 100 - 69 = 31
+    //      height0.consumedLiquidity = 60 - 31 = 29
+    //    _removeLiquidity adjusts: liquidityGross drops to 1 at boundaries
+    //    With liquidity=1, the height curve changes
+    // 6. LP_B calls withdrawAll:
+    //    _collectPositionSide for height0:
+    //      Now liquidity-per-height=1, currentHeight may have shifted
+    //      If currentHeight is now higher (same consumed, less liquidity per height)
+    //      sideValue is smaller, subtracted is larger
+    //      If subtracted > 29 (remaining consumedLiquidity): UNDERFLOW
+    // 7. Assert: consumedLiquidity wraps, LP_B gets inflated pairValue
+}
+
+function test_consumedLiquidity_threeLP_drain() public {
+    // Variant with 3 LPs, sequential withdrawals
+    // Each withdrawal shifts the height topology
+    // Third LP sees the most distorted state
+    // Check total withdrawn > total deposited + fees
+}
+```
+
+### 9. [H-R7-CP-13] (confidence: medium, prior: new)
+**Mechanism**: In FixedHelper.calculateShareDeltaForLiquidityReturn (line 1342), `returnableLiquidityDelta = boundaryLiquidity - totalConsumedLiquidity - 1`. When `boundaryLiquidity == totalConsumedLiquidity + 1` (totalConsumedLiquidity is exactly 1 unit below a share boundary), returnableLiquidityDelta = 0. This zero value propagates to _splitAmountsAndFeesByHeight where it's used as `returnableInput` from the second calculateShareDeltaForLiquidityReturn call (line 1610-1617, with allowPartialCross=true). When returnableInput=0, the adjustment path at line 1622 fires (total output underfilled), and line 1626 increases amountOutFilledByOutputHeight to cover the deficit: `amountOutFilledByOutputHeight = amountOut - expectedAmountOutFilledByInputHeight`. If this exceeds `swapCache.outputShareOfExpectedReserve`, the function reverts at line 1628 with FixedPool__OutputValidationFailed. The issue: returnableInput=0 means NO input can be redistributed from input height to output height without crossing a share boundary. The entire adjustment burden falls on the output height. For pools where the input height dominates the expected reserve (inputShareOfExpectedReserve >> outputShareOfExpectedReserve), the output height cannot absorb the adjustment, and the swap fails. This creates a DoS when consumedLiquidity on the input side is positioned exactly 1 unit below any share boundary — a condition achievable through careful swap sizing.
+**Complexity**: complex (target: max_reasoning)
+**Lines**:
+   - `lbamm-pool-type-fixed/src/libraries/FixedHelper.sol`: lines 1308, 1328, 1336, 1337, 1338, 1339, 1340, 1341, 1342, 1559, 1601, 1602, 1608, 1610, 1616, 1622, 1626, 1627, 1628, 1641
+**Grounded in**: code-observation: FixedHelper.sol:1342 — the `-1` produces zero when boundaryLiquidity - totalConsumedLiquidity == 1. Line 1628: revert when amountOutFilledByOutputHeight exceeds outputShareOfExpectedReserve, which happens when the output height must absorb ALL adjustment due to returnableInput=0.
+**Suggested test skeleton**:
+```solidity
+function test_returnableBoundary_zeroCausesOutputValidationRevert() public {
+    // 1. Create fixed pool with ratio 3:2 (each share boundary at liquidity multiples of 2/3)
+    //    precision=1
+    // 2. LP deposits: 100 token0, 100 token1
+    // 3. Execute swaps to position height0.consumedLiquidity at exactly
+    //    boundaryLiquidity - 1 for some share N:
+    //    boundaryLiquidity = ceil(N * 2 / 3)
+    //    consumedLiquidity = boundaryLiquidity - 1
+    //    (requires computing the exact boundary and crafting swap amounts)
+    // 4. Attempt swapByOutput (token1 -> token0):
+    //    - calculateShareDeltaForLiquidityReturn returns returnableLiquidityDelta=0
+    //    - _splitAmountsAndFeesByHeight cannot redistribute from input to output height
+    //    - amountOutFilledByOutputHeight grows beyond outputShareOfExpectedReserve
+    //    - Reverts with FixedPool__OutputValidationFailed
+    // 5. Assert: revert occurs
+    // 6. Execute a 1-wei swap to move consumedLiquidity off the boundary
+    // 7. Re-attempt the same swap — should succeed now
+    // 8. This proves the DoS is boundary-dependent, not liquidity-dependent
+}
+
+function test_returnableBoundary_attackerPositionsPool() public {
+    // Attacker controls swap sizing to position pool at boundary
+    // Then victim's swapByOutput fails
+    // Attacker reverses with small swap, profits from price impact
+}
+```
+
+### 10. [H-R7-CP-14] (confidence: medium, prior: new)
+**Mechanism**: In FixedHelper._increaseHeight (lines 1856-1938), when a swap pushes consumption to the tail height of the linked list, the tail has nextHeightAbove pointing to itself (set at line 831 in _addLiquidityToHeight: `mapToHeight.nextHeightAbove = toHeight`). The failure path: (1) The while loop at line 1871 processes remaining liquidity. (2) When it reaches the tail boundary, line 1886 evaluates `remaining >= liquidityToNextHeight`. At the tail where nextHeightAbove == currentHeight, liquidityToNextHeight = (currentHeight - currentHeight) * liquidity - (liquidity - remainingAtHeight) = -(liquidity - remainingAtHeight). But this is uint256, so it would underflow to a huge number... except this is in an unchecked block (line 1888). Wait — lines 1882-1884 are NOT in an unchecked block. Let me re-check: `liquidityToNextHeight = (heightCache.nextHeightAbove - heightCache.currentHeight) * heightCache.liquidity - (heightCache.liquidity - heightRemainingLiquidity)`. If nextHeightAbove == currentHeight, first term = 0, second term = (liquidity - remainingAtHeight). This is a checked subtraction of a positive value from 0 → REVERT with arithmetic underflow. This means ANY swap that pushes consumption to where it would need to calculate liquidityToNextHeight at a self-referencing tail height will revert. The expectedReserve calculation should prevent reaching this state, but if there's ANY rounding mismatch between updateExpectedReserve and the actual height traversal math, the swap reverts. This creates a 'last-unit-unswappable' scenario where the pool reports available reserves that cannot actually be swapped.
+**Complexity**: complex (target: max_reasoning)
+**Lines**:
+   - `lbamm-pool-type-fixed/src/libraries/FixedHelper.sol`: lines 1856, 1871, 1872, 1873, 1874, 1877, 1881, 1882, 1883, 1884, 1886, 1930, 1932, 831, 1365, 1386, 1387, 1388, 1390
+**Grounded in**: code-observation: FixedHelper.sol:1882-1884 — liquidityToNextHeight calculation. When nextHeightAbove == currentHeight (tail self-reference, set at line 831), the first multiplicand is 0 and the subtraction `0 - (liquidity - remainingAtHeight)` reverts in checked context (lines 1882-1884 are NOT inside an unchecked block). Line 1388: expectedReserve = outputShareOfExpectedReserve + inputHeightOutputCapacity, where inputHeightOutputCapacity uses calculateFixedSwapByRatioRoundingDown which may round to include a fraction of liquidity that actually requires traversing the tail.
+**Suggested test skeleton**:
+```solidity
+function test_tailHeight_arithmeticRevert() public {
+    // 1. Create fixed pool with precision=1, ratio=1:1
+    // 2. Single LP deposits: 10 token0, 10 token1
+    //    height0 range [0, 10), height1 range [0, 10)
+    //    Tail height for height0 = 10 (nextHeightAbove = 10, self-ref)
+    // 3. Query expectedReserve for zeroForOne swap
+    //    expectedReserve should = position1ShareOf1 + inputHeightOutputCapacity
+    // 4. Attempt swapByOutput for amount = expectedReserve
+    //    _increaseHeight receives the full swap amount
+    //    If height traversal reaches the tail, liquidityToNextHeight calculation
+    //    at line 1882-1884 will underflow: 0 - (liquidity - remaining) < 0 → REVERT
+    // 5. Assert: swap reverts with arithmetic underflow
+    // 6. Attempt swapByOutput for amount = expectedReserve - 1
+    //    Should succeed (doesn't reach tail boundary)
+    // 7. The gap between reportedReserve and swappableReserve = at least 1 unit
+    //    For pools with precision > 1, the gap scales with precision
+}
+
+function test_tailHeight_multiLP_exhaustion() public {
+    // 3 LPs provide liquidity at different height ranges
+    // After LP withdrawals, tail position changes
+    // Swap attempts near the new tail boundary
+    // Verify the unswappable gap exists at each tail configuration
+}
+```
+
+### 11. [H-R7-CP-07] (confidence: low, prior: new)
 **Mechanism**: In FixedHelper._splitAmountsAndFeesByHeight, the excess amountIn handling at lines 1714-1728 converts unused input to fees via _calculateExcessLPAndProtocolFee (line 1720). This function at line 992 computes `totalFeesBefore = excessAmountIn + lpFeeAmountBefore + protocolFeeAmountBefore` and then re-splits the ENTIRE combined amount between LP and protocol. The critical issue: the protocolFeeAmountBefore was already computed and included in poolProtocolFees. After the recalculation, the new protocolFeeAmountAfter could be DIFFERENT from protocolFeeAmountBefore. If protocolFeeAmountAfter > protocolFeeAmountBefore, the excess goes to the protocol (LP gets less). If protocolFeeAmountAfter < protocolFeeAmountBefore, the protocol's share decreases and the LP gets more. But the AMMModule at line 1431 calls _validateProtocolFees with the pool type's returned poolProtocolFees (which includes the recalculated value). The validation at line 1665 computes expectedProtocolFee from totalFees. Since _calculateExcessLPAndProtocolFee redistributes the entire fee pool, the LP fee percentage changes relative to what was expected. For pools where lpFeeBPS is high (e.g., 5000 = 50%), the redistribution can shift significant value between LP and protocol.
 **Complexity**: complex (target: max_reasoning)
 **Lines**:
@@ -729,13 +839,9 @@ function test_excessFeeRedistributionChangesProtocolShare() public {
 ```
 **EVOLUTION NOTE: This hypothesis has low confidence. Before testing, read the cited lines carefully and identify EXACT input values that would trigger the issue. Calculate economic impact in USD.**
 
-### 9. [H-R6-CP-08] (confidence: low, prior: new)
-**Mechanism**: Now I have the full picture. Let me write the precise hypothesis:
-
----
-
-When a pool's dynamic fee hook returns `poolFeeBPS = MAX_BPS (10000)` for an input swap, both the AMM's guard at `AMMModule._getPoolFee` line 1717 (`poolFeeBPS > MAX_BPS`, strict) and `DynamicPoolType.swapByInput` line 412 (`poolFeeBPS > MAX_BPS`, strict) pass without reverting, since `10000 > 10000` evaluates to `false`. The call reaches `DynamicHelper.computeSwap` with a 100% fee rate, which consumes the entire `amountIn` as `feeAmount` and returns `amountCalculated = 0`; line 477 then sets `amountOut = 0`, and the AMM completes the swap, crediting the user zero output tokens while fully debiting their input. The attack vector requires deploying a pool whose `poolHook` address is an attacker-controlled contract returning `10000` from the fee hook callback; any user who swaps through that pool loses their full `amountIn` to fees in a single transaction — economic impact equals 100% of swapped value with no upper bound. Testable trigger: create a `DynamicPoolType` pool with `poolFeeBPS = DYNAMIC_POOL_FEE_BPS` sentinel and a hook that unconditionally returns `10000`, call `swap` with any `amountIn`, and assert `amountOut == 0` while the fee escrow is credited `amountIn`.
-**Complexity**: complex (target: max_reasoning)
+### 12. [H-R7-CP-08] (confidence: low, prior: new)
+**Mechanism**: Now I have the exact code. Let me verify what `DYNAMIC_POOL_FEE_BPS` is and whether there's a downstream slippage guard:
+**Complexity**: medium (target: deep_reasoning)
 **Lines**:
    - `amm-pool-type-dynamic/src/DynamicPoolType.sol`: lines 398, 412, 458, 476, 477, 478, 517, 531, 577, 595, 596, 597
    - `lbamm-core/src/modules/AMMModule.sol`: lines 1373, 1706, 1711, 1712, 1713, 1714, 1717, 1718, 1389, 1390, 1391, 1392, 1393, 1394, 1395, 1396
@@ -769,8 +875,8 @@ function test_dynamicFeeHookReturns100PercentOnInputSwap() public {
 ```
 *(Mechanism refined by sonnet — original: "In DynamicPoolType.swapByOutput (lines 517-607), the fee validation at line 531 ...")*
 
-### 10. [H-R6-CP-09] (confidence: low, prior: new)
-**Mechanism**: The original hypothesis is mechanistically wrong. Both `remaining` and `amount` are decremented by `consumedAtHeight` in lockstep each iteration (lines 1890 and 1915), so they remain equal throughout the loop; when the last iteration consumes exactly `liquidityToNextHeight`, both reach zero simultaneously, meaning `feeDistributedToHeight = mulDiv(feeAmount, amount, amount) = feeAmount` — all fees are fully exhausted inside the loop with zero residual when `_crossHeight` fires at line 1932. The post-loop `_crossHeight` does mutate `heightCache.liquidity` and flips `heightInfo[currentHeight].feeGrowthOutside{0,1}X128` via the subtraction pattern at lines 2016–2019 (using the now-finalized `feeGrowthGlobal*`), but this flip is semantically correct: both the loop-start crossing (line 1877) and the post-loop crossing (line 1932) flip `feeGrowthOutside` only after the fees for the segment that caused the boundary condition have already been committed to `feeGrowthGlobal*`, preserving Uniswap-style position-fee accounting. No fee attribution error exists at this boundary; a more productive attack surface is the silent fee burn on lines 1912–1926 when `heightCache.liquidity == 0` at a height — fees proportionally allocated to that segment are deducted from `feeAmount`/`amount` but never credited to any `feeGrowthGlobal*`, permanently destroying those tokens.
+### 13. [H-R7-CP-09] (confidence: low, prior: new)
+**Mechanism**: The post-loop `_crossHeight` at line 1930 is **not** a fee-attribution bug: by the time the while loop exits with `remaining == 0`, the fee accounting variables `feeAmount` and `amount` have been fully decremented in lock-step each iteration (lines 1914–1915), so when the last iteration consumes exactly `liquidityToNextHeight`, `feeAmount` reaches zero and there are no fees left to misattribute. The fee growth increment in each iteration (line 1916) uses `heightCache.liquidity` which, due to the crossing guard at the top of the loop (line 1872–1879), already reflects the post-crossing liquidity for the segment being traversed — the liquidity divisor and the fee numerator are always consistent within a single iteration. The post-loop crossing at line 1932 is a pure state-advance (advancing `nextHeightAbove`, `nextHeightBelow`, and `liquidity` to the next segment's initial values) with `feeAmount == 0`, so it cannot produce any fee accounting discrepancy. This hypothesis is a false positive: the actual vulnerability surface at these lines, if any, lies elsewhere — for example in the `int128(heightCache.liquidity)` cast at line 1993 overflowing silently under `unchecked` if `heightCache.liquidity > type(int128).max`, or in the absence of any `feeGrowthOutside` flip during height crossing, which would cause LP fee entitlements across different height ranges to be mis-accumulated if the pool relies on per-height fee checkpointing for `collect()` logic.
 **Complexity**: complex (target: max_reasoning)
 **Lines**:
    - `lbamm-pool-type-fixed/src/libraries/FixedHelper.sol`: lines 1856, 1864, 1866, 1868, 1870, 1871, 1886, 1888, 1889, 1891, 1892, 1894, 1895, 1896, 1901, 1902, 1907, 1910, 1912, 1913, 1914, 1915, 1916, 1917, 1921, 1922, 1924, 1928, 1930, 1931, 1932, 1933, 1936, 1984, 1993, 1997, 1998, 1999, 2000
@@ -808,6 +914,39 @@ function test_postLoopCrossHeightFeeAttribution() public {
 }
 ```
 *(Mechanism refined by sonnet — original: "In FixedHelper._increaseHeight (lines 1856-1938), after the while loop completes...")*
+
+### 14. [H-R7-CP-11] (confidence: medium-high, prior: new)
+**Mechanism**: In FixedHelper._splitAmountsAndFeesByHeight (line 1642), when the output height's actual input exceeds expectation, the code attempts to subtract returnableInput from amountInFilledByInputHeight. The condition at line 1641 checks `amountInFromOutputHeightDelta > returnableInput`, and when true, subtracts the FULL returnableInput from amountInFilledByInputHeight (line 1642). However, returnableInput can exceed amountInFilledByInputHeight at this point because: (1) amountInFilledByInputHeight was already reduced at line 1590 by unfilledInput from the first calculateShareDeltaForLiquidityReturn call, and again at line 1618 by unfilledInput from the second call. (2) returnableInput comes from calculateShareDeltaForLiquidityReturn (line 1610-1617) which computes `boundaryLiquidity - totalConsumedLiquidity - 1` (line 1342), a value derived from share boundary geometry that is independent of amountInFilledByInputHeight's current value. In pools with high ratio asymmetry (e.g., packed ratio where numerator >> denominator), the share boundary gaps create returnableInput values whose magnitude is decoupled from the proportionally-split amountInFilledByInputHeight. Since this is checked arithmetic (Solidity 0.8.24), the underflow causes a transaction revert, creating a DoS condition for output-based swaps in affected pool configurations. The DoS persists until pool state changes (new deposits, withdrawals, or swaps in the opposite direction) move consumedLiquidity away from the triggering boundary.
+**Complexity**: complex (target: max_reasoning)
+**Lines**:
+   - `lbamm-pool-type-fixed/src/libraries/FixedHelper.sol`: lines 1559, 1576, 1580, 1590, 1607, 1608, 1610, 1618, 1622, 1626, 1630, 1635, 1636, 1638, 1639, 1641, 1642, 1644, 1342, 910, 913, 915
+**Grounded in**: code-observation: FixedHelper.sol:1642 — checked subtraction of returnableInput from amountInFilledByInputHeight where returnableInput is computed from share boundary geometry (line 1342) and amountInFilledByInputHeight has been reduced by two prior subtractions (lines 1590, 1618). The values are computed from different mathematical bases (proportional split vs boundary liquidity gaps).
+**Suggested test skeleton**:
+```solidity
+function test_splitUnderflow_highRatioPool() public {
+    // 1. Create fixed pool with high ratio (e.g., packed ratio 100:1 token0:token1)
+    //    heightPrecision = 1 on both sides
+    // 2. LP deposits: 10000 token0, 100 token1
+    // 3. Execute small swaps to position consumedLiquidity near a share boundary
+    //    where calculateShareDeltaForLiquidityReturn produces large returnableLiquidityDelta
+    // 4. Attempt swapByOutput:
+    //    - _splitAmountsAndFeesByHeight called
+    //    - amountInFilledByInputHeight = proportional split (small due to high ratio)
+    //    - First calculateShareDeltaForLiquidityReturn reduces via unfilledInput
+    //    - Second call with allowPartialCross=true returns large returnableInput
+    //    - Line 1622 condition true (total output underfilled)
+    //    - Line 1641 condition true (delta > returnableInput) 
+    //    - Line 1642: amountInFilledByInputHeight -= returnableInput REVERTS
+    // 5. Assert: vm.expectRevert() for arithmetic underflow
+    // 6. Verify: equivalent swap in opposite direction succeeds (proves pool has liquidity)
+}
+
+function test_splitUnderflow_inputFallbackBlocked() public {
+    // Same pool setup
+    // Trigger via swapByInput that falls back to swapByOutput (line 910-915)
+    // The fallback revert blocks input swaps near reserve boundaries too
+}
+```
 
 </hypotheses>
 

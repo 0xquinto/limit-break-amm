@@ -1,42 +1,40 @@
-# Agent Metrics: auth-forger (Wave 1)
+# Auth-Forger Agent Metrics — Wave 1 Round 7
 
 ## Summary
-- **Findings**: 0 (no exploitable vulnerabilities found)
-- **Hypotheses tested**: 10/10 (all dismissed with strategic failure class)
-- **Ruled-out vectors**: 16
-- **Hot spots**: 3
-- **Test files**: 3 (AuditAuthForgerKLoop.t.sol, CH02OverflowTest.t.sol, HalmosAuthForger.t.sol)
-- **Tests passing**: 40/40 (39 in KLoop + 1 overflow test)
+- **Findings**: 1 Medium (AUTH-001: hook fee partial fill overcharge)
+- **Ruled Out**: 20 vectors with Forge test evidence
+- **Hypotheses**: 11 tested, 1 confirmed, 3 dismissed, 7 ruled out
+- **Tests**: 38 passing (lbamm-hooks-and-handlers/test/AuditAuthForgerW1R7.t.sol)
 
-## Tool Usage
-| Tool | Status | Notes |
-|------|--------|-------|
-| Slither MCP | Ran | CLOBTransferHandler, PermitTransferHandler, AMMStandardHook, SqrtPriceCalculator |
-| Aderyn | Ran (crashed) | v0.6.8 fatal compiler bug. Phase 0 output available from prior run |
-| Forge | Ran | 40 tests, 1000 fuzz runs. 3 test files |
-| Halmos | Ran | C16 PASSED (44 paths). C17 TIMED OUT (solver-timeout 30000) |
-| Medusa | Ran (fallback) | Constructor args missing for CLOB handler. Forge fuzzer used as fallback |
+## AUTH-001: Hook Fees Not Adjusted on Partial Fill
 
-## Checklist Completion
-- **Phase A**: 2/2 (static analysis: Slither + Aderyn)
-- **Phase B**: 2/2 (audit-context-building + entry-point-analyzer)
-- **Phase C**: 20/22 (C18/C19 Medusa items used Forge fuzz fallback)
-- **Phase D**: 4/4 (all exploit probes completed)
-- **Total**: 28/30 (93%)
+**Severity**: Medium
+**Confidence**: 65/100
 
-## Hypothesis Results Summary
-All 10 hypotheses from knowledge generation (H-R6-CH-01 through H-R6-CH-10) were tested and dismissed with strategic failure class. Key reasons:
-1. Architectural guards (nonReentrant, AMM-only callers) block exploitation paths
-2. CLOB pipeline parameter bounds prevent arithmetic overflow
-3. Storage-based accounting immune to balance manipulation
-4. Dual protection (ratio check + limitAmount) on permit paths
-5. Boolean expression simplification eliminates alleged asymmetries
+In `_poolSwapByOutput` and `_poolSwapByInput`, hook fees are stored via `_storeHookFees` BEFORE the pool type call. When the pool partially fills (hits sqrtPrice limit), the code correctly adjusts:
+- Exchange fees (lines 1420-1426) - proportionally reduced
+- LP fees (lines 1415-1416) - proportionally reduced
+- Protocol exchange fees (line 1421) - proportionally reduced
 
-## Key Architectural Observations
-1. **Defense in depth**: Multiple overlapping guards at each entry point
-2. **Parameter bounding**: CLOB uint128.max + price range bounds prevent overflow scenarios
-3. **Storage isolation**: Fee accounting uses internal mappings, not balanceOf
-4. **Strict caller checks**: Hook callbacks and settlement functions are AMM-only
+But hook fees stored at lines 2625, 2642, 2871, 2887 are **NOT** adjusted.
 
-## Turns Used: ~85
-## Files Read: ~42
+**Key asymmetry**: Exchange fees get `exchangeFeeAdjustment = mulDiv(exchangeFeeAmount, amountInAdjustment, originalAmountIn)` on partial fill, but hook fees have no equivalent adjustment.
+
+**Impact**: User overpays hook fees proportional to the unfilled portion. For 5% hook fee and 50% partial fill: user loses ~2.5% of swap value to the hook compared to fair proportional allocation.
+
+**Prior R6 dismissal was incorrect**: R6 claimed "user's total cost proportionally reduced" but missed the asymmetry with exchange fee adjustment. The total cost IS reduced, but the hook fee proportion increases disproportionately at the user's expense.
+
+## Tools Run
+| Tool | Result |
+|------|--------|
+| Slither MCP | 338 functions analyzed, no critical findings |
+| Aderyn v0.6.8 | Background scan completed |
+| Forge | 38/38 tests pass |
+| Halmos v0.3.3 | Symbolic verification on H01 (1 path, 3.74s) |
+| Medusa v1.5.0 | 25s corpus run (no property tests in unit test format) |
+
+## Checklist Completion: 29/33 (88%)
+- A (Phase A static): 4/4
+- B (Phase B architectural): 3/3
+- C (Phase C invariant): 19/22
+- D (Phase D hypothesis): 3/4
