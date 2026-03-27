@@ -277,7 +277,12 @@ def annotate_vectors_file(findings_path: Path) -> int:
 
     vectors = data.get("ruled_out_vectors", [])
     flagged = 0
-    for vec in vectors:
+    for i, vec in enumerate(vectors):
+        # Agents sometimes write vectors as plain strings instead of dicts
+        if isinstance(vec, str):
+            vectors[i] = vec = {"description": vec, "test_file": ""}
+        if not isinstance(vec, dict):
+            continue
         gate_flagged, reason = check_gate_e(vec)
         if gate_flagged:
             vec["evidence_gate"] = {"status": "flagged", "gate": "E", "reason": reason}
