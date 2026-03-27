@@ -343,3 +343,8 @@ The JSON must have this structure:
 - Every hypothesis mechanism MUST mention at least one function name
 - At least 60% of hypotheses should have a `suggested_test` with valid Foundry syntax
 - Prefer depth over breadth — 5 deep hypotheses are better than 15 shallow ones
+
+
+## Gate Feedback
+
+Test Presence scored 0/25 — suggested_test fields are missing or contain prose instead of Solidity code. Each test must contain 'function', assertions, and reference a cited function.

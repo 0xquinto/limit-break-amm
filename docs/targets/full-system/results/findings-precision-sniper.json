@@ -1,0 +1,187 @@
+{
+  "metadata": {
+    "agent": "precision-sniper",
+    "wave": 1,
+    "run": 8,
+    "model": "claude-opus-4-20250514",
+    "timestamp": "2026-03-26T00:00:00Z",
+    "duration_minutes": 90,
+    "tools_used": ["forge-test", "forge-fuzz", "slither-mcp", "grep", "read"],
+    "checklist_completed": 25,
+    "checklist_total": 29,
+    "test_file": "amm-pool-type-dynamic/test/AuditPrecisionSniperW1V4.t.sol",
+    "tests_passed": 35,
+    "tests_failed": 0
+  },
+  "findings": [],
+  "ruled_out_vectors": [
+    {
+      "id": "RO-PS-001",
+      "vector": "FullMath.mulDiv phantom overflow",
+      "items": ["C1", "C2"],
+      "reason": "512-bit multiply via CRT+Newton-Raphson handles phantom overflow correctly. Fuzz verified: mulDivRoundingUp >= mulDiv for all inputs. mulDiv(max,max,max) = max.",
+      "evidence": "test_C1_mulDiv_maxValues, test_C1_mulDiv_phantomOverflow, test_C2_fuzz_roundingUpGtOrEq"
+    },
+    {
+      "id": "RO-PS-002",
+      "vector": "SqrtPriceMath direction bug",
+      "items": ["C11"],
+      "reason": "getNextSqrtPriceFromInput correctly decreases price for zeroForOne and increases for oneForZero. Zero input returns same price.",
+      "evidence": "test_C11_zeroAmountNoChange, test_C11_largeInputDecreasesPriceZeroForOne, test_C11_largeInputIncreasesPriceOneForZero"
+    },
+    {
+      "id": "RO-PS-003",
+      "vector": "getAmountDelta sign/rounding bug",
+      "items": ["C12", "C24"],
+      "reason": "Equal prices produce zero deltas. Rounding is consistent: roundUp >= roundDown verified by fuzz. Positive liquidity always gives non-negative deltas.",
+      "evidence": "test_C12_equalPricesZeroDelta, test_C12_unitLiquidityNonNegative, test_C24_amountDeltaRounding_fuzz"
+    },
+    {
+      "id": "RO-PS-004",
+      "vector": "SwapMath amountIn + feeAmount > amountRemaining",
+      "items": ["C13"],
+      "reason": "Mathematically proven: in exhaust branch, amountIn + feeAmount = amountRemaining exactly. In reach-target branch, ceil(A*fee/(MAX-fee)) + A <= R follows from floor(R*(MAX-fee)/MAX) >= A. Fuzz confirmed.",
+      "evidence": "test_C13_inputStepFeeBound_fuzz"
+    },
+    {
+      "id": "RO-PS-005",
+      "vector": "TickMath round-trip precision loss",
+      "items": ["C14"],
+      "reason": "getSqrtPriceAtTick -> getTickAtSqrtPrice round-trip verified at every 1000th tick from MIN_TICK to MAX_TICK. MIN_TICK gives >= MIN_SQRT_RATIO, MAX_TICK gives <= MAX_SQRT_RATIO.",
+      "evidence": "test_C14_tickPriceRoundTrip_every1000thTick, test_C14_minMaxTickBounds"
+    },
+    {
+      "id": "RO-PS-006",
+      "vector": "BitMath MSB/LSB errors",
+      "items": ["C15"],
+      "reason": "MSB and LSB verified for all 256 powers of 2. MSB(1)=0, MSB(max)=255.",
+      "evidence": "test_C15_msbOfPowerOf2, test_C15_lsbOfPowerOf2"
+    },
+    {
+      "id": "RO-PS-007",
+      "vector": "LiquidityMath.addDelta overflow/underflow",
+      "items": ["C16"],
+      "reason": "Correct revert on underflow (50 + (-51)), overflow (max + 1), and int128.min. Normal operations produce correct results.",
+      "evidence": "test_C16_positiveAdd, test_C16_underflowReverts, test_C16_overflowReverts, test_C16_int128MinReverts"
+    },
+    {
+      "id": "RO-PS-008",
+      "vector": "FeeHelper output path unchecked underflow",
+      "items": ["C17"],
+      "reason": "protocolFee = mulDivRoundingUp(grossFee, protocolBPS, MAX_BPS). Since protocolBPS <= MAX_BPS (validated in _setProtocolFees), protocolFee <= grossFee always holds. Fuzz verified across all valid BPS combinations.",
+      "evidence": "test_C17_outputFeeSubtractionSafe_fuzz"
+    },
+    {
+      "id": "RO-PS-009",
+      "vector": "Input/output fee path inconsistency (arbitrageable)",
+      "items": ["C17"],
+      "reason": "Output path always charges >= input path (verified by fuzz). Maximum difference bounded by ceil(MAX_BPS/(MAX_BPS-feeBPS))+1, which is always in the protocol's favor. Not exploitable.",
+      "evidence": "test_C17_inputOutputFeeConsistency_fuzz"
+    },
+    {
+      "id": "RO-PS-010",
+      "vector": "computeRatioX96 precision loss",
+      "items": ["C19"],
+      "reason": "Dynamic scaling loop produces correct sqrtPrice for equal amounts. Returns MIN_SQRT_RATIO for zero amount0 (correct: infinite price). Extreme ratios handled correctly.",
+      "evidence": "test_C19_computeRatioX96_extremeAmounts"
+    },
+    {
+      "id": "RO-PS-011",
+      "vector": "Profitable round-trip at library level",
+      "items": ["C23"],
+      "reason": "Forward swap (zeroForOne) + reverse swap (oneForZero) using SqrtPriceMath always results in loss. Rounding directions (input rounds up, output rounds down) consistently favor pool. Concrete and fuzz tests confirm.",
+      "evidence": "test_C23_swapStepRoundTrip_noProfit, test_C23_swapStepRoundTrip_fuzz"
+    },
+    {
+      "id": "RO-PS-012",
+      "vector": "Cetus-pattern overflow in SqrtPriceMath",
+      "items": ["C26"],
+      "reason": "Extreme parameters correctly revert with arithmetic overflow. Not exploitable - just parameter boundary protection. Reasonable parameters at extreme ticks work correctly.",
+      "evidence": "test_C26_noOverflowAtExtremeTicks"
+    },
+    {
+      "id": "RO-PS-013",
+      "vector": "Balancer-pattern 1-wei swap accumulation",
+      "items": ["C27"],
+      "reason": "200 sequential 1-wei input swaps produce 0 output (each too small to generate output due to rounding). Reverse swap of 0 output returns 0. No profit path.",
+      "evidence": "test_C27_repeatedOneWeiSwapsNeverProfit"
+    },
+    {
+      "id": "RO-PS-014",
+      "vector": "_getTokensOwed uint128 truncation",
+      "items": ["H5"],
+      "reason": "Mathematically possible when feeGrowthDelta > Q128 (1+ token per unit of liquidity in fees). Requires unrealistic fee accumulation: $10^18 in cumulative fees with 1 wei of liquidity. Same pattern as Uniswap V3 - accepted design limitation.",
+      "evidence": "test_H5_tokensOwedUint128Truncation"
+    },
+    {
+      "id": "RO-PS-015",
+      "vector": "Compound 1-wei truncation over 100+ iterations",
+      "items": ["H11"],
+      "reason": "100 small swaps (0.001 tokens each) produce 48 wei less output than a single equivalent large swap. This is correct behavior: more rounding steps = more rounding loss. The difference always favors the pool, never the attacker.",
+      "evidence": "test_H11_compoundTruncation_100swaps"
+    },
+    {
+      "id": "RO-PS-016",
+      "vector": "Operator precedence in bitwise OR comparison",
+      "items": ["H1"],
+      "reason": "Solidity's | has higher precedence than ==, so (a | b == 0) evaluates as ((a | b) == 0). Verified by compilation and runtime test. FixedHelper.withdrawLiquidity line 69 is correct.",
+      "evidence": "test_H01_operatorPrecedenceInBitwiseOr"
+    },
+    {
+      "id": "RO-PS-017",
+      "vector": "100% fee asymmetry between input/output paths",
+      "items": ["H10"],
+      "reason": "swapByInput allows poolFeeBPS == MAX_BPS (100%), swapByOutput rejects >= MAX_BPS. Intentional: 100% input fee means all input goes to fees with 0 output (user protected by limitAmount). 100% output fee would cause division by zero in fee = ceil(input * fee / (MAX - fee)).",
+      "evidence": "test_H10_feeAsymmetryIsIntentional"
+    },
+    {
+      "id": "RO-PS-018",
+      "vector": "DynamicHelper tick crossing accumulated error",
+      "items": ["C7", "C10"],
+      "reason": "Agent analysis of computeSwap loop: each tick crossing introduces at most 1 wei rounding error per amount calculation. Over 100+ ticks, max error ~100 wei. Rounding always favors pool. Not exploitable.",
+      "evidence": "Agent analysis: DynamicHelper computeSwap loop"
+    },
+    {
+      "id": "RO-PS-019",
+      "vector": "Fee growth at exact tick boundaries",
+      "items": ["C10"],
+      "reason": "Agent analysis: When sqrtPrice lands exactly on tick, currentTick is set to tickNext-1 (zeroForOne) or tickNext (oneForZero). Fee growth outside values are flipped correctly. Follows standard Uniswap V3 convention. No phantom fee growth.",
+      "evidence": "Agent analysis: _getFeeGrowthInside, _crossTick"
+    },
+    {
+      "id": "RO-PS-020",
+      "vector": "SingleProviderHelper exploitable round-trip",
+      "items": ["C20"],
+      "reason": "Agent analysis: calculateFixedInput rounds DOWN twice, calculateFixedOutput rounds UP twice. Round-trips always lose. Fee formulas are algebraic inverses. No extraction path.",
+      "evidence": "Agent analysis: SingleProviderHelper.sol"
+    },
+    {
+      "id": "RO-PS-021",
+      "vector": "Fee settlement accounting mismatch",
+      "items": ["C17"],
+      "reason": "Agent analysis: Every fee split uses exact arithmetic (recipientPortion = totalFee - protocolPortion). Balance check at AMMModule:2208 verifies exact token transfer. protocolExchangeFeeAmount not set for output swaps is intentional (only used in input partial fill adjustment). No stuck or leaked tokens.",
+      "evidence": "Agent analysis: AMMModule fee settlement flow"
+    },
+    {
+      "id": "RO-PS-022",
+      "vector": "CLOBHelper order matching insolvency",
+      "items": ["C18"],
+      "reason": "Agent analysis: fillOrder loop correctly tracks fillInputRemaining/fillOutputRemaining. stepOutput > fillOutputRemaining check prevents overpaying makers. makerTokenBalance credits match exactly. Nonce is globally monotonic. No double-fill or insolvency path.",
+      "evidence": "Agent analysis: CLOBHelper.sol fillOrder, closeOrder"
+    },
+    {
+      "id": "RO-PS-023",
+      "vector": "FixedHelper normalizePriceToRatio precision loss",
+      "items": ["C3"],
+      "reason": "Two-step division in normalizePriceToRatio introduces at most 2 units of precision loss on RATIO_BASE = 10^38. Relative error < 10^-36. After simplifyRatio(), the loss is locked but negligible. Not exploitable for round-trip profit.",
+      "evidence": "Code analysis: FixedHelper.sol normalizePriceToRatio, RATIO_BASE=10^38"
+    },
+    {
+      "id": "RO-PS-024",
+      "vector": "FixedHelper _splitAmountsAndFeesByHeight 1-unit tolerance",
+      "items": ["C4"],
+      "reason": "Output swap path allows totalAmountInFilled = amountIn + 1 (split rounding tolerance). The extra 1 wei goes to fees via _calculateOutputLPAndProtocolFee recalculation, not to the attacker. Not exploitable.",
+      "evidence": "Code analysis: FixedHelper.sol lines 1678-1692"
+    }
+  ]
+}

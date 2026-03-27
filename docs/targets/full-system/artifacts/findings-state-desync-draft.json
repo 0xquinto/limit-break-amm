@@ -1,0 +1,403 @@
+{
+  "agent": "state-desync",
+  "wave": 1,
+  "run": 8,
+  "timestamp": "2026-03-26T12:00:00Z",
+  "hypothesis_results": [
+    {
+      "id": "H-R8-CH-14",
+      "title": "Reentrancy Flag Clearing After _setReentrancyFlags(NO_FLAGS)",
+      "status": "dismissed",
+      "confidence": "high",
+      "summary": "_setReentrancyFlags preserves the ENTERED bit while clearing custom flags. nonReentrantWithFlags correctly blocks re-entry even after flag clearing during queued hook fee execution.",
+      "evidence": "TstorishReentrancyGuardWithFlags._setReentrancyFlags strips bits 0-1 from new flags, preserves ENTERED from current state. Re-entry test with MaliciousReentrantToken reverts as expected.",
+      "test_file": "lbamm-core/test/AuditStateDesyncHyp14.t.sol",
+      "test_name": "test_H14_entered_bit_preserved_after_flag_clearing",
+      "lines": [
+        "tm-core-lib/src/utils/security/TstorishReentrancyGuardWithFlags.sol:L85-L90"
+      ]
+    },
+    {
+      "id": "H-R8-CH-15",
+      "title": "Dead Code Analysis in _poolSwapByOutput",
+      "status": "dismissed",
+      "confidence": "high",
+      "summary": "No dead code identified in the output-based swap path. The check at line 1561 (actualAmountOut > originalAmountOut) is a safety guard against pool type bugs, not dead code.",
+      "evidence": "All branches in _poolSwapByOutput (lines 1506-1627) are reachable: normal fill, partial fill, partial fill less than fees, partial fill less than minimum.",
+      "test_file": "lbamm-core/test/AuditStateDesyncHyp_CH.t.sol",
+      "test_name": "test_CH15_no_dead_code_in_swap_path",
+      "lines": [
+        "AMMModule.sol:L1506-L1627"
+      ]
+    },
+    {
+      "id": "H-R8-HH-01",
+      "title": "CLOB Pricing Round-Trip Bypass via calculateFixedInput/computeRatioX96 Mismatch",
+      "status": "confirmed",
+      "severity": "low",
+      "confidence": "high",
+      "summary": "At extreme prices near MIN_SQRT_RATIO, calculateFixedInput (double mulDivRoundingUp) maps large inputs to amountOut=1, then computeRatioX96 reconstructs a price ~10 billion times larger. This allows orders at prices below creator pricing bounds to pass validateHandlerOrder checks. Practical impact limited to extreme prices (sqrtPriceX96 < ~8e10 with 1e18 input).",
+      "evidence": "calculateFixedInput(1e18, MIN_SQRT_RATIO) = 1. computeRatioX96(1, 1e18) \u2248 7.92e19. MIN_SQRT_RATIO = 4.295e9. Divergence factor: ~1.8e10. Creator with minSqrtPriceX96 = 1e15 would see orders at MIN_SQRT_RATIO pass bounds check.",
+      "attack_sequence": [
+        "1. Creator sets pricing bounds: minSqrtPriceX96 = 1e15 via AMMStandardHook",
+        "2. Attacker calls openOrder with sqrtPriceX96 = MIN_SQRT_RATIO (4.3e9)",
+        "3. _enforceTokenHooks computes amountOut = calculateFixedInput(1e18, MIN_SQRT_RATIO) = 1",
+        "4. validateHandlerOrder reconstructs price: computeRatioX96(1, 1e18) \u2248 7.92e19",
+        "5. 7.92e19 > 1e15 \u2014 bounds check passes despite actual price being below minimum"
+      ],
+      "victim": "Token creators who rely on pricing bounds enforcement via AMMStandardHook",
+      "profit_mechanism": "Bypass of creator-enforced price floor allows order placement at extreme prices. Economic impact is limited because these extreme prices represent nearly zero exchange rates.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditStateDesyncR8_PricingMath.t.sol",
+      "test_name": "test_HH01_pricing_bounds_bypass_scenario",
+      "lines": [
+        "CLOBHelper.sol:L309-L315",
+        "SqrtPriceCalculator.sol:L28-L56",
+        "AMMStandardHook.sol:L198-L226",
+        "CLOBTransferHandler.sol:L574-L619"
+      ],
+      "contracts": [
+        "CLOBHelper",
+        "SqrtPriceCalculator",
+        "AMMStandardHook",
+        "CLOBTransferHandler"
+      ],
+      "functions": [
+        "calculateFixedInput",
+        "computeRatioX96",
+        "validateHandlerOrder",
+        "_enforceTokenHooks"
+      ]
+    },
+    {
+      "id": "H-R8-HH-02",
+      "title": "FOT Token CLOB Insolvency via ammHandleTransfer",
+      "status": "confirmed",
+      "severity": "low",
+      "confidence": "high",
+      "summary": "depositToken correctly rejects fee-on-transfer tokens via balance check (line 368), but ammHandleTransfer does NOT verify actual received amount of tokenOut from AMM. If tokenOut is FOT, CLOB credits makers with full mathematical amount while holding fewer actual tokens. Last maker(s) cannot withdraw.",
+      "evidence": "FOT token with 5% fee: AMM sends 1000 to CLOB, CLOB receives 950, but makers credited 1000. 50-token deficit = 5%. Test AuditStateDesyncCLOB.t.sol demonstrates the gap.",
+      "attack_sequence": [
+        "1. Create CLOB order book: tokenIn = normalERC20, tokenOut = FOT token",
+        "2. Multiple makers deposit tokenIn and open orders",
+        "3. AMM swap fills orders, sending FOT tokens to CLOB as amountOut",
+        "4. fillOrder credits makers with full calculateFixedInput amounts",
+        "5. Actual CLOB FOT balance < sum of maker virtual balances",
+        "6. First makers withdraw successfully, last maker cannot (insufficient balance)"
+      ],
+      "victim": "Last CLOB order makers whose virtual balances exceed remaining actual tokens",
+      "profit_mechanism": "First-mover advantage on withdrawal when CLOB is insolvent. Attacker who is first to withdraw extracts full credited amount at the expense of later withdrawers.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditStateDesyncCLOB.t.sol",
+      "test_name": "test_H15_last_maker_cannot_withdraw",
+      "lines": [
+        "CLOBTransferHandler.sol:L221-L300",
+        "CLOBHelper.sol:L180-L239",
+        "CLOBTransferHandler.sol:L354-L375"
+      ],
+      "contracts": [
+        "CLOBTransferHandler",
+        "CLOBHelper"
+      ],
+      "functions": [
+        "ammHandleTransfer",
+        "fillOrder",
+        "depositToken"
+      ]
+    },
+    {
+      "id": "H-R8-HH-03",
+      "title": "Reentrancy via afterSwapRefund Callback",
+      "status": "dismissed",
+      "confidence": "high",
+      "summary": "afterSwapRefund is protected by dual reentrancy guards. The AMM's ENTERED bit prevents re-entry to singleSwap/multiSwap, and the CLOB's own nonReentrant on ammHandleTransfer prevents nested fills. afterSwapRefund only performs SafeERC20.safeTransfer with no state mutations to order books.",
+      "evidence": "afterSwapRefund (line 315) checks msg.sender == AMM, only does SafeERC20.safeTransfer. Called during _executeTransferHandlerCallback inside AMM's nonReentrantWithFlags guard.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditStateDesyncR8_PricingMath.t.sol",
+      "test_name": "test_HH03_afterSwapRefund_no_reentrancy_risk",
+      "lines": [
+        "CLOBTransferHandler.sol:L315-L333"
+      ]
+    },
+    {
+      "id": "H-R8-HH-04",
+      "title": "Stale Pricing Bounds at CLOB Fill Time",
+      "status": "dismissed",
+      "confidence": "high",
+      "summary": "By-design: CLOB orders represent committed liquidity at a fixed price. Pricing bounds are validated at order open time. Fill-time re-validation would break the CLOB limit order model. Analogous to limit orders on traditional exchanges.",
+      "evidence": "ammHandleTransfer (line 221-300) executes fills without pricing bounds checks. _enforceTokenHooks is called during openOrder (line 534), not during fills.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditStateDesyncR8_PricingMath.t.sol",
+      "test_name": "test_HH04_fill_time_no_bounds_recheck_by_design",
+      "lines": [
+        "CLOBTransferHandler.sol:L221-L300",
+        "CLOBTransferHandler.sol:L534"
+      ]
+    },
+    {
+      "id": "H-R8-HH-05",
+      "title": "CLOB Order Nonce Collision Analysis",
+      "status": "dismissed",
+      "confidence": "high",
+      "summary": "nextOrderNonce is a monotonically increasing uint256 counter. No risk of nonce collision since it's per-CLOB-instance, incremented by exactly 1 per openOrder call. Would require 2^256 orders to overflow.",
+      "evidence": "CLOBTransferHandler.sol line 538: orderNonce = nextOrderNonce++",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditStateDesyncR8_PricingMath.t.sol",
+      "test_name": "test_HH05_order_nonce_monotonic",
+      "lines": [
+        "CLOBTransferHandler.sol:L35",
+        "CLOBTransferHandler.sol:L538"
+      ]
+    },
+    {
+      "id": "H-R8-HH-06",
+      "title": "CLOB Linked List Integrity Analysis",
+      "status": "dismissed",
+      "confidence": "high",
+      "summary": "CLOB linked list operations (openOrder, closeOrder, traverseCLOB) maintain proper doubly-linked list invariants. Sentinels: bytes32(0) for order lists, 0 and type(uint160).max for price lists. closeOrder handles both head removal (via traverseCLOB) and queued order removal correctly.",
+      "evidence": "openOrder (L90-164): appends to tail, sets currentOrderId if first. closeOrder (L28-78): handles current head vs queued orders. traverseCLOB (L255-297): maintains bidirectional links.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditStateDesyncR8_PricingMath.t.sol",
+      "test_name": "test_HH06_linked_list_analysis",
+      "lines": [
+        "CLOBHelper.sol:L28-L78",
+        "CLOBHelper.sol:L90-L164",
+        "CLOBHelper.sol:L255-L297"
+      ]
+    },
+    {
+      "id": "H-R8-HH-07",
+      "title": "Sentinel Value Collision at Price Boundaries",
+      "status": "dismissed",
+      "confidence": "high",
+      "summary": "MIN_SQRT_RATIO (4,295,128,739) > 0 and MAX_SQRT_RATIO < type(uint160).max. The CLOB uses 0 as bottom sentinel and type(uint160).max as top sentinel for the price linked list. No collision with valid order prices.",
+      "evidence": "Constants.sol: MIN_SQRT_RATIO = 4,295,128,739. Price list sentinels: 0 (bottom) and type(uint160).max (top). Both distinct from valid prices.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditStateDesyncR8_PricingMath.t.sol",
+      "test_name": "test_HH07_sentinel_values_at_boundaries",
+      "lines": [
+        "Constants.sol:L5-L8",
+        "CLOBHelper.sol:L110-L116"
+      ]
+    },
+    {
+      "id": "H-R8-CH-01",
+      "title": "Non-Token Hook Fee Key Mismatch (_storeNonTokenHookFees)",
+      "status": "dismissed",
+      "confidence": "high",
+      "summary": "_storeNonTokenHookFees uses hash(hook, hash(tokenFor, tokenFor)) which looks like a bug but is correct because for non-token hooks (pool/liquidity hooks), the fee token IS always the same as tokenFor. When collecting via collectHookFeesByHook(tokenFor, tokenFee=tokenFor), the keys match.",
+      "evidence": "All callers of _storeNonTokenHookFees pass tokenFor (L790, L794, L838, L842, L1160, L1164, L1220, L1224) where the fee is denominated in tokenFor itself.",
+      "test_file": "lbamm-core/test/AuditStateDesyncHyp_CH.t.sol",
+      "test_name": "test_CH01_nonTokenHookFee_key_match_when_tokenFor_eq_tokenFee",
+      "lines": [
+        "AMMModule.sol:L3011-L3026",
+        "AMMModule.sol:L3116-L3139"
+      ]
+    },
+    {
+      "id": "H-R8-CH-05",
+      "title": "feeOnTop Not Signed in Permit SWAP_TYPEHASH",
+      "status": "dismissed",
+      "confidence": "high",
+      "summary": "By-design: feeOnTop is set by the executor/relay, not the swapper. The swapper's protection comes from minAmountSpecified which constrains total deductions. The permit signature covers (amountSpecified, limitAmount, minAmountSpecified) which are sufficient to prevent value extraction.",
+      "evidence": "SWAP_TYPEHASH in PermitTransferHandler does not include feeOnTop fields. User protection via amountSpecified/limitAmount/minAmountSpecified covers the economic risk.",
+      "test_file": "lbamm-core/test/AuditStateDesyncHyp_CH.t.sol",
+      "test_name": "test_CH05_feeOnTop_protected_by_minAmountSpecified",
+      "lines": [
+        "PermitTransferHandler.sol:SWAP_TYPEHASH"
+      ]
+    },
+    {
+      "id": "H-R8-CH-06",
+      "title": "State Corruption During Fee Distribution",
+      "status": "dismissed",
+      "confidence": "high",
+      "summary": "Multiple swaps generating hook fees maintain solvency. The queued hook fee system (transient storage) processes fees atomically during _finalizeSwapCollectFundsAndDisburse. No state corruption observed.",
+      "evidence": "5 sequential swap pairs maintain solvency invariant: balances >= reserves + feeBalances.",
+      "test_file": "lbamm-core/test/AuditStateDesyncHyp14.t.sol",
+      "test_name": "test_H06_solvency_maintained_during_fee_distribution",
+      "lines": [
+        "AMMModule.sol:L3183-L3204",
+        "AMMModule.sol:L2144-L2253"
+      ]
+    },
+    {
+      "id": "H-R8-CH-08",
+      "title": "Partial Fill Hook Fee on Original Amount",
+      "status": "dismissed",
+      "confidence": "high",
+      "summary": "In _poolSwapByOutput, beforeSwap hook fees are computed on the original amountSpecified before partial fill adjustment. This means proportionally larger fees on partial fills. User is protected by minAmountSpecified (line 1579). This is a known trade-off, not a bug.",
+      "evidence": "Lines 1536-1537: _executeBeforeSwapHooks and _applySwapByOutputOutputFees called before pool swap. Line 1576: adjustedAmountSpecified recalculated after partial fill. Line 1579: check against minAmountSpecified.",
+      "test_file": "lbamm-core/test/AuditStateDesyncHyp_CH.t.sol",
+      "test_name": "test_CH08_partial_fill_fee_protected_by_min_amount",
+      "lines": [
+        "AMMModule.sol:L1536-L1537",
+        "AMMModule.sol:L1558-L1583"
+      ]
+    },
+    {
+      "id": "H-R8-CH-13",
+      "title": "Flash Loan Protocol Fee Base Asymmetry",
+      "status": "dismissed",
+      "confidence": "high",
+      "summary": "Without hook: protocol fee = loanAmount * flashLoanBPS / MAX_BPS. With hook: protocol fee = tokenFeeAmount * flashLoanBPS / MAX_BPS. The base changes from loanAmount to hook-returned fee amount. This is by-design: the hook can override the fee structure. Protocol fee is a percentage of whatever the effective fee is.",
+      "evidence": "Flash loan with 1% fee, 100e18 loan amount: protocol fee = 1e18 (1% of loan). Test confirms correct calculation.",
+      "test_file": "lbamm-core/test/AuditStateDesyncHyp14.t.sol",
+      "test_name": "test_H13_flash_loan_fee_without_hook",
+      "lines": [
+        "AMMModule.sol:L3288-L3382"
+      ]
+    },
+    {
+      "id": "H-R8-CH-16",
+      "title": "Price Divergence in Multi-Pool Swap Paths",
+      "status": "dismissed",
+      "confidence": "high",
+      "summary": "Multi-hop swaps use independent pool prices per hop. Price divergence between hops is standard multi-hop AMM behavior (same as Uniswap V3 routing). User is protected by limitAmount parameter which constrains overall exchange rate.",
+      "evidence": "Two-pool multi-hop swap (token0\u2192token1\u2192token2) completes successfully. User receives output tokens. Per-pool solvency maintained.",
+      "test_file": "lbamm-core/test/AuditStateDesyncHyp_CH.t.sol",
+      "test_name": "test_CH16_multiSwap_price_divergence_protected",
+      "lines": [
+        "AMMModule.sol:L266-L273"
+      ]
+    }
+  ],
+  "findings": [
+    {
+      "id": "SD-001",
+      "title": "CLOB Pricing Round-Trip Divergence Bypasses Creator Pricing Bounds",
+      "severity": "low",
+      "confidence": "high",
+      "description": "The AMMStandardHook.validateHandlerOrder function reconstructs the order price from (amountIn, amountOut) using SqrtPriceCalculator.computeRatioX96, then checks it against creator-configured pricing bounds. However, calculateFixedInput (used to compute amountOut) applies double mulDivRoundingUp while computeRatioX96 uses floor sqrt. At extreme prices near MIN_SQRT_RATIO, this produces a reconstructed price ~10 billion times larger than the actual order price, bypassing minimum pricing bounds. Practical impact is limited to extreme prices where exchange rates are nearly zero.",
+      "contracts": [
+        "CLOBHelper",
+        "SqrtPriceCalculator",
+        "AMMStandardHook"
+      ],
+      "functions": [
+        "calculateFixedInput",
+        "computeRatioX96",
+        "validateHandlerOrder"
+      ],
+      "test_file": "lbamm-hooks-and-handlers/test/AuditStateDesyncR8_PricingMath.t.sol",
+      "lines": [
+        "CLOBHelper.sol:L309-L315",
+        "SqrtPriceCalculator.sol:L28-L56",
+        "AMMStandardHook.sol:L198-L226"
+      ],
+      "kill_gate": {
+        "status": "killed",
+        "gate": "D",
+        "reason": "Missing attack_sequence"
+      }
+    },
+    {
+      "id": "SD-002",
+      "title": "FOT Token CLOB Insolvency: ammHandleTransfer Lacks Balance Verification",
+      "severity": "low",
+      "confidence": "high",
+      "description": "CLOBTransferHandler.depositToken correctly rejects fee-on-transfer tokens via balance before/after check, but ammHandleTransfer (the AMM fill callback) does not verify actual received amount. When tokenOut is a FOT token, the CLOB receives fewer tokens than amountOut but credits makers with the full mathematical amount via CLOBHelper.fillOrder. This creates a virtual balance > actual balance insolvency where the last maker(s) cannot withdraw their credited tokens.",
+      "contracts": [
+        "CLOBTransferHandler",
+        "CLOBHelper"
+      ],
+      "functions": [
+        "ammHandleTransfer",
+        "fillOrder",
+        "withdrawToken"
+      ],
+      "test_file": "lbamm-hooks-and-handlers/test/AuditStateDesyncCLOB.t.sol",
+      "lines": [
+        "CLOBTransferHandler.sol:L221-L300",
+        "CLOBHelper.sol:L228-L234"
+      ],
+      "kill_gate": {
+        "status": "killed",
+        "gate": "D",
+        "reason": "Missing attack_sequence"
+      }
+    }
+  ],
+  "invariant_results": {
+    "INV-S01": {
+      "status": "holds",
+      "test": "test_INV_S01_solvency_after_swap"
+    },
+    "INV-S02": {
+      "status": "holds",
+      "test": "test_INV_S02_no_value_creation_round_trip"
+    },
+    "INV-S03": {
+      "status": "holds",
+      "test": "test_INV_S03_withdrawal_guarantee_after_random_swaps"
+    },
+    "INV-H03": {
+      "status": "holds",
+      "test": "test_INV_H03_transient_storage_independence"
+    },
+    "INV-H05": {
+      "status": "holds",
+      "test": "test_INV_H05_reentrancy_guard_blocks_reentry"
+    },
+    "INV-L01": {
+      "status": "holds",
+      "test": "test_INV_L01_liquidity_consistency_after_operations"
+    },
+    "INV-L02": {
+      "status": "holds",
+      "test": "test_INV_L02_liquidityNet_sum_zero"
+    },
+    "INV-L03": {
+      "status": "holds",
+      "test": "test_INV_L03_price_consistency_after_swap"
+    },
+    "INV-E02": {
+      "status": "holds",
+      "test": "test_INV_E02_no_flash_loan_profit"
+    }
+  },
+  "checklist_completion": {
+    "C1": true,
+    "C2": true,
+    "C3": true,
+    "C4": true,
+    "C5": true,
+    "C6": true,
+    "C7": true,
+    "C8": true,
+    "C9": true,
+    "C10": true,
+    "C11": true,
+    "C12": true,
+    "C13": true,
+    "C14": true,
+    "C15": true,
+    "C16": true,
+    "C17": true,
+    "C18": true,
+    "C19": true,
+    "C20": true,
+    "C21": false,
+    "C22": false,
+    "C23": false,
+    "C24": false,
+    "C25": false
+  },
+  "tools_used": [
+    "forge_test",
+    "forge_build",
+    "slither_mcp",
+    "grep",
+    "read"
+  ],
+  "test_files": [
+    "lbamm-core/test/AuditStateDesyncHyp14.t.sol",
+    "lbamm-core/test/AuditStateDesyncHyp_CH.t.sol",
+    "lbamm-hooks-and-handlers/test/AuditStateDesyncR8_PricingMath.t.sol",
+    "lbamm-hooks-and-handlers/test/AuditStateDesyncCLOB.t.sol"
+  ],
+  "metrics": {
+    "hypotheses_total": 15,
+    "hypotheses_tested": 15,
+    "hypotheses_confirmed": 2,
+    "hypotheses_dismissed": 13,
+    "hypotheses_not_tested": 0,
+    "test_files_count": 4,
+    "findings_count": 2,
+    "invariants_tested": 9,
+    "invariants_held": 9
+  }
+}

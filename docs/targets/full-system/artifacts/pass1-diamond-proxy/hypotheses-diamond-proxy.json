@@ -1,7 +1,7 @@
 {
   "boundary": "diamond-proxy",
   "agent": "knowledge-gen-diamond-proxy",
-  "generated_at": "2026-03-26T18:00:00Z",
+  "generated_at": "2026-03-26T22:00:00Z",
   "contracts_analyzed": [
     "lbamm-core/src/modules/AMMModule.sol",
     "lbamm-core/src/modules/ModuleAdmin.sol",
@@ -10,25 +10,95 @@
     "lbamm-core/src/libraries/FeeHelper.sol",
     "lbamm-core/src/libraries/PoolDecoder.sol",
     "lbamm-core/src/Constants.sol",
-    "lbamm-core/lib/tm-core-lib/src/utils/security/TstorishReentrancyGuardWithFlags.sol"
+    "lbamm-core/lib/tm-core-lib/src/utils/security/TstorishReentrancyGuardWithFlags.sol",
+    "lbamm-core/lib/tm-core-lib/src/utils/math/FullMath.sol",
+    "lbamm-pool-type-single-provider/src/SingleProviderPoolType.sol"
   ],
   "hypotheses": [
     {
       "id": "H-DP-01",
-      "title": "Queued Hook Fee Execution Clears Reentrancy Flags — Creates Unguarded Re-entry Window via Token Callbacks",
-      "mechanism": "In _executeQueuedHookFeesByHookTransfers (AMMModule.sol:3183-3204), line 3190 calls _setReentrancyFlags(NO_FLAGS). Per TstorishReentrancyGuardWithFlags.sol:68-72, _setReentrancyFlags strips ENTERED and NOT_ENTERED bits from `flags` (yielding 0) then preserves only the ENTERED bit from current state. Result: the guard value becomes `ENTERED` (0x02) — ALL specific flags (SWAP_GUARD_FLAG=0x04, LIQUIDITY_GUARD_FLAG=0x80, FLASHLOAN_GUARD_FLAG=0x800) are CLEARED. The function then iterates queued transfers (lines 3192-3201), each calling _transferHookFeesByHook which does SafeERC20.safeTransfer (line 3133). If the fee token implements transfer callbacks (ERC-777 tokensReceived, or ERC-20 with hooks), the recipient contract gains execution. The recipient calls collectHookFeesByHook (ModuleFeeCollection.sol:72). The check at line 75 tests _isReentrancyFlagSet(SWAP_GUARD_FLAG) — returns FALSE (flag cleared). Line 77 tests FLASHLOAN_GUARD_FLAG — also FALSE. Execution falls through to line 79-80: _transferHookFeesByHook(msg.sender, ...) — DIRECT execution, bypassing the intended queueing mechanism. Attack: A hook that collects fees for the SAME hookFeeKey in the callback drains the tokensOwed balance via the direct path. When the loop continues to the original queued entry, _transferHookFeesByHook finds insufficient balance — underflow check at line 3130 triggers revert. Since executeQueuedHookFeesByHookTransfers was called via external CALL at line 2247 (ILimitBreakAMM(address(this)).executeQueuedHookFeesByHookTransfers()), the revert propagates to _finalizeSwapCollectFundsAndDisburse, bricking the entire swap. This is a guaranteed DoS vector for any swap that queues hook fees to a recipient contract with transfer callbacks.",
-      "functions": ["_executeQueuedHookFeesByHookTransfers", "_setReentrancyFlags", "_transferHookFeesByHook", "collectHookFeesByHook", "_finalizeSwapCollectFundsAndDisburse"],
+      "title": "Operator Precedence Bug in createPool Deposit Validation Allows Zero-Liquidity Pools and Blocks Token1-Only Deposits",
+      "mechanism": "At ModuleLiquidity.sol:90, the deposit validation check `if (deposit0 | deposit1 == 0)` suffers from Solidity operator precedence: the equality operator `==` (precedence 10) binds tighter than bitwise OR `|` (precedence 12), so the expression evaluates as `deposit0 | (deposit1 == 0)` instead of the intended `(deposit0 | deposit1) == 0`. Truth table analysis: (1) deposit0=0, deposit1=0: evaluates to `0 | (0==0)` = `0 | true` = `0 | 1` = 1 (truthy) → revert NOT triggered → ZERO deposits accepted. (2) deposit0=0, deposit1>0: evaluates to `0 | (X==0)` = `0 | false` = `0 | 0` = 0 (falsy) → revert IS triggered → valid token1-only deposits BLOCKED. (3) deposit0>0, deposit1=0: evaluates to `X | (0==0)` = `X | 1` = non-zero → revert NOT triggered → asymmetric acceptance of token0-only. Cross-referenced with SingleProviderPoolType.addLiquidity (lines 180-205) which returns user-specified amount0/amount1 without requiring both non-zero, confirming single-sided deposits are a valid pool type feature. The reserves at line 88-89 are read from `ptrPoolState` which points to the NEWLY CREATED pool, so the bug allows pools to be 'created with liquidity' while having zero reserves.",
+      "functions": ["createPool", "addLiquidity"],
       "lines": {
-        "lbamm-core/src/modules/AMMModule.sol": [2246, 2247, 3183, 3189, 3190, 3192, 3195, 3201, 3116, 3127, 3129, 3130, 3133],
-        "lbamm-core/src/modules/ModuleFeeCollection.sol": [72, 75, 77, 79, 80],
-        "lbamm-core/lib/tm-core-lib/src/utils/security/TstorishReentrancyGuardWithFlags.sol": [68, 69, 70, 71]
+        "lbamm-core/src/modules/ModuleLiquidity.sol": [77, 78, 79, 80, 81, 88, 89, 90, 91, 92],
+        "lbamm-pool-type-single-provider/src/SingleProviderPoolType.sol": [180, 181, 182, 183, 184, 185, 186, 187, 188, 189, 190, 191, 192, 193, 194, 195, 196, 197, 198, 199, 200, 201, 202, 203, 204, 205]
       },
       "confidence": "high",
       "grounded_in": [
-        "code-observation: _setReentrancyFlags(NO_FLAGS) at AMMModule.sol:3190 — per TstorishReentrancyGuardWithFlags.sol:69 `flags = flags & ~(ENTERED | NOT_ENTERED)` yields 0, line 70 extracts ENTERED from current, line 71 stores `ENTERED | 0 = ENTERED`. SWAP_GUARD_FLAG (1<<2=4) is NOT in the result. _isReentrancyFlagSet(4) at ModuleFeeCollection.sol:75 returns (2 & 4 > 0) = false.",
+        "code-observation: Solidity operator precedence table — `==` (precedence 10) binds tighter than `|` (precedence 12), causing `a | b == 0` to parse as `a | (b == 0)` not `(a | b) == 0`. The boolean result of `b == 0` is implicitly cast to uint256 (0 or 1) before the bitwise OR.",
+        "code-observation: SingleProviderPoolType.addLiquidity (lines 180-205) returns user-specified amount0/amount1 directly without requiring both to be non-zero, confirming single-sided deposits are a valid pool type feature that triggers the bug.",
+        "code-observation: ModuleLiquidity.sol:88-89 reads reserves from `Storage.appStorage().pools[poolId]` where `poolId` is the NEWLY created pool from line 75, meaning the reserves reflect only what the delegatecalled addLiquidity deposited.",
+        "Pattern 1: Arithmetic precision errors — operator precedence is a subcategory of arithmetic correctness issues that cause logic to diverge from intent"
+      ],
+      "category": "logic-error",
+      "source_category": "precision-sniper",
+      "coupled_pair": {
+        "state_a": "Intended check: (deposit0 | deposit1) == 0 — true only when BOTH deposits are zero",
+        "state_b": "Actual check: deposit0 | (deposit1 == 0) — true when deposit0 is non-zero OR deposit1 is zero (completely different semantics)",
+        "invariant": "createPool with liquidityData must revert when the resulting deposits are both zero",
+        "gap_contract": "ModuleLiquidity.sol",
+        "gap_function": "createPool",
+        "gap_line": 90
+      },
+      "masking_code": {
+        "file": "ModuleLiquidity.sol",
+        "line": 90,
+        "pattern": "operator_precedence",
+        "masks_invariant": "The bug is masked in the common case where both deposit0 > 0 AND deposit1 > 0, since `nonzero | (nonzero == 0)` = `nonzero | 0` = nonzero (correctly passes). It only manifests for edge cases: zero-only deposits (should revert, doesn't) and single-sided token1 deposits (should pass, reverts)."
+      },
+      "suggested_test": "// SPDX-License-Identifier: MIT\npragma solidity 0.8.24;\n\nimport 'forge-std/Test.sol';\n\ncontract OperatorPrecedenceTest is Test {\n    function test_zerDepositsPassValidation() public pure {\n        uint256 deposit0 = 0;\n        uint256 deposit1 = 0;\n\n        // Bug: evaluates as deposit0 | (deposit1 == 0)\n        bool buggyCondition = (deposit0 | deposit1 == 0) != 0;\n        // Intent: evaluates as (deposit0 | deposit1) == 0\n        bool correctCondition = ((deposit0 | deposit1) == 0);\n\n        // Buggy: zero deposits are treated as non-zero (passes validation)\n        assertTrue(buggyCondition, 'Bug: zero deposits pass validation');\n        // Correct: zero deposits would be caught\n        assertTrue(correctCondition, 'Correct: zero deposits are zero');\n    }\n\n    function test_token1OnlyDepositBlocked() public pure {\n        uint256 deposit0 = 0;\n        uint256 deposit1 = 1000e18;\n\n        // Bug: 0 | (1000e18 == 0) = 0 | false = 0 | 0 = 0 -> reverts\n        bool buggyResult = deposit0 | deposit1 == 0;\n        assertEq(buggyResult, false, 'Token1-only blocked by bug');\n\n        // Correct: (0 | 1000e18) == 0 -> false -> no revert\n        bool correctResult = (deposit0 | deposit1) == 0;\n        assertFalse(correctResult, 'Token1-only should be valid');\n    }\n\n    function test_token0OnlyAccepted() public pure {\n        uint256 deposit0 = 1000e18;\n        uint256 deposit1 = 0;\n\n        // Bug: 1000e18 | (0 == 0) = 1000e18 | 1 = non-zero -> passes\n        bool buggyResult = (deposit0 | deposit1 == 0) != 0;\n        assertTrue(buggyResult, 'Token0-only passes (asymmetric)');\n    }\n\n    // Full integration test:\n    // function test_createPoolZeroLiquidity() public {\n    //     // 1. Deploy AMM with SingleProviderPoolType\n    //     // 2. Call createPool with liquidityData encoding addLiquidity\n    //     //    that targets a DIFFERENT pool (or uses params resulting in 0,0)\n    //     // 3. Verify createPool returns successfully with deposit0=0, deposit1=0\n    //     // 4. Verify pool exists with reserve0=0, reserve1=0\n    //     //    despite liquidityData being provided\n    // }\n}"
+    },
+    {
+      "id": "H-DP-02",
+      "title": "Division-by-Zero DoS in Shortage Calculation When poolFeeBPS and lpFeeBPS Are Both MAX_BPS",
+      "mechanism": "In _applySwapByInputInputFees at AMMModule.sol:2657-2660, the shortage calculation uses FullMath.mulDivRoundingUp(shortage, DOUBLE_BPS, denominator) where denominator = `DOUBLE_BPS - uint256(poolFeeBPS) * uint256(swapCache.protocolFeeStructure.lpFeeBPS)`. When poolFeeBPS == MAX_BPS (10000) and lpFeeBPS == MAX_BPS (10000), the denominator becomes `100_000_000 - 10000 * 10000 = 0`. FullMath.mulDivRoundingUp delegates to mulDiv which at FullMath.sol:52 checks `if (denominator <= prod1)` — when denominator is 0, this is `0 <= 0` = true, causing a revert with FullMath__MulDivOverflowError(). Both conditions can coexist: (1) poolFeeBPS == MAX_BPS is allowed for input swaps via dynamic pool fee hooks — _getPoolFee at AMMModule.sol:1717 checks `poolFeeBPS > MAX_BPS` (strict greater-than) for input swaps, allowing exactly MAX_BPS=10000. (2) lpFeeBPS == MAX_BPS is allowed by _setProtocolFees at AMMModule.sol:3459 which checks `lpFeeBPS > MAX_BPS` (strict greater-than). The shortage path at line 2652 is entered when `protocolFeeFromHookFees + expectedProtocolLPFee < minimumProtocolFee`, which occurs when hop fees set a minimum that hook fee contributions don't fully satisfy.",
+      "functions": ["_applySwapByInputInputFees", "_getPoolFee", "_setProtocolFees", "_executePoolFeeHook"],
+      "lines": {
+        "lbamm-core/src/modules/AMMModule.sol": [1706, 1711, 1712, 1713, 1717, 2646, 2647, 2648, 2649, 2650, 2651, 2652, 2653, 2654, 2655, 2656, 2657, 2658, 2659, 2660, 2661, 2662, 3458, 3459],
+        "lbamm-core/lib/tm-core-lib/src/utils/math/FullMath.sol": [36, 50, 51, 52, 53],
+        "lbamm-core/src/Constants.sol": [78, 79]
+      },
+      "confidence": "medium",
+      "grounded_in": [
+        "code-observation: _getPoolFee at AMMModule.sol:1717 uses `poolFeeBPS > MAX_BPS` (strict >) for input swaps, allowing exactly MAX_BPS (10000). This is an intentional asymmetry — output swaps use `poolFeeBPS >= MAX_BPS` (rejecting MAX_BPS).",
+        "code-observation: _setProtocolFees at AMMModule.sol:3459 uses `lpFeeBPS > MAX_BPS` (strict >), allowing exactly MAX_BPS (10000) as a valid LP protocol fee.",
+        "code-observation: DOUBLE_BPS = MAX_BPS * MAX_BPS = 100_000_000 at Constants.sol:79. Denominator = 100_000_000 - 10000 * 10000 = 0.",
+        "code-observation: FullMath.mulDiv at FullMath.sol:52 — `if (denominator <= prod1)` catches denominator=0 since 0 <= 0 is true, reverting with FullMath__MulDivOverflowError()."
+      ],
+      "category": "denial-of-service",
+      "source_category": "precision-sniper",
+      "coupled_pair": {
+        "state_a": "poolFeeBPS = MAX_BPS (allowed for input swaps by _getPoolFee line 1717 strict > check)",
+        "state_b": "lpFeeBPS = MAX_BPS (allowed by _setProtocolFees line 3459 strict > check)",
+        "invariant": "The denominator DOUBLE_BPS - poolFeeBPS * lpFeeBPS must be positive for the shortage calculation to succeed",
+        "gap_contract": "AMMModule.sol",
+        "gap_function": "_applySwapByInputInputFees",
+        "gap_line": 2660
+      },
+      "masking_code": {
+        "file": "AMMModule.sol",
+        "line": 2652,
+        "pattern": "conditional_path",
+        "masks_invariant": "The shortage path at line 2652 is only entered under specific fee conditions (hook fees + LP fees insufficient to cover hop fee minimum). Most pools never enter this path, masking the division-by-zero. Additionally, dynamic fee pools are rare, and lpFeeBPS is typically set well below MAX_BPS."
+      },
+      "suggested_test": "// SPDX-License-Identifier: MIT\npragma solidity 0.8.24;\n\nimport 'forge-std/Test.sol';\nimport {FullMath} from '../lib/tm-core-lib/src/utils/math/FullMath.sol';\n\ncontract DivisionByZeroTest is Test {\n    uint256 constant MAX_BPS = 10_000;\n    uint256 constant DOUBLE_BPS = MAX_BPS * MAX_BPS;\n\n    function test_denominatorIsZero() public pure {\n        uint16 poolFeeBPS = uint16(MAX_BPS);  // 10000, allowed for input swaps\n        uint16 lpFeeBPS = uint16(MAX_BPS);    // 10000, allowed by setProtocolFees\n\n        uint256 denominator = DOUBLE_BPS - uint256(poolFeeBPS) * uint256(lpFeeBPS);\n        assertEq(denominator, 0, 'Denominator should be exactly zero');\n    }\n\n    function test_mulDivRevertsOnZeroDenominator() public {\n        uint256 shortage = 1e18;\n        uint256 denominator = 0;\n\n        vm.expectRevert(); // FullMath__MulDivOverflowError\n        FullMath.mulDivRoundingUp(shortage, DOUBLE_BPS, denominator);\n    }\n\n    // Integration test:\n    // function test_swapDoSWithMaxFees() public {\n    //     // 1. Fee manager sets lpFeeBPS = MAX_BPS via setProtocolFees\n    //     // 2. Create pool with DYNAMIC_POOL_FEE_BPS, pool hook returns MAX_BPS\n    //     // 3. Set hop fee on input token (creates minimumProtocolFee > 0)\n    //     // 4. Execute input swap\n    //     // 5. Verify: swap reverts in _applySwapByInputInputFees at the shortage calc\n    //     vm.expectRevert();\n    //     amm.singleSwap(...);\n    // }\n}"
+    },
+    {
+      "id": "H-DP-03",
+      "title": "Queued Hook Fee Execution Clears Reentrancy Flags — Creates Unguarded Re-entry Window via Token Callbacks",
+      "mechanism": "In _executeQueuedHookFeesByHookTransfers (AMMModule.sol:3183-3204), line 3190 calls _setReentrancyFlags(NO_FLAGS). Per TstorishReentrancyGuardWithFlags.sol:68-72, _setReentrancyFlags strips ENTERED and NOT_ENTERED bits from `flags` (yielding 0) then preserves only the ENTERED bit from current state: `currentGuard = _getTstorish(...) & ENTERED` → stores `ENTERED | 0 = ENTERED (0x02)`. All operation-specific flags (SWAP_GUARD_FLAG=0x04, LIQUIDITY_GUARD_FLAG=0x80, FLASHLOAN_GUARD_FLAG=0x800) are CLEARED. The function then iterates queued transfers (lines 3192-3201), each calling _transferHookFeesByHook which performs SafeERC20.safeTransfer at line 3133. If the fee token implements transfer callbacks (ERC-777 tokensReceived), the recipient contract gains execution. The recipient calls collectHookFeesByHook (ModuleFeeCollection.sol:72). The check at line 75 tests _isReentrancyFlagSet(SWAP_GUARD_FLAG) — returns FALSE (flag cleared). Line 77 tests FLASHLOAN_GUARD_FLAG — also FALSE. Execution falls through to line 80: _transferHookFeesByHook(msg.sender, ...) — DIRECT execution, bypassing the intended queueing mechanism. A hook collecting fees for the SAME hookFeeKey in the callback drains the tokensOwed balance via the direct path. When the loop continues to process remaining queue entries for the same key, _transferHookFeesByHook finds insufficient balance — underflow check at line 3130 triggers revert. Since executeQueuedHookFeesByHookTransfers was called via external CALL at line 2247, the revert propagates to _finalizeSwapCollectFundsAndDisburse, bricking the entire swap.",
+      "functions": ["_executeQueuedHookFeesByHookTransfers", "_setReentrancyFlags", "_transferHookFeesByHook", "collectHookFeesByHook", "_finalizeSwapCollectFundsAndDisburse"],
+      "lines": {
+        "lbamm-core/src/modules/AMMModule.sol": [2246, 2247, 3183, 3184, 3185, 3186, 3187, 3189, 3190, 3192, 3193, 3195, 3196, 3197, 3198, 3199, 3200, 3201, 3116, 3123, 3124, 3125, 3127, 3128, 3129, 3130, 3131, 3133],
+        "lbamm-core/src/modules/ModuleFeeCollection.sol": [72, 75, 77, 79, 80],
+        "lbamm-core/lib/tm-core-lib/src/utils/security/TstorishReentrancyGuardWithFlags.sol": [17, 18, 19, 68, 69, 70, 71]
+      },
+      "confidence": "high",
+      "grounded_in": [
+        "code-observation: _setReentrancyFlags(NO_FLAGS) at AMMModule.sol:3190 — per TstorishReentrancyGuardWithFlags.sol:69 `flags = flags & ~(ENTERED | NOT_ENTERED)` yields 0, line 70 extracts ENTERED from current, line 71 stores `ENTERED | 0 = ENTERED`. SWAP_GUARD_FLAG (1<<2=4) is NOT in result. _isReentrancyFlagSet(4) at ModuleFeeCollection.sol:75 returns (2 & 4 > 0) = false.",
         "code-observation: collectHookFeesByHook at ModuleFeeCollection.sol:72-82 has NO nonReentrant modifier — it relies on flag-specific checks (SWAP_GUARD_FLAG, LIQUIDITY_GUARD_FLAG, FLASHLOAN_GUARD_FLAG) which are all cleared, causing fall-through to direct _transferHookFeesByHook at line 80.",
         "EXP-9: Read-only reentrancy pattern variant — state (tokensOwed) is committed before the re-entry opportunity. The queued entries reference committed state that the callback can access and modify through the unguarded collectHookFeesByHook path.",
-        "EXP-13: Arbitrary call vulnerability — SafeERC20.safeTransfer at line 3133 transfers control to an arbitrary recipient contract during the flag-cleared window. The transfer target is hook-chosen (queued at line 3174 from _queueTransferHookFeesByHook parameter).",
         "Solodit: Bunni v2 reentrancy lock bypass (Cyfrin audit) — BunniHub.unlockForRebalance() cleared reentrancy protection during hook execution, allowing hooks to re-enter via token callbacks."
       ],
       "category": "reentrancy-dos",
@@ -45,14 +115,47 @@
         "file": "ModuleFeeCollection.sol",
         "line": 128,
         "pattern": "insufficient_guard",
-        "masks_invariant": "executeQueuedHookFeesByHookTransfers msg.sender==address(this) check (line 128) prevents DIRECT external calls but does not prevent re-entry through token transfer callbacks during the flag-cleared window"
+        "masks_invariant": "executeQueuedHookFeesByHookTransfers msg.sender==address(this) check (line 128) prevents DIRECT external calls but does not prevent re-entry through token transfer callbacks during the flag-cleared window. The ENTERED bit blocks core operations (swap/addLiquidity/removeLiquidity) but not collectHookFeesByHook which uses flag-based access control."
       },
-      "suggested_test": "// SPDX-License-Identifier: MIT\npragma solidity 0.8.24;\nimport 'forge-std/Test.sol';\n\ncontract MaliciousRecipient {\n    address immutable amm;\n    address immutable tokenFor;\n    address immutable tokenFee;\n    uint256 immutable claimAmount;\n    bool reentered;\n\n    constructor(address _amm, address _tf, address _tfe, uint256 _amt) {\n        amm = _amm; tokenFor = _tf; tokenFee = _tfe; claimAmount = _amt;\n    }\n\n    // ERC-777 tokensReceived or ERC-20 hook callback\n    function tokensReceived(address, address, address, uint256, bytes calldata, bytes calldata) external {\n        if (!reentered) {\n            reentered = true;\n            // Re-enter: reentrancy flags cleared at AMMModule:3190\n            // collectHookFeesByHook falls through to _transferHookFeesByHook\n            IModuleFeeCollection(amm).collectHookFeesByHook(\n                tokenFor, tokenFee, address(this), claimAmount\n            );\n        }\n    }\n}\n\nfunction testReentrancyFlagClearingDoS() public {\n    // 1. Deploy ERC-777 fee token\n    // 2. Deploy hook that queues collectHookFeesByHook during beforeSwap\n    // 3. Set MaliciousRecipient as fee recipient\n    // 4. Execute swap -> hook queues fee transfer\n    // 5. _finalizeSwapCollectFundsAndDisburse calls executeQueuedHookFeesByHookTransfers\n    // 6. _setReentrancyFlags(NO_FLAGS) at line 3190 clears SWAP_GUARD_FLAG\n    // 7. SafeERC20.safeTransfer triggers tokensReceived on MaliciousRecipient\n    // 8. MaliciousRecipient.collectHookFeesByHook -> direct _transferHookFeesByHook\n    // 9. Queue loop continues, second _transferHookFeesByHook -> underflow -> revert\n    // 10. Entire swap reverts\n    vm.expectRevert(); // LBAMM__Underflow\n    amm.singleSwap(swapOrder, poolId, exchangeFee, feeOnTop, hooks, data);\n}"
+      "suggested_test": "// SPDX-License-Identifier: MIT\npragma solidity 0.8.24;\nimport 'forge-std/Test.sol';\n\n// Mock ERC-777-like token that calls back on transfer\ncontract CallbackToken {\n    // ... standard ERC20 with transfer callback to recipient\n    // In transfer(): if recipient is a contract, call tokensReceived()\n}\n\ncontract MaliciousRecipient {\n    address immutable amm;\n    address immutable tokenFor;\n    address immutable tokenFee;\n    uint256 immutable claimAmount;\n    bool reentered;\n\n    constructor(address _amm, address _tf, address _tfe, uint256 _amt) {\n        amm = _amm; tokenFor = _tf; tokenFee = _tfe; claimAmount = _amt;\n    }\n\n    function tokensReceived(address, address, address, uint256, bytes calldata, bytes calldata) external {\n        if (!reentered) {\n            reentered = true;\n            // Re-enter: reentrancy flags cleared at AMMModule:3190\n            // SWAP_GUARD_FLAG = 0, falls through to direct _transferHookFeesByHook\n            IModuleFeeCollection(amm).collectHookFeesByHook(\n                tokenFor, tokenFee, address(this), claimAmount\n            );\n        }\n    }\n}\n\n// function test_flagClearingReentrancyDoS() public {\n//     // 1. Deploy AMM with CallbackToken\n//     // 2. Register hook that generates fees → queued during swap\n//     // 3. Set MaliciousRecipient as fee recipient in queued entries\n//     // 4. Execute swap → _finalizeSwapCollectFundsAndDisburse\n//     // 5. executeQueuedHookFeesByHookTransfers clears flags (line 3190)\n//     // 6. First transfer triggers callback → direct collectHookFeesByHook\n//     // 7. Second queued entry → underflow → revert → swap bricked\n//     vm.expectRevert(); // LBAMM__Underflow\n//     amm.singleSwap(...);\n// }"
     },
     {
-      "id": "H-DP-02",
+      "id": "H-DP-04",
+      "title": "Unchecked Hook Fee Addition Overflow Corrupts Pool Fee Hook Amount Input",
+      "mechanism": "In _executePoolFeeHook at AMMModule.sol:1752-1757, the unchecked block computes `uint256 totalHookFees = swapCache.tokenInTokenInFee + swapCache.tokenOutTokenInFee` and then `amount -= totalHookFees`. Both the addition and subtraction are unchecked. The hook fee values are set by external token hook contracts via _executeSwapHook (line 2522: `feeAmount := mload(0x00)`) with NO validation on the returned uint256 value — the return is simply loaded from memory with no bounds check. If two malicious token hooks return values that sum to more than type(uint256).max, the addition overflows. The resulting incorrect `totalHookFees` is subtracted from `amount` (also unchecked), producing a corrupted value. This corrupted `amount` is passed to the pool fee hook at line 1771 as the swap amount parameter via `mstore(add(hookMemoryPointer, 0x200), amount)`. The pool fee hook uses this amount to determine the dynamic fee rate (poolFeeBPS). The comment at line 1755 states 'Underflow will be checked in _applySwapByInputInputFees', but that function only validates individual fee values against swapAmountIn (lines 2616, 2629), NOT their overflowed sum.",
+      "functions": ["_executePoolFeeHook", "_executeSwapHook", "_executeBeforeSwapHooks", "_applySwapByInputInputFees"],
+      "lines": {
+        "lbamm-core/src/modules/AMMModule.sol": [1746, 1747, 1748, 1749, 1750, 1751, 1752, 1753, 1754, 1755, 1756, 1757, 1758, 1771, 2485, 2492, 2516, 2517, 2522, 2523, 2366, 2367, 2392, 2393, 2394, 2614, 2615, 2616, 2627, 2628, 2629]
+      },
+      "confidence": "medium",
+      "grounded_in": [
+        "code-observation: _executeSwapHook at AMMModule.sol:2522 returns hook fee via `feeAmount := mload(0x00)` with no bounds check on the returned uint256 — any value the hook returns is accepted",
+        "code-observation: The unchecked block at AMMModule.sol:1752-1757 performs both addition (line 1754) and subtraction (line 1756) without overflow/underflow protection",
+        "code-observation: _applySwapByInputInputFees validates individual fees at lines 2616 (`feeAmount > swapAmountIn`) and 2629 (same), but does NOT validate their sum, which is where the overflow occurs",
+        "EXP-13: Arbitrary external call data manipulation — malicious hooks return crafted values to corrupt internal calculations passed to the pool fee hook"
+      ],
+      "category": "arithmetic-overflow",
+      "source_category": "precision-sniper",
+      "coupled_pair": {
+        "state_a": "swapCache.tokenInTokenInFee and swapCache.tokenOutTokenInFee — unbounded uint256 values from external token hooks",
+        "state_b": "amount parameter passed to pool fee hook — should represent actual swap amount available for fee calculation",
+        "invariant": "The amount passed to the pool fee hook must accurately reflect the swap amount after legitimate fee deductions, not an overflowed/underflowed artifact",
+        "gap_contract": "AMMModule.sol",
+        "gap_function": "_executePoolFeeHook",
+        "gap_line": 1754
+      },
+      "masking_code": {
+        "file": "AMMModule.sol",
+        "line": 1755,
+        "pattern": "misleading_comment",
+        "masks_invariant": "Comment 'Underflow will be checked in _applySwapByInputInputFees' creates false assurance that downstream validation catches all issues. The downstream checks validate INDIVIDUAL fee values, not the overflowed SUM that corrupted the pool fee hook's input."
+      },
+      "suggested_test": "// SPDX-License-Identifier: MIT\npragma solidity 0.8.24;\n\nimport 'forge-std/Test.sol';\n\ncontract HookFeeOverflowTest is Test {\n    function test_hookFeeAdditionOverflowToSmallValue() public pure {\n        // Two malicious hooks each return values that sum to overflow\n        uint256 tokenInTokenInFee = type(uint256).max - 100;\n        uint256 tokenOutTokenInFee = 200;\n        uint256 amount = 1000e18;\n\n        unchecked {\n            // Overflows: max-100 + 200 = 99 (wrapped)\n            uint256 totalHookFees = tokenInTokenInFee + tokenOutTokenInFee;\n            assertEq(totalHookFees, 99, 'Sum should overflow to 99');\n\n            // amount -= 99 = nearly unchanged, masking the massive real fees\n            amount -= totalHookFees;\n            assertGt(amount, 900e18, 'Amount barely changed despite huge fees');\n        }\n    }\n\n    function test_hookFeeOverflowToZero() public pure {\n        // Exact overflow to zero\n        uint256 tokenInTokenInFee = type(uint256).max / 2 + 1;\n        uint256 tokenOutTokenInFee = type(uint256).max / 2 + 1;\n        uint256 amount = 1000e18;\n\n        unchecked {\n            uint256 totalHookFees = tokenInTokenInFee + tokenOutTokenInFee;\n            assertEq(totalHookFees, 0, 'Sum overflows to exactly 0');\n\n            amount -= totalHookFees;\n            assertEq(amount, 1000e18, 'Amount unchanged — pool fee hook sees full amount');\n        }\n    }\n\n    // Integration:\n    // function test_poolFeeHookReceivesCorruptedAmount() public {\n    //     // 1. Deploy two tokens with malicious hooks returning huge fees\n    //     // 2. Create pool with dynamic fees (DYNAMIC_POOL_FEE_BPS)\n    //     // 3. Execute swap → _executePoolFeeHook gets corrupted amount\n    //     // 4. Pool hook returns fee based on wrong amount\n    //     // 5. Verify: pool fee is incorrect for actual swap size\n    // }\n}"
+    },
+    {
+      "id": "H-DP-05",
       "title": "Output Swap Partial Fill Stores Irrevocable Hook Fees for Non-Actualized Volume",
-      "mechanism": "In _poolSwapByOutput (AMMModule.sol), _applySwapByOutputOutputFees is called at line 1537 BEFORE the pool type's swapByOutput call at line 1548. Inside _applySwapByOutputOutputFees (lines 2851-2895): tokenInTokenOutFee and tokenOutTokenOutFee (set by beforeSwapHooks) are ADDED to swapAmountOut (lines 2863, 2875), increasing the amount the pool must provide. These hook fees are irrevocably committed to persistent storage via _storeHookFees at lines 2871 and 2887. The inflated amountOut is passed to the pool type. If the pool type returns actualAmountOut < originalAmountOut (partial fill, line 1559), the adjustment at lines 1569-1582 reduces adjustedAmountSpecified (user's output) by amountOutAdjustment = originalAmountOut - actualAmountOut (line 1569). The stored hook fees are NOT proportionally reduced. In contrast, input swap partial fills at lines 1413-1427 explicitly adjust exchange fees (line 1420: exchangeFeeAdjustment = mulDiv(exchangeFeeAmount, amountInAdjustment, originalAmountIn)) and protocol fees (line 1421: protocolExchangeFeeAdjustment). This asymmetry means the ENTIRE shortfall from partial fill is absorbed by the user while hooks receive 100% of their pre-fill fees. A colluding {pool type + token hook} on a SingleProviderPoolType can systematically extract: hook charges large flat fee, pool consistently partial-fills, hook keeps full fee, user absorbs disproportionate loss.",
+      "mechanism": "In _poolSwapByOutput (AMMModule.sol), _applySwapByOutputOutputFees is called at line 1537 BEFORE the pool type's swapByOutput call at line 1548. Inside _applySwapByOutputOutputFees (lines 2851-2895): tokenInTokenOutFee and tokenOutTokenOutFee (set by beforeSwapHooks) are ADDED to swapAmountOut (lines 2863, 2875), increasing the amount the pool must provide. These hook fees are irrevocably committed to persistent storage via _storeHookFees at lines 2871 and 2887. The inflated amountOut is passed to the pool type. If the pool type returns actualAmountOut < originalAmountOut (partial fill, line 1559), the adjustment at lines 1569-1582 reduces adjustedAmountSpecified (user's output) by amountOutAdjustment = originalAmountOut - actualAmountOut (line 1569). The stored hook fees are NOT proportionally reduced. In contrast, input swap partial fills at lines 1413-1427 explicitly adjust exchange fees (line 1420: exchangeFeeAdjustment = mulDiv(...)) and protocol fees (line 1421). This asymmetry means the ENTIRE shortfall from partial fill is absorbed by the user while hooks receive 100% of their pre-fill fees.",
       "functions": ["_poolSwapByOutput", "_applySwapByOutputOutputFees", "_storeHookFees", "_poolSwapByInput"],
       "lines": {
         "lbamm-core/src/modules/AMMModule.sol": [1537, 1548, 1558, 1559, 1569, 1570, 1576, 1577, 1413, 1415, 1416, 1420, 1421, 1425, 1426, 2851, 2857, 2861, 2863, 2871, 2873, 2875, 2887, 2894]
@@ -62,7 +165,7 @@
         "code-observation: _storeHookFees at lines 2871/2887 writes to persistent storage (tokensOwed mapping via AMMModule.sol:2988) inside _applySwapByOutputOutputFees (line 1537), which executes BEFORE the pool type call at line 1548. Once written, there is no mechanism to decrement or reverse these entries.",
         "code-observation: Input swap partial fill adjustment (lines 1413-1427) proportionally adjusts exchangeFeeAmount (line 1425) and protocolFeeFromFees (line 1426) using mulDiv ratio. Output swap partial fill (lines 1569-1582) adjusts ONLY adjustedAmountSpecified and amountOut — no analogous hook fee adjustment exists.",
         "EXP-9: State committed before completion — hook fees are committed to persistent storage before the pool type determines actual execution, analogous to read-only reentrancy where committed state is observed before final validation.",
-        "code-observation: SingleProviderPoolType can partial fill by design (line 1565: only first hop can partial fill, verified at line 1409/1566)"
+        "code-observation: SingleProviderPoolType can partial fill by design (verified at AMMModule.sol line 1565: only first hop can partial fill)"
       ],
       "category": "value-extraction",
       "source_category": "state-desync",
@@ -80,62 +183,28 @@
         "pattern": "insufficient_adjustment",
         "masks_invariant": "Partial fill check at line 1572 prevents amountOutAdjustment from exceeding adjustedAmountSpecified but does NOT check or adjust the irrevocable hook fees stored 40 lines earlier"
       },
-      "suggested_test": "function testOutputPartialFillHookFeeOverpayment() public {\n    // Setup:\n    // - Create pool with SingleProviderPoolType that partial fills to 50%\n    // - Token hook returns tokenOutTokenOutFee = 200 during beforeSwap\n    // - User requests output swap for 1000 tokens (adjustedAmountSpecified = 1000)\n\n    // Flow:\n    // 1. _applySwapByOutputOutputFees: stores hookFee=200, amountOut=1000+200=1200\n    // 2. Pool type swapByOutput: partial fill, actualAmountOut=600 (50% of 1200)\n    // 3. amountOutAdjustment = 1200 - 600 = 600\n    // 4. adjustedAmountSpecified = 1000 - 600 = 400 (user gets 400)\n    // 5. Hook fees stored = 200 (FULL, not reduced)\n\n    // Accounting: pool outputs 600 = hookFee(200) + userOutput(400). Balances check.\n    // But fair allocation: hookFee should be ~100 (proportional 50% fill)\n    // Hook extracted 200 from 600 actual output = 33.3% instead of 16.7%\n\n    vm.prank(user);\n    (uint256 amountIn, uint256 amountOut) = amm.singleSwap(\n        outputSwapOrder, poolId, exchangeFee, feeOnTop, hooks, data\n    );\n    uint256 storedHookFees = amm.getHookFeesOwedByToken(address(tokenOut), address(tokenOut));\n    assertEq(storedHookFees, 200, 'Hook fees NOT adjusted for 50% partial fill');\n    assertEq(amountOut, 400, 'User absorbed entire shortfall');\n}"
+      "suggested_test": "function testOutputPartialFillHookFeeOverpayment() public {\n    // Setup:\n    // - Create pool with SingleProviderPoolType that partial fills to 50%\n    // - Token hook returns tokenOutTokenOutFee = 200 during beforeSwap\n    // - User requests output swap for 1000 tokens\n\n    // Flow:\n    // 1. _applySwapByOutputOutputFees: stores hookFee=200, amountOut=1000+200=1200\n    // 2. Pool type swapByOutput: partial fill, actualAmountOut=600 (50% of 1200)\n    // 3. amountOutAdjustment = 1200 - 600 = 600\n    // 4. adjustedAmountSpecified = 1000 - 600 = 400 (user gets 400)\n    // 5. Hook fees stored = 200 (FULL, not reduced)\n\n    // Accounting: pool outputs 600 = hookFee(200) + userOutput(400)\n    // Fair: hookFee should be ~100 (proportional 50% fill)\n    // Hook extracted 200 from 600 = 33.3% instead of fair 16.7%\n\n    vm.prank(user);\n    (uint256 amountIn, uint256 amountOut) = amm.singleSwap(\n        outputSwapOrder, poolId, exchangeFee, feeOnTop, hooks, data\n    );\n    uint256 storedHookFees = amm.getHookFeesOwedByToken(\n        address(tokenOut), address(tokenOut)\n    );\n    assertEq(storedHookFees, 200, 'Hook fees NOT adjusted for partial fill');\n    assertEq(amountOut, 400, 'User absorbed entire shortfall');\n}"
     },
     {
-      "id": "H-DP-03",
-      "title": "Unbounded Hook Fees During collectFees Can Drain LP — hookFee Not Bounded by Collected Fees",
-      "mechanism": "In _positionCollectFees, the pool type returns (positionId, fees0, fees1) representing the LP's accrued trading fees. Then _executeLiquidityCollectFeesHooks is called, returning hookFee0 and hookFee1 from up to 4 hook tiers (token0 hook, token1 hook, position hook, pool hook). The check at the maxHookFee validation only compares against the caller-supplied maxHookFee0/maxHookFee1 parameters. There is NO validation that hookFee0 <= fees0. Net distribution to LP: -fees0.toInt256() + hookFee0.toInt256(). If hookFee0 > fees0, this becomes POSITIVE, meaning the LP must SEND tokens to the AMM during fee collection. A malicious token hook returning hookFee0 = 10000 when fees0 = 100 would extract 9900 tokens from the LP. The LP expected to receive 100 tokens but instead sends 9900. The extracted tokens go to the hook via _storeHookFees. Many DeFi UIs and aggregator integrations set maxHookFee to type(uint256).max as a default. Combined with typical infinite token approvals, the LP is silently drained.",
-      "functions": ["_positionCollectFees", "_executeLiquidityCollectFeesHooks", "_distributeAndCollectLiquidityTokens", "_distributeOrCollectLiquidityToken"],
-      "lines": {
-        "lbamm-core/src/modules/AMMModule.sol": [299, 318, 320, 329, 336, 338, 339, 340, 349, 353, 354, 468, 1282, 1298]
-      },
-      "confidence": "medium",
-      "grounded_in": [
-        "code-observation: Net distribution at AMMModule.sol:353 is `-fees0.toInt256() + hookFee0.toInt256()`. No check enforces hookFee0 <= fees0. When hookFee0 > fees0, the result is positive, triggering _distributeOrCollectLiquidityToken to call _collectToken (transferFrom LP to AMM).",
-        "code-observation: maxHookFee validation at line 338 (`hookFee0 <= maxHookFee0`) delegates security entirely to caller parameter choice — the protocol does NOT enforce any relationship between collected fees and hook fees.",
-        "EXP-14: Diamond proxy extension hijacker — the hook system (token hooks, pool hooks, liquidity hooks) is the diamond's extension mechanism. A malicious hook exploits unbounded return values to extract funds from LPs through the fee collection path.",
-        "Solodit: Bunni v2 TOB-BUNNI-15/16/17/18 (Trail of Bits) — delta sign inversion in Uniswap v4 hooks caused free swaps and positive-sum round trips. Same pattern: unbounded hook return values crossing the trust boundary between protocol and extension."
-      ],
-      "category": "value-extraction",
-      "source_category": "extension-hijacker",
-      "coupled_pair": {
-        "state_a": "fees0 from pool type collectFees (LP's legitimately earned trading fees)",
-        "state_b": "hookFee0 from hook validation (arbitrary uint256, bounded only by caller's maxHookFee parameter)",
-        "invariant": "Hook fees during fee collection should not exceed the fees being collected, or at minimum the protocol should enforce an upper bound",
-        "gap_contract": "AMMModule.sol",
-        "gap_function": "_positionCollectFees",
-        "gap_line": 353
-      },
-      "masking_code": {
-        "file": "AMMModule.sol",
-        "line": 338,
-        "pattern": "delegated_validation",
-        "masks_invariant": "maxHookFee0 check at line 338 appears to protect the LP but actually delegates all security to the caller's parameter choice, which defaults to max in most integrations"
-      },
-      "suggested_test": "function testCollectFeesHookDrainsLP() public {\n    // 1. Pool has fees0=100 accrued for LP's position\n    // 2. Token0 hook returns hookFee0=10000 during validateCollectFees\n    // 3. LP calls collectFees with maxHookFee0 = type(uint256).max (common default)\n\n    uint256 lpBalanceBefore = token0.balanceOf(provider);\n\n    // LP has approved AMM for unlimited tokens (common pattern)\n    vm.prank(provider);\n    token0.approve(address(amm), type(uint256).max);\n\n    vm.prank(provider);\n    (uint256 fees0, uint256 fees1) = amm.collectFees(params, hooksData);\n\n    uint256 lpBalanceAfter = token0.balanceOf(provider);\n\n    // LP expected to RECEIVE 100 tokens\n    // Instead: net = -100 + 10000 = +9900 (LP SENDS 9900 to AMM)\n    assertLt(lpBalanceAfter, lpBalanceBefore, 'LP lost tokens during fee collection');\n    assertEq(lpBalanceBefore - lpBalanceAfter, 9900, 'LP drained 9900 tokens');\n\n    // Hook owner can claim the 10000\n    uint256 hookFees = amm.getHookFeesOwedByToken(address(token0), address(token0));\n    assertEq(hookFees, 10000, 'Hook extracted 10000 = 100 pool fees + 9900 from LP');\n}"
-    },
-    {
-      "id": "H-DP-04",
+      "id": "H-DP-06",
       "title": "Flash Loan Fee Basis Override — Token Hook Returns tokenFeeAmount=1 to Near-Eliminate Flash Loan Costs",
-      "mechanism": "In _flashLoan (AMMModule.sol:3288-3382), the fee calculation at lines 3298-3303 has two paths: (1) When tokenFeeAmount == 0 (no hook fee): feeAmount = mulDivRoundingUp(loanAmount, flashLoanBPS, MAX_BPS) — the fee is based on the LOAN AMOUNT. (2) When tokenFeeAmount > 0 (hook sets a fee): feeAmount = tokenFeeAmount + mulDivRoundingUp(tokenFeeAmount, flashLoanBPS, MAX_BPS) — the fee is based on the HOOK'S FEE AMOUNT, not the loan amount. In path (2), the protocol's flashLoanBPS is applied as a percentage of the hook's fee, not the loan. If a token hook returns tokenFeeAmount=1 (1 wei), then: feeAmount = 1 + mulDivRoundingUp(1, flashLoanBPS, 10000) = 1 + 1 = 2 wei (for any flashLoanBPS > 0). For a 1,000,000 token loan with flashLoanBPS=30 (0.3%): path (1) would charge 3000 tokens; path (2) charges 2 wei. The protocol fee at line 3373-3378: _storeProtocolFees(feeToken, feeAmount - tokenFeeAmount) = _storeProtocolFees(feeToken, 1 wei). A token owner deploys a hook that returns tokenFeeAmount=1 for flash loans (via TOKEN_SETTINGS_FLASHLOANS_FLAG at Constants.sol:119). All flash loans of that token pay ~1 wei instead of the intended percentage-based fee. The token owner could simultaneously be the flash loan borrower, getting near-free capital access.",
+      "mechanism": "In _flashLoan (AMMModule.sol:3288-3382), the fee calculation at lines 3298-3303 has two paths: (1) When tokenFeeAmount == 0 (no hook fee): feeAmount = mulDivRoundingUp(loanAmount, flashLoanBPS, MAX_BPS) — fee is proportional to LOAN AMOUNT. (2) When tokenFeeAmount > 0 (hook sets a fee): feeAmount = tokenFeeAmount + mulDivRoundingUp(tokenFeeAmount, flashLoanBPS, MAX_BPS) — fee is proportional to HOOK'S FEE AMOUNT, not loan amount. In path (2), the protocol's flashLoanBPS is applied as a percentage of the hook's fee, not the loan. If a token hook returns tokenFeeAmount=1 (1 wei), then feeAmount = 1 + ceil(1 * flashLoanBPS / 10000) = 1 + 1 = 2 wei (for any flashLoanBPS > 0). For a 1,000,000 token loan with flashLoanBPS=30 (0.3%): path (1) would charge 3000 tokens; path (2) charges 2 wei. Protocol fee at line 3378: _storeProtocolFees(feeToken, feeAmount - tokenFeeAmount) = _storeProtocolFees(feeToken, 1 wei). A token owner deploys a hook that returns tokenFeeAmount=1 for flash loans (enabled via TOKEN_SETTINGS_FLASHLOANS_FLAG). All flash loans of that token pay ~1 wei instead of the intended percentage-based fee.",
       "functions": ["_flashLoan", "_executeTokenFlashloanHooks", "setTokenSettings"],
       "lines": {
-        "lbamm-core/src/modules/AMMModule.sol": [3288, 3291, 3295, 3296, 3298, 3299, 3300, 3301, 3302, 3303, 3373, 3374, 3375, 3376, 3378],
-        "lbamm-core/src/modules/ModuleAdmin.sol": [272, 293, 294],
-        "lbamm-core/src/Constants.sol": [119]
+        "lbamm-core/src/modules/AMMModule.sol": [3288, 3291, 3295, 3296, 3298, 3299, 3300, 3301, 3302, 3303, 3304, 3305, 3306, 3373, 3374, 3375, 3376, 3378],
+        "lbamm-core/src/modules/ModuleAdmin.sol": [272, 293, 294]
       },
       "confidence": "medium",
       "grounded_in": [
-        "code-observation: Conditional at AMMModule.sol:3299 switches fee computation basis. Path tokenFeeAmount==0 at line 3300 uses `loanAmount` as base. Path tokenFeeAmount>0 at line 3302 uses `tokenFeeAmount` as base. These produce VASTLY different results: for loanAmount=1e18, flashLoanBPS=30, tokenFeeAmount=1: path1=3e14, path2=2.",
-        "code-observation: Token hooks are set by token owners via setTokenSettings (ModuleAdmin.sol:272). The TOKEN_SETTINGS_FLASHLOANS_FLAG (Constants.sol:119) enables the flash loan hook. The hook's returned tokenFeeAmount has no minimum bound — only the fee token address is validated if non-zero.",
+        "code-observation: Conditional at AMMModule.sol:3299 switches fee computation basis. Path tokenFeeAmount==0 at line 3300 uses `loanAmount` as base. Path tokenFeeAmount>0 at line 3302 uses `tokenFeeAmount` as base. For loanAmount=1e18, flashLoanBPS=30, tokenFeeAmount=1: path1 yields 3e14, path2 yields 2.",
+        "code-observation: Token hooks are set by token owners via setTokenSettings (ModuleAdmin.sol:272). The TOKEN_SETTINGS_FLASHLOANS_FLAG enables the flash loan hook. The hook's returned tokenFeeAmount has no minimum bound.",
         "EXP-14: Diamond proxy extension hijacker — the token hook system allows token owners to override core protocol fee logic. The fee calculation delegates to the hook, which can return a value that nullifies the protocol's intended fee structure."
       ],
       "category": "fee-manipulation",
       "source_category": "extension-hijacker",
       "coupled_pair": {
-        "state_a": "flashLoanBPS (protocol-set fee rate, intended to apply to loanAmount)",
-        "state_b": "tokenFeeAmount (hook-returned value, used as the new fee basis when > 0)",
+        "state_a": "flashLoanBPS (protocol-set fee rate, intended to apply proportionally to loanAmount)",
+        "state_b": "tokenFeeAmount (hook-returned value that becomes the new fee basis when > 0)",
         "invariant": "Protocol flash loan fee should be proportional to the loan amount, not substitutable by a hook returning an arbitrary (possibly minimal) value",
         "gap_contract": "AMMModule.sol",
         "gap_function": "_flashLoan",
@@ -145,71 +214,43 @@
         "file": "AMMModule.sol",
         "line": 3302,
         "pattern": "fee_basis_substitution",
-        "masks_invariant": "The addition `tokenFeeAmount + mulDivRoundingUp(tokenFeeAmount, flashLoanBPS, MAX_BPS)` appears to add protocol fee ON TOP of hook fee, masking that the protocol fee base changed from loanAmount to tokenFeeAmount"
+        "masks_invariant": "The expression `tokenFeeAmount + mulDivRoundingUp(tokenFeeAmount, flashLoanBPS, MAX_BPS)` appears to add protocol fee ON TOP of hook fee, masking that the protocol fee base changed from loanAmount to tokenFeeAmount"
       },
-      "suggested_test": "function testFlashLoanFeeBasisOverride() public {\n    // Setup: token with hook that returns tokenFeeAmount=1 for flash loans\n    // flashLoanBPS = 30 (0.3%)\n    // loanAmount = 1_000_000e18\n\n    // Expected fee (no hook): 1_000_000e18 * 30 / 10000 = 3_000e18\n    // Actual fee (with hook): 1 + ceil(1 * 30 / 10000) = 1 + 1 = 2 wei\n\n    uint256 ammBalanceBefore = token.balanceOf(address(amm));\n\n    vm.prank(attacker);\n    amm.flashLoan(FlashloanRequest({\n        loanToken: address(token),\n        loanAmount: 1_000_000e18,\n        executor: address(flashBorrower),\n        executorData: '',\n        tokenHookData: ''\n    }));\n\n    uint256 ammBalanceAfter = token.balanceOf(address(amm));\n    uint256 totalFee = ammBalanceAfter - ammBalanceBefore;\n\n    // Fee should be ~3000e18 but is only 2 wei\n    assertEq(totalFee, 2, 'Flash loan fee reduced to 2 wei');\n    // Protocol lost 2999.999... tokens of expected fee revenue\n\n    uint256 protocolFees = amm.getProtocolFees(address(token));\n    assertEq(protocolFees, 1, 'Protocol received 1 wei instead of ~3000 tokens');\n}"
+      "suggested_test": "function testFlashLoanFeeBasisOverride() public {\n    // Setup: token with hook returning tokenFeeAmount=1\n    // flashLoanBPS = 30 (0.3%)\n    // loanAmount = 1_000_000e18\n\n    // Expected (no hook): 1_000_000e18 * 30 / 10000 = 3_000e18\n    // Actual (with hook): 1 + ceil(1 * 30 / 10000) = 1 + 1 = 2 wei\n\n    uint256 ammBalanceBefore = token.balanceOf(address(amm));\n\n    vm.prank(attacker);\n    amm.flashLoan(FlashloanRequest({\n        loanToken: address(token),\n        loanAmount: 1_000_000e18,\n        executor: address(flashBorrower),\n        executorData: '',\n        tokenHookData: ''\n    }));\n\n    uint256 totalFee = token.balanceOf(address(amm)) - ammBalanceBefore;\n    assertEq(totalFee, 2, 'Flash loan fee reduced to 2 wei');\n\n    uint256 protocolFees = amm.getProtocolFees(address(token));\n    assertEq(protocolFees, 1, 'Protocol got 1 wei instead of ~3000 tokens');\n}"
     },
     {
-      "id": "H-DP-05",
-      "title": "Non-Token Hook Fee Storage Key Uses tokenFor Twice — Mismatch with Read/Collect API",
-      "mechanism": "In AMMModule._storeNonTokenHookFees (lines 3011-3026), the function signature is (address hook, address tokenFor, uint256 feeAmount) — it has NO tokenFee parameter. The storage key at line 3018 is computed as: EfficientHash.efficientHash(hook, EfficientHash.efficientHash(tokenFor, tokenFor)) — tokenFor appears TWICE. However, _transferHookFeesByHook (line 3116-3139) and the view function getHookFeesOwedByHook (ModuleFeeCollection.sol:171-181) compute keys as: hash(hook, hash(tokenFor, tokenFee)) with SEPARATE tokenFor and tokenFee parameters. For current call patterns (liquidity hooks at lines 790/794/838/842/1160/1164/1220/1224), hookFee0 is always stored for token0 and hookFee1 for token1, so tokenFor==tokenFee matches. But _storeNonTokenHookFees is a GENERAL function available to position/pool hooks. If a pool hook or position hook that receives cross-token fees is ever deployed (hookFee denominated in tokenFee != tokenFor), the fees would be stored at hash(hook, hash(tokenFor, tokenFor)) but the hook would call collectHookFeesByHook(tokenFor, tokenFee, ...) which reads hash(hook, hash(tokenFor, tokenFee)) — a DIFFERENT key. Fees become permanently locked in the AMM's tokensOwed mapping.",
-      "functions": ["_storeNonTokenHookFees", "_storeHookFees", "_transferHookFeesByHook", "collectHookFeesByHook", "getHookFeesOwedByHook"],
+      "id": "H-DP-07",
+      "title": "createPool Clears Reentrancy Guard Before User-Controlled Delegatecall, Enabling Unguarded Intermediate State",
+      "mechanism": "In createPool at ModuleLiquidity.sol:79-81, the function explicitly calls `_clearReentrancyGuard()` before performing `address(this).delegatecall(liquidityData)`. _clearReentrancyGuard calls _nonReentrantAfter (TstorishReentrancyGuardWithFlags.sol:64-66, 88-90), which sets the transient storage guard to NOT_ENTERED (0x01). This completely drops reentrancy protection — the ENTERED bit (0x02) is NOT set. The delegatecall at line 81 goes through the diamond proxy's fallback dispatcher. During dispatch routing and before addLiquidity's nonReentrantWithFlags modifier executes, the guard is NOT_ENTERED. If the proxy's dispatch logic or any pre-execution hook checks reentrancy state during this window, they see an unguarded state. Furthermore, createPool's own nonReentrant modifier's _nonReentrantAfter cleanup (which runs after the delegatecall returns) sets the guard to NOT_ENTERED again — a no-op since addLiquidity's own cleanup already reset it. This means the outer nonReentrant modifier provides no protection for the code after the delegatecall returns. Combined with the operator precedence bug (H-DP-01), a crafted liquidityData can target a different pool, and the zero-deposit validation passes incorrectly.",
+      "functions": ["createPool", "_clearReentrancyGuard", "_nonReentrantAfter", "addLiquidity"],
       "lines": {
-        "lbamm-core/src/modules/AMMModule.sol": [790, 794, 838, 842, 1160, 1164, 1220, 1224, 3011, 3012, 3013, 3016, 3017, 3018, 3019, 3020, 3116, 3123, 3124, 3125],
-        "lbamm-core/src/modules/ModuleFeeCollection.sol": [72, 80, 171, 176, 177, 178]
+        "lbamm-core/src/modules/ModuleLiquidity.sol": [74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 136, 137, 138, 139],
+        "lbamm-core/lib/tm-core-lib/src/utils/security/TstorishReentrancyGuardWithFlags.sol": [39, 40, 41, 42, 58, 59, 60, 61, 64, 65, 66, 78, 80, 81, 85, 88, 89, 90]
       },
       "confidence": "medium",
       "grounded_in": [
-        "code-observation: _storeNonTokenHookFees at AMMModule.sol:3011 has signature (address hook, address tokenFor, uint256 feeAmount) — 3 params, no tokenFee. Storage key at line 3018: hash(hook, hash(tokenFor, tokenFor)). _transferHookFeesByHook at line 3116 has signature (address hook, address tokenFor, address tokenFee, address recipient, uint256 amount) — 5 params. Key at line 3125: hash(hook, hash(tokenFor, tokenFee)). When tokenFor != tokenFee, keys differ.",
-        "code-observation: getHookFeesOwedByHook at ModuleFeeCollection.sol:176-178 exposes both tokenFor and tokenFee as separate parameters, confirming the API design intent supports tokenFor != tokenFee scenarios.",
-        "EXP-14: Diamond proxy state desync — storage key derivation in the write path (_storeNonTokenHookFees) uses a different formula than the read path (_transferHookFeesByHook/getHookFeesOwedByHook), creating a latent mismatch that manifests when cross-token hook fees are introduced."
+        "EXP-14: Diamond proxy selector collision and dispatch patterns — the delegatecall through the proxy creates a trust boundary crossing where guard state matters for dispatch-level security checks",
+        "code-observation: TstorishReentrancyGuardWithFlags.sol:64-66 — _clearReentrancyGuard calls _nonReentrantAfter which sets guard to NOT_ENTERED (0x01), fully clearing the ENTERED bit",
+        "code-observation: The delegatecall at ModuleLiquidity.sol:81 uses user-controlled liquidityData — only the 4-byte selector (line 78) is validated, the remaining calldata (poolId, amounts, etc.) is arbitrary",
+        "code-observation: The outer nonReentrant modifier's _nonReentrantAfter at ModuleLiquidity.sol:74 becomes a no-op since the inner addLiquidity already reset to NOT_ENTERED"
       ],
-      "category": "fund-locking",
+      "category": "reentrancy",
       "source_category": "state-desync",
       "coupled_pair": {
-        "state_a": "tokensOwed[hash(hook, hash(tokenFor, tokenFor))] — written by _storeNonTokenHookFees at line 3020",
-        "state_b": "tokensOwed[hash(hook, hash(tokenFor, tokenFee))] — read by _transferHookFeesByHook at line 3129",
-        "invariant": "Storage key used to write hook fees must match the storage key used to read/collect them",
-        "gap_contract": "AMMModule.sol",
-        "gap_function": "_storeNonTokenHookFees",
-        "gap_line": 3018
+        "state_a": "Reentrancy guard after _clearReentrancyGuard() — NOT_ENTERED (0x01), no protection",
+        "state_b": "User-controlled liquidityData determining target pool and amounts in delegatecall",
+        "invariant": "Reentrancy protection should be continuously enforced during pool creation, including any nested delegatecalls",
+        "gap_contract": "ModuleLiquidity.sol",
+        "gap_function": "createPool",
+        "gap_line": 79
       },
       "masking_code": {
-        "file": "AMMModule.sol",
-        "line": 3011,
-        "pattern": "parameter_omission",
-        "masks_invariant": "_storeNonTokenHookFees omits the tokenFee parameter entirely, implicitly assuming tokenFor==tokenFee. This assumption holds for current callers but creates a hard constraint that isn't documented or enforced by the API"
+        "file": "ModuleLiquidity.sol",
+        "line": 78,
+        "pattern": "selector_check",
+        "masks_invariant": "The selector check `bytes4(liquidityData[0:4]) == this.addLiquidity.selector` at line 78 restricts the delegatecall to addLiquidity, which re-establishes the guard via its own modifier. But the guard is down between lines 79-81, and the user controls the parameters (poolId, amounts) in liquidityData, allowing the delegatecall to target arbitrary pools."
       },
-      "suggested_test": "function testNonTokenHookFeeKeyMismatch() public {\n    // Setup: Deploy a custom pool hook that returns cross-token fees\n    // (hookFee0 denominated in token1, hookFee1 denominated in token0)\n    // This exercises the key mismatch in _storeNonTokenHookFees\n\n    // After liquidity operation with cross-token hook fees:\n    // Fees stored at: hash(hook, hash(token0, token0)) via _storeNonTokenHookFees\n    // But should be at: hash(hook, hash(token0, token1)) for cross-token fees\n\n    // Same-token query works:\n    uint256 sameTokenFees = amm.getHookFeesOwedByHook(\n        address(hook), address(token0), address(token0)\n    );\n    assertGt(sameTokenFees, 0, 'Same-token query finds fees');\n\n    // Cross-token query returns zero (key mismatch):\n    uint256 crossTokenFees = amm.getHookFeesOwedByHook(\n        address(hook), address(token0), address(token1)\n    );\n    assertEq(crossTokenFees, 0, 'Cross-token query returns 0 despite fees existing');\n\n    // Hook tries to collect with cross-token params -> underflow revert\n    vm.prank(address(hook));\n    vm.expectRevert(); // LBAMM__Underflow at line 3131\n    amm.collectHookFeesByHook(\n        address(token0), address(token1), address(hook), sameTokenFees\n    );\n}"
-    },
-    {
-      "id": "H-DP-06",
-      "title": "Token Settings Change Leaves Old Hook's Accumulated Fees Socially Inaccessible",
-      "mechanism": "ModuleAdmin.setTokenSettings (line 272-297) overwrites tokenSettings.packedSettings and tokenSettings.tokenHook (lines 293-294) without migrating or draining the old hook's accumulated fees. If the old hook had TOKEN_SETTINGS_HOOK_MANAGES_FEES_FLAG set (Constants.sol:116), its fees are stored at hash(oldHookAddress, hash(tokenFor, tokenFee)). Technically, the old hook CAN still call collectHookFeesByHook since msg.sender is the key — no on-chain blocker exists. However, many hooks are stateless execution contracts (no admin functions, no self-serve collection) designed to be called only by the AMM during swap/liquidity operations. Once deregistered, the AMM no longer calls the old hook, and the hook has no mechanism to initiate collection. The tokens remain in the AMM's balance tracked under tokensOwed but become effectively unclaimable. Repeated hook changes compound the issue: each change orphans the previous hook's fees. The AMM's actual token balance diverges from (reserves + feeBalances + claimable tokensOwed), creating phantom liquidity. If the MODE changes from HOOK_MANAGES_FEES to token-managed (or vice versa), the old-mode fees at the old key are also orphaned.",
-      "functions": ["setTokenSettings", "_storeHookFees", "collectHookFeesByHook", "_transferHookFeesByHook"],
-      "lines": {
-        "lbamm-core/src/modules/ModuleAdmin.sol": [272, 273, 275, 278, 292, 293, 294, 296],
-        "lbamm-core/src/modules/AMMModule.sol": [2971, 2977, 2978, 2979, 2980, 2981, 2982, 2988, 2989],
-        "lbamm-core/src/Constants.sol": [116]
-      },
-      "confidence": "medium",
-      "grounded_in": [
-        "code-observation: setTokenSettings at ModuleAdmin.sol:293-294 directly overwrites storage without checking Storage.appStorage().tokensOwed for outstanding balances under the old hook's key. No migration function exists.",
-        "code-observation: _storeHookFees at AMMModule.sol:2977-2982 branches on TOKEN_SETTINGS_HOOK_MANAGES_FEES_FLAG. When flag is set, key = hash(hook, hash(tokenFor, tokenFee)). When unset, key = hash(TOKEN_MANAGED_HOOK_FEE, hash(tokenFor, tokenFee)). Changing the flag changes which key NEW fees use, orphaning old-key balances.",
-        "code-observation: collectHookFeesByHook at ModuleFeeCollection.sol:80 passes msg.sender as `hook` to _transferHookFeesByHook. Only the exact old hook address can claim its fees. If the old hook contract lacks a mechanism to call collectHookFeesByHook, funds are permanently locked."
-      ],
-      "category": "fund-locking",
-      "source_category": "state-desync",
-      "coupled_pair": {
-        "state_a": "tokensOwed[hash(oldHook, hash(tokenFor, tokenFee))] — accumulated fees under old hook, persists after change",
-        "state_b": "tokenSettings[token].tokenHook — overwritten to new hook at ModuleAdmin.sol:294",
-        "invariant": "Hook fee storage should remain accessible when token settings change, or accumulated fees should be drained before hook migration",
-        "gap_contract": "ModuleAdmin.sol",
-        "gap_function": "setTokenSettings",
-        "gap_line": 294
-      },
-      "masking_code": null,
-      "suggested_test": "function testTokenSettingsChangeLocksFees() public {\n    // 1. Token with hookA, HOOK_MANAGES_FEES_FLAG set\n    // 2. Execute swaps → hookA accumulates 1000 fees\n    assertEq(\n        amm.getHookFeesOwedByHook(address(hookA), address(token), address(token)),\n        1000\n    );\n\n    // 3. Admin changes hook to hookB\n    vm.prank(tokenOwner);\n    amm.setTokenSettings(address(token), address(hookB), newPackedSettings);\n\n    // 4. hookA fees still in storage\n    assertEq(\n        amm.getHookFeesOwedByHook(address(hookA), address(token), address(token)),\n        1000\n    );\n\n    // 5. If hookA is a stateless hook (no self-serve collection mechanism):\n    // Nobody can call collectHookFeesByHook as hookA — funds permanently locked\n\n    // 6. Even if hookA CAN collect, switching fee management mode orphans differently:\n    // Switch from HOOK_MANAGES to TOKEN_MANAGES:\n    // Old fees at hash(hookA, ...) — only hookA can claim via collectHookFeesByHook\n    // New fees at hash(TOKEN_MANAGED_HOOK_FEE, ...) — token admin claims via collectHookFeesByToken\n    // No migration between key spaces\n\n    // 7. Verify AMM balance includes orphaned fees\n    uint256 ammBalance = token.balanceOf(address(amm));\n    uint256 reserves = getPoolReserves(poolId);\n    uint256 feeBalances = getPoolFeeBalances(poolId);\n    // ammBalance > reserves + feeBalances + claimableTokensOwed\n    // Difference = orphaned hook fees\n}"
+      "suggested_test": "// function test_reentrancyGuardDownDuringCreatePool() public {\n//     // 1. Deploy AMM\n//     // 2. Create pool X normally\n//     // 3. Prepare liquidityData encoding addLiquidity for pool Y\n//     // 4. Call createPool for pool Z with liquidityData targeting pool Y\n//     // 5. Verify: pool Z created with zero reserves\n//     //    (operator precedence bug lets this pass)\n//     // 6. Verify: reentrancy guard was NOT_ENTERED between lines 79-81\n//     //    (use a monitoring hook to check guard state during dispatch)\n//     \n//     PoolCreationDetails memory details = ...;  // Pool Z params\n//     bytes memory liquidityData = abi.encodeWithSelector(\n//         ILimitBreakAMM.addLiquidity.selector,\n//         liquidityParamsForPoolY,  // Targets pool Y, not pool Z\n//         liquidityHooksExtraData\n//     );\n//     \n//     (bytes32 poolId, uint256 deposit0, uint256 deposit1) = \n//         amm.createPool(details, '', '', '', liquidityData);\n//     \n//     // Pool Z exists but has zero liquidity\n//     assertEq(deposit0, 0);\n//     assertEq(deposit1, 0);\n//     // This should have reverted but didn't (H-DP-01 + H-DP-07 interaction)\n// }"
     }
   ]
 }

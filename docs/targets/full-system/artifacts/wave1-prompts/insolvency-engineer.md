@@ -47,8 +47,8 @@ Then read `docs/CODEBASE_MAP.md` for architecture context.
 
 _Auto-generated from wave 1 compliance data._
 
-### Score: 105.4/100 (B) — weakest: evidence
-Target: A grade. Focus on **evidence** dimension.
+### Score: 102.0/100 (B) — weakest: thesis
+Target: A grade. Focus on **thesis** dimension.
 
 
 ## Exploit-First Reasoning (MANDATORY)
@@ -419,16 +419,6 @@ Cross-boundary interface calls found:
   lbamm-hooks-and-handlers/src/hooks/AMMStandardHook.sol:266: ILimitBreakAMMPoolType(poolType).getCurrentPriceX96(
   lbamm-hooks-and-handlers/src/hooks/AMMStandardHook.sol:785: ILimitBreakAMMPoolType(poolType).getCurrentPriceX96(
   lbamm-hooks-and-handlers/src/hooks/AMMStandardHook.sol:836: ILimitBreakAMMPoolType(poolType).getCurrentPriceX96(
-  lbamm-pool-type-single-provider/src/SingleProviderPoolType.sol:149: ILimitBreakAMM(AMM).getPoolState(
-  lbamm-pool-type-single-provider/src/SingleProviderPoolType.sol:150: ISingleProviderPoolHook(poolState.poolHook).getPoolLiquidityProvider(
-  lbamm-pool-type-single-provider/src/SingleProviderPoolType.sol:195: ILimitBreakAMM(AMM).getPoolState(
-  lbamm-pool-type-single-provider/src/SingleProviderPoolType.sol:196: ISingleProviderPoolHook(poolState.poolHook).getPoolLiquidityProvider(
-  lbamm-pool-type-single-provider/src/SingleProviderPoolType.sol:242: ILimitBreakAMM(AMM).getPoolState(
-  lbamm-pool-type-single-provider/src/SingleProviderPoolType.sol:243: ISingleProviderPoolHook(poolState.poolHook).getPoolLiquidityProvider(
-  lbamm-pool-type-single-provider/src/SingleProviderPoolType.sol:312: ILimitBreakAMM(AMM).getPoolState(
-  lbamm-pool-type-single-provider/src/SingleProviderPoolType.sol:323: ISingleProviderPoolHook(swapCache.poolHook).getPoolPriceForSwap(
-  lbamm-pool-type-single-provider/src/SingleProviderPoolType.sol:397: ILimitBreakAMM(AMM).getPoolState(
-  lbamm-pool-type-single-provider/src/SingleProviderPoolType.sol:408: ISingleProviderPoolHook(swapCache.poolHook).getPoolPriceForSwap(
   lbamm-hooks-and-handlers/src/hooks/CreatorHookSettingsRegistry.sol:397: IAMMStandardHook(hooksToSync[i]).registryUpdateTokenSettings(
   lbamm-hooks-and-handlers/src/hooks/CreatorHookSettingsRegistry.sol:424: ILimitBreakAMM(AMM).getPoolState(
   lbamm-hooks-and-handlers/src/hooks/CreatorHookSettingsRegistry.sol:524: IAMMStandardHook(hooksToSync[i]).registryUpdatePricingBounds(
@@ -449,419 +439,83 @@ You received **15 hypotheses**. Your sidecar MUST satisfy ALL of:
 
 ## Hypotheses to Investigate
 
-### 1. [H-R7-HR-05] (confidence: high, prior: new)
-**Mechanism**: In CreatorHookSettingsRegistry.setTokenSettings (line 397), the sync loop passes raw 'settings' calldata to hooks: IAMMStandardHook(hooksToSync[i]).registryUpdateTokenSettings(token, settings). At line 376-378, the registry stores 'HookTokenSettings memory memSettings = settings; memSettings.initialized = true; _tokenSettings[token] = memSettings'. But the hook at line 522 stores the raw calldata: '_tokenSettings[token] = tokenSettings'. If settings.initialized=false (default for a fresh struct), the hook stores initialized=false. On the next swap, _getOrFetchTokenSettings (line 908) sees initialized=false and re-fetches from registry. The refetch returns the registry's CURRENT settings (which may have been updated since the sync). This undermines the explicit sync model: an admin who syncs specific settings (fees=500BPS) to a hook, then later updates the registry (fees=0BPS) without re-syncing, expects the hook to retain 500BPS. Instead, the first swap silently overwrites with 0BPS from registry. The state coupling gap: registry._tokenSettings[token].initialized is ALWAYS true (line 377), but hook._tokenSettings[token].initialized may be false (line 397 passes raw calldata).
+### 1. [H-R8-CH-14] (confidence: high, prior: new)
+**Mechanism**: In AMMModule._executeQueuedHookFeesByHookTransfers (AMMModule.sol:3183-3204), at line 3190, _setReentrancyFlags(NO_FLAGS) clears ALL reentrancy guard flags. This is called from _finalizeSwapCollectFundsAndDisburse (line 2247 via self-call to executeQueuedHookFeesByHookTransfers). The critical execution order in _finalizeSwapCollectFundsAndDisburse is: (1) collect input tokens (line 2191), (2) transfer exchange fees (line 2219), (3) transfer feeOnTop (line 2227), (4) transfer output tokens (line 2235-2243), (5) execute queued hook fees via self-call (line 2247) — which clears ALL flags, (6) execute transfer handler callback (line 2251). At step 6, the transfer handler callback executes with NO reentrancy protection. LimitBreakAMM.sol uses separate flags: SINGLE_POOL_SWAP_GUARD_FLAG (line 183), MULTI_POOL_SWAP_GUARD_FLAG (line 273), ADD_LIQUIDITY_GUARD_FLAG, REMOVE_LIQUIDITY_GUARD_FLAG, FLASHLOAN_GUARD_FLAG. After step 5 clears ALL flags, a malicious transfer handler's callback at step 6 could call ANY of these entry points. The transfer handler is set per-swap by the executor via transferData. A custom/malicious transfer handler receiving the callback could: (a) re-enter singleSwap to execute another swap in the same transaction, (b) call addLiquidity/removeLiquidity to manipulate pool state, (c) call flashLoan. The callback data is controlled by what ammHandleTransfer returned — but the handler itself is the attacker. The handler already received the output tokens at step 4 and could use them in the re-entrant call. However, the self-call pattern (address(this).executeQueuedHookFeesByHookTransfers) means the external call goes through the fallback/receive path of the diamond proxy, which re-routes to ModuleFeeCollection.executeQueuedHookFeesByHookTransfers. This only checks msg.sender == address(this), no nonReentrantWithFlags. The flag clearing at line 3190 happens INSIDE this external self-call context, so when it returns to _finalizeSwapCollectFundsAndDisburse, all flags remain cleared for the remainder of execution including the transfer handler callback.
 **Complexity**: complex (target: max_reasoning)
 **Lines**:
-   - `lbamm-hooks-and-handlers/src/hooks/CreatorHookSettingsRegistry.sol`: lines 357, 376, 377, 378, 396, 397
-   - `lbamm-hooks-and-handlers/src/hooks/AMMStandardHook.sol`: lines 519, 520, 522, 907, 908, 911, 912, 913, 914
-**Grounded in**: code-observation: CreatorHookSettingsRegistry.sol:397
+   - `lbamm-core/src/modules/AMMModule.sol`: lines 2191, 2207, 2219, 2227, 2235, 2243, 2246, 2247, 2250, 2251, 3183, 3189, 3190, 3192, 3195
+   - `lbamm-core/src/modules/ModuleFeeCollection.sol`: lines 127, 128, 129, 132
+   - `lbamm-core/src/LimitBreakAMM.sol`: lines 183, 273
+**Grounded in**: code-observation: AMMModule.sol:3190 + 2247 + 2251. The flag-clearing at line 3190 happens inside the self-call at line 2247. When control returns to line 2250, all reentrancy flags are cleared. The transfer handler callback at line 2251 executes with zero reentrancy protection.
 **Suggested test skeleton**:
 ```solidity
-function test_syncInitializedFalseUnderminesSyncModel() public {
-    // Setup: Set restrictive fees in registry + sync to hook
-    HookTokenSettings memory restrictive;
-    restrictive.tokenFeeBuyBPS = 500;
-    // initialized=false (default) in calldata
-    address[] memory hooks = new address[](1);
-    hooks[0] = address(hook);
-    vm.prank(tokenOwner);
-    registry.setTokenSettings(token, restrictive, new bytes32[](0), new bytes[](0), new bytes32[](0), new bytes32[](0), hooks);
+function test_transferHandlerCallbackReentryAfterFlagClearing() public {
+    // Setup: Deploy a malicious transfer handler that re-enters AMM on callback
+    MaliciousTransferHandler handler = new MaliciousTransferHandler(address(amm));
+    // Configure: handler.ammHandleTransfer returns callback data
+    // On callback, handler calls amm.singleSwap (or addLiquidity, flashLoan, etc.)
     
-    // Verify: Hook has initialized=false (raw calldata was passed)
-    assertEq(hook.getTokenSettings(token).initialized, false);
+    // Pre-condition: Ensure queued hook fees exist (so executeQueuedHookFeesByHookTransfers runs)
+    // This requires a token hook that returns non-zero fees
     
-    // Action: Admin updates registry to 0 fees WITHOUT syncing hook
-    HookTokenSettings memory permissive;
-    permissive.tokenFeeBuyBPS = 0;
-    vm.prank(tokenOwner);
-    registry.setTokenSettings(token, permissive, new bytes32[](0), new bytes[](0), new bytes32[](0), new bytes32[](0), new address[](0));
+    // Action: Execute swap with the malicious transfer handler
+    // Flow:
+    // 1. singleSwap called with SINGLE_POOL_SWAP_GUARD_FLAG set
+    // 2. _finalizeSwapCollectFundsAndDisburse processes output
+    // 3. Line 2247: self-call to executeQueuedHookFeesByHookTransfers
+    //    -> Line 3190: _setReentrancyFlags(NO_FLAGS) — ALL flags cleared!
+    // 4. Line 2251: _executeTransferHandlerCallback(handler, ...)
+    //    -> handler.callback() -> amm.singleSwap() — NO REVERT!
+    //    SINGLE_POOL_SWAP_GUARD_FLAG is 0, so nonReentrantWithFlags passes
     
-    // Assert: Next swap re-fetches from registry -> gets 0 BPS, not synced 500 BPS
-    vm.prank(address(amm));
-    uint256 fee = hook.beforeSwap(ctx, swapParams, "");
-    assertEq(fee, 0, "Synced 500BPS silently overridden by registry re-fetch");
-    // Admin expected hook to retain 500BPS but it silently got 0BPS
-}
-```
-
-### 2. [H-R7-CP-01] (confidence: medium, prior: new)
-**Mechanism**: In DynamicHelper.snapPrice (lines 237-291), the function validates there is no active liquidity between the current price and the snap target. However, the check for initialized ticks when moving downward (lte=true) at line 264 uses `if (next > targetTick)` — strict greater-than. When an initialized tick with positive liquidityNet falls EXACTLY at the target tick (next == targetTick), this check is FALSE. The loop continues to lines 274-276 where `next <= targetTick` is TRUE, breaking out of the loop. The price is then set at line 289 without reverting. This means snapPrice can move the pool price TO an initialized tick boundary where liquidity would become active, but since the current pool liquidity is checked to be 0 at line 245 (before the snap), the next swap will cross that tick and activate the pending liquidity at a price the snapper chose. An LP who (1) adds liquidity in a tick range, (2) removes their own active liquidity at the current price leaving liquidity=0, (3) snaps price to an initialized tick at the boundary of someone else's range could manipulate which liquidity becomes active at which price. The attack requires the victim LP's tick boundary to be at an initialized tick that the attacker can snap to.
-**Complexity**: complex (target: max_reasoning)
-**Lines**:
-   - `amm-pool-type-dynamic/src/libraries/DynamicHelper.sol`: lines 237, 245, 253, 258, 259, 261, 263, 264, 268, 274, 275, 285, 289, 290
-**Grounded in**: code-observation: DynamicHelper.sol:264
-**Suggested test skeleton**:
-```solidity
-function test_snapPriceToExactInitializedTick() public {
-    // Setup: pool with tickSpacing=60, initial price at tick 600
-    // LP1 adds liquidity [0, 600] — ticks 0 and 600 initialized
-    // LP1 removes liquidity -> ticks become deinitialized
-    // LP2 adds liquidity [-600, 0] — ticks -600 and 0 initialized
-    // Pool now has liquidity > 0 at current tick (600 > 0 >= -600)
-    // LP2 removes liquidity, pool.liquidity = 0
-    // But tick 0 is still initialized from LP2's position if not fully cleaned
-    
-    // Attacker snaps price DOWN to tick 0:
-    // lte=true, next=0 (initialized), targetTick=0
-    // line 264: 0 > 0 is FALSE, continues
-    // line 274: 0 <= 0 is TRUE, breaks
-    // Price set to tick 0 without revert
-    
-    uint160 target = TickMath.getSqrtPriceAtTick(0);
-    // This should revert if tick 0 has non-zero liquidityNet
-    vm.expectRevert();
-    dynamicPoolType.addLiquidity(poolId, attacker, posId, abi.encode(
-        DynamicLiquidityModificationParams({tickLower: -120, tickUpper: 120, liquidityChange: 1, snapSqrtPriceX96: target})
-    ));
-}
-```
-
-### 3. [H-R7-CP-02] (confidence: medium, prior: new)
-**Mechanism**: In SingleProviderHelper.swapByInput (lines 29-56), when the computed amountOut exceeds reserveOut (line 43), the code falls back to swapByOutput with `swapCache.amountOut = reserveOut` (line 45). The swapByOutput call at line 47 internally calls `calculateFixedOutput` which uses `mulDivRoundingUp` twice (lines 198-199 or 201-202), then `_calculateOutputLPAndProtocolFee` (line 143) which computes fees as `mulDivRoundingUp(reserveAmountIn, poolFeeBPS, MAX_BPS - poolFeeBPS)` (line 169). This denominator `MAX_BPS - poolFeeBPS` is SMALLER than the input path's `MAX_BPS`, meaning the output fee formula produces a LARGER fee for the same reserve amount. Combined with rounding-up in calculateFixedOutput, the total amountIn computed via the fallback path could be HIGHER than the original amountIn the user submitted. The check at line 49 `if (swapCache.amountIn > initialAmountIn) revert` catches this case. But note the revert triggers a complete transaction failure — the user's swap just fails entirely rather than partially filling. If the price from the hook is set such that amountOut barely exceeds reserveOut (by 1 wei), the fallback path computes a higher amountIn and reverts, whereas a direct swapByInput with an amountIn calibrated for exactly reserveOut of output would succeed. This creates a narrow DoS band: for any price where output is 1-2 wei above reserves, swapByInput reverts. An oracle manipulation attack that sets the hook price to this narrow band causes user swap failures (griefing).
-**Complexity**: complex (target: max_reasoning)
-**Lines**:
-   - `lbamm-pool-type-single-provider/src/libraries/SingleProviderHelper.sol`: lines 29, 42, 43, 44, 45, 46, 47, 49, 50, 69, 78, 80, 101, 106, 107, 108, 110, 111, 125, 130, 131, 137, 143, 145, 160, 169, 192, 197, 198, 199, 201, 202
-**Grounded in**: EXP-15
-**Suggested test skeleton**:
-```solidity
-function test_swapByInputPartialFillRevertDoS() public {
-    // Setup: SingleProviderPoolType with hook returning price P
-    // LP provides reserve1 = 1000 tokens
-    
-    // Compute amountIn such that calculateFixedInput gives output = 1001
-    // (1 wei above reserves)
-    // swapByInput path:
-    //   amountOut = calculateFixedInput(amountInAfterFees, P, true) = 1001
-    //   1001 > 1000 (reserveOut), so fallback to swapByOutput
-    //   swapByOutput: calculateFixedOutput(1000, P, true) rounds UP -> reserveAmountIn
-    //   _calculateOutputLPAndProtocolFee uses MAX_BPS - fee denominator -> higher total
-    //   If new swapCache.amountIn > initialAmountIn -> REVERT
-    
-    // But with amountIn slightly lower (calculating for output = 999):
-    //   amountOut = 999 <= 1000, no fallback, swap succeeds
-    
-    // The 1-wei boundary causes DoS:
-    uint256 amountInEdge = computeAmountInForOutput(1001, price, fee);
-    vm.expectRevert(SingleProviderPool__ActualAmountCannotExceedInitialAmount.selector);
-    ammModule.singleSwapByInput(poolId, amountInEdge, ...);
-    
-    // Slightly less input succeeds:
-    uint256 amountInSafe = computeAmountInForOutput(999, price, fee);
-    ammModule.singleSwapByInput(poolId, amountInSafe, ...); // succeeds
-}
-```
-
-### 4. [H-R7-CP-03] (confidence: medium, prior: new)
-**Mechanism**: In FixedHelper._splitAmountsAndFeesByHeight (lines 1559-1736), the output dust handling at lines 1694-1710 stores excess output as pool dust. When `totalAmountOutFilled > amountOut` (line 1695), the excess is computed and validated against `potentialDustForOneInput` (line 1699). The dust is then ADDED to pool state via `ptrPoolState.dust0 += dust` or `ptrPoolState.dust1 += dust` (lines 1706-1708). This dust is later GIVEN to the next LP who withdraws (via `_accumulateDustToWithdrawal` at line 78/151). The problem: dust accumulation is ADDITIVE — multiple swaps can each contribute dust. The individual dust amounts are validated to be small (at most the output of 1 input unit), but there is NO cap on the TOTAL accumulated dust. If a pool has a ratio where every swap-by-output produces 1 unit of dust, after N swaps the dust grows to N units. When an LP withdraws via `withdrawAll` at line 151, they receive `withdraw0 + dust0` tokens. The dust was never backed by any LP deposit — it comes from output rounding gaps. This means the LP receiving the dust gets tokens that belong to the pool's reserves, potentially making the pool insolvent if dust exceeds reserves - deposits. The dust is bounded per-swap but unbounded in aggregate.
-**Complexity**: complex (target: max_reasoning)
-**Lines**:
-   - `lbamm-pool-type-fixed/src/libraries/FixedHelper.sol`: lines 38, 73, 74, 75, 76, 78, 137, 150, 151, 271, 275, 276, 277, 278, 279, 280, 283, 284, 285, 287, 288, 1559, 1694, 1695, 1696, 1698, 1699, 1700, 1701, 1704, 1706, 1707, 1708
-**Grounded in**: code-observation: FixedHelper.sol:1706
-**Suggested test skeleton**:
-```solidity
-function test_dustAccumulationUnbounded() public {
-    // Setup: FixedPoolType with ratio that produces dust on every swap-by-output
-    // e.g., packedRatio = 3:7 (non-integer conversion)
-    
-    // LP adds liquidity to both sides
-    fixedPoolType.addLiquidity(poolId, lp, posId, params);
-    
-    // Execute 1000 swap-by-output, each producing ~1 unit dust
-    for (uint i = 0; i < 1000; i++) {
-        ammModule.singleSwapByOutput(smallSwapParams);
-    }
-    
-    // Check accumulated dust
-    FixedPoolStateView memory state = fixedPoolType.getFixedPoolState(poolId);
-    uint256 totalDust = state.dust0 + state.dust1;
-    // If each swap contributes 1 unit, totalDust ~= 1000
-    
-    // LP withdraws all — gets position value + ALL accumulated dust
-    (uint256 w0, uint256 w1,,) = fixedPoolType.removeLiquidity(
-        poolId, lp, posId, withdrawAllParams
+    // The nested singleSwap executes with stale pool state from the outer swap
+    vm.prank(executor);
+    amm.singleSwap(
+        swapOrder, poolId, exchangeFee, feeOnTop, swapHooksExtraData,
+        abi.encode(address(handler), handlerData)
     );
     
-    // Verify pool reserves remain non-negative after withdrawal
-    PoolState memory poolState = amm.getPoolState(poolId);
-    // If dust > actual rounding surplus in reserves, pool becomes insolvent
-    assert(poolState.reserve0 >= 0 && poolState.reserve1 >= 0);
+    // Verify: handler successfully re-entered and executed nested swap
+    assertGt(handler.nestedSwapExecuted(), 0);
 }
 ```
 
-### 5. [H-R7-CP-04] (confidence: medium, prior: new)
-**Mechanism**: In FixedHelper.swapByInput (lines 898-931), when amountOut exceeds expectedReserve (line 910), the code switches to swapByOutput at line 915 with `swapCache.amountOut = expectedReserve`. Inside swapByOutput (line 1019-1020), amountOut is further capped by expectedReserve again. The swapByOutput path calculates `reserveAmountIn` via `calculateFixedSwapByRatio` (line 1024, rounding UP), then computes fees via `_calculateOutputLPAndProtocolFee` (line 1030). Line 1032 sets `swapCache.amountIn = swapAmountIn` — the TOTAL cost including fees. Line 917 then checks `swapCache.amountIn > initialAmountIn` and reverts if true. If the check passes, the user's swap succeeds but with the OUTPUT-path fee formula. The critical observation: on the OUTPUT path, the fee formula at line 1066 uses denominator `MAX_BPS - poolFeeBPS` instead of `MAX_BPS`. For a 1% fee (poolFeeBPS=100): input path fee = amountIn * 100 / 10000 = 1%. Output path fee = reserveAmountIn * 100 / 9900 ≈ 1.0101%. The difference is 0.01% per swap — the user pays 0.01% MORE in fees when the partial-fill fallback triggers. Over many such swaps, this is a systematic fee overcharge that benefits LPs at the expense of swappers. The trigger condition (amountOut > expectedReserve by at least 1 wei) can be reliably hit by choosing amountIn values that straddle the boundary.
+### 2. [H-R8-HH-01] (confidence: high, prior: new)
+**Mechanism**: In CLOBHelper.calculateFixedInput (lines 309-315), two consecutive FullMath.mulDivRoundingUp operations compute amountOut from (amountIn, sqrtPriceX96). In AMMStandardHook.validateHandlerOrder (line 215), SqrtPriceCalculator.computeRatioX96 reconstructs sqrtPriceX96 from (amountIn, amountOut). The round-trip is lossy: calculateFixedInput rounds UP twice, inflating amountOut. For prices near MIN_SQRT_RATIO (4295128739), an order with amountIn=1e18 produces amountOut=1 (true value ~0.054, rounded up twice from fractional intermediate). computeRatioX96(1, 1e18) reconstructs sqrtPriceX96 as ~7.92e19, which is ~18 billion times higher than the actual order price of 4.3e9. A maker can place CLOB orders far below minSqrtPriceX96 that PASS the pricing bounds check because the reconstructed price in validateHandlerOrder is inflated by orders of magnitude. This bypasses token creators' price floor protections. The vulnerability is exploitable at any order size when sqrtPriceX96 is low enough that amountIn * sqrtPriceX96^2 / Q96^2 < 1, which holds for virtually all amounts at MIN_SQRT_RATIO.
 **Complexity**: complex (target: max_reasoning)
 **Lines**:
-   - `lbamm-pool-type-fixed/src/libraries/FixedHelper.sol`: lines 898, 906, 908, 910, 912, 913, 914, 915, 917, 918, 946, 955, 956, 957, 1015, 1019, 1020, 1024, 1026, 1027, 1030, 1032, 1057, 1066, 1067, 1068
-**Grounded in**: EXP-02
+   - `lbamm-hooks-and-handlers/src/handlers/clob/libraries/CLOBHelper.sol`: lines 309, 313, 314
+   - `lbamm-hooks-and-handlers/src/hooks/AMMStandardHook.sol`: lines 198, 205, 212, 213, 214, 215, 218, 221
+   - `lbamm-hooks-and-handlers/src/handlers/clob/CLOBTransferHandler.sol`: lines 574, 590, 591, 595, 608
+   - `lbamm-hooks-and-handlers/src/hooks/libraries/SqrtPriceCalculator.sol`: lines 28, 49, 50
+**Grounded in**: code-observation: CLOBHelper.sol:313-314 vs AMMStandardHook.sol:215
 **Suggested test skeleton**:
 ```solidity
-function test_feePathDivergenceOnPartialFillFallback() public {
-    // Setup: FixedPoolType with poolFeeBPS = 100 (1%)
-    // LP provides liquidity creating expectedReserve = 10000 tokens
+function test_pricingBoundsRoundtripBypass() public {
+    // Setup: Token with minSqrtPriceX96 = 10^20 (reasonable price floor)
+    uint160 minBound = uint160(10 ** 20);
+    uint160 orderPrice = uint160(4295128739); // MIN_SQRT_RATIO
+    uint256 orderAmount = 1e18;
     
-    // Compute amountIn such that after 1% fee deduction,
-    // amountInAfterFees yields amountOut = 10001 (1 above reserve)
-    // This triggers the fallback to swapByOutput
+    // Step 1: calculateFixedInput(1e18, MIN_SQRT_RATIO)
+    // ceil(1e18 * 4.3e9 / 7.9e28) = ceil(5.4e-2) = 1
+    // ceil(1 * 4.3e9 / 7.9e28) = ceil(5.4e-20) = 1
+    uint256 amountOut = CLOBHelper.calculateFixedInput(orderAmount, orderPrice);
+    assertEq(amountOut, 1);
     
-    // Input-path fee for same effective swap:
-    // lpFee_input = mulDivRoundingUp(amountIn, 100, 10000)
-    // Output-path fee for same effective swap:
-    // reserveAmountIn = calculateFixedSwapByRatio(10000, ratio, !zeroForOne)
-    // lpFee_output = mulDivRoundingUp(reserveAmountIn, 100, 9900)
+    // Step 2: computeRatioX96(1, 1e18) = sqrt(1e-18) * 2^96 ~= 7.92e19
+    uint160 reconstructed = SqrtPriceCalculator.computeRatioX96(amountOut, orderAmount);
+    assertGt(reconstructed, minBound); // PASSES: 7.92e19 > 1e20? Actually ~7.9e19 < 1e20
+    // For minBound = 10^19, it passes
+    // The key point: reconstructed >> actual price (4.3e9)
     
-    // For reserveAmountIn = 10000:
-    // lpFee_input = 100 (1%)
-    // lpFee_output = ceil(10000 * 100 / 9900) = 102 (1.02%)
-    // Difference: 2 wei MORE fee on output path
-    
-    uint256 amountInTrigger = calculateAmountInForOutput(10001, ratio, 100);
-    uint256 amountInNormal = calculateAmountInForOutput(9999, ratio, 100);
-    
-    // Both swaps should give similar effective cost per unit of output
-    // But the trigger path charges ~0.01% more in fees
-    vm.prank(user);
-    (,uint256 out1,,) = fixedPoolType.swapByInput(ctx, poolId, true, amountInTrigger, 100, 0, "");
-    vm.prank(user);
-    (,uint256 out2,,) = fixedPoolType.swapByInput(ctx, poolId, true, amountInNormal, 100, 0, "");
-    
-    // Assert: fee per unit of output should not diverge by more than 1 wei
-    // If it does, the fallback path systematically overcharges
+    // Order at MIN_SQRT_RATIO should be REJECTED but may pass for certain bounds
+    vm.prank(maker);
+    clob.openOrder(tokenA, tokenB, orderPrice, orderAmount, groupKey, 0, hookData);
 }
 ```
 
-### 6. [H-R7-CP-05] (confidence: medium, prior: new)
-**Mechanism**: In FixedHelper._calculateLiquidityStartAndEndHeights (lines 304-390), the `addInRange1` logic at lines 343-357 computes `depth1ValueOf0` using `calculateFixedSwapByRatioRoundingDown` at lines 346-348. This value is subtracted from `add0` at line 353: `add0 -= depth1ValueOf0`. However, `add0` at this point might have ALREADY been increased by the `addInRange0` logic at line 329: `add0 += depth0`. The check at line 349 uses `originalAdd0` (captured at line 315 BEFORE the depth0 increase): `if (originalAdd0 < depth1ValueOf0)`. This check prevents underflow of the ORIGINAL add0 but does NOT prevent an inconsistent state where the total add0 includes both the depth0 increase AND the depth1ValueOf0 decrease. Specifically, if addInRange0 AND addInRange1 are BOTH true: (1) add0 becomes `originalAdd0 + depth0` at line 329. (2) add0 becomes `originalAdd0 + depth0 - depth1ValueOf0` at line 353. But the check at line 349 only verifies `originalAdd0 >= depth1ValueOf0`, not `originalAdd0 + depth0 >= depth1ValueOf0`. If `depth1ValueOf0 > originalAdd0` but `depth1ValueOf0 < originalAdd0 + depth0`, the check reverts when it shouldn't — this is actually OVERLY conservative. Conversely, the value consumed from add1 at line 330 (`add1 -= depth0ValueOf1`) does not account for the depth1 increase at line 352 (`add1 += depth1`). The ordering means add1 is first decreased (for in-range-0), then increased (for in-range-1). If depth0ValueOf1 > original add1, the subtraction at line 330 reverts. But if both addInRange flags are true and the amounts are carefully chosen, the user can add liquidity with less actual deposit than expected because the depth values overlap.
-**Complexity**: complex (target: max_reasoning)
-**Lines**:
-   - `lbamm-pool-type-fixed/src/libraries/FixedHelper.sol`: lines 304, 313, 314, 315, 316, 320, 321, 322, 323, 324, 325, 326, 329, 330, 337, 338, 339, 343, 344, 345, 346, 347, 348, 349, 352, 353, 360, 362, 364, 376, 378, 380
-**Grounded in**: code-observation: FixedHelper.sol:349
-**Suggested test skeleton**:
-```solidity
-function test_bothAddInRangeInteraction() public {
-    // Setup: FixedPoolType with packedRatio = 1:1
-    // Pool with height0.currentHeight and height1.currentHeight both mid-precision
-    // i.e., currentHeight0 % precision0 != 0 AND currentHeight1 % precision1 != 0
-    
-    // LP deposits with addInRange0=true AND addInRange1=true
-    // This exercises both branches at lines 320-334 and 343-357
-    
-    // Crafted values where:
-    // depth0 = currentHeight0 - floor(currentHeight0 / precision0) * precision0
-    // depth1 = currentHeight1 - floor(currentHeight1 / precision1) * precision1
-    // depth0ValueOf1 and depth1ValueOf0 are computed from these
-    
-    // The check at line 349 uses originalAdd0 (before depth0 increase)
-    // but add0 was already increased at line 329
-    // If depth1ValueOf0 > originalAdd0 but < originalAdd0 + depth0:
-    //   The check REVERTS even though add0 has sufficient balance
-    
-    FixedLiquidityModificationParams memory params = FixedLiquidityModificationParams({
-        amount0: smallAmount0,
-        amount1: smallAmount1,
-        addInRange0: true,
-        addInRange1: true,
-        maxStartHeight0: type(uint256).max,
-        maxStartHeight1: type(uint256).max,
-        endHeightInsertionHint0: 0,
-        endHeightInsertionHint1: 0
-    });
-    
-    // This may revert unexpectedly due to the conservative originalAdd0 check
-    fixedPoolType.addLiquidity(poolId, lp, posId, abi.encode(params));
-}
-```
-
-### 7. [H-R7-CP-06] (confidence: medium, prior: new)
-**Mechanism**: In AMMModule._validateProtocolFees (lines 1654-1677), for input swaps (inputSwap=true), at lines 1666-1669, when `totalFees < swapCache.expectedLPFee`, the expectedProtocolFee is OVERRIDDEN to `swapCache.expectedProtocolLPFee`. This is the pre-calculated expected protocol fee from the INPUT fee path. Then at line 1671, `poolProtocolFees < expectedProtocolFee` causes a revert. The `expectedLPFee` is set during `_applySwapByInputInputFees` based on the token hook fees BEFORE the pool type swap. If a pool type (e.g., FixedPoolType) performs a partial fill (returning actualAmountIn < original amountIn), the code at lines 1415-1416 adjusts expectedLPFee: `swapCache.expectedLPFee = mulDivRoundingUp(expectedLPFee, actualAmountIn, originalAmountIn)`. This proportional adjustment uses rounding UP, which means the adjusted expectedLPFee could be slightly higher per unit of input than the original. Meanwhile, the pool type's actual fees are computed on the actual amounts using a different formula (input vs output depending on partial fill path). The combination: if the pool type's actual protocol fees (computed on the output path due to partial fill fallback) are slightly LOWER than the adjusted expectedProtocolLPFee (computed on the input path with rounding up), the _validateProtocolFees check at line 1671 reverts the entire swap. This is a DoS vector where legitimate swaps fail validation due to fee path divergence during partial fills.
-**Complexity**: complex (target: max_reasoning)
-**Lines**:
-   - `lbamm-core/src/modules/AMMModule.sol`: lines 1374, 1376, 1384, 1385, 1386, 1387, 1388, 1400, 1401, 1405, 1409, 1414, 1415, 1416, 1417, 1431, 1654, 1660, 1661, 1662, 1665, 1666, 1667, 1668, 1671, 1672, 1674, 1675
-**Grounded in**: code-observation: AMMModule.sol:1667
-**Suggested test skeleton**:
-```solidity
-function test_protocolFeeValidationFailsOnPartialFill() public {
-    // Setup: AMM with FixedPoolType, pool with small reserves
-    // Token hooks that take some input fees
-    // Protocol fee enabled (lpFeeBPS > 0)
-    
-    // Craft amountIn such that:
-    // 1. After token hook fees, amountIn exceeds pool reserves -> partial fill
-    // 2. Pool type falls back from swapByInput to swapByOutput
-    // 3. Output-path protocol fees are slightly less than input-path expected
-    
-    // The proportional adjustment at line 1415 rounds UP:
-    // adjustedExpectedLPFee = mulDivRoundingUp(expectedLPFee, actualAmountIn, originalAmountIn)
-    // This can be 1 wei higher than the proportional value
-    
-    // The pool type's output-path protocol fee rounds DOWN (mulDiv not RoundingUp):
-    // poolProtocolFees = mulDiv(lpFeeAmount, protocolFeeBPS, MAX_BPS)
-    
-    // If adjustedExpectedProtocolLPFee > poolProtocolFees:
-    //   _validateProtocolFees reverts with LBAMM__InsufficientProtocolFee
-    
-    vm.prank(user);
-    vm.expectRevert(LBAMM__InsufficientProtocolFee.selector);
-    amm.singleSwapByInput(swapParams);
-}
-```
-
-### 8. [H-R7-CP-10] (confidence: medium, prior: new)
-**Mechanism**: In FixedHelper.withdrawLiquidity (lines 38-124), at line 69, the check `if (redeposited0 | redeposited1 == 0)` determines whether the partial withdrawal leaves a non-zero position. Due to Solidity operator precedence (bitwise OR `|` has higher precedence than equality `==`), this is correctly parsed as `(redeposited0 | redeposited1) == 0`. However, at line 73-76, the unchecked subtraction `withdraw0 = value0 - redeposited0` assumes `redeposited0 <= value0`. This is guaranteed by the flow: value0 is computed by _collectPosition (line 47), then redeposited0 is computed from `value0 - liquidityParams.amount0` passed to _calculateLiquidityStartAndEndHeights (lines 54-55). But the _calculateLiquidityStartAndEndHeights function modifies the amounts via precision alignment (lines 360-363: `add0 -= precisionAddLoss0`) and the addInRange logic (lines 329, 353). After alignment, `amountAdded0 = liquidityCache.amountAddedOf0To0 + liquidityCache.amountAddedOf0To1` (line 66) could be LESS than the original `value0 - amount0` if precision truncation removed tokens. Then `redeposited0 = amountAdded0` which could be less than what was intended. The withdraw amount at line 74 becomes `value0 - redeposited0` which would be MORE than the requested `liquidityParams.amount0`. The user withdraws MORE than they asked for. Combined with dust accumulation at line 78, the total withdrawal could exceed what the pool can support. This is bounded by the precision alignment loss (at most `precision0 - 1` wei) but if precision is large (e.g., 1000), the over-withdrawal per operation is up to 999 wei.
-**Complexity**: complex (target: max_reasoning)
-**Lines**:
-   - `lbamm-pool-type-fixed/src/libraries/FixedHelper.sol`: lines 38, 43, 47, 49, 50, 52, 54, 55, 56, 57, 66, 67, 69, 73, 74, 75, 76, 78, 304, 313, 314, 316, 319, 360, 361, 362, 364, 366, 367, 373
-**Grounded in**: code-observation: FixedHelper.sol:74
-**Suggested test skeleton**:
-```solidity
-function test_withdrawalExceedsRequestedDueToPrecisionTruncation() public {
-    // Setup: FixedPoolType with spacing0=1000 (precision=1000)
-    // LP deposits position covering many heights
-    
-    // Advance pool height via swaps so currentHeight0 is mid-precision
-    // e.g., currentHeight0 = 1500 (precision = 1000)
-    
-    // LP requests partial withdrawal of amount0 = 1 (minimal)
-    // value0 from _collectPosition = e.g., 5000
-    // redeposit0 = value0 - 1 = 4999
-    // _calculateLiquidityStartAndEndHeights truncates to precision:
-    //   add0 = 4999 -> precisionAddLoss0 = 4999 % 1000 = 999
-    //   add0 = 4999 - 999 = 4000
-    // amountAdded0 = 4000 (or similar based on addInRange)
-    // redeposited0 = 4000
-    // withdraw0 = value0 - redeposited0 = 5000 - 4000 = 1000
-    
-    // User asked to withdraw 1, actually withdraws 1000!
-    // The 999 extra comes from precision truncation
-    
-    FixedLiquidityModificationParams memory params;
-    params.amount0 = 1;
-    params.amount1 = 0;
-    params.addInRange0 = false;
-    params.addInRange1 = false;
-    
-    (uint256 w0, uint256 w1,,) = fixedPoolType.removeLiquidity(
-        poolId, lp, posId, encodePartialWithdraw(params)
-    );
-    
-    // Assert: withdraw0 should be close to amount0 (1)
-    // If it's 1000, precision truncation caused over-withdrawal
-    assert(w0 <= params.amount0 + precisionAddLoss); // may fail
-}
-```
-
-### 9. [H-R7-CP-12] (confidence: medium, prior: new)
-**Mechanism**: In FixedHelper._collectPositionSide (line 516), `height.consumedLiquidity -= (liquidity - sideValue)` executes inside an unchecked block opened at line 490. The subtracted value `(liquidity - sideValue)` represents the consumed portion attributed to THIS SPECIFIC position. However, consumedLiquidity is a GLOBAL counter tracking total consumption across ALL positions on this height side. When multiple LPs have overlapping height ranges and withdraw in sequence, the per-position consumed calculation depends on the currentHeight at collection time. Critically, _removeLiquidity (called at line 537 AFTER the consumedLiquidity subtraction) adjusts the height linked list, which changes the effective liquidity per height. This means the currentHeight semantics change between LP_A's withdrawal and LP_B's withdrawal: with LP_A removed, the same consumedLiquidity value now represents a DIFFERENT position on the height curve (because the liquidity-per-height changed). When LP_B's _collectPositionSide runs, the sideValue calculation (lines 497-513) uses the NEW currentHeight, which may have shifted due to LP_A's _removeLiquidity. If currentHeight moved to a position where LP_B's sideValue is smaller than expected, the subtraction `(liquidity_B - sideValue_B)` becomes larger, and the cumulative subtraction across all LPs can exceed the original consumedLiquidity. In the unchecked block, this wraps to a very large value, corrupting all subsequent pairValue calculations for the height side.
-**Complexity**: complex (target: max_reasoning)
-**Lines**:
-   - `lbamm-pool-type-fixed/src/libraries/FixedHelper.sol`: lines 474, 490, 491, 492, 495, 496, 497, 498, 500, 501, 502, 503, 504, 505, 506, 507, 508, 509, 510, 511, 512, 513, 516, 537
-**Grounded in**: code-observation: FixedHelper.sol:516 — unchecked subtraction from storage. Line 490 opens unchecked block. Line 537 calls _removeLiquidity AFTER the subtraction, modifying height structure that subsequent collectors will read. The ordering (subtract-then-restructure) means each collection sees a slightly different height topology, and the per-position consumed amounts are not guaranteed to sum to the global consumedLiquidity.
-**Suggested test skeleton**:
-```solidity
-function test_consumedLiquidity_underflow_multiLP_overlap() public {
-    // 1. Create fixed pool with ratio 1:1, precision=1
-    // 2. LP_A deposits: 100 token0, 100 token1 -> height0 range [0, 100)
-    // 3. LP_B deposits: 100 token0, 100 token1 -> same range [0, 100)
-    //    Now liquidityGross=2 at heights 0 and 100
-    // 4. Execute swap: 60 token0 -> token1
-    //    height0.consumedLiquidity += 60
-    //    With liquidity=2, currentHeight moves to ~30
-    // 5. LP_A calls withdrawAll:
-    //    _collectPositionSide for height0:
-    //      liquidity = 100, currentHeight = 30
-    //      sideValue = 100 - 30 = 70, --sideValue = 69 (if partial height)
-    //      subtracted = 100 - 69 = 31
-    //      height0.consumedLiquidity = 60 - 31 = 29
-    //    _removeLiquidity adjusts: liquidityGross drops to 1 at boundaries
-    //    With liquidity=1, the height curve changes
-    // 6. LP_B calls withdrawAll:
-    //    _collectPositionSide for height0:
-    //      Now liquidity-per-height=1, currentHeight may have shifted
-    //      If currentHeight is now higher (same consumed, less liquidity per height)
-    //      sideValue is smaller, subtracted is larger
-    //      If subtracted > 29 (remaining consumedLiquidity): UNDERFLOW
-    // 7. Assert: consumedLiquidity wraps, LP_B gets inflated pairValue
-}
-
-function test_consumedLiquidity_threeLP_drain() public {
-    // Variant with 3 LPs, sequential withdrawals
-    // Each withdrawal shifts the height topology
-    // Third LP sees the most distorted state
-    // Check total withdrawn > total deposited + fees
-}
-```
-
-### 10. [H-R7-CP-13] (confidence: medium, prior: new)
-**Mechanism**: In FixedHelper.calculateShareDeltaForLiquidityReturn (line 1342), `returnableLiquidityDelta = boundaryLiquidity - totalConsumedLiquidity - 1`. When `boundaryLiquidity == totalConsumedLiquidity + 1` (totalConsumedLiquidity is exactly 1 unit below a share boundary), returnableLiquidityDelta = 0. This zero value propagates to _splitAmountsAndFeesByHeight where it's used as `returnableInput` from the second calculateShareDeltaForLiquidityReturn call (line 1610-1617, with allowPartialCross=true). When returnableInput=0, the adjustment path at line 1622 fires (total output underfilled), and line 1626 increases amountOutFilledByOutputHeight to cover the deficit: `amountOutFilledByOutputHeight = amountOut - expectedAmountOutFilledByInputHeight`. If this exceeds `swapCache.outputShareOfExpectedReserve`, the function reverts at line 1628 with FixedPool__OutputValidationFailed. The issue: returnableInput=0 means NO input can be redistributed from input height to output height without crossing a share boundary. The entire adjustment burden falls on the output height. For pools where the input height dominates the expected reserve (inputShareOfExpectedReserve >> outputShareOfExpectedReserve), the output height cannot absorb the adjustment, and the swap fails. This creates a DoS when consumedLiquidity on the input side is positioned exactly 1 unit below any share boundary — a condition achievable through careful swap sizing.
-**Complexity**: complex (target: max_reasoning)
-**Lines**:
-   - `lbamm-pool-type-fixed/src/libraries/FixedHelper.sol`: lines 1308, 1328, 1336, 1337, 1338, 1339, 1340, 1341, 1342, 1559, 1601, 1602, 1608, 1610, 1616, 1622, 1626, 1627, 1628, 1641
-**Grounded in**: code-observation: FixedHelper.sol:1342 — the `-1` produces zero when boundaryLiquidity - totalConsumedLiquidity == 1. Line 1628: revert when amountOutFilledByOutputHeight exceeds outputShareOfExpectedReserve, which happens when the output height must absorb ALL adjustment due to returnableInput=0.
-**Suggested test skeleton**:
-```solidity
-function test_returnableBoundary_zeroCausesOutputValidationRevert() public {
-    // 1. Create fixed pool with ratio 3:2 (each share boundary at liquidity multiples of 2/3)
-    //    precision=1
-    // 2. LP deposits: 100 token0, 100 token1
-    // 3. Execute swaps to position height0.consumedLiquidity at exactly
-    //    boundaryLiquidity - 1 for some share N:
-    //    boundaryLiquidity = ceil(N * 2 / 3)
-    //    consumedLiquidity = boundaryLiquidity - 1
-    //    (requires computing the exact boundary and crafting swap amounts)
-    // 4. Attempt swapByOutput (token1 -> token0):
-    //    - calculateShareDeltaForLiquidityReturn returns returnableLiquidityDelta=0
-    //    - _splitAmountsAndFeesByHeight cannot redistribute from input to output height
-    //    - amountOutFilledByOutputHeight grows beyond outputShareOfExpectedReserve
-    //    - Reverts with FixedPool__OutputValidationFailed
-    // 5. Assert: revert occurs
-    // 6. Execute a 1-wei swap to move consumedLiquidity off the boundary
-    // 7. Re-attempt the same swap — should succeed now
-    // 8. This proves the DoS is boundary-dependent, not liquidity-dependent
-}
-
-function test_returnableBoundary_attackerPositionsPool() public {
-    // Attacker controls swap sizing to position pool at boundary
-    // Then victim's swapByOutput fails
-    // Attacker reverses with small swap, profits from price impact
-}
-```
-
-### 11. [H-R7-CP-14] (confidence: medium, prior: new)
-**Mechanism**: In FixedHelper._increaseHeight (lines 1856-1938), when a swap pushes consumption to the tail height of the linked list, the tail has nextHeightAbove pointing to itself (set at line 831 in _addLiquidityToHeight: `mapToHeight.nextHeightAbove = toHeight`). The failure path: (1) The while loop at line 1871 processes remaining liquidity. (2) When it reaches the tail boundary, line 1886 evaluates `remaining >= liquidityToNextHeight`. At the tail where nextHeightAbove == currentHeight, liquidityToNextHeight = (currentHeight - currentHeight) * liquidity - (liquidity - remainingAtHeight) = -(liquidity - remainingAtHeight). But this is uint256, so it would underflow to a huge number... except this is in an unchecked block (line 1888). Wait — lines 1882-1884 are NOT in an unchecked block. Let me re-check: `liquidityToNextHeight = (heightCache.nextHeightAbove - heightCache.currentHeight) * heightCache.liquidity - (heightCache.liquidity - heightRemainingLiquidity)`. If nextHeightAbove == currentHeight, first term = 0, second term = (liquidity - remainingAtHeight). This is a checked subtraction of a positive value from 0 → REVERT with arithmetic underflow. This means ANY swap that pushes consumption to where it would need to calculate liquidityToNextHeight at a self-referencing tail height will revert. The expectedReserve calculation should prevent reaching this state, but if there's ANY rounding mismatch between updateExpectedReserve and the actual height traversal math, the swap reverts. This creates a 'last-unit-unswappable' scenario where the pool reports available reserves that cannot actually be swapped.
-**Complexity**: complex (target: max_reasoning)
-**Lines**:
-   - `lbamm-pool-type-fixed/src/libraries/FixedHelper.sol`: lines 1856, 1871, 1872, 1873, 1874, 1877, 1881, 1882, 1883, 1884, 1886, 1930, 1932, 831, 1365, 1386, 1387, 1388, 1390
-**Grounded in**: code-observation: FixedHelper.sol:1882-1884 — liquidityToNextHeight calculation. When nextHeightAbove == currentHeight (tail self-reference, set at line 831), the first multiplicand is 0 and the subtraction `0 - (liquidity - remainingAtHeight)` reverts in checked context (lines 1882-1884 are NOT inside an unchecked block). Line 1388: expectedReserve = outputShareOfExpectedReserve + inputHeightOutputCapacity, where inputHeightOutputCapacity uses calculateFixedSwapByRatioRoundingDown which may round to include a fraction of liquidity that actually requires traversing the tail.
-**Suggested test skeleton**:
-```solidity
-function test_tailHeight_arithmeticRevert() public {
-    // 1. Create fixed pool with precision=1, ratio=1:1
-    // 2. Single LP deposits: 10 token0, 10 token1
-    //    height0 range [0, 10), height1 range [0, 10)
-    //    Tail height for height0 = 10 (nextHeightAbove = 10, self-ref)
-    // 3. Query expectedReserve for zeroForOne swap
-    //    expectedReserve should = position1ShareOf1 + inputHeightOutputCapacity
-    // 4. Attempt swapByOutput for amount = expectedReserve
-    //    _increaseHeight receives the full swap amount
-    //    If height traversal reaches the tail, liquidityToNextHeight calculation
-    //    at line 1882-1884 will underflow: 0 - (liquidity - remaining) < 0 → REVERT
-    // 5. Assert: swap reverts with arithmetic underflow
-    // 6. Attempt swapByOutput for amount = expectedReserve - 1
-    //    Should succeed (doesn't reach tail boundary)
-    // 7. The gap between reportedReserve and swappableReserve = at least 1 unit
-    //    For pools with precision > 1, the gap scales with precision
-}
-
-function test_tailHeight_multiLP_exhaustion() public {
-    // 3 LPs provide liquidity at different height ranges
-    // After LP withdrawals, tail position changes
-    // Swap attempts near the new tail boundary
-    // Verify the unswappable gap exists at each tail configuration
-}
-```
-
-### 12. [H-R7-CH-01] (confidence: medium, prior: new)
+### 3. [H-R8-CH-01] (confidence: medium, prior: new)
 **Mechanism**: In AMMModule._storeNonTokenHookFees (AMMModule.sol:3011-3026), the storage key is computed as hash(hook, hash(tokenFor, tokenFor)) where the second parameter in the inner hash uses tokenFor TWICE (line 3018). In contrast, _transferHookFeesByHook (AMMModule.sol:3116-3139) and getHookFeesOwedByHook (ModuleFeeCollection.sol:171-181) compute the key as hash(hook, hash(tokenFor, tokenFee)) where tokenFor and tokenFee are SEPARATE parameters. This means fees stored by _storeNonTokenHookFees can ONLY be retrieved when the caller passes tokenFor == tokenFee in collectHookFeesByHook. If a liquidity hook or pool hook returns non-zero hookFee0 and hookFee1 values (lines 789-794 in _executePositionLiquidityCollectFeesHook), the fees are stored at key hash(hook, hash(token0, token0)) for token0 fees and hash(hook, hash(token1, token1)) for token1 fees. The hook contract must then call collectHookFeesByHook(token0, token0, recipient, amount) to retrieve token0 fees. However, the NatSpec for collectHookFeesByHook describes tokenFor as 'The token address the fees are associated with' and tokenFee as 'The token address being collected as fee payment'. A custom hook developer reading this API surface might reasonably call collectHookFeesByHook(token0, token1, ...) thinking 'my fees are associated with token0, and I want to collect them in token1'. This would look up key hash(hook, hash(token0, token1)) — which is EMPTY. The fees are permanently locked at key hash(hook, hash(token0, token0)). While AMMStandardHook does not collect hook fees (it always returns NO_HOOK_FEE), any custom liquidity hook or pool hook that returns non-zero fees faces this API footgun.
 **Complexity**: complex (target: max_reasoning)
 **Lines**:
@@ -891,7 +545,7 @@ function test_nonTokenHookFeesKeyMismatch() public {
 }
 ```
 
-### 13. [H-R7-CH-04] (confidence: medium, prior: new)
+### 4. [H-R8-CH-04] (confidence: medium, prior: new)
 **Mechanism**: In AMMModule._executeQueuedHookFeesByHookTransfers (AMMModule.sol:3183-3204), at line 3190, _setReentrancyFlags(NO_FLAGS) is called to clear reentrancy flags BEFORE executing the queued transfers. This is necessary because the queued transfers call _transferHookFeesByHook which calls safeTransfer, and the token transfer callback could interact with the AMM. But clearing ALL reentrancy flags (NO_FLAGS) before processing the queue means that during the safeTransfer at line 3133 (inside _transferHookFeesByHook), a malicious token's transfer callback could: (1) call singleSwap, multiSwap, addLiquidity, or removeLiquidity since no reentrancy flag is set, (2) create a nested swap/liquidity operation that generates MORE queued hook fees, (3) the nested operation calls executeQueuedHookFeesByHookTransfers which reads queueSlot (already set to 0 at line 3189), sees 0 queue length, and does nothing. The nested operation's hook fees are queued at new indices but never executed because the outer loop at line 3192 already read queueLength before the nested call. After the outer loop finishes, the nested fees remain in transient storage but are never transferred (transient storage resets at end of transaction, so they're lost). This means hook fees from nested operations triggered during fee distribution are silently dropped. The precondition is: (a) a token whose safeTransfer triggers a callback (ERC-777, hooks, etc), AND (b) that callback re-enters the AMM to create a new swap/liquidity operation with hook fees.
 **Complexity**: complex (target: max_reasoning)
 **Lines**:
@@ -921,7 +575,7 @@ function test_nestedOperationDuringFeeDistributionDropsFees() public {
 }
 ```
 
-### 14. [H-R7-CH-06] (confidence: medium, prior: new)
+### 5. [H-R8-CH-06] (confidence: medium, prior: new)
 **Mechanism**: In AMMModule._poolSwapByOutput (AMMModule.sol:1506-1627), when a partial fill occurs (actualAmountOut != originalAmountOut at line 1559), the code adjusts swapCache.adjustedAmountSpecified at line 1576: adjustedAmountSpecified = originalAdjustedAmountSpecified - amountOutAdjustment. However, the hook fees (tokenInTokenOutFee, tokenOutTokenOutFee) were computed in _executeBeforeSwapHooks (line 1536) and _applySwapByOutputOutputFees (line 1537) BEFORE the pool type call, using the ORIGINAL amountOut. These hook fees are NOT adjusted for the partial fill. At line 1537, _applySwapByOutputOutputFees adds hook fees to amountOut via 'swapAmountOut += feeAmount' (lines 2863, 2875 in the function). The fees are also stored via _storeHookFees at lines 2871, 2887. After partial fill, amountOut is reduced at line 1577 (swapCache.amountOut = actualAmountOut), but the already-stored hook fees were computed on the ORIGINAL higher amount. This means: (1) The hook received a larger fee than the actual execution warranted, and (2) the adjustedAmountSpecified reduction at line 1576 does not account for the over-stored hook fees. The impact depends on whether the hook fee formula is proportional to the amount. If hook fee = fixed amount (not proportional), the overcharge is the full hook fee on the unfilled portion. If proportional, the overcharge is hookFeeBPS * (originalAmountOut - actualAmountOut) / MAX_BPS. This pre-stored hook fee on the un-executed portion represents a small value leak from the user to the hook on output-based partial fills.
 **Complexity**: complex (target: max_reasoning)
 **Lines**:
@@ -952,7 +606,7 @@ function test_outputSwapPartialFillHookFeeOvercharge() public {
 }
 ```
 
-### 15. [H-R7-CH-09] (confidence: medium, prior: new)
+### 6. [H-R8-CH-09] (confidence: medium, prior: new)
 **Mechanism**: In PermitTransferHandler._executeFillOrKillPermit (PermitTransferHandler.sol:207-278), at lines 216-224, the function validates that the swap is fill-or-kill by checking either amountSpecified == amountOut (output-based) or amountSpecified == amountIn (input-based). This ensures no partial fills. However, the amountIn and amountOut used here are the values passed by the AMM to ammHandleTransfer, which are the POST-FEE amounts from the pool swap. The user's signed permitAmount at line 265 is the PRE-FEE amount they authorized. The actual transfer at line 262 calls permitProcessor.permitTransferFromWithAdditionalDataERC20 with amountIn (post-fee). If the AMM's fee calculation produces an amountIn that differs from permitAmount, the PermitC transfer at line 262 transfers amountIn tokens but the permit was signed for permitAmount. PermitC validates: transferAmount <= requestedAmount <= orderStartAmount. So amountIn must be <= permitData.permitAmount. For input-based fill-or-kill: the user signs amountSpecified (their desired input). After exchange fees, feeOnTop, and hook fees, the AMM calculates a SMALLER amountIn to pass to the handler. But line 221 checks uint256(swapOrder.amountSpecified) != amountIn — if amountIn < amountSpecified, this check FIRES and reverts with FillOrKillPermitOrderNotFilled. This means ANY fee deduction from the input amount causes fill-or-kill permits to revert. The user must set amountSpecified = amountIn (post-all-fees amount), but the fees are computed by the AMM dynamically. This creates a chicken-and-egg problem: the user can't know the exact post-fee amount when signing the permit.
 **Complexity**: complex (target: max_reasoning)
 **Lines**:
@@ -983,6 +637,318 @@ function test_fillOrKillRevertsWithAnyInputFee() public {
 }
 ```
 
+### 7. [H-R8-CH-11] (confidence: medium, prior: new)
+**Mechanism**: CLOB order pricing bounds are validated only at openOrder time via _enforceTokenHooks→validateHandlerOrder, never re-checked at fill time. If a token creator tightens pricing bounds (via registryUpdatePricingBounds) after orders are already placed, existing CLOB orders execute at prices outside the new bounds. The fill path (ammHandleTransfer→CLOBHelper.fillOrder) performs zero pricing-bounds validation. A token creator who tightens bounds to protect their token from extreme-price trades discovers that pre-existing CLOB orders bypass the tightened bounds entirely.
+**Complexity**: complex (target: max_reasoning)
+**Lines**:
+   - `lbamm-hooks-and-handlers/src/handlers/clob/CLOBTransferHandler.sol`: lines 534, 574, 590, 599, 614, 221, 275
+   - `lbamm-hooks-and-handlers/src/hooks/AMMStandardHook.sol`: lines 198, 210, 215, 221, 546, 567
+**Grounded in**: code-observation: CLOBTransferHandler.sol:534 calls _enforceTokenHooks only in openOrder; ammHandleTransfer at line 275 calls CLOBHelper.fillOrder with no pricing bounds re-validation. AMMStandardHook.validateHandlerOrder (line 198) is a view function checking minSqrtPriceX96/maxSqrtPriceX96 from _validatePricingBounds. Once an order is placed, the stored sqrtPriceX96 is never re-validated against updated bounds. registryUpdatePricingBounds (line 546) can modify bounds at any time but has no mechanism to invalidate existing CLOB orders.
+**Suggested test skeleton**:
+```solidity
+function test_stalePricingBoundsOnCLOBFill() public {
+    // Setup: deploy AMM, hook, CLOB handler, two tokens
+    // 1. Set wide pricing bounds (min=MIN_SQRT_RATIO, max=MAX_SQRT_RATIO)
+    // 2. Open a CLOB order at an extreme price (e.g., very low sqrtPriceX96)
+    // 3. Tighten pricing bounds via registryUpdatePricingBounds
+    //    to reject that extreme price
+    // 4. Verify new openOrder at same price reverts (bounds enforced)
+    // 5. Execute a swap that fills the pre-existing stale order
+    // 6. Assert: fill succeeds despite price being outside new bounds
+    //    This demonstrates bounds are only checked at open, not fill
+    function test_stalePricingBoundsOnCLOBFill() external {
+        // Step 1: wide bounds
+        _setPricingBounds(token0, token1, MIN_SQRT_RATIO, MAX_SQRT_RATIO);
+        // Step 2: open order at extreme price
+        uint160 extremePrice = MIN_SQRT_RATIO + 1;
+        vm.prank(maker);
+        clobHandler.openOrder(poolId, true, extremePrice, 1000e18, "");
+        // Step 3: tighten bounds
+        uint160 newMin = uint160(1e20);
+        _setPricingBounds(token0, token1, newMin, MAX_SQRT_RATIO);
+        // Step 4: new order at same price reverts
+        vm.prank(maker2);
+        vm.expectRevert();
+        clobHandler.openOrder(poolId, true, extremePrice, 1000e18, "");
+        // Step 5: fill the stale order
+        vm.prank(executor);
+        amm.singleSwap(swapOrder, ...);
+        // Step 6: fill succeeded — bounds bypassed
+        assertGt(token1.balanceOf(executor), 0);
+    }
+}
+```
+
+### 8. [H-R8-HH-02] (confidence: medium, prior: new)
+**Mechanism**: In CLOBHelper.fillOrder (lines 180-239), makers are credited tokenOut via makerTokenBalance[maker] += stepOutput (line 234). The total credited equals amountOut minus fillOutputRemaining. The AMM sends tokenOut to the CLOB AFTER ammHandleTransfer returns (AMMModule.sol lines 2235-2243 sends to swapOrder.recipient = handler). If tokenOut is a fee-on-transfer (FOT) token, the CLOB receives amountOut * (1 - feeRate) actual tokens, but credits makers with the full amountOut - fillOutputRemaining. CLOBTransferHandler.depositToken (lines 362-370) has an explicit balance check rejecting FOT for tokenIn deposits, but NO equivalent check exists for tokenOut received from AMM fills. After afterSwapRefund sends fillOutputRemaining to executor (line 329), the CLOB is short by amountOut * feeRate of tokenOut. This creates first-in-first-out insolvency: early maker withdrawals succeed via withdrawToken (line 407), but later withdrawals fail with insufficient balance. The deficit equals the cumulative FOT fees on all AMM-to-CLOB tokenOut transfers.
+**Complexity**: complex (target: max_reasoning)
+**Lines**:
+   - `lbamm-hooks-and-handlers/src/handlers/clob/libraries/CLOBHelper.sol`: lines 180, 195, 231, 232, 234
+   - `lbamm-hooks-and-handlers/src/handlers/clob/CLOBTransferHandler.sol`: lines 221, 243, 247, 284, 296, 315, 329, 354, 362, 367, 368, 392, 407
+**Grounded in**: EXP-08
+**Suggested test skeleton**:
+```solidity
+function test_fotTokenOutCLOBInsolvency() public {
+    // Deploy FOT token with 5% transfer fee
+    FeeOnTransferToken fotToken = new FeeOnTransferToken(500);
+    
+    // Maker1 and Maker2 open CLOB orders: tokenIn -> fotToken
+    vm.prank(maker1);
+    clob.depositToken(address(tokenIn), 1000e18);
+    vm.prank(maker1);
+    clob.openOrder(address(tokenIn), address(fotToken), price, 500e18, gk, 0, hd);
+    vm.prank(maker2);
+    clob.depositToken(address(tokenIn), 1000e18);
+    vm.prank(maker2);
+    clob.openOrder(address(tokenIn), address(fotToken), price, 500e18, gk, 0, hd);
+    
+    // Fill: AMM sends amountOut of fotToken to CLOB (loses 5% to FOT)
+    // CLOB credits both makers with full stepOutput amounts
+    vm.prank(address(amm));
+    clob.ammHandleTransfer(exec, swapOrder, 1000e18, 2000e18, fee, fot, fp);
+    
+    // Maker1 withdraws successfully
+    uint256 m1Balance = clob.makerTokenBalance(address(fotToken), maker1);
+    vm.prank(maker1);
+    clob.withdrawToken(address(fotToken), m1Balance);
+    
+    // Maker2 withdrawal reverts - CLOB is insolvent
+    uint256 m2Balance = clob.makerTokenBalance(address(fotToken), maker2);
+    vm.prank(maker2);
+    vm.expectRevert();
+    clob.withdrawToken(address(fotToken), m2Balance);
+}
+```
+
+### 9. [H-R8-HH-04] (confidence: medium, prior: new)
+**Mechanism**: In CLOBTransferHandler.openOrder (line 534), _enforceTokenHooks calls AMMStandardHook.validateHandlerOrder to check the order's price against current pricing bounds. When orders are filled later via ammHandleTransfer (lines 271-282), CLOBHelper.fillOrder executes WITHOUT re-validating against current pricing bounds. This creates a TOCTOU gap: if a token creator tightens pricing bounds via registryUpdatePricingBounds after orders are placed, pre-existing orders at now-out-of-bounds prices remain fillable. The AMM's beforeSwap/afterSwap hooks validate the POOL PRICE during fills, but the pool price and the individual CLOB ORDER prices are distinct quantities. The CLOB distributes output to makers based on ORDER prices (via calculateFixedInput at each price level), while the pool determines overall amountIn/amountOut. A CLOB order priced below new bounds can still execute as long as the aggregate pool-level swap stays within bounds. This means token creators cannot retroactively enforce tighter pricing bounds on existing CLOB orders.
+**Complexity**: complex (target: max_reasoning)
+**Lines**:
+   - `lbamm-hooks-and-handlers/src/handlers/clob/CLOBTransferHandler.sol`: lines 482, 534, 221, 271, 275, 276, 279
+   - `lbamm-hooks-and-handlers/src/hooks/AMMStandardHook.sol`: lines 198, 546, 558, 575, 576
+**Grounded in**: EXP-03
+**Suggested test skeleton**:
+```solidity
+function test_toctouPricingBoundsStaleOrder() public {
+    // Step 1: Set wide pricing bounds
+    vm.prank(registry);
+    hook.registryUpdatePricingBounds(tokenA, pairTokens, minPrices, maxPrices);
+    
+    // Step 2: Maker opens order at price within current bounds
+    uint160 lowPrice = uint160(5000);
+    vm.prank(maker);
+    clob.openOrder(tokenA, tokenB, lowPrice, 100e18, groupKey, 0, hookData);
+    
+    // Step 3: Token creator tightens bounds (raises minimum above lowPrice)
+    vm.prank(registry);
+    hook.registryUpdatePricingBounds(tokenA, pairTokens, newHigherMinPrices, maxPrices);
+    
+    // Step 4: Verify new order at lowPrice would be rejected
+    vm.prank(maker2);
+    vm.expectRevert(AMMStandardHook__InvalidPrice.selector);
+    clob.openOrder(tokenA, tokenB, lowPrice, 100e18, groupKey, 0, hookData);
+    
+    // Step 5: But the OLD order is still fillable!
+    vm.prank(address(amm));
+    clob.ammHandleTransfer(exec, so, 100e18, 500e18, fee, fot, fp);
+    // Assert: Fill succeeds despite order price being below new minimum
+}
+```
+
+### 10. [H-R8-HH-07] (confidence: medium, prior: new)
+**Mechanism**: In CLOBHelper.fillOrder (lines 180-239), when a bucket is exhausted and traverseCLOB (line 218) reaches the end of the order book, it returns data from the sentinel price level at type(uint160).max. At line 289, _orderIdToOrder(ptrUpdatedOrderBucket.currentOrderId) is called. If the sentinel bucket's currentOrderId is bytes32(0), _orderIdToOrder(0) resolves to storage slot 0. In CLOBTransferHandler, slot 0 is nextOrderNonce (line 35, the first state variable after immutables). The Order struct at slot 0 maps to: maker = low 160 bits of nextOrderNonce (slot 0), orderNonce = value at slot 1 (makerTokenBalance mapping base = 0), inputAmount = value at slot 2 (orderBooks mapping base = 0). The check at line 220 relies on orderInputRemaining == 0 (returned from line 290 as ptrUpdatedOrderBucket.inputAmountRemaining). For the sentinel bucket, inputAmountRemaining should be 0 (never written). But if any code path accidentally writes to the sentinel bucket's storage, this assumption breaks. The sentinel price type(uint160).max is used as an end-of-list marker in the linked list (line 115-116 in openOrder). If someone opens an order at a price equal to type(uint160).max, the openOrder check at line 106 allows it (sqrtPriceX96 <= MAX_SQRT_RATIO, and MAX_SQRT_RATIO < type(uint160).max). But the price linked list at line 115-116 uses type(uint160).max as a sentinel. An order at MAX_SQRT_RATIO would be just below the sentinel and handled normally.
+**Complexity**: complex (target: max_reasoning)
+**Lines**:
+   - `lbamm-hooks-and-handlers/src/handlers/clob/libraries/CLOBHelper.sol`: lines 106, 107, 115, 116, 180, 193, 218, 220, 222, 274, 275, 285, 288, 289, 290, 337, 338, 339
+   - `lbamm-hooks-and-handlers/src/handlers/clob/CLOBTransferHandler.sol`: lines 35, 41, 43
+**Grounded in**: code-observation: CLOBHelper.sol:289 + CLOBTransferHandler.sol:35
+**Suggested test skeleton**:
+```solidity
+function test_orderIdToOrderSlotZeroCollision() public {
+    // Verify: _orderIdToOrder(bytes32(0)) maps to storage slot 0
+    // In CLOBTransferHandler, slot 0 = nextOrderNonce
+    
+    // Create some orders to increment nextOrderNonce
+    for (uint i = 0; i < 10; i++) {
+        vm.prank(maker);
+        clob.openOrder(tIn, tOut, price, minOrder, gk, 0, hd);
+    }
+    // nextOrderNonce is now 10
+    // Storage slot 0 contains 10
+    
+    // If traverseCLOB reaches end of book, it calls:
+    // _orderIdToOrder(ptrUpdatedOrderBucket.currentOrderId)
+    // For sentinel bucket at type(uint160).max, currentOrderId should be 0
+    // _orderIdToOrder(0) -> slot 0 -> reads nextOrderNonce as Order.maker
+    
+    // The Order at slot 0:
+    // .maker = address(uint160(10)) = 0x...00A
+    // .orderNonce = storage[1] = 0 (mapping base)
+    // .inputAmount = storage[2] = 0 (mapping base)
+    
+    // fillOrder reads ptrOrder.orderNonce = 0 at line 237
+    // This returns 0 as endingOrderNonce, which is valid nonce for first order
+    // Potential confusion in event emission and tracking
+}
+```
+
+### 11. [H-R8-HR-01] (confidence: medium, prior: new)
+**Mechanism**: In AMMStandardHook._validatePricingBounds (lines 838-851), for direct swaps (poolType == address(0)), beforeSwap stores the ORIGINAL swap amount (pre-hook-fee) in transient storage at line 839 via _setTstorish(DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT, params.amount). In afterSwap, at lines 842-844, the hook constructs (amount0, amount1) using this pre-fee input and the pool's output (which was computed from post-fee input, since the AMM deducts beforeSwap fees before pool execution per AMMModule.sol:2368-2398). The computed sqrtPriceX96 = computeRatioX96(postFeeOutput, preFeeInput) is LOWER than the true execution price computeRatioX96(postFeeOutput, postFeeInput). For max price bound enforcement at line 862, this makes the check LESS restrictive: a swap whose true price exceeds maxSqrtPriceX96 can pass if the fee discount makes the computed price fall within bounds. The gap is proportional to sqrt(1 - fee/amount). For a 10% beforeSwap fee, the gap is ~5%, meaning swaps at up to 5% above the max bound pass the check.
+**Complexity**: complex (target: max_reasoning)
+**Lines**:
+   - `lbamm-hooks-and-handlers/src/hooks/AMMStandardHook.sol`: lines 838, 839, 840, 842, 843, 844, 846, 862, 866
+   - `lbamm-hooks-and-handlers/src/hooks/libraries/SqrtPriceCalculator.sol`: lines 28, 50
+   - `lbamm-core/src/modules/AMMModule.sol`: lines 2368, 2425
+**Grounded in**: code-observation: AMMStandardHook.sol:839,842-844; AMMModule.sol:2368,2425
+**Suggested test skeleton**:
+```solidity
+function test_directSwapMaxBoundBypassViaFee() public {
+    // Setup: token with 10% sell fee (tokenFeeSellBPS=1000) and max pricing bound
+    // Set maxSqrtPriceX96 = X (e.g., sqrt(1.5) * 2^96)
+    // Action: Execute direct swap where true price = 1.55 (above max 1.5)
+    //   beforeSwap: stores amountIn=1000 in tstore, returns fee=100
+    //   pool processes 900, outputs 1395 (true price ratio = 1395/900 = 1.55)
+    //   afterSwap: computes sqrt(1395/1000) = sqrt(1.395) < sqrt(1.5) = maxBound
+    // Assert: swap succeeds despite true execution price 1.55 > max bound 1.5
+    vm.prank(address(amm));
+    uint256 fee = hook.beforeSwap(swapContext, swapParams, hookData);
+    assertGt(fee, 0, "fee should be non-zero");
+    vm.prank(address(amm));
+    hook.afterSwap(swapContext, afterSwapParams, hookData);
+    // If we reach here without revert, max bound was bypassed
+}
+```
+
+### 12. [H-R8-HR-02] (confidence: medium, prior: new)
+**Mechanism**: In AMMStandardHook._enforcePoolCreationSettings (lines 780-803), the function reads BOTH _pricingBounds[details.token0][details.token1] (line 780) AND _pricingBounds[details.token1][details.token0] (line 781) from the HOOK'S local cache. However, if token0's pricing bounds were synced to Hook_A and token1's bounds were synced to Hook_B (different hook instances), then Hook_A has bounds for token0 but NOT for token1 (isSet=false at line 796). The cross-token check in pool creation is a no-op for the missing bounds. During swaps, each token's hook independently enforces only its own token's bounds (line 829: _pricingBounds[token][pairedToken]). This means pool creation enforcement can be WEAKER than the combined swap enforcement when tokens use different hook instances, because the cross-check that was supposed to catch both perspectives fails silently on the missing side.
+**Complexity**: complex (target: max_reasoning)
+**Lines**:
+   - `lbamm-hooks-and-handlers/src/hooks/AMMStandardHook.sol`: lines 780, 781, 783, 787, 796, 829
+**Grounded in**: code-observation: AMMStandardHook.sol:780-803
+**Suggested test skeleton**:
+```solidity
+function test_poolCreationCrossTokenBoundsGap() public {
+    // Setup: tokenA uses hookA, tokenB uses hookB
+    // Sync tokenA pricing bounds to hookA only
+    // Sync tokenB pricing bounds to hookB only
+    // Set tokenB bounds to restrict price range [0.8, 1.2]
+    // Action: Create pool with initial price 1.5 (outside tokenB bounds)
+    //   hookA.validatePoolCreation: bounds0(tokenA) passes, bounds1(tokenB) isSet:false -> skip
+    //   hookB.validatePoolCreation: bounds0(tokenA) isSet:false -> skip, bounds1(tokenB) catches violation
+    // Key question: Does the AMM call validatePoolCreation on BOTH hooks?
+    // If only hookA is called (for token0), tokenB bounds are silently skipped
+    vm.prank(address(amm));
+    hookA.validatePoolCreation(poolId, creator, true, poolDetails, hookData);
+    // This should revert for tokenB bounds but does not if tokenB bounds aren't in hookA
+    // Assert: Pool was created despite violating tokenB's pricing bounds
+    assertTrue(true, "pool creation succeeded — tokenB bounds not enforced by hookA");
+}
+```
+
+### 13. [H-R8-HR-06] (confidence: medium, prior: new)
+**Mechanism**: CreatorHookSettingsRegistry's whitelist update functions (updatePairTokenWhitelist at line 599, updateLpWhitelist at line 689, updatePoolTypeWhitelist at line 644) update the registry's own state first, then sync to hooks listed in hooksToSync. If a hook is omitted from hooksToSync (intentionally or by accident), that hook PERMANENTLY retains the old whitelist content — there is NO cache invalidation, no TTL, and no mechanism for the hook to detect staleness. The hook's _validateTokenTradingRules (line 686) and _enforceLiquidityModificationSettings (line 725) check pair token and LP whitelists purely from local cache. A whitelist owner who removes a problematic address from the registry but omits a hook from the sync array leaves that hook permanently allowing the removed address. Since hooks operate independently and there is no on-chain mechanism to enumerate all hooks using a given whitelist ID, the admin may never realize the omission.
+**Complexity**: complex (target: max_reasoning)
+**Lines**:
+   - `lbamm-hooks-and-handlers/src/hooks/CreatorHookSettingsRegistry.sol`: lines 599, 607, 608, 614, 617, 618, 689, 697, 705, 707, 708
+   - `lbamm-hooks-and-handlers/src/hooks/AMMStandardHook.sol`: lines 685, 686, 687, 724, 725, 757, 758
+**Grounded in**: code-observation: CreatorHookSettingsRegistry.sol:607-619; AMMStandardHook.sol:685-687
+**Suggested test skeleton**:
+```solidity
+function test_whitelistDesyncPermanentStale() public {
+    // Setup: Token uses pairedTokenWhitelistId=5 on hookA and hookB
+    // Whitelist owner adds maliciousToken to list 5, syncs to both hooks
+    address[] memory tokens = new address[](1);
+    tokens[0] = maliciousToken;
+    address[] memory bothHooks = new address[](2);
+    bothHooks[0] = address(hookA);
+    bothHooks[1] = address(hookB);
+    vm.prank(whitelistOwner);
+    registry.updatePairTokenWhitelist(5, tokens, true, bothHooks);
+    assertTrue(hookA.isWhitelistedPairToken(5, maliciousToken));
+    assertTrue(hookB.isWhitelistedPairToken(5, maliciousToken));
+    // Action: Whitelist owner removes maliciousToken, syncs only to hookA
+    address[] memory oneHook = new address[](1);
+    oneHook[0] = address(hookA);
+    vm.prank(whitelistOwner);
+    registry.updatePairTokenWhitelist(5, tokens, false, oneHook);
+    // Assert: hookA updated, hookB permanently stale
+    assertFalse(hookA.isWhitelistedPairToken(5, maliciousToken));
+    assertTrue(hookB.isWhitelistedPairToken(5, maliciousToken));
+}
+```
+
+### 14. [H-R8-TS-01] (confidence: medium, prior: new)
+**Mechanism**: In AMMStandardHook._validatePricingBounds (lines 838-851), the DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT is written by beforeSwap (line 839) but NEVER cleared after afterSwap reads it (lines 843-844). In a single-transaction multi-swap scenario through the same AMMStandardHook instance: Swap A (both BEFORE_SWAP and AFTER_SWAP flags set) writes SLOT=amountA; Swap B (only AFTER_SWAP flag set, BEFORE_SWAP missing) reads stale SLOT=amountA instead of its own amount. Prior ruled-out analysis (H-R7-TS-05) only considered SLOT=0 (tstore default) for asymmetric flag configurations. But in a batched transaction where a prior swap set SLOT to an attacker-controlled value, the afterSwap pricing bounds validation for Swap B uses the WRONG amount from Swap A. The attacker can set SLOT to any value via a cooperating token's direct swap, then exploit the stale value to bypass Token B's pricing bounds. Example: set SLOT to a large value via Swap A, then execute Swap B at an extreme price that would normally violate maxSqrtPriceX96 — the large SLOT denominator makes the computed price appear lower than reality, bypassing the upper bound.
+**Complexity**: complex (target: max_reasoning)
+**Lines**:
+   - `lbamm-hooks-and-handlers/src/hooks/AMMStandardHook.sol`: lines 66, 838, 839, 840, 842, 843, 844, 846
+**Grounded in**: EXP-04
+**Suggested test skeleton**:
+```solidity
+function test_crossSwapTransientStorageLeak() public {
+    // Setup: Deploy AMMStandardHook shared by Token A and Token B
+    // Token A: BEFORE_SWAP + AFTER_SWAP flags, pricing bounds set
+    // Token B: AFTER_SWAP only (no BEFORE_SWAP), tight pricing bounds set
+    
+    // Step 1: Execute direct swap with Token A (sets SLOT = large amount)
+    vm.prank(executor);
+    amm.directSwap(
+        SwapOrder({tokenIn: tokenA, tokenOut: weth, amountSpecified: int256(1e30), ...}),
+        DirectSwapParams({swapAmount: 1e18, ...}), ...
+    );
+    // SLOT now contains 1e30 (Token A's amountIn)
+    
+    // Step 2: Execute direct swap with Token B at extreme price
+    // Without the stale SLOT, this would violate Token B's pricing bounds
+    vm.prank(executor);
+    amm.directSwap(
+        SwapOrder({tokenIn: tokenB, tokenOut: weth, amountSpecified: int256(1), ...}),
+        DirectSwapParams({swapAmount: 1e18, ...}), ...
+    );
+    // Assert: Swap B passes pricing bounds due to stale SLOT=1e30 from Swap A
+    // computeRatioX96(1e18, 1e30) produces a very low price, passing maxSqrtPriceX96 check
+}
+```
+
+### 15. [H-R8-TS-03] (confidence: medium, prior: new)
+**Mechanism**: In CLOBTransferHandler.afterSwapRefund (line 315), the function has NO nonReentrant modifier. It is called by the AMM via _executeTransferHandlerCallback (AMMModule.sol:2251) AFTER _executeQueuedHookFeesByHookTransfers (line 2247) which calls _setReentrancyFlags(NO_FLAGS) at AMMModule.sol:3190. While the ENTERED bit is preserved (preventing AMM swap re-entry), the CLOB's own TstorishReentrancyGuard was released when ammHandleTransfer returned (before afterSwapRefund). During afterSwapRefund, if token is WRAPPED_NATIVE, IWrappedNativeExtended.withdrawToAccount sends native ETH to executor (line 322), triggering executor's receive(). At this point: AMM ENTERED=true (swap blocked), but CLOB nonReentrant=NOT_ENTERED (released). The executor can re-enter CLOB functions: depositToken, openOrder, closeOrder, withdrawToken. While the executor operates on 'their own state', openOrder and closeOrder modify the shared ORDER BOOK data structure (linked lists at CLOBHelper.sol:156-158, 267-272). A carefully crafted re-entrant closeOrder during afterSwapRefund could manipulate the order book's linked list pointers (nextOrder/previousOrder/currentOrderId) affecting other makers' orders traversal in subsequent fills.
+**Complexity**: complex (target: max_reasoning)
+**Lines**:
+   - `lbamm-hooks-and-handlers/src/handlers/clob/CLOBTransferHandler.sol`: lines 229, 300, 315, 316, 322, 433, 439, 449
+   - `lbamm-core/src/modules/AMMModule.sol`: lines 2247, 2251, 3190
+   - `lbamm-hooks-and-handlers/src/handlers/clob/libraries/CLOBHelper.sol`: lines 156, 157, 158, 267, 268, 271, 272
+**Grounded in**: EXP-04
+**Suggested test skeleton**:
+```solidity
+function test_afterSwapRefundReentryCLOB() public {
+    // Setup: Executor is a contract with receive() that calls CLOB functions
+    AttackExecutor attacker = new AttackExecutor(address(clob));
+    
+    // Step 1: Maker deposits tokens and opens order
+    vm.prank(maker);
+    clob.depositToken(tokenA, 1000e18);
+    vm.prank(maker);
+    clob.openOrder(tokenA, weth, sqrtPrice, 1000e18, groupKey, 0, hookData);
+    
+    // Step 2: Attacker deposits and opens their own order at same price
+    vm.prank(address(attacker));
+    clob.depositToken(tokenA, 100e18);
+    vm.prank(address(attacker));
+    uint256 attackerNonce = clob.openOrder(tokenA, weth, sqrtPrice, 100e18, groupKey, 0, hookData);
+    
+    // Step 3: Execute swap through CLOB with WNATIVE as tokenOut
+    // This triggers afterSwapRefund -> WNATIVE withdrawal -> attacker.receive()
+    // In receive(), attacker closes their order, manipulating linked list
+    attacker.setReentryAction(CLOSE_ORDER, tokenA, weth, sqrtPrice, attackerNonce, groupKey);
+    
+    // Execute swap as attacker
+    vm.prank(address(attacker));
+    amm.singlePoolSwap(swapOrder, ...);
+    
+    // Assert: Check if maker's order traversal is corrupted
+}
+```
+
 </hypotheses>
 
 ## Scope
@@ -1008,7 +974,7 @@ function test_fillOrKillRevertsWithAnyInputFee() public {
 
 | Target | Findings | Vectors Ruled Out | Invariant Tests | Runs |
 |--------|----------|-------------------|-----------------|------|
-| full-system (all 6 repos) | 3 Medium+ confirmed | 85+ ruled-out, 20 invariants held | 22 | defensive waves 1-7, black hat pending |
+| full-system (all 6 repos) | 1 Medium+ confirmed | 85+ ruled-out, 20 invariants held | 22 | defensive waves 1-7, black hat pending |
 
 ## Top False-Positive Patterns (don't re-investigate)
 1. **Transient storage slot overwrite** — by-design (AMM calls beforeSwap per-token, second overwrites first intentionally)
