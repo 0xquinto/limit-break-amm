@@ -116,6 +116,11 @@ def validate_output(data: dict) -> list[str]:
             if alias in f and canonical not in f:
                 f[canonical] = f.pop(alias)
 
+        # Default missing status/category rather than failing validation
+        if "status" not in f:
+            f["status"] = "needs_review"
+        if "category" not in f:
+            f["category"] = "uncategorized"
         missing = REQUIRED_FINDING_FIELDS - set(f.keys())
         if missing:
             errors.append(f"findings[{i}]: missing fields {missing}")

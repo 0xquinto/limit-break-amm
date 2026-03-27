@@ -296,6 +296,34 @@ def validate_hypothesis_results(sidecar: dict, had_hypotheses: bool) -> list[str
         )
         return issues  # Can't check entries if list is missing/empty
 
+    # ── Coerce common agent variations before validation ──────────────────
+    _STATUS_COERCE = {
+        "false_positive": "dismissed",
+        "informational": "dismissed",
+        "safe": "dismissed",
+        "ruled_out": "dismissed",
+        "vulnerable": "confirmed",
+        "exploitable": "confirmed",
+        "needs_testing": "not_tested",
+        "untested": "not_tested",
+    }
+    for entry in results:
+        # Alias: agents sometimes use "result" instead of "status"
+        if "status" not in entry and "result" in entry:
+            entry["status"] = _STATUS_COERCE.get(entry["result"], entry["result"])
+        # Coerce non-standard status values
+        if entry.get("status") in _STATUS_COERCE:
+            entry["status"] = _STATUS_COERCE[entry["status"]]
+        # Alias: agents sometimes use "hypothesis_id" instead of "id"
+        if "id" not in entry and "hypothesis_id" in entry:
+            entry["id"] = entry["hypothesis_id"]
+        # Default missing failure_class on dismissed entries to "strategic"
+        if entry.get("status") == "dismissed" and entry.get("failure_class") not in ("tactical", "strategic"):
+            entry["failure_class"] = "strategic"
+        # Default missing detail from evidence
+        if not entry.get("detail") and not entry.get("reason") and entry.get("evidence"):
+            entry["detail"] = entry["evidence"]
+
     # Per-entry validation
     for i, entry in enumerate(results):
         prefix = f"HYPOTHESIS #{i+1}"
