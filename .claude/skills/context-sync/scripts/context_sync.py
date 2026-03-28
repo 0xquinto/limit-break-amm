@@ -9,13 +9,31 @@ Usage:
 """
 
 import json
+import os
 import re
 import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parents[4]  # .claude/skills/context-sync/scripts -> project root
+def _find_project_root() -> Path:
+    """Find project root via CLAUDE_PROJECT_DIR env var or git."""
+    env_root = os.environ.get("CLAUDE_PROJECT_DIR")
+    if env_root:
+        return Path(env_root)
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            capture_output=True, text=True,
+        )
+        if result.returncode == 0:
+            return Path(result.stdout.strip())
+    except FileNotFoundError:
+        pass
+    return Path.cwd()
+
+
+PROJECT_ROOT = _find_project_root()
 STATE_FILE = PROJECT_ROOT / ".context-sync-state.json"
 CLAUDE_MD = PROJECT_ROOT / "CLAUDE.md"
 MEMORY_MD_CANDIDATES = list(
@@ -23,7 +41,8 @@ MEMORY_MD_CANDIDATES = list(
 )
 CODEBASE_MAP = PROJECT_ROOT / "docs" / "CODEBASE_MAP.md"
 
-SYNC_LOG = Path(__file__).parent / "sync.log"
+_PLUGIN_DATA = os.environ.get("CLAUDE_PLUGIN_DATA")
+SYNC_LOG = Path(_PLUGIN_DATA) / "sync.log" if _PLUGIN_DATA else PROJECT_ROOT / ".context-sync-log"
 
 TARGET_REPOS = [
     "lbamm-core/", "amm-pool-type-dynamic/", "lbamm-pool-type-fixed/",
