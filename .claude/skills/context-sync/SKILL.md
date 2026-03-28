@@ -1,56 +1,55 @@
 ---
 name: context-sync
-description: "Detects git changes since last sync and patches CLAUDE.md, CODEBASE_MAP.md, and MEMORY.md with targeted updates. Prevents stale context in long sessions. Run manually or auto-triggered on session resume/compaction."
+description: "Detects git changes and warns about stale context files. Triggers on: 'sync context', 'check for stale files', 'what changed since last sync', 'refresh context', 'are my memory files up to date', or when resuming after compaction. Also auto-runs via SessionStart hook on compact/resume."
 ---
 
 # Context Sync
 
-Keeps project context files in sync with git changes.
+Detects what changed in git since the last checkpoint and reports which context files (CLAUDE.md, MEMORY.md, CODEBASE_MAP.md) may be stale.
 
-## When to Use
+## How It Works
 
-- After pulling new changes
-- When resuming a session after compaction
-- When you suspect CLAUDE.md or MEMORY.md is stale
-- At the start of a long session
+Run the sync script in `scripts/context_sync.py`. It compares HEAD against a stored checkpoint and classifies changes into categories (config, templates, orchestrator, target_repos, scoring, audit_memory).
 
-## What It Does
+```bash
+# See what changed (no writes)
+python3 ${SKILL_DIR}/scripts/context_sync.py --dry-run
 
-1. Reads `.context-sync-state.json` for the last known git commit
-2. Runs `git diff --name-only <last_commit>..HEAD` to find changed files
-3. For each context file, applies targeted patches:
-   - **CLAUDE.md**: Updates file counts, active templates list, experiment baseline if `config.py` or template files changed
-   - **MEMORY.md**: Flags stale entries whose referenced files have changed, adds a `## Staleness Warnings` section
-   - **CODEBASE_MAP.md**: If it exists, appends a `## Recent Changes` section with the delta. For full re-map, use `/cartographer` instead.
-4. Writes new checkpoint to `.context-sync-state.json`
+# Apply patches and update checkpoint
+python3 ${SKILL_DIR}/scripts/context_sync.py
 
-## How to Use
-
-```
-/context-sync           # Run sync now
-/context-sync --dry-run # Show what would change without writing
-/context-sync --reset   # Reset checkpoint to current HEAD (no patches)
+# Reset checkpoint to current HEAD
+python3 ${SKILL_DIR}/scripts/context_sync.py --reset
 ```
 
-## Automatic Mode
+The script patches CLAUDE.md with sync markers, prints staleness warnings for MEMORY.md references, and appends a delta summary to CODEBASE_MAP.md if it exists.
 
-Add to `.claude/settings.local.json` to run on every session resume and compaction:
+Previous sync results are logged in `scripts/sync.log` — read this to see what changed across recent syncs.
 
-```json
-{
-  "hooks": {
-    "SessionStart": [
-      {
-        "matcher": "compact|resume",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 $CLAUDE_PROJECT_DIR/.claude/skills/context-sync/scripts/context_sync.py --auto",
-            "timeout": 10
-          }
-        ]
-      }
-    ]
-  }
-}
+## When to Run
+
+- At session start if resuming previous work
+- After context compaction (auto-triggered via SessionStart hook)
+- When the user says context or memory feels stale
+- After pulling or merging branches
+
+For a full codebase re-mapping, use `/cartographer` instead — this skill only patches the delta.
+
+## Gotchas
+
+- MEMORY.md is owned by the auto-memory system. This skill prints warnings about stale references but does NOT write to MEMORY.md — that would conflict with the auto-memory system.
+- The checkpoint (`.context-sync-state.json`) is gitignored and per-developer. Each developer has their own sync state.
+- If the checkpoint is missing, the first run detects everything as changed. Use `--reset` to initialize without patching.
+- The SessionStart hook requires `.claude/settings.local.json` to be configured. See `references/hook-setup.md` for the config block.
+- CLAUDE.md patches are HTML comments (`<!-- context-sync: ... -->`) — invisible to humans but readable by Claude for freshness checks.
+
+## File Structure
+
+```
+scripts/
+  context_sync.py       # Main sync script (run this)
+  test_context_sync.py  # Tests (7 cases)
+  sync.log              # Execution history (auto-appended)
+references/
+  hook-setup.md         # SessionStart hook configuration
 ```

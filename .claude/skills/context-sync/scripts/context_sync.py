@@ -23,6 +23,8 @@ MEMORY_MD_CANDIDATES = list(
 )
 CODEBASE_MAP = PROJECT_ROOT / "docs" / "CODEBASE_MAP.md"
 
+SYNC_LOG = Path(__file__).parent / "sync.log"
+
 TARGET_REPOS = [
     "lbamm-core/", "amm-pool-type-dynamic/", "lbamm-pool-type-fixed/",
     "lbamm-pool-type-single-provider/", "lbamm-hooks-and-handlers/", "secure-proxy/",
@@ -265,6 +267,18 @@ def main():
         save_state(STATE_FILE, current_commit, changed)
         if not quiet:
             print(f"Checkpoint saved: {current_commit[:8]}")
+
+        # Append to sync log for execution history
+        log_entry = (
+            f"{datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')} "
+            f"{(last_commit or 'init')[:8]}..{current_commit[:8]} "
+            f"{len(changed)} files "
+            f"[{', '.join(f'{k}:{len(v)}' for k, v in sorted(categories.items()))}]"
+        )
+        if memory_result.get("warnings"):
+            log_entry += f" stale:{len(memory_result['warnings'])}"
+        with open(SYNC_LOG, "a") as f:
+            f.write(log_entry + "\n")
 
 
 if __name__ == "__main__":
