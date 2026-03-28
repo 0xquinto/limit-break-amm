@@ -137,6 +137,7 @@ For each repo in your scope, run ALL of:
   ```
   If slither CLI not available, use MCP: `mcp__slither__run_detectors path=<repo> detectors=["diamond-slot-collision","hook-reentrancy","transient-storage-leak","unchecked-delegatecall-return"]`
 - A5. Storage layout (for cross-boundary and state-desync agents only): `mcp__slither__get_storage_layout` for AMMModule, each pool type, and each handler — look for slot collisions across the diamond proxy.
+- A6. Semgrep (if available): `Skill("static-analysis:semgrep")` on your primary repos — community Solidity rules for reentrancy, access control, DeFi patterns. Cross-file taint tracking via Semgrep Pro. Log results in `tools_run.semgrep`.
 
 **Phase B: Architectural Analysis**
 
@@ -145,6 +146,8 @@ For each repo in your scope, run ALL of:
 - B3. `mcp__slither__export_call_graph` for your primary contract — visualize cross-contract call flow, identify unexpected external calls
 - B4. (C-MATH agents only) `Skill("property-based-testing:property-based-testing")` — get guidance on writing invariant tests for math functions
 - B5. (If you find ANYTHING suspicious) `Skill("variant-analysis:variant-analysis")` — search for variants of the pattern across the codebase
+- B6. (composability-exploiter, cross-boundary, extension-hijacker) `Skill("building-secure-contracts:token-integration-analyzer")` — check how the AMM handles weird ERC20 tokens (fee-on-transfer, rebasing, low decimals, pausable, blocklists). The handler system (`CLOBTransferHandler`, `PermitTransferHandler`) must handle all 24 patterns safely.
+- B7. (auth-forger, extension-hijacker) `Skill("sharp-edges:sharp-edges")` — analyze the hook/handler configuration interface for API footguns: pool creation params that silently disable security, fee configurations that accept dangerous values, handler addresses that aren't validated.
 
 **Phase C: Invariant Testing — THE CORE OF YOUR WORK**
 
@@ -201,10 +204,10 @@ Example: `"checklist_items_completed": "A: 4/4, B: 3/5, C: 25/29, D: 5/5"`
 ### Pre-Completion Gate (MUST verify before writing final findings.json)
 
 Count your completed items. Your sidecar MUST report in `metadata.checklist_items_completed`:
-- [ ] Phase A: 4-5 tool types (A1-A4, plus A5 if applicable).
+- [ ] Phase A: 4-6 tool types (A1-A4, plus A5/A6 if applicable).
 - [ ] Phase B: 3-5 items (B1-B5 depending on archetype).
 - [ ] Phase C: ALL items in YOUR section (includes exploit-grounded probes):
-  - C-MATH: 29/29
+  - C-MATH: 39/39
   - C-STATE: 25/25
   - C-AUTH: 22/22
   - C-BOUNDARY: 22/22

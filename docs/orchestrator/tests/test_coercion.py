@@ -71,3 +71,34 @@ def test_coercion_handles_whitespace_and_fences():
     from docs.orchestrator.knowledge_gen import _ensure_hypothesis_dict
     result = _ensure_hypothesis_dict(fenced)
     assert result["mechanism"] == "test"
+
+
+# ── Schema status coercion tests ──────────────────────────────────────────
+
+from docs.orchestrator.schema import validate_output
+
+
+def test_nonstandard_finding_statuses_coerced():
+    """Non-standard finding statuses should be coerced, not rejected."""
+    data = {
+        "agent_name": "extension-hijacker",
+        "findings": [
+            {
+                "id": "EH-001", "title": "test", "severity": "low",
+                "status": "below-threshold",
+                "contracts": ["C.sol"], "functions": ["f()"],
+                "category": "precision", "description": "test",
+            },
+            {
+                "id": "EH-002", "title": "test2", "severity": "low",
+                "status": "known-duplicate",
+                "contracts": ["C.sol"], "functions": ["f()"],
+                "category": "precision", "description": "test2",
+            },
+        ],
+    }
+    errors = validate_output(data)
+    status_errors = [e for e in errors if "invalid status" in e]
+    assert status_errors == [], f"Statuses should be coerced, not rejected: {status_errors}"
+    assert data["findings"][0]["status"] in ("ruled_out", "lead")
+    assert data["findings"][1]["status"] in ("ruled_out", "lead")

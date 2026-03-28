@@ -15,9 +15,9 @@ from .config import RESULTS_DIR
 # Agent name → checklist section (matches prompt_renderer._CHECKLIST_MAP)
 # Counts include original C-items + exploit-grounded probes
 CHECKLIST_EXPECTED: dict[str, int] = {
-    "precision-sniper": 29,     # 25 original + 4 probes
-    "math-deep-diver": 29,      # 25 original + 4 probes
-    "price-distorter": 29,      # 25 original + 4 probes
+    "precision-sniper": 39,     # 25 original + 4 exploit probes + 10 dimensional probes
+    "math-deep-diver": 39,      # 25 original + 4 exploit probes + 10 dimensional probes
+    "price-distorter": 39,      # 25 original + 4 exploit probes + 10 dimensional probes
     "state-desync": 25,         # 20 original + 5 probes
     "composability-exploiter": 25,  # 20 original + 5 probes
     "insolvency-engineer": 25,  # 20 original + 5 probes

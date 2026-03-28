@@ -306,6 +306,14 @@ def validate_hypothesis_results(sidecar: dict, had_hypotheses: bool) -> list[str
         "exploitable": "confirmed",
         "needs_testing": "not_tested",
         "untested": "not_tested",
+        "below-threshold": "dismissed",
+        "below_threshold": "dismissed",
+        "known-duplicate": "dismissed",
+        "known_duplicate": "dismissed",
+        "duplicate": "dismissed",
+        "wont-fix": "dismissed",
+        "wont_fix": "dismissed",
+        "acknowledged": "dismissed",
     }
     for entry in results:
         # Alias: agents sometimes use "result" instead of "status"

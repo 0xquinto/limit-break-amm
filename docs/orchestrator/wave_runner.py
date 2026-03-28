@@ -413,6 +413,27 @@ def _build_results_from_disk(
         has_sidecar = sidecar_path.exists() or flat_sidecar.exists()
         effective_sidecar = sidecar_path if sidecar_path.exists() else flat_sidecar
 
+        # Draft fallback: if no final sidecar, check for draft files
+        if not has_sidecar:
+            draft_path = ARTIFACTS_DIR / f"findings-{agent.name}-draft.json"
+            if draft_path.exists():
+                _log(f"  {agent.name}: promoting draft -> {flat_sidecar.name}")
+                try:
+                    draft_data = json.loads(draft_path.read_text())
+                    if isinstance(draft_data, dict):
+                        draft_data.setdefault("agent_name", agent.name)
+                        draft_data.setdefault("findings", [])
+                        draft_data.setdefault("ruled_out_vectors", [])
+                        draft_data.setdefault("metadata", {})
+                        draft_data["metadata"]["promoted_from_draft"] = True
+                        from .schema import validate_output
+                        validate_output(draft_data)  # coerces in-place
+                        flat_sidecar.write_text(json.dumps(draft_data, indent=2))
+                        has_sidecar = True
+                        effective_sidecar = flat_sidecar
+                except (json.JSONDecodeError, OSError) as e:
+                    _log(f"  {agent.name}: draft unreadable: {e}")
+
         # Write fallback sidecar for crashed/silent agents
         if not has_sidecar:
             fallback = {

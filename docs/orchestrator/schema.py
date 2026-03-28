@@ -30,6 +30,28 @@ class VectorStatus(str, Enum):
     LEAD = "lead"                # partial attack path, needs manual investigation
 
 
+# Coerce non-standard finding statuses to valid VectorStatus values.
+_STATUS_ALIASES: dict[str, str] = {
+    "below-threshold": "lead",
+    "below_threshold": "lead",
+    "known-duplicate": "ruled_out",
+    "known_duplicate": "ruled_out",
+    "duplicate": "ruled_out",
+    "false-positive": "ruled_out",
+    "false_positive": "ruled_out",
+    "informational": "lead",
+    "safe": "ruled_out",
+    "wont-fix": "lead",
+    "wont_fix": "lead",
+    "acknowledged": "lead",
+    "disputed": "needs_review",
+    "pending": "needs_review",
+    "unverified": "needs_poc",
+    "exploitable": "confirmed",
+    "vulnerable": "confirmed",
+}
+
+
 @dataclass
 class Finding:
     id: str                          # e.g. "CORE-001"
@@ -148,6 +170,10 @@ def validate_output(data: dict) -> list[str]:
                     errors.append(f"findings[{i}]: invalid confidence '{conf}'")
             except (ValueError, TypeError):
                 errors.append(f"findings[{i}]: invalid confidence '{conf}'")
+        # Coerce non-standard statuses before validation
+        raw_status = f.get("status", "")
+        if raw_status and raw_status in _STATUS_ALIASES:
+            f["status"] = _STATUS_ALIASES[raw_status]
         if f.get("status") and f["status"] not in [v.value for v in VectorStatus]:
             errors.append(f"findings[{i}]: invalid status '{f['status']}'")
 
