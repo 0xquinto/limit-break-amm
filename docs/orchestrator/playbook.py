@@ -96,7 +96,19 @@ def compute_line_hashes(
 
         hashes: dict[int, str] = {}
         for ln in line_nums:
-            if 1 <= ln <= len(source):
+            # Coerce string line ranges ("1856-1938") to ints
+            if isinstance(ln, str):
+                for part in ln.split("-"):
+                    try:
+                        ln_int = int(part.strip())
+                        if 1 <= ln_int <= len(source):
+                            stripped = source[ln_int - 1].strip()
+                            h = hashlib.sha256(stripped.encode()).hexdigest()[:16]
+                            hashes[ln_int] = h
+                    except ValueError:
+                        pass
+                continue
+            if isinstance(ln, int) and 1 <= ln <= len(source):
                 stripped = source[ln - 1].strip()
                 h = hashlib.sha256(stripped.encode()).hexdigest()[:16]
                 hashes[ln] = h

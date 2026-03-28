@@ -78,8 +78,18 @@ def _jaccard_lines(h1, h2) -> float:
         if not isinstance(lines, dict):
             return result
         for contract, line_nums in lines.items():
+            if not isinstance(line_nums, list):
+                continue
             for ln in line_nums:
-                result.add((contract, ln))
+                if isinstance(ln, int):
+                    result.add((contract, ln))
+                elif isinstance(ln, str):
+                    # Handle "1856-1938" range strings from agents
+                    for part in ln.split("-"):
+                        try:
+                            result.add((contract, int(part.strip())))
+                        except ValueError:
+                            pass
         return result
 
     s1 = _flatten(h1)
