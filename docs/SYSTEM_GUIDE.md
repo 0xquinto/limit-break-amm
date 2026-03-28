@@ -237,9 +237,9 @@ $ .venv/bin/python3 -m docs.orchestrator.run_audit --wave 1 --fresh --experiment
 
 | Agent | Archetype | Scope | Checklist |
 |-------|-----------|-------|-----------|
-| `precision-sniper` | Math boundary / rounding | All repos | C-MATH (29 items) |
-| `math-deep-diver` | Deep math analysis | Fixed, Dynamic, Core, Hooks | C-MATH (29 items) |
-| `price-distorter` | Cross-venue price manipulation | All repos | C-MATH (29 items) |
+| `precision-sniper` | Math boundary / rounding | All repos | C-MATH (39 items) |
+| `math-deep-diver` | Deep math analysis | Fixed, Dynamic, Core, Hooks | C-MATH (39 items) |
+| `price-distorter` | Cross-venue price manipulation | All repos | C-MATH (39 items) |
 | `state-desync` | Cross-module state divergence | All repos | C-STATE (25 items) |
 | `composability-exploiter` | Multi-step composition attacks | All repos | C-STATE (25 items) |
 | `insolvency-engineer` | Bad debt / reserve drain | All repos | C-STATE (25 items) |

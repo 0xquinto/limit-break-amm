@@ -17,7 +17,7 @@ Limit Break AMM security audit framework. This parent directory orchestrates aud
 
 **Structure**:
 - `docs/framework/` — Shared rubrics, runbook, tool guide, patterns
-- `docs/spawn-prompts/` — Base agent templates (framework sections)
+- `docs/orchestrator/templates/` — Agent prompt templates (archetypes, checklists, preamble)
 - `docs/audit_memory/` — Hierarchical memory system (digest, FPs, patterns, lessons, episodes)
 - `docs/targets/{name}/` — Per-target artifacts, results, spawn-prompt overrides
 - `docs/plans/` — Implementation plans
@@ -27,17 +27,17 @@ Limit Break AMM security audit framework. This parent directory orchestrates aud
 
 **Active templates** (black hat model):
 - `black-hat-preamble.md` — shared exploit-first reasoning (included via `{{PREAMBLE}}`)
-- 6 archetype templates: `price-distorter`, `insolvency-engineer`, `state-desync`, `precision-sniper`, `auth-forger`, `extension-hijacker`
+- 9 archetype templates: `precision-sniper`, `state-desync`, `auth-forger`, `math-deep-diver`, `cross-boundary`, `composability-exploiter`, `price-distorter`, `insolvency-engineer`, `extension-hijacker`
 - `exploit-developer` — wave 2 PoC construction from wave 1 leads
 - Old defensive templates archived in `docs/orchestrator/templates/archive/`
 
-**Experiment loop** (autoresearch model):
-- `docs/orchestrator/experiment.py` — `compute_audit_score()`, TSV logger, `best_score()`
+**Experiment loop** (compliance scoring model):
+- `docs/orchestrator/experiment.py` — `compute_compliance_score()`, TSV logger, `best_score()`
+- `docs/orchestrator/compliance.py` — 6-dimension scoring (checklist, tool_breadth, evidence, depth, thesis, hypothesis)
 - `docs/targets/full-system/experiments.tsv` — persistent experiment log (untracked)
-- `docs/targets/full-system/research-program.md` — meta-researcher instructions (what to optimize, what's modifiable)
-- Run with: `python3 -m docs.orchestrator.run_audit --wave 1 --fresh --experiment --description "what changed"`
-- Baseline: `audit_score=13.9` (0 findings, 0/4 regression, 25% tools, 80 vectors)
+- Run with: `.venv/bin/python3 -m docs.orchestrator.run_audit --wave 1 --fresh --experiment --description "what changed"`
+- Best score: 112.5 (read `experiments.tsv` for current trajectory)
 
 For architecture details, see [docs/CODEBASE_MAP.md](docs/CODEBASE_MAP.md).
-<!-- context-sync: 2026-03-28T15:19:08Z -->
-<!-- Recent changes: Templates changed: 21 files modified; Config changed: config.py; Scoring changed: compliance.py, test_compliance_e2e.py, 2026-03-28-output-compliance-and-dimensional-patterns.md -->
+<!-- context-sync: 2026-03-28T15:30:50Z -->
+<!-- Recent changes: Templates changed: 1 files modified; Config changed: config.py; Scoring changed: compliance.py, 2026-03-28-output-compliance-and-dimensional-patterns.md -->
