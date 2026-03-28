@@ -15,7 +15,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
+PROJECT_ROOT = Path(__file__).resolve().parents[4]  # .claude/skills/context-sync/scripts -> project root
 STATE_FILE = PROJECT_ROOT / ".context-sync-state.json"
 CLAUDE_MD = PROJECT_ROOT / "CLAUDE.md"
 MEMORY_MD_CANDIDATES = list(

@@ -39,3 +39,5 @@ Limit Break AMM security audit framework. This parent directory orchestrates aud
 - Baseline: `audit_score=13.9` (0 findings, 0/4 regression, 25% tools, 80 vectors)
 
 For architecture details, see [docs/CODEBASE_MAP.md](docs/CODEBASE_MAP.md).
+<!-- context-sync: 2026-03-28T15:19:08Z -->
+<!-- Recent changes: Templates changed: 21 files modified; Config changed: config.py; Scoring changed: compliance.py, test_compliance_e2e.py, 2026-03-28-output-compliance-and-dimensional-patterns.md -->
