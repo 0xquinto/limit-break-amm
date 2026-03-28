@@ -89,7 +89,7 @@ class AgentConfig:
     scope: list[str]  # repo names from REPOS
     profile: str = ""  # key into model_profiles.PROFILES (empty = use model field)
     model: str = ""  # DEPRECATED — use profile instead. Kept for backwards compat.
-    max_turns: int = 200  # high default — uncapped for calibration runs, tighten after benchmarking
+    max_turns: int = 500  # Opus agents need 200-400 turns for deep analysis + sidecar output
     permission_mode: str = "bypassPermissions"
     extra_context: dict = field(default_factory=dict)
 
