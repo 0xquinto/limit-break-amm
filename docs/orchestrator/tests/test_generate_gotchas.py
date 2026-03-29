@@ -85,11 +85,11 @@ def test_gotchas_written(mock_env):
     assert "entry-point-analyzer" in ps_gotchas
     assert "Early completion detected (30 turns)" in ps_gotchas
     assert "Low test count (2 Forge tests)" in ps_gotchas
-    assert "41.8/100 (F)" in ps_gotchas
+    assert "41.8/120 (F)" in ps_gotchas
 
     # state-desync should have gotchas (good score, but still generates summary)
     sd_gotchas = (templates_dir / "state-desync" / "gotchas.md").read_text()
-    assert "80.0/100 (B)" in sd_gotchas
+    assert "80.0/120 (B)" in sd_gotchas
     # No checklist warning (85% > 70%)
     assert "Checklist completion:" not in sd_gotchas
     # No missing tools
@@ -126,7 +126,7 @@ def test_null_dimension_scores(mock_env):
         generate_gotchas(1)  # Should not crash
 
     gotchas = (templates_dir / "test-agent" / "gotchas.md").read_text()
-    assert "0/100 (F)" in gotchas
+    assert "0/120 (F)" in gotchas
 
 
 def test_empty_agents(mock_env):

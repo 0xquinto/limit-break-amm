@@ -62,4 +62,4 @@ def test_score_hypothesis_no_hypotheses_injected():
     from docs.orchestrator.compliance import _score_hypothesis_compliance
     sidecar = {}
     score, details = _score_hypothesis_compliance(sidecar, total_hypotheses=0)
-    assert score == 20.0
+    assert score == 0.0  # no free points for missing hypotheses

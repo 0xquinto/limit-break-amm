@@ -554,7 +554,7 @@ async def run_single_wave(
                         _parts = _etime.replace("-", ":").split(":")
                         _mins = int(_parts[-2]) if len(_parts) >= 2 else 0
                         _hrs = int(_parts[-3]) if len(_parts) >= 3 else 0
-                        if _hrs * 60 + _mins < 90:  # only kill processes < 90min old
+                        if _hrs * 60 + _mins > 90:  # kill orphans older than 90min
                             _sp.run(["kill", "-9", _pid], capture_output=True)
         except Exception:
             pass  # Non-critical

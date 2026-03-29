@@ -12,8 +12,8 @@ from .config import (
 )
 from .prompt_renderer import _load_checklist
 
-# Agents below this score get a continuation pass
-CONTINUATION_THRESHOLD = 60.0
+# Agents below this score get a continuation pass (60% of 120 max)
+CONTINUATION_THRESHOLD = 72.0
 
 # Maximum number of continuation rounds per agent
 MAX_CONTINUATION_ROUNDS = 2

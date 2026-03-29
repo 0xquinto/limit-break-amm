@@ -3,9 +3,9 @@
 from dataclasses import dataclass, field
 from pathlib import Path
 
-# Paths
-PROJECT_ROOT = Path("/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm")
-VENV_PATH = Path("/Users/diego/Dev/non-toxic/bug_bounty/.venv")
+# Paths — resolved from this file's location (docs/orchestrator/config.py)
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+VENV_PATH = PROJECT_ROOT / ".venv"
 TARGETS_DIR = PROJECT_ROOT / "docs" / "targets" / "full-system"
 ARTIFACTS_DIR = TARGETS_DIR / "artifacts"
 PHASE0_DIR = ARTIFACTS_DIR / "phase0"

@@ -564,7 +564,7 @@ def generate_synthesis(
     try:
         rc = _score_wave(wave.number)
         write_compliance_report(rc, wave.number)
-        compliance_lines = [f"**Aggregate: {rc.aggregate_score}/100 ({rc.grade})** — weakest dimension: {rc.weakest_dimension}\n"]
+        compliance_lines = [f"**Aggregate: {rc.aggregate_score}/120 ({rc.grade})** — weakest dimension: {rc.weakest_dimension}\n"]
         for a in rc.agents:
             compliance_lines.append(
                 f"| {a.name} | {a.total} | {a.grade} | "

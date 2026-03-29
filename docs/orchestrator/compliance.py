@@ -319,7 +319,7 @@ def _score_hypothesis_compliance(
     - Classification quality: dismissed_with_failure_class / dismissed * 5 points (0-5)
     """
     if total_hypotheses == 0:
-        return 20.0, {"skipped": True, "reason": "no hypotheses injected"}
+        return 0.0, {"skipped": True, "reason": "no hypotheses injected — 0 points (not free 20)"}
 
     results = sidecar.get("hypothesis_results", [])
     if not results:

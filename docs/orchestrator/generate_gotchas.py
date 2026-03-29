@@ -93,8 +93,8 @@ def generate_gotchas(wave_number: int = 1):
         total = agent_data.get("total", 0)
         grade = agent_data.get("grade", "?")
         weakest = _weakest_dimension(agent_data)
-        lines.append(f"### Score: {total}/100 ({grade}) — weakest: {weakest}")
-        target_grade = "A" if total >= 80 else "B" if total >= 60 else "C"
+        lines.append(f"### Score: {total}/120 ({grade}) — weakest: {weakest}")
+        target_grade = "A" if total >= 108 else "B" if total >= 96 else "C"
         lines.append(f"Target: {target_grade} grade. Focus on **{weakest}** dimension.\n")
 
         gotchas_path = template_dir / "gotchas.md"

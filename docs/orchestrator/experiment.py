@@ -1,7 +1,7 @@
 """Experiment tracking for autoresearch-style prompt optimization.
 
 Each wave 1 run is an experiment. The compliance_score measures agent
-thoroughness across 5 dimensions (0-100). Higher is better.
+thoroughness across 6 dimensions (0-120). Higher is better.
 
 Modeled after karpathy/autoresearch: fixed-budget experiments, single
 metric, keep/discard selection pressure, persistent TSV log.
