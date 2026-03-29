@@ -325,9 +325,8 @@ def validate_hypothesis_results(sidecar: dict, had_hypotheses: bool) -> list[str
         # Alias: agents sometimes use "hypothesis_id" instead of "id"
         if "id" not in entry and "hypothesis_id" in entry:
             entry["id"] = entry["hypothesis_id"]
-        # Default missing failure_class on dismissed entries to "strategic"
-        if entry.get("status") == "dismissed" and entry.get("failure_class") not in ("tactical", "strategic"):
-            entry["failure_class"] = "strategic"
+        # NOTE: failure_class validation happens in the validation loop below.
+        # We do NOT default it here — agents must explicitly classify dismissals.
         # Default missing detail from evidence
         if not entry.get("detail") and not entry.get("reason") and entry.get("evidence"):
             entry["detail"] = entry["evidence"]
@@ -362,6 +361,16 @@ def validate_hypothesis_results(sidecar: dict, had_hypotheses: bool) -> list[str
                     f"{prefix}: status is '{status}' but missing 'test_file'. "
                     "Provide the Forge test file path."
                 )
+
+        # failure_class required on dismissed entries
+        if status == "dismissed":
+            fc = entry.get("failure_class")
+            if fc not in ("tactical", "strategic"):
+                issues.append(
+                    f"[WARN] {prefix}: dismissed but failure_class='{fc}' (expected 'tactical' or 'strategic'). "
+                    "Defaulted to 'strategic'."
+                )
+                entry["failure_class"] = "strategic"
 
         # Gate E: exploitation evidence required for dismissed hypotheses
         if status == "dismissed":

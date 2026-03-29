@@ -95,7 +95,7 @@ class AgentConfig:
 
     @property
     def allowed_tools(self) -> list[str]:
-        return TOOL_PROFILES.get(self.role, TOOL_PROFILES["auditor"])
+        return TOOL_PROFILES.get(self.role, TOOL_PROFILES["black-hat"])
 
     @property
     def resolved_model(self) -> str:

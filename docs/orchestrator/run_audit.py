@@ -680,11 +680,8 @@ async def run_single_wave(
     if wave.number == 1:
         from .kill_gate import run_kill_gate_wave
         kill_gate_results = run_kill_gate_wave(wave.number)
-        total_flagged = sum(kill_gate_results.values())
-        print(f"\n  Kill gate: {total_flagged} findings flagged across {len(kill_gate_results)} agents")
-        for agent_name, count in kill_gate_results.items():
-            if count > 0:
-                print(f"    {agent_name}: {count} flagged")
+        print(f"\n  Kill gate: {kill_gate_results['killed']}/{kill_gate_results['total']} "
+              f"findings flagged across {kill_gate_results['files']} files")
 
     # ── Step 5.6: Evidence gate on ruled-out vectors ──
     if wave.number == 1:
