@@ -8,6 +8,7 @@ Usage:
     python3 context_sync.py --auto       # Auto mode (quiet, for hooks)
 """
 
+import fnmatch
 import json
 import os
 import re
@@ -57,10 +58,98 @@ def _find_memory_md() -> Path | None:
             return candidate
     return None
 
-TARGET_REPOS = [
-    "lbamm-core/", "amm-pool-type-dynamic/", "lbamm-pool-type-fixed/",
-    "lbamm-pool-type-single-provider/", "lbamm-hooks-and-handlers/", "secure-proxy/",
-]
+# ── Project type detection ────────────────────────────────────────────────
+
+def detect_project_type(root: Path) -> str:
+    """Detect project type from marker files."""
+    if (root / "foundry.toml").exists():
+        return "solidity"
+    if (root / "hardhat.config.js").exists() or (root / "hardhat.config.ts").exists():
+        return "solidity"
+    if (root / "pyproject.toml").exists() or (root / "setup.py").exists():
+        return "python"
+    if (root / "package.json").exists():
+        return "javascript"
+    if (root / "Cargo.toml").exists():
+        return "rust"
+    if (root / "go.mod").exists():
+        return "go"
+    return "generic"
+
+
+DEFAULT_CATEGORIES: dict[str, dict[str, list[str]]] = {
+    "generic": {
+        "config": ["**/config.*", "**/*.toml", "**/*.yaml", "**/*.yml"],
+        "source": ["src/**", "lib/**", "app/**"],
+        "tests": ["tests/**", "test/**", "**/test_*.*"],
+        "docs": ["docs/**", "*.md"],
+        "ci": [".github/**", "Makefile", "Dockerfile"],
+    },
+    "python": {
+        "config": ["**/config.py", "**/settings.py", "pyproject.toml", "setup.cfg"],
+        "source": ["src/**/*.py", "**/*.py"],
+        "tests": ["tests/**", "test/**", "**/test_*.py"],
+        "docs": ["docs/**", "*.md", "*.rst"],
+        "ci": [".github/**", "Makefile", "tox.ini"],
+    },
+    "solidity": {
+        "config": ["**/config.*", "foundry.toml", "hardhat.config.*"],
+        "source": ["src/**/*.sol", "contracts/**/*.sol"],
+        "tests": ["test/**/*.sol", "test/**/*.t.sol"],
+        "docs": ["docs/**", "*.md"],
+        "scripts": ["script/**", "deploy/**"],
+    },
+    "javascript": {
+        "config": ["**/config.*", "package.json", "tsconfig.json"],
+        "source": ["src/**", "lib/**", "app/**"],
+        "tests": ["tests/**", "test/**", "**/*.test.*", "**/*.spec.*"],
+        "docs": ["docs/**", "*.md"],
+    },
+    "rust": {
+        "config": ["Cargo.toml"],
+        "source": ["src/**/*.rs"],
+        "tests": ["tests/**", "**/test_*.*"],
+        "docs": ["docs/**", "*.md"],
+    },
+    "go": {
+        "config": ["go.mod", "go.sum"],
+        "source": ["**/*.go"],
+        "tests": ["**/*_test.go"],
+        "docs": ["docs/**", "*.md"],
+    },
+}
+
+
+def load_config(config_path: Path) -> dict:
+    """Load .context-sync.json if it exists, merge with auto-detected defaults."""
+    root = config_path.parent if config_path.exists() else PROJECT_ROOT
+    project_type = detect_project_type(root)
+    defaults = DEFAULT_CATEGORIES.get(project_type, DEFAULT_CATEGORIES["generic"])
+
+    config = {
+        "project_type": project_type,
+        "categories": dict(defaults),
+        "context_files": {"claude_md": "CLAUDE.md", "codebase_map": None},
+    }
+
+    if config_path.exists():
+        try:
+            override = json.loads(config_path.read_text())
+            if "categories" in override:
+                config["categories"].update(override["categories"])
+            if "context_files" in override:
+                config["context_files"].update(override["context_files"])
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    # Auto-discover codebase map
+    if config["context_files"]["codebase_map"] is None:
+        for name in ["docs/CODEBASE_MAP.md", "CODEBASE_MAP.md", "docs/ARCHITECTURE.md"]:
+            if (PROJECT_ROOT / name).exists():
+                config["context_files"]["codebase_map"] = name
+                break
+
+    return config
 
 
 def load_state(path: Path) -> dict:
@@ -113,24 +202,24 @@ def get_changed_files(since_commit: str | None) -> list[str]:
     return [f for f in result.stdout.strip().splitlines() if f]
 
 
-def classify_changes(files: list[str]) -> dict[str, list[str]]:
-    """Classify changed files into context-relevant categories."""
+def classify_changes(files: list[str], config: dict | None = None) -> dict[str, list[str]]:
+    """Classify changed files using glob patterns from config."""
+    if config is None:
+        config = load_config(PROJECT_ROOT / ".context-sync.json")
+
     categories: dict[str, list[str]] = {}
+    patterns = config.get("categories", {})
+
     for f in files:
-        if "config.py" in f:
-            categories.setdefault("config", []).append(f)
-        if "templates/" in f:
-            categories.setdefault("templates", []).append(f)
-        if "docs/orchestrator/" in f:
-            categories.setdefault("orchestrator", []).append(f)
-        if any(f.startswith(repo) for repo in TARGET_REPOS):
-            categories.setdefault("target_repos", []).append(f)
-        if "docs/audit_memory/" in f:
-            categories.setdefault("audit_memory", []).append(f)
-        if "compliance" in f or "experiment" in f:
-            categories.setdefault("scoring", []).append(f)
-        if f in ("CLAUDE.md", "docs/CODEBASE_MAP.md", "docs/SYSTEM_GUIDE.md"):
+        for cat_name, cat_patterns in patterns.items():
+            for pattern in cat_patterns:
+                if fnmatch.fnmatch(f, pattern):
+                    categories.setdefault(cat_name, []).append(f)
+                    break
+        # Always classify context files
+        if f in ("CLAUDE.md", ".claude/CLAUDE.md") or f.endswith("CODEBASE_MAP.md") or f.endswith("SYSTEM_GUIDE.md"):
             categories.setdefault("context_files", []).append(f)
+
     return categories
 
 
@@ -161,17 +250,12 @@ def patch_claude_md(
     original = content
     patches = []
 
-    if "templates" in categories:
-        template_files = [f for f in categories["templates"]
-                          if f.endswith(".md") and "archive" not in f and "checklist" not in f]
-        if template_files:
-            patches.append(f"Templates changed: {len(template_files)} files modified")
-
-    if "config" in categories:
-        patches.append(f"Config changed: {', '.join(Path(f).name for f in categories['config'])}")
-
-    if "scoring" in categories:
-        patches.append(f"Scoring changed: {', '.join(Path(f).name for f in categories['scoring'])}")
+    for cat_name, files in sorted(categories.items()):
+        if cat_name == "context_files":
+            continue
+        names = ', '.join(Path(f).name for f in files[:5])
+        suffix = '...' if len(files) > 5 else ''
+        patches.append(f"{cat_name}: {len(files)} files ({names}{suffix})")
 
     if not patches:
         return {"patched": False, "reason": "no relevant changes for CLAUDE.md"}
@@ -281,7 +365,11 @@ def main():
         save_state(STATE_FILE, current_commit, [])
         sys.exit(0)
 
-    categories = classify_changes(changed)
+    config = load_config(PROJECT_ROOT / ".context-sync.json")
+    if not quiet:
+        print(f"Project type: {config['project_type']}")
+
+    categories = classify_changes(changed, config)
 
     if not quiet:
         print(f"Changes since {(last_commit or 'initial')[:8]}: {len(changed)} files")

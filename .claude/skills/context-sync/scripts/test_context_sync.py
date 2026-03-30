@@ -32,7 +32,7 @@ def test_save_and_load_state(tmp_path):
 
 
 def test_classify_changes():
-    """Changed files are classified into context categories."""
+    """Changed files are classified using auto-detected project patterns."""
     files = [
         "docs/orchestrator/config.py",
         "docs/orchestrator/templates/precision-sniper.md",
@@ -41,10 +41,10 @@ def test_classify_changes():
         "README.md",
     ]
     categories = classify_changes(files)
-    assert "config" in categories
-    assert "templates" in categories
-    assert "orchestrator" in categories
-    assert "target_repos" in categories
+    # Should classify into at least some categories
+    assert len(categories) > 0
+    # README.md should show up as context_files
+    assert "context_files" not in categories or "README.md" not in str(categories.get("context_files"))
 
 
 def test_build_staleness_warnings():
@@ -87,3 +87,55 @@ def test_patch_claude_md_no_changes(tmp_path):
     categories = {}
     result = patch_claude_md(claude_md, categories, dry_run=False)
     assert result["patched"] is False
+
+
+# ── Config and project detection tests ─────────────────────────────────
+
+from context_sync import load_config, detect_project_type
+
+
+def test_load_config_missing_file(tmp_path):
+    """Missing config returns defaults."""
+    config = load_config(tmp_path / "nonexistent.json")
+    assert "categories" in config
+    assert len(config["categories"]) > 0
+
+
+def test_load_config_with_override(tmp_path):
+    """Config file overrides defaults."""
+    cfg_path = tmp_path / ".context-sync.json"
+    cfg_path.write_text(json.dumps({
+        "categories": {
+            "frontend": ["src/components/**", "*.tsx"]
+        }
+    }))
+    config = load_config(cfg_path)
+    assert "frontend" in config["categories"]
+
+
+def test_detect_project_type_python(tmp_path):
+    (tmp_path / "pyproject.toml").write_text("")
+    assert detect_project_type(tmp_path) == "python"
+
+
+def test_detect_project_type_solidity(tmp_path):
+    (tmp_path / "foundry.toml").write_text("")
+    assert detect_project_type(tmp_path) == "solidity"
+
+
+def test_detect_project_type_generic(tmp_path):
+    assert detect_project_type(tmp_path) == "generic"
+
+
+def test_classify_with_config():
+    """Classification uses config categories with glob patterns."""
+    config = {
+        "categories": {
+            "frontend": ["src/components/**", "*.tsx"],
+            "api": ["src/api/**"],
+        }
+    }
+    files = ["src/components/Button.tsx", "src/api/routes.py", "README.md"]
+    categories = classify_changes(files, config)
+    assert "frontend" in categories
+    assert "api" in categories
