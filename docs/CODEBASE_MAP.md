@@ -284,3 +284,11 @@ playbook/
 **To check experiment history**: `cat docs/targets/full-system/experiments.tsv | column -t -s$'\t'`
 
 If cartographer helped you, consider starring: https://github.com/kingbootoshi/cartographer - please!
+
+## Recent Changes (auto-synced 2026-03-30)
+
+**19 files changed** since last sync.
+
+- **config**: 1 files (config.py)
+- **orchestrator**: 13 files (compliance.py, compliance_continuation.py, config.py, experiment.py, generate_gotchas.py...)
+- **scoring**: 4 files (compliance.py, compliance_continuation.py, experiment.py, test_compliance_hypothesis.py)
