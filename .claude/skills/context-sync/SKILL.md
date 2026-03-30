@@ -60,6 +60,54 @@ If it exists and no relevant files changed, leave it alone.
 
 If `docs/SYSTEM_GUIDE.md` exists, check if it references the current tool stack, agent profiles, and workflow. Flag major gaps but don't rewrite the whole guide — just fix specific outdated facts.
 
+### README.md
+
+If `README.md` does not exist, create it. If it exists, verify it's current.
+
+The README is the project's front door. Generate it from current code state:
+
+1. **Read** `CLAUDE.md` for the project overview, stack, and target repos
+2. **Read** `docs/orchestrator/config.py` for agent count, wave config, max_turns
+3. **Read** `docs/orchestrator/model_profiles.py` for model profiles
+4. **Read** `docs/orchestrator/compliance.py` for CHECKLIST_EXPECTED and scoring dimensions
+5. **Count** tests: `.venv/bin/python3 -m pytest docs/orchestrator/tests/ --co -q 2>&1 | tail -1`
+
+Write `README.md` with this structure:
+
+```markdown
+# Limit Break AMM — Security Audit Framework
+
+> AI-powered security audit orchestrator for the Guardian Defender contest.
+
+## What This Is
+[1-2 sentences from CLAUDE.md overview]
+
+## Quick Start
+[Run command, venv setup, prerequisites]
+
+## Architecture
+[Mermaid diagram from CODEBASE_MAP.md if it exists, else a simple text description]
+
+## Agent Roster
+[Table: agent name, model, scope, checklist — from config.py]
+
+## Compliance Scoring
+[6 dimensions, max 120, grade thresholds — from compliance.py]
+
+## Tools
+[7 required tools + 3 bonus tools — from preamble]
+
+## Project Structure
+[Condensed directory tree — from CODEBASE_MAP.md or ls]
+
+## Links
+- [Codebase Map](docs/CODEBASE_MAP.md)
+- [System Guide](docs/SYSTEM_GUIDE.md)
+- [Experiment History](docs/targets/full-system/experiments.tsv)
+```
+
+Keep the README concise — under 200 lines. It should give a new contributor enough context to run an audit in 5 minutes.
+
 ## Step 3: Update Checkpoint
 
 After all fixes, run the script without `--dry-run` to save the checkpoint:
