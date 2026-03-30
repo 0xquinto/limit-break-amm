@@ -291,9 +291,10 @@ def render_prompt(agent: AgentConfig, wave: WaveConfig, prior_synthesis: str | N
                 context_lines.append("")
         prompt = prompt + "\n".join(context_lines)
 
-    # Append scoped memory block (scaffold §7a)
-    memory_block = build_memory_block(agent.role)
-    prompt = prompt + "\n\n" + memory_block
+    # Append scoped memory block (scaffold §7a) — skip for exploit mode
+    if wave.name != "exploit-focused":
+        memory_block = build_memory_block(agent.role)
+        prompt = prompt + "\n\n" + memory_block
 
     return prompt
 

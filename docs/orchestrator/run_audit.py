@@ -443,6 +443,90 @@ def run_regression_check(wave_number: int) -> dict:
     return result
 
 
+async def run_exploit_wave(
+    experiment: bool = False,
+    description: str = "",
+) -> None:
+    """Run exploit mode: spawn 3 agents → collect sidecars → verify tests → score.
+
+    No compliance scoring, no Pass 1, no continuation, no synthesis.
+    ~40 lines instead of 400.
+    """
+    from .config import WAVE_EXPLOIT, ARTIFACTS_DIR
+    from .prompt_renderer import render_wave_prompts
+    from .wave_runner import run_wave
+    from .exploit_scorer import score_exploit_wave
+    from .test_verifier import verify_agent_tests
+
+    wave = WAVE_EXPLOIT
+    print(f"\n{'='*60}")
+    print(f"EXPLOIT MODE: {wave.name.upper()}")
+    print(f"{'='*60}")
+    print(f"Agents: {len(wave.agents)} (Sonnet, {wave.agents[0].max_turns} turns each)")
+
+    # 1. Render prompts
+    prompts = render_wave_prompts(wave)
+    for name, prompt in prompts.items():
+        out = ARTIFACTS_DIR / "wave1-prompts" / f"{name}.md"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(prompt)
+        print(f"  {name}: {len(prompt):,} chars")
+
+    # 2. Spawn agents
+    results = await run_wave(wave, prompts)
+
+    # 3. Collect sidecars
+    import json
+    sidecars = []
+    for agent in wave.agents:
+        sidecar_path = ARTIFACTS_DIR / f"findings-{agent.name}.json"
+        if sidecar_path.exists():
+            try:
+                sidecars.append(json.loads(sidecar_path.read_text()))
+            except json.JSONDecodeError:
+                print(f"  WARNING: {agent.name} sidecar unreadable")
+
+    wave_result = score_exploit_wave(sidecars)
+
+    print(f"\n{'='*60}")
+    print(f"EXPLOIT RESULTS")
+    print(f"{'='*60}")
+    print(f"  Wave score: {wave_result['wave_score']}")
+    print(f"  Tests compiled: {wave_result['total_compiled']}")
+    print(f"  Tests profitable: {wave_result['total_profitable']}")
+    for a in wave_result["agents"]:
+        print(f"  {a['agent']:25s} score={a['score']:>4d} ({a['grade']}) "
+              f"written={a['tests_written']} compiled={a['tests_compiled']} profit={a['tests_showing_profit']}")
+
+    # 5. Experiment logging (optional)
+    if experiment:
+        from .experiment import log_experiment, ExperimentResult
+        from .run_manager import get_run_info
+        import subprocess
+        run_info = get_run_info()
+        commit = subprocess.run(["git", "rev-parse", "--short", "HEAD"],
+                                capture_output=True, text=True).stdout.strip()
+        result = ExperimentResult(
+            run_id=run_info["run_id"] if run_info else "unknown",
+            commit=commit,
+            compliance_score=float(wave_result["wave_score"]),
+            grade=wave_result["agents"][0]["grade"] if wave_result["agents"] else "F",
+            weakest_dim="exploit_tests",
+            regression=f"{wave_result['total_compiled']}/{wave_result['total_compiled']}",
+            findings=wave_result["total_profitable"],
+            vectors=wave_result["total_compiled"],
+            wall_time_s=0,
+            status="keep" if wave_result["total_profitable"] > 0 else "discard",
+            description=description,
+            pass1_mode="none",
+        )
+        log_experiment(result)
+        print(f"\n  Experiment logged: score={wave_result['wave_score']} "
+              f"compiled={wave_result['total_compiled']} profitable={wave_result['total_profitable']}")
+
+    print(f"\nExploit wave complete.")
+
+
 async def run_single_wave(
     wave_number: int,
     force: bool = False,
@@ -1115,6 +1199,8 @@ def main():
         import docs.orchestrator.config as _cfg
         _cfg.WAVES = WAVES_EXPLOIT
         # Parse and inject human hints
+        # Force no Pass 1 in exploit mode — human hints replace hypothesis gen
+        args.pass1_mode = "none"
         if args.hints:
             hints = _parse_hints(args.hints)
             for agent in WAVE_EXPLOIT.agents:
@@ -1136,12 +1222,19 @@ def main():
         else:
             run_id = ensure_run(fresh=args.fresh)
             print(f"Run ID: {run_id}")
-            anyio.run(
-                run_single_wave, args.wave, args.force,
-                getattr(args, 'experiment', False),
-                getattr(args, 'description', ''),
-                getattr(args, 'pass1_mode', 'hypotheses'),
-            )
+            if args.mode == "exploit":
+                anyio.run(
+                    run_exploit_wave,
+                    getattr(args, 'experiment', False),
+                    getattr(args, 'description', ''),
+                )
+            else:
+                anyio.run(
+                    run_single_wave, args.wave, args.force,
+                    getattr(args, 'experiment', False),
+                    getattr(args, 'description', ''),
+                    getattr(args, 'pass1_mode', 'hypotheses'),
+                )
     else:
         anyio.run(run_full_audit, args.fresh)
 
