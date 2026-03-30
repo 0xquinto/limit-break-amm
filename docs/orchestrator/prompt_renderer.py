@@ -255,6 +255,9 @@ def render_prompt(agent: AgentConfig, wave: WaveConfig, prior_synthesis: str | N
     if "{{LEADS}}" in prompt:
         leads = agent.extra_context.get("leads", "No leads provided.")
         prompt = prompt.replace("{{LEADS}}", leads)
+    if "{{HINTS}}" in prompt:
+        hints = agent.extra_context.get("hints", "(No human hints provided. Use your own judgment to identify targets.)")
+        prompt = prompt.replace("{{HINTS}}", hints)
 
     # Inject prior synthesis if available
     if prior_synthesis:

@@ -210,6 +210,41 @@ WAVE_BH2 = WaveConfig(
 
 WAVES_BLACK_HAT = [WAVE_BH1, WAVE_BH2]
 
+# Exploit mode: 3 Sonnet agents, 50 turns, minimal prompts
+# Based on cost intelligence audit + ReEVMBench findings
+WAVE_EXPLOIT = WaveConfig(
+    number=1,
+    name="exploit-focused",
+    agents=[
+        AgentConfig(
+            name="math-exploiter",
+            role="black-hat",
+            template="exploit-user-prompt",
+            scope=["lbamm-core", "amm-pool-type-dynamic", "lbamm-pool-type-fixed"],
+            profile="fast_reasoning",
+            max_turns=50,
+        ),
+        AgentConfig(
+            name="state-exploiter",
+            role="black-hat",
+            template="exploit-user-prompt",
+            scope=["lbamm-hooks-and-handlers", "lbamm-core"],
+            profile="fast_reasoning",
+            max_turns=50,
+        ),
+        AgentConfig(
+            name="boundary-exploiter",
+            role="black-hat",
+            template="exploit-user-prompt",
+            scope=list(REPOS.keys()),
+            profile="fast_reasoning",
+            max_turns=50,
+        ),
+    ],
+)
+
+WAVES_EXPLOIT = [WAVE_EXPLOIT]
+
 # Active wave configuration — switch between models here
 WAVES = WAVES_BLACK_HAT
 

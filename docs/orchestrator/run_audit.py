@@ -41,6 +41,27 @@ _STOPWORDS = frozenset({
 })
 
 
+# ─── Hints parser ─────────────────────────────────────────────────────────────
+
+def _parse_hints(hints_path: str) -> dict[str, str]:
+    """Parse hints.md into {agent_name: hint_text}."""
+    content = Path(hints_path).read_text()
+    hints: dict[str, str] = {}
+    current_agent: str | None = None
+    current_lines: list[str] = []
+    for line in content.splitlines():
+        if line.startswith("## "):
+            if current_agent:
+                hints[current_agent] = "\n".join(current_lines).strip()
+            current_agent = line[3:].strip()
+            current_lines = []
+        else:
+            current_lines.append(line)
+    if current_agent:
+        hints[current_agent] = "\n".join(current_lines).strip()
+    return hints
+
+
 # ─── Triage helpers ───────────────────────────────────────────────────────────
 
 def _find_finding_by_id(finding_id: str) -> dict | None:
@@ -1048,6 +1069,10 @@ def main():
                         help="Interactively review pending suggestions from reflection reports")
     parser.add_argument("--prune", action="store_true",
                         help="Prune old archive runs before starting")
+    parser.add_argument("--mode", choices=["compliance", "exploit"], default="compliance",
+                        help="compliance: full 9-agent pipeline. exploit: 3 Sonnet agents, 50 turns, attack-focused")
+    parser.add_argument("--hints", type=str, default=None,
+                        help="Path to markdown file with human attack hints (one ## section per agent)")
     args = parser.parse_args()
 
     if args.status:
@@ -1083,6 +1108,21 @@ def main():
         print(f"Pruned {len(pruned)} archive runs")
         if not args.wave:
             return
+
+    # Mode selection: exploit mode overrides wave config
+    if args.mode == "exploit":
+        from .config import WAVES_EXPLOIT, WAVE_EXPLOIT
+        import docs.orchestrator.config as _cfg
+        _cfg.WAVES = WAVES_EXPLOIT
+        # Parse and inject human hints
+        if args.hints:
+            hints = _parse_hints(args.hints)
+            for agent in WAVE_EXPLOIT.agents:
+                if agent.name in hints:
+                    agent.extra_context["hints"] = hints[agent.name]
+            print(f"Exploit mode: {len(WAVE_EXPLOIT.agents)} agents, hints for {len(hints)} agents")
+        else:
+            print(f"Exploit mode: {len(WAVE_EXPLOIT.agents)} agents, no human hints")
 
     if args.wave:
         if args.dry_run:
