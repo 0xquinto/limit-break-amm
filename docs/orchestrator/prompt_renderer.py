@@ -144,18 +144,46 @@ def build_exploit_knowledge(agent_name: str, scope: list[str]) -> str:
     import json as _json
     parts = []
 
-    # 1. Confirmed patterns — real bugs, test for variants
+    # ── Rejection cross-reference: known issues already submitted and rejected ──
+    # These overlap between confirmed patterns, tactical failures, and FP-SUB entries.
+    # Agents must NOT re-report these unless they find a NOVEL variant with higher severity.
+    _REJECTED_KEYWORDS = {
+        # FP-SUB02: validateHandlerOrder sqrtPriceX96==0
+        "validateHandlerOrder", "sqrtPriceX96==0", "computeRatioX96 overflow",
+        # FP-SUB01: setTokenSettings desync
+        "setTokenSettings", "initialized flag",
+        # FP-SUB03-08: other rejected submissions
+        "double-rounding 1 wei", "getCurrentPriceX96 stale", "zero-amount swap",
+        "swapExtraData silent", "tick traversal gas", "feeOnTop not signed",
+        # CP-001/HOOK-001: stale transient storage (known, low severity)
+        "stale transient storage", "HOOK-001", "DIRECT_SWAP_BEFORE_SWAP_AMOUNT",
+        # CP-003: same as FP-SUB02
+        "missing sqrtPriceX96==0",
+    }
+
+    def _is_rejected(text: str) -> bool:
+        text_lower = text.lower()
+        return any(kw.lower() in text_lower for kw in _REJECTED_KEYWORDS)
+
+    # 1. Confirmed patterns — only include if NOT already rejected
     patterns_path = MEMORY_DIR / "confirmed-patterns.md"
     if patterns_path.exists():
         content = patterns_path.read_text()
         import re
         cp_matches = re.findall(r'### (CP-\S+): (.+)', content)
-        if cp_matches:
-            parts.append("KNOWN VULNERABILITIES IN THIS CODEBASE (test for variants):")
-            for cp_id, summary in cp_matches[:5]:
+        novel = [(cp_id, summary) for cp_id, summary in cp_matches if not _is_rejected(summary)]
+        if novel:
+            parts.append("KNOWN VULNERABILITIES (test for NOVEL variants only — original bugs already submitted):")
+            for cp_id, summary in novel[:4]:
                 parts.append(f"- {cp_id}: {summary}")
+        # Always warn about rejected ones
+        rejected = [(cp_id, summary) for cp_id, summary in cp_matches if _is_rejected(summary)]
+        if rejected:
+            parts.append("\nALREADY SUBMITTED AND REJECTED (do NOT re-report unless you find a HIGHER severity variant):")
+            for cp_id, summary in rejected:
+                parts.append(f"- {cp_id}: {summary} — REJECTED by judges")
 
-    # 2. Tactical failures — concepts that may be right, test code was wrong
+    # 2. Tactical failures — only include if NOT already rejected
     playbook_path = Path(__file__).parent / "playbook" / "failure_classifications.jsonl"
     if playbook_path.exists():
         tactical = []
@@ -164,19 +192,25 @@ def build_exploit_knowledge(agent_name: str, scope: list[str]) -> str:
                 continue
             entry = _json.loads(line)
             if entry.get("failure_class") == "tactical":
-                tactical.append(entry)
+                detail = entry.get("detail", "")
+                if not _is_rejected(detail):
+                    tactical.append(entry)
         if tactical:
             parts.append("\nUNPROVEN BUT PLAUSIBLE (test code failed, concept may be right):")
             for t in tactical[:5]:
                 parts.append(f"- {t['hypothesis_id']}: {t['detail'][:120]}")
 
-    # 3. Top FPs — don't waste turns
+    # 3. Top FPs + rejected submissions — don't waste turns
     fps = parse_false_positives()
     top_fps = sorted(fps, key=lambda f: -f.confidence)[:8]
-    if top_fps:
-        parts.append("\nDO NOT INVESTIGATE (confirmed false positives):")
-        for fp in top_fps:
-            parts.append(f"- {fp.id}: {fp.vector[:80]}")
+    # Add rejected submissions explicitly
+    sub_fps = [fp for fp in fps if fp.id.startswith("FP-SUB")]
+    all_blocklist = list({fp.id: fp for fp in (top_fps + sub_fps)}.values())
+    if all_blocklist:
+        parts.append("\nDO NOT INVESTIGATE — KNOWN FALSE POSITIVES + REJECTED SUBMISSIONS:")
+        for fp in sorted(all_blocklist, key=lambda f: f.id):
+            prefix = "REJECTED" if fp.id.startswith("FP-SUB") else "FP"
+            parts.append(f"- {fp.id} [{prefix}]: {fp.vector[:80]}")
 
     # 4. Regression cases — known exploit patterns mapped to this codebase
     regression_path = Path(__file__).parent / "regression_cases.json"
