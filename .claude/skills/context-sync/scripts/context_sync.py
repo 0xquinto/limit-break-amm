@@ -36,13 +36,26 @@ def _find_project_root() -> Path:
 PROJECT_ROOT = _find_project_root()
 STATE_FILE = PROJECT_ROOT / ".context-sync-state.json"
 CLAUDE_MD = PROJECT_ROOT / "CLAUDE.md"
-MEMORY_MD_CANDIDATES = list(
-    (Path.home() / ".claude" / "projects").glob("**/memory/MEMORY.md")
-)
 CODEBASE_MAP = PROJECT_ROOT / "docs" / "CODEBASE_MAP.md"
 
 _PLUGIN_DATA = os.environ.get("CLAUDE_PLUGIN_DATA")
 SYNC_LOG = Path(_PLUGIN_DATA) / "sync.log" if _PLUGIN_DATA else PROJECT_ROOT / ".context-sync-log"
+
+
+def _find_memory_md() -> Path | None:
+    """Find the MEMORY.md for the current project (deferred, project-filtered)."""
+    # Build expected project slug from PROJECT_ROOT
+    slug = str(PROJECT_ROOT).replace("/", "-").lstrip("-")
+    projects_dir = Path.home() / ".claude" / "projects"
+    # Try exact match first
+    exact = projects_dir / slug / "memory" / "MEMORY.md"
+    if exact.exists():
+        return exact
+    # Fallback: glob and filter by project root path
+    for candidate in projects_dir.glob("**/memory/MEMORY.md"):
+        if slug in str(candidate) or str(PROJECT_ROOT).split("/")[-1] in str(candidate):
+            return candidate
+    return None
 
 TARGET_REPOS = [
     "lbamm-core/", "amm-pool-type-dynamic/", "lbamm-pool-type-fixed/",
@@ -116,6 +129,8 @@ def classify_changes(files: list[str]) -> dict[str, list[str]]:
             categories.setdefault("audit_memory", []).append(f)
         if "compliance" in f or "experiment" in f:
             categories.setdefault("scoring", []).append(f)
+        if f in ("CLAUDE.md", "docs/CODEBASE_MAP.md", "docs/SYSTEM_GUIDE.md"):
+            categories.setdefault("context_files", []).append(f)
     return categories
 
 
@@ -127,7 +142,7 @@ def build_staleness_warnings(memory_content: str, changed_files: list[str]) -> l
 
     for ref in set(refs):
         for changed in changed_files:
-            if changed.endswith(ref) or ref.endswith(changed) or Path(ref).name == Path(changed).name:
+            if changed.endswith(ref) or ref.endswith(changed):
                 warnings.append(f"WARNING: `{ref}` referenced in MEMORY.md has changed ({changed})")
                 break
     return warnings
@@ -175,11 +190,8 @@ def patch_claude_md(
 
 def patch_memory_md(changed_files: list[str], dry_run: bool = False) -> dict:
     """Add staleness warnings to MEMORY.md if referenced files changed."""
-    for candidate in MEMORY_MD_CANDIDATES:
-        if candidate.exists():
-            memory_path = candidate
-            break
-    else:
+    memory_path = _find_memory_md()
+    if not memory_path:
         return {"patched": False, "reason": "MEMORY.md not found"}
 
     content = memory_path.read_text()
@@ -250,6 +262,13 @@ def main():
     state = load_state(STATE_FILE)
     last_commit = state["last_commit"]
 
+    # Auto-reset on first run (no checkpoint exists)
+    if last_commit is None:
+        save_state(STATE_FILE, current_commit)
+        if not quiet:
+            print(f"First run — checkpoint initialized at {current_commit[:8]}")
+        sys.exit(0)
+
     if last_commit == current_commit:
         if not quiet:
             print("No changes since last sync")
@@ -296,8 +315,11 @@ def main():
         )
         if memory_result.get("warnings"):
             log_entry += f" stale:{len(memory_result['warnings'])}"
-        with open(SYNC_LOG, "a") as f:
-            f.write(log_entry + "\n")
+        try:
+            with open(SYNC_LOG, "a") as f:
+                f.write(log_entry + "\n")
+        except OSError:
+            pass  # non-critical — log dir may not be writable
 
 
 if __name__ == "__main__":
