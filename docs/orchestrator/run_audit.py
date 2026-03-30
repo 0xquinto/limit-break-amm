@@ -1212,7 +1212,8 @@ def main():
 
     if args.wave:
         if args.dry_run:
-            wave = WAVES[args.wave - 1]
+            import docs.orchestrator.config as _cfg_ref
+            wave = _cfg_ref.WAVES[args.wave - 1]
             prior = read_synthesis(args.wave - 1) if args.wave > 1 else None
             prompts = render_wave_prompts(wave, prior)
             for name, prompt in prompts.items():

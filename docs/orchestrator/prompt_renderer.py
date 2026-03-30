@@ -206,7 +206,7 @@ def build_exploit_knowledge(agent_name: str, scope: list[str]) -> str:
                 parts.append(f"- {inv_id}: {desc}")
 
     # 6. Phase 0 highlights
-    phase0_dir = Path(__file__).parent.parent.parent / "targets" / "full-system" / "artifacts" / "phase0"
+    phase0_dir = ARTIFACTS_DIR / "phase0"
     if phase0_dir.exists():
         scope_repos = [r.rstrip("/") for r in scope]
         highlights = []
@@ -354,7 +354,11 @@ def render_prompt(agent: AgentConfig, wave: WaveConfig, prior_synthesis: str | N
     prompt = prompt.replace("{{PHASE0_ARTIFACTS}}", "\n".join(f"- `{r}`" for r in phase0_refs))
     output_dir = f"docs/targets/full-system/artifacts/wave{wave.number}-{agent.name}"
     prompt = prompt.replace("{{OUTPUT_FILE}}", f"{output_dir}/report.md")
-    prompt = prompt.replace("{{FINDINGS_JSON}}", f"{output_dir}/findings.json")
+    # Exploit mode uses flat path (matches system prompt + scorer); compliance uses nested
+    if wave.name == "exploit-focused":
+        prompt = prompt.replace("{{FINDINGS_JSON}}", f"docs/targets/full-system/artifacts/findings-{agent.name}.json")
+    else:
+        prompt = prompt.replace("{{FINDINGS_JSON}}", f"{output_dir}/findings.json")
 
     # PREFIX needs special computation
     if "{{PREFIX}}" in prompt:
