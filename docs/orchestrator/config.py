@@ -222,7 +222,7 @@ WAVE_EXPLOIT = WaveConfig(
             template="exploit-user-prompt",
             scope=["lbamm-core", "amm-pool-type-dynamic", "lbamm-pool-type-fixed"],
             profile="fast_reasoning",
-            max_turns=50,
+            max_turns=500,
         ),
         AgentConfig(
             name="state-exploiter",
@@ -230,7 +230,7 @@ WAVE_EXPLOIT = WaveConfig(
             template="exploit-user-prompt",
             scope=["lbamm-hooks-and-handlers", "lbamm-core"],
             profile="fast_reasoning",
-            max_turns=50,
+            max_turns=500,
         ),
         AgentConfig(
             name="boundary-exploiter",
@@ -238,7 +238,7 @@ WAVE_EXPLOIT = WaveConfig(
             template="exploit-user-prompt",
             scope=list(REPOS.keys()),
             profile="fast_reasoning",
-            max_turns=50,
+            max_turns=500,
         ),
     ],
 )
