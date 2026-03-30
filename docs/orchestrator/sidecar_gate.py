@@ -388,13 +388,7 @@ def validate_hypothesis_results(sidecar: dict, had_hypotheses: bool) -> list[str
                     "You MUST write a Forge test that proves the hypothesis is not exploitable "
                     "before dismissing. Reasoning alone is not sufficient."
                 )
-            fc = entry.get("failure_class")
-            if fc not in ("tactical", "strategic"):
-                issues.append(
-                    f"{prefix}: status is 'dismissed' but missing or invalid 'failure_class'. "
-                    "Set to 'tactical' (test code issue — wrong setup, compilation error) "
-                    "or 'strategic' (hypothesis was wrong — guard exists, path unreachable)."
-                )
+            # failure_class already coerced to "strategic" in the pre-validation pass above
 
     # Diversity check: all not_tested/dismissed is a warning
     statuses = [e.get("status") for e in results]

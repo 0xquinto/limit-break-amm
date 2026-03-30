@@ -22,7 +22,7 @@ class ExperimentResult:
     """One row in experiments.tsv."""
     run_id: str
     commit: str                        # git short hash at time of run
-    compliance_score: float            # aggregate compliance (0-100, higher = better)
+    compliance_score: float            # aggregate compliance (0-120, higher = better)
     grade: str                         # letter grade (A-F)
     weakest_dim: str                   # dimension that dragged score down
     regression: str                    # "4/4" format

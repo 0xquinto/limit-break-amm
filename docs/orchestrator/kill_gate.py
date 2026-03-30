@@ -80,14 +80,22 @@ def _tokenize(text: str) -> set[str]:
 
 
 def _token_similarity(text_a: str, text_b: str) -> float:
-    """Jaccard similarity on meaningful tokens. O(n) not O(n²)."""
+    """Hybrid similarity: Jaccard on tokens + shared token count floor.
+
+    Returns max(jaccard, shared_ratio) where shared_ratio = shared / min(len_a, len_b).
+    This handles synonym-heavy paraphrases that Jaccard penalizes (union grows
+    with synonyms but the core overlap is still significant).
+    """
     tokens_a = _tokenize(text_a)
     tokens_b = _tokenize(text_b)
     if not tokens_a or not tokens_b:
         return 0.0
     intersection = tokens_a & tokens_b
     union = tokens_a | tokens_b
-    return len(intersection) / len(union)
+    jaccard = len(intersection) / len(union)
+    # Shared ratio: what fraction of the smaller set is covered?
+    shared_ratio = len(intersection) / min(len(tokens_a), len(tokens_b))
+    return max(jaccard, shared_ratio)
 
 
 # ---------------------------------------------------------------------------
@@ -161,7 +169,7 @@ def check_gate_h(
 ) -> tuple[bool, str]:
     """Gate H: Flag findings that closely match known FPs or gotchas.
 
-    Uses Jaccard token similarity with threshold 0.8.
+    Uses hybrid token similarity (Jaccard + shared ratio) with threshold 0.6.
     """
     text = " ".join([
         finding.get("title", ""),
@@ -173,12 +181,12 @@ def check_gate_h(
 
     for fp in known_fps:
         ratio = _token_similarity(text, fp.lower())
-        if ratio >= 0.8:
+        if ratio >= 0.6:
             return True, f"Matches known FP (similarity={ratio:.2f})"
 
     for gotcha in known_gotchas:
         ratio = _token_similarity(text, gotcha.lower())
-        if ratio >= 0.8:
+        if ratio >= 0.6:
             return True, f"Matches known gotcha (similarity={ratio:.2f})"
 
     return False, ""

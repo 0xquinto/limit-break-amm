@@ -280,8 +280,9 @@ async def run_wave(
 
     async def _safe_run(agent, prompt, delay):
         try:
+            await asyncio.sleep(delay)  # stagger outside semaphore
             async with _AGENT_SEMAPHORE:
-                return await _run_agent(agent, prompt, wave.number, start_delay=delay)
+                return await _run_agent(agent, prompt, wave.number, start_delay=0)
         except Exception as e:
             elapsed = time.monotonic() - start_time - delay
             if elapsed < _FAST_FAIL_WINDOW_S:
