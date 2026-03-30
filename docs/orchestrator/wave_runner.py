@@ -34,6 +34,7 @@ from claude_agent_sdk import (
 
 from .config import (
     WaveConfig, AgentConfig, PROJECT_ROOT, ARTIFACTS_DIR, RESULTS_DIR, REPOS,
+    MAX_CONCURRENT_AGENTS,
 )
 from .model_profiles import resolve_profile, AUDIT_SYSTEM_PROMPT
 
@@ -57,6 +58,9 @@ if _dotenv_path.exists():
 # Stagger delay between agent launches to avoid concurrent TLS handshake issues
 _STAGGER_DELAY_SECONDS = 2.0
 
+# Concurrency limiter — prevents unbounded SDK sessions
+_AGENT_SEMAPHORE = asyncio.Semaphore(MAX_CONCURRENT_AGENTS)
+
 
 class StopReason(str, Enum):
     COMPLETED = "completed"
@@ -79,8 +83,14 @@ class WaveAbortError(Exception):
 _MIN_SUCCESS_RATIO = 0.5  # abort wave if fewer than 50% agents succeed
 
 
+import logging as _logging
+
+_logger = _logging.getLogger("orchestrator.wave_runner")
+
+
 def _log(msg: str) -> None:
-    """Print with immediate flush — ensures visibility when stdout is piped."""
+    """Log + print with immediate flush — enables both structured logging and run_monitor.py."""
+    _logger.info(msg)
     print(msg, flush=True)
 
 
@@ -270,7 +280,8 @@ async def run_wave(
 
     async def _safe_run(agent, prompt, delay):
         try:
-            return await _run_agent(agent, prompt, wave.number, start_delay=delay)
+            async with _AGENT_SEMAPHORE:
+                return await _run_agent(agent, prompt, wave.number, start_delay=delay)
         except Exception as e:
             elapsed = time.monotonic() - start_time - delay
             if elapsed < _FAST_FAIL_WINDOW_S:

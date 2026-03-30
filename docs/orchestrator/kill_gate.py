@@ -11,7 +11,6 @@ Gates:
   H — Known false positive or gotcha match
 """
 
-import difflib
 import json
 import re
 from pathlib import Path
@@ -59,6 +58,36 @@ _DUST_RAW = [
 ]
 
 DUST_PATTERNS: list[re.Pattern] = [re.compile(p, re.IGNORECASE) for p in _DUST_RAW]
+
+
+# ---------------------------------------------------------------------------
+# Token fingerprinting for FP matching (replaces O(n²) SequenceMatcher)
+# ---------------------------------------------------------------------------
+
+_STOP_WORDS = frozenset({
+    "the", "a", "an", "in", "to", "for", "of", "is", "and", "or", "with",
+    "on", "at", "by", "from", "that", "this", "it", "be", "as", "are",
+    "was", "has", "can", "not", "but", "if", "no", "do", "will",
+    "function", "contract", "uint256", "address", "bool", "returns",
+    "public", "external", "internal", "private", "view", "pure",
+})
+
+
+def _tokenize(text: str) -> set[str]:
+    """Extract meaningful tokens from text, excluding stop words."""
+    words = set(re.findall(r'[a-zA-Z_][a-zA-Z0-9_]+', text.lower()))
+    return words - _STOP_WORDS
+
+
+def _token_similarity(text_a: str, text_b: str) -> float:
+    """Jaccard similarity on meaningful tokens. O(n) not O(n²)."""
+    tokens_a = _tokenize(text_a)
+    tokens_b = _tokenize(text_b)
+    if not tokens_a or not tokens_b:
+        return 0.0
+    intersection = tokens_a & tokens_b
+    union = tokens_a | tokens_b
+    return len(intersection) / len(union)
 
 
 # ---------------------------------------------------------------------------
@@ -132,7 +161,7 @@ def check_gate_h(
 ) -> tuple[bool, str]:
     """Gate H: Flag findings that closely match known FPs or gotchas.
 
-    Uses difflib.SequenceMatcher with threshold 0.8.
+    Uses Jaccard token similarity with threshold 0.8.
     """
     text = " ".join([
         finding.get("title", ""),
@@ -143,12 +172,12 @@ def check_gate_h(
         return False, ""
 
     for fp in known_fps:
-        ratio = difflib.SequenceMatcher(None, text, fp.lower()).ratio()
+        ratio = _token_similarity(text, fp.lower())
         if ratio >= 0.8:
             return True, f"Matches known FP (similarity={ratio:.2f})"
 
     for gotcha in known_gotchas:
-        ratio = difflib.SequenceMatcher(None, text, gotcha.lower()).ratio()
+        ratio = _token_similarity(text, gotcha.lower())
         if ratio >= 0.8:
             return True, f"Matches known gotcha (similarity={ratio:.2f})"
 

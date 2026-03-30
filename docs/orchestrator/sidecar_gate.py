@@ -315,21 +315,28 @@ def validate_hypothesis_results(sidecar: dict, had_hypotheses: bool) -> list[str
         "wont_fix": "dismissed",
         "acknowledged": "dismissed",
     }
+    coercion_log: list[str] = []
     for entry in results:
         # Alias: agents sometimes use "result" instead of "status"
         if "status" not in entry and "result" in entry:
-            entry["status"] = _STATUS_COERCE.get(entry["result"], entry["result"])
+            original = entry["result"]
+            entry["status"] = _STATUS_COERCE.get(original, original)
+            coercion_log.append(f"result '{original}' -> status '{entry['status']}'")
         # Coerce non-standard status values
         if entry.get("status") in _STATUS_COERCE:
-            entry["status"] = _STATUS_COERCE[entry["status"]]
+            original = entry["status"]
+            entry["status"] = _STATUS_COERCE[original]
+            coercion_log.append(f"status '{original}' -> '{entry['status']}'")
         # Alias: agents sometimes use "hypothesis_id" instead of "id"
         if "id" not in entry and "hypothesis_id" in entry:
             entry["id"] = entry["hypothesis_id"]
+            coercion_log.append("hypothesis_id -> id")
         # NOTE: failure_class validation happens in the validation loop below.
         # We do NOT default it here — agents must explicitly classify dismissals.
         # Default missing detail from evidence
         if not entry.get("detail") and not entry.get("reason") and entry.get("evidence"):
             entry["detail"] = entry["evidence"]
+            coercion_log.append("evidence -> detail")
 
     # Per-entry validation
     for i, entry in enumerate(results):
@@ -402,6 +409,9 @@ def validate_hypothesis_results(sidecar: dict, had_hypotheses: bool) -> list[str
             f"WARNING: {passive_count}/{len(results)} hypothesis_results "
             f"are 'not_tested'/'dismissed' (>{80}%). Test more hypotheses."
         )
+
+    if coercion_log:
+        issues.append(f"[INFO] {len(coercion_log)} fields coerced: {'; '.join(coercion_log[:5])}")
 
     return issues
 

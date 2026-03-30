@@ -445,6 +445,13 @@ async def run_single_wave(
         print(f"Edit the wave config or run the full audit to auto-populate from synthesis.")
         return
 
+    import logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(name)s %(levelname)s %(message)s",
+        datefmt="%H:%M:%S",
+    )
+
     print(f"\n{'='*60}")
     print(f"WAVE {wave.number}: {wave.name.upper()}")
     print(f"{'='*60}")
