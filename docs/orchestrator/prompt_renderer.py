@@ -239,7 +239,26 @@ def build_exploit_knowledge(agent_name: str, scope: list[str]) -> str:
             for inv_id, desc in relevant[:4]:
                 parts.append(f"- {inv_id}: {desc}")
 
-    # 6. Phase 0 highlights
+    # 6. Guardian audit known findings — DO NOT duplicate these
+    guardian_path = ARTIFACTS_DIR / "guardian-audit-findings.md"
+    if guardian_path.exists():
+        content = guardian_path.read_text()
+        import re
+        # Extract the quick lookup table rows
+        rows = re.findall(r'\| ([A-Z]-\d+) \| (.+?) \| (\w+) \| .+? \| (\w+)', content)
+        if rows:
+            acknowledged = [(fid, title.strip(), sev) for fid, title, sev, status in rows if status == "Acknowledged"]
+            resolved = [(fid, title.strip(), sev) for fid, title, sev, status in rows if status == "Resolved"]
+            if acknowledged:
+                parts.append("\nGUARDIAN AUDIT — ACKNOWLEDGED (not fixed, but ALREADY KNOWN — only report NOVEL variants):")
+                for fid, title, sev in acknowledged:
+                    parts.append(f"- {fid} [{sev}]: {title}")
+            if resolved:
+                parts.append("\nGUARDIAN AUDIT — RESOLVED (already fixed — do NOT report unless fix is incomplete):")
+                for fid, title, sev in resolved[:8]:
+                    parts.append(f"- {fid} [{sev}]: {title}")
+
+    # 7. Phase 0 highlights
     phase0_dir = ARTIFACTS_DIR / "phase0"
     if phase0_dir.exists():
         scope_repos = [r.rstrip("/") for r in scope]
