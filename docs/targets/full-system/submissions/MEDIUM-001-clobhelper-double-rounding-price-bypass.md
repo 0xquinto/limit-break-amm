@@ -117,7 +117,7 @@ Option B — Pass the actual `sqrtPriceX96` to `validateHandlerOrder` instead of
 **Not a duplicate.** This is a different root cause from:
 - **FP-SUB02** (our rejected submission): `computeRatioX96` overflow returns 0, bypasses max bound. Different function, different bound direction.
 - **M-05** (Guardian): pricing validation fails when `beforeSwap` disabled. Different mechanism (flag-based skip vs rounding-based inflation).
-- **FP-C18** (our FP): CLOBHelper fill loop rounding accumulation. Different vector (fill loop vs order opening), different impact.
+- **Internal FP (CLOBHelper rounding)**: Fill loop rounding accumulation was investigated and deemed safe (rounds UP favoring makers). Different vector (fill loop vs order opening), different impact.
 
 The novelty is that the validation **runs correctly** on **incorrect inputs** — the double rounding destroys the price information before it reaches the validator.
 
