@@ -57,3 +57,18 @@
   causing redundant storage writes.
 - **Detection**: Look for local variable copies that diverge from the synced variable.
 - **Generalizable**: Yes — any modify-copy-then-sync-original pattern.
+
+### CP-006: CLOBHelper Double-Rounding Inflates Reconstructed Price (MEDIUM-001)
+
+- **Found by**: boundary-exploiter (exploit mode, run 2026-03-30)
+- **Severity**: Medium (pricing governance bypass)
+- **Contracts**: CLOBHelper.sol (calculateFixedInput), CLOBTransferHandler.sol (_enforceTokenHooks), AMMStandardHook.sol (validateHandlerOrder)
+- **Pattern**: Two sequential `mulDivRoundingUp` operations collapse near-zero values to 1 wei.
+  When `validateHandlerOrder` reconstructs the price from `(orderAmount, amountOut=1)`,
+  the result is 7.9 billion times higher than the actual order price, bypassing min pricing bounds.
+- **Detection**: Look for any code path where rounding-up produces a minimum-value output (1)
+  that is then used as input to a price/ratio reconstruction. The reconstruction amplifies the
+  rounding error into a massive inflation.
+- **Generalizable**: Yes — any (round → reconstruct) chain where the rounding floor (1 wei)
+  is far from the expected output magnitude.
+- **Related**: FP-SUB02 (different mechanism — overflow, not rounding), FP-SUB03 (different function — FixedHelper, not CLOBHelper)

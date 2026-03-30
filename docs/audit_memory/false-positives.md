@@ -552,3 +552,84 @@ If partial match (similar but different code path), proceed but reference the re
 - **Source**: v2 (economic-analyst, red-team)
 - **Category**: ECONOMIC | MEV
 - **Lesson**: "If sandwich economics match vanilla AMM, it's not a protocol-specific finding"
+
+---
+
+## Pool Type Domain (amm-pool-type-dynamic, lbamm-pool-type-fixed) — R11 Pass
+
+### FP-PT01: Operator precedence bug `redeposited0 | redeposited1 == 0`
+- **Scope**: [any agent analyzing FixedHelper.sol]
+- **Contracts**: lbamm-pool-type-fixed/src/libraries/FixedHelper.sol L69
+- **Vector**: `redeposited0 | redeposited1 == 0` parsed as `redeposited0 | (redeposited1 == 0)` — DoS on withdrawLiquidity
+- **Why false**: **Solidity `|` has HIGHER precedence than `==`** (unlike C). Expression is `(redeposited0 | redeposited1) == 0`. This is correct: reverts only when both amounts are zero (full position cleared). Same applies to L799 (`informationNextHeightBelow | informationNextHeightAbove == 0`) and L1469 (`amount0 | amount1 > type(uint128).max`). All three are syntactically and semantically correct. Verified with forge test.
+- **Confidence**: 99
+- **Source**: R11 (composability-exploiter background agent triage)
+- **Category**: OPERATOR_PRECEDENCE | SOLIDITY_SEMANTICS
+- **Lesson**: "In Solidity, bitwise `|` binds TIGHTER than `==` and `>` (order: |, then </>/<=/>=, then ==). This is OPPOSITE to C/Java. The classic C footgun `a | b == 0` means `a | (b == 0)` in C, but in Solidity it means `(a | b) == 0`. Always verify with forge test."
+
+### FP-PT02: DynamicPoolType missing onlyAMM access control
+- **Scope**: [any agent analyzing DynamicPoolType.sol]
+- **Contracts**: amm-pool-type-dynamic/src/DynamicPoolType.sol (all external functions)
+- **Vector**: No `onlyAMM` guard allows any caller to manipulate pool state
+- **Why false**: All state-mutating functions use `globalState[msg.sender]` as the namespace key. Direct calls by non-AMM callers write to `globalState[callerAddress]` which is completely isolated from `globalState[AMM_address]`. The AMM's pools are under `globalState[AMM_address]` and cannot be affected by external callers. This is a deliberate design difference from FixedPoolType (which has onlyAMM because it uses a shared pool-ID key). The permissionless design is intentional.
+- **Confidence**: 90
+- **Source**: R11 (composability-exploiter background agent triage)
+- **Category**: ACCESS_CONTROL | DESIGN
+- **Lesson**: "DynamicPoolType namespacing via msg.sender provides caller isolation without an explicit onlyAMM guard. Verify namespace isolation before reporting access control bugs."
+
+### FP-PT03: FixedPoolType swapByInput→swapByOutput internal bypass at 100% fee
+- **Scope**: [any agent analyzing FixedHelper.swapByInput]
+- **Contracts**: lbamm-pool-type-fixed/src/libraries/FixedHelper.sol L910-L915
+- **Vector**: Internal re-invocation of swapByOutput bypasses 100% poolFeeBPS check, causing division-by-zero
+- **Why false**: At poolFeeBPS=100% (MAX_BPS), `amountInAfterFees = amountIn - lpFeeAmount = amountIn - amountIn = 0`. Then `amountOut = calculateFixedSwapByRatioRoundingDown(0, ...) = 0`. The condition `if (amountOut > swapCache.expectedReserve)` becomes `0 > expectedReserve` which is false for any pool with reserves. The internal re-invocation never triggers at 100% fee. The structural coupling exists but the path is unreachable.
+- **Confidence**: 90
+- **Source**: R11 (composability-exploiter background agent triage)
+- **Category**: ARITHMETIC | PATH_REACHABILITY
+- **Lesson**: "Trace the 100% fee path through all intermediate calculations before assuming the guard bypass is reachable."
+
+### FP-PT04: swapExtraData non-32-byte length silently disables slippage
+- **Scope**: [any agent analyzing DynamicPoolType]
+- **Contracts**: amm-pool-type-dynamic/src/DynamicPoolType.sol L433-441, L552-560
+- **Vector**: Non-32-byte swapExtraData silently sets maximum price limit (no slippage protection)
+- **Why false**: Already documented in MEMORY.md as a known gotcha. This is a caller-controlled input error (self-inflicted). No attacker can force the victim to pass wrong-length data. Not exploitable for third-party profit.
+- **Confidence**: 95
+- **Source**: R11 (composability-exploiter background agent triage)
+- **Category**: INPUT_VALIDATION | KNOWN_PATTERN
+- **Lesson**: "Known issue: swapExtraData must be exactly 32 bytes or slippage protection is disabled. See MEMORY.md gotchas."
+
+### FP-EXP01: Fixed Pool height-bucket quantization looks like theft but is value-neutral rebalancing
+- **Scope**: [math-exploiter, precision-sniper, math-deep-diver]
+- **Contracts**: FixedHelper.sol (withdrawLiquidity, _calculateLiquidityStartAndEndHeights)
+- **Vector**: 1-wei withdrawal returns ~4,750 USDC due to height-bucket quantization rounding down the redeposit
+- **Why false**: The 4,750 USDC surplus is offset by ~0.95 WETH deficit (equivalent value at pool price). Net P&L ≈ $0. This is a token rebalancing, not value extraction. INV-S01/S02 are NOT violated — pool solvency maintained.
+- **Confidence**: 95
+- **Source**: exploit mode run 2026-03-30, confirmed by audit review (AUDIT-REVIEW.md)
+- **Category**: MATH_PRECISION
+- **Lesson**: Always check BOTH token movements when claiming profit on one token. Single-token profit analysis is misleading in two-token pools.
+
+### FP-EXP02: HOOK-001 stale transient storage (rediscovery of CP-001)
+- **Scope**: [state-exploiter, state-desync]
+- **Contracts**: AMMStandardHook.sol, AMMModule.sol
+- **Vector**: Stale tstore from first directSwap read by second directSwap in same tx
+- **Why false**: Already known as CP-001 (Low severity). Token creator pricing bounds bypass, not direct theft. Acknowledged by Limit Break.
+- **Confidence**: 99
+- **Source**: exploit mode run 2026-03-30 — state-exploiter Finding 1
+- **Category**: STATE_DESYNC
+
+### FP-EXP03: validateHandlerOrder overflow (rediscovery of FP-SUB02)
+- **Scope**: [state-exploiter, auth-forger]
+- **Contracts**: AMMStandardHook.sol, SqrtPriceCalculator.sol
+- **Vector**: computeRatioX96 overflows uint160 → returns 0 → max bound check passes
+- **Why false**: Already submitted as FP-SUB02 and REJECTED by contest judges.
+- **Confidence**: 99
+- **Source**: exploit mode run 2026-03-30 — state-exploiter Finding 2
+- **Category**: MATH_OVERFLOW
+
+### FP-EXP04: Asymmetric hook flags bypass (rediscovery of Guardian M-05)
+- **Scope**: [boundary-exploiter, cross-boundary, extension-hijacker]
+- **Contracts**: AMMStandardHook.sol, AMMModule.sol
+- **Vector**: BEFORE_SWAP flag set but AFTER_SWAP flag not set → afterSwap pricing check never fires
+- **Why false**: Already known as Guardian M-05 (Medium, Acknowledged). Not novel.
+- **Confidence**: 99
+- **Source**: exploit mode run 2026-03-30 — boundary-exploiter Finding 2
+- **Category**: FLAG_LOGIC
