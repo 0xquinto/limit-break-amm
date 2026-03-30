@@ -133,6 +133,114 @@ def _load_checklist(agent_name: str) -> str:
     return f"(Checklist file {filename} not found.)"
 
 
+# --- Exploit knowledge builder ---
+
+def build_exploit_knowledge(agent_name: str, scope: list[str]) -> str:
+    """Compact knowledge block for exploit system prompts (~420 tokens).
+
+    Reads the same sources as compliance mode but formats for attack-first agents.
+    Injected into the system prompt (persists across all turns).
+    """
+    import json as _json
+    parts = []
+
+    # 1. Confirmed patterns — real bugs, test for variants
+    patterns_path = MEMORY_DIR / "confirmed-patterns.md"
+    if patterns_path.exists():
+        content = patterns_path.read_text()
+        import re
+        cp_matches = re.findall(r'### (CP-\S+): (.+)', content)
+        if cp_matches:
+            parts.append("KNOWN VULNERABILITIES IN THIS CODEBASE (test for variants):")
+            for cp_id, summary in cp_matches[:5]:
+                parts.append(f"- {cp_id}: {summary}")
+
+    # 2. Tactical failures — concepts that may be right, test code was wrong
+    playbook_path = Path(__file__).parent / "playbook" / "failure_classifications.jsonl"
+    if playbook_path.exists():
+        tactical = []
+        for line in playbook_path.read_text().splitlines():
+            if not line.strip():
+                continue
+            entry = _json.loads(line)
+            if entry.get("failure_class") == "tactical":
+                tactical.append(entry)
+        if tactical:
+            parts.append("\nUNPROVEN BUT PLAUSIBLE (test code failed, concept may be right):")
+            for t in tactical[:5]:
+                parts.append(f"- {t['hypothesis_id']}: {t['detail'][:120]}")
+
+    # 3. Top FPs — don't waste turns
+    fps = parse_false_positives()
+    top_fps = sorted(fps, key=lambda f: -f.confidence)[:8]
+    if top_fps:
+        parts.append("\nDO NOT INVESTIGATE (confirmed false positives):")
+        for fp in top_fps:
+            parts.append(f"- {fp.id}: {fp.vector[:80]}")
+
+    # 4. Regression cases — known exploit patterns mapped to this codebase
+    regression_path = Path(__file__).parent / "regression_cases.json"
+    if regression_path.exists():
+        cases = _json.loads(regression_path.read_text())
+        if cases:
+            parts.append("\nKNOWN EXPLOIT PATTERNS (test against this code):")
+            for c in cases[:5]:
+                parts.append(f"- {c.get('id', '?')}: {c.get('title', c.get('description', '?'))[:100]}")
+
+    # 5. Invariants to break
+    invariant_path = Path(__file__).parent.parent / "framework" / "amm-invariant-catalog.md"
+    if invariant_path.exists():
+        content = invariant_path.read_text()
+        import re
+        inv_matches = re.findall(r'### (INV-\S+): (.+?)(?:\s*\[)', content)
+        # Pick invariants relevant to scope
+        scope_keywords = {"math": ["SW", "S0", "E0"], "state": ["H0", "S0", "L0"], "boundary": ["H0", "S04", "P0"]}
+        agent_type = agent_name.split("-")[0] if "-" in agent_name else "boundary"
+        relevant_prefixes = scope_keywords.get(agent_type, [])
+        relevant = [(i, d) for i, d in inv_matches if any(p in i for p in relevant_prefixes)]
+        if not relevant:
+            relevant = inv_matches[:3]
+        if relevant:
+            parts.append("\nINVARIANTS TO BREAK:")
+            for inv_id, desc in relevant[:4]:
+                parts.append(f"- {inv_id}: {desc}")
+
+    # 6. Phase 0 highlights
+    phase0_dir = Path(__file__).parent.parent.parent / "targets" / "full-system" / "artifacts" / "phase0"
+    if phase0_dir.exists():
+        scope_repos = [r.rstrip("/") for r in scope]
+        highlights = []
+        for repo in scope_repos[:3]:
+            slither_file = phase0_dir / f"{repo}-slither.md"
+            if slither_file.exists():
+                highlights.append(f"Read {slither_file.relative_to(phase0_dir.parent.parent.parent.parent)}")
+        if highlights:
+            parts.append("\nSTATIC ANALYSIS (read for attack surface):")
+            for h in highlights:
+                parts.append(f"- {h}")
+
+    # 7. Tools
+    parts.append("\nTOOLS (use these — don't just rely on Forge):")
+    parts.append("- Quick math check: chisel (Solidity REPL, type expressions directly)")
+    parts.append("- Symbolic proof: halmos --contract X --function check_ --loop 4")
+    parts.append("- Stateful fuzz: medusa fuzz --target-contracts X --test-limit 10000")
+    parts.append("- Deep analysis: Skill(\"audit-context-building:audit-context-building\") on key functions")
+    parts.append("- Entry points: Skill(\"entry-point-analyzer:entry-point-analyzer\") for attack surface")
+    parts.append("- Weird tokens: Skill(\"building-secure-contracts:token-integration-analyzer\") for handler safety")
+    parts.append("- API footguns: Skill(\"sharp-edges:sharp-edges\") for config/hook interface misuse")
+    parts.append("- Pattern search: Skill(\"variant-analysis:variant-analysis\") when you find ANY suspicious pattern")
+    parts.append("- Semgrep: Skill(\"static-analysis:semgrep\") for cross-file taint tracking")
+
+    # 8. Key lessons from 19 runs
+    parts.append("\nLESSONS FROM 19 PRIOR RUNS:")
+    parts.append("- Exploit COMPOSITION across contracts, not individual functions")
+    parts.append("- Rounding consistently favors protocol — look for the exception")
+    parts.append("- Cross-boundary denomination mismatches are the highest-signal pattern")
+    parts.append("- 0 findings from autonomous agents across all runs — human hints are critical")
+
+    return "\n".join(parts)
+
+
 # --- Prompt building ---
 
 def build_memory_block(agent_role: str) -> str:

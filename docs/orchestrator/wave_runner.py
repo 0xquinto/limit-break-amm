@@ -37,7 +37,7 @@ from .config import (
     MAX_CONCURRENT_AGENTS,
 )
 from .model_profiles import resolve_profile, AUDIT_SYSTEM_PROMPT
-from .templates.exploit_system_prompts import EXPLOIT_SYSTEM_PROMPTS
+from .templates.exploit_system_prompts import EXPLOIT_BASE_PROMPTS, build_exploit_system_prompt
 
 # Must unset before SDK spawns CLI subprocess — nested session check
 os.environ.pop("CLAUDECODE", None)
@@ -170,7 +170,9 @@ async def _run_agent(
         model=agent.resolved_model,
         max_turns=agent.max_turns,
         permission_mode=agent.permission_mode,
-        system_prompt=EXPLOIT_SYSTEM_PROMPTS.get(agent.name, AUDIT_SYSTEM_PROMPT),
+        system_prompt=(build_exploit_system_prompt(agent.name, agent.scope)
+                       if agent.name in EXPLOIT_BASE_PROMPTS
+                       else AUDIT_SYSTEM_PROMPT),
         setting_sources=["user", "project", "local"],
         thinking=thinking,
     )
