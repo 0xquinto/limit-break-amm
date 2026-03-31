@@ -68,3 +68,29 @@ class TestGetSystemPrompt:
             agent = _mock_agent(name)
             result = _get_system_prompt(agent)
             assert result, f"Empty system prompt for boundary agent {name}"
+
+
+from docs.orchestrator.config import WAVE_BH1, WAVE_EXPLOIT
+
+
+class TestConfigPromptAlignment:
+    """Every configured agent must have a system prompt — no silent fallback."""
+
+    def test_wave_bh1_agents_all_have_prompts(self):
+        all_prompt_keys = (
+            set(EXPLOIT_BASE_PROMPTS.keys())
+            | set(COMPLIANCE_BASE_PROMPTS.keys())
+            | set(BOUNDARY_BASE_PROMPTS.keys())
+        )
+        for agent in WAVE_BH1.agents:
+            assert agent.name in all_prompt_keys, (
+                f"Agent '{agent.name}' in WAVE_BH1 has no system prompt. "
+                f"Will silently fall back to generic AUDIT_SYSTEM_PROMPT."
+            )
+
+    def test_wave_exploit_agents_all_have_prompts(self):
+        for agent in WAVE_EXPLOIT.agents:
+            assert agent.name in EXPLOIT_BASE_PROMPTS, (
+                f"Exploit agent '{agent.name}' not in EXPLOIT_BASE_PROMPTS. "
+                f"Will fall through to compliance or generic prompt."
+            )
