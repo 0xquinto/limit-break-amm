@@ -4,7 +4,7 @@
 
 ## What This Is
 
-A Python pipeline that spawns 9 specialized Claude agents in parallel to hunt for exploitable vulnerabilities in the Limit Break AMM smart contracts. Agents write Forge tests, run static analyzers, and produce structured findings. The orchestrator scores their work on 6 compliance dimensions, deduplicates across agents, and tracks progress across runs.
+A Python pipeline with two modes: **compliance mode** spawns 9 agents to map the attack surface and build a knowledge base; **exploit mode** spawns 3 agents to crack the tactical failures compliance found. Both modes use per-archetype system prompts with knowledge injection, write Forge tests, and produce structured findings. The orchestrator scores, deduplicates, and verifies all output.
 
 **Stack**: Solidity 0.8.24, Foundry, Cancun EVM, Python 3.11+, Claude Agent SDK
 
@@ -16,10 +16,18 @@ cd limit-break-amm
 python3 -m venv .venv && source .venv/bin/activate
 pip install claude-agent-sdk
 
-# Run a full audit (Pass 1 hypotheses + Wave 1 agents)
+# Compliance mode (builds knowledge base, ~$30-50/run)
 .venv/bin/python3 -m docs.orchestrator.run_audit \
-  --wave 1 --fresh --experiment \
+  --wave 1 --fresh --mode compliance --experiment \
   --description "your experiment description"
+
+# Exploit mode (cracks tactical failures, ~$30/run)
+.venv/bin/python3 -m docs.orchestrator.run_audit \
+  --wave 1 --fresh --mode exploit --experiment \
+  --description "your experiment description"
+
+# Dry run (preview prompts, no agents spawned)
+.venv/bin/python3 -m docs.orchestrator.run_audit --wave 1 --dry-run
 
 # Monitor live
 python3 docs/orchestrator/scripts/run_monitor.py
@@ -29,26 +37,40 @@ python3 docs/orchestrator/scripts/run_monitor.py
 
 ```mermaid
 graph TB
-    subgraph Pipeline
+    subgraph Compliance Mode
         Phase0[Phase 0: Static Analysis]
-        Pass1[Pass 1: 6 Sonnet Boundary Agents]
-        Wave1[Wave 1: 9 Parallel Audit Agents]
-        Gates[Quality Gates]
+        Pass1[Pass 1: 6 Boundary Agents]
+        Wave1[Wave 1: 9 Audit Agents]
+        CGates[Quality Gates]
         Score[Compliance Scoring]
+    end
+    subgraph Exploit Mode
+        Hints[Auto-Hints from Playbook]
+        Exploit[3 Exploit Agents]
+        EGates[Verification Gates]
+        EScore[Exploit Scoring]
     end
     Phase0 --> Pass1
     Pass1 -->|hypotheses| Wave1
-    Wave1 -->|sidecars| Gates
-    Gates --> Score
+    Wave1 -->|sidecars| CGates
+    CGates --> Score
+    Score -->|tactical failures| Hints
+    Hints --> Exploit
+    Exploit -->|findings| EGates
+    EGates --> EScore
 ```
 
 **Phase 0**: Slither + Aderyn on all 6 repos (scripted, no LLM)
 **Pass 1**: 6 Sonnet boundary agents generate hypotheses at trust boundaries
 **Wave 1**: 9 agents investigate hypotheses + run checklists (500 turns max)
-**Gates**: Sidecar gate → Kill gate (7 filters) → FP pre-filter → Regression check
-**Scoring**: 6-dimension compliance (0-120), experiment tracking via TSV
+**Compliance Gates**: Sidecar gate → Kill gate (7 filters) → FP pre-filter → Regression check
+**Compliance Scoring**: 6-dimension (0-120), experiment tracking via TSV
+**Exploit Gates**: Forge test verification → Dedup against FPs → Net-value check (L-017) → Config protection
+**Exploit Scoring**: `compiled_tests x 10 + profitable_tests x 100`
 
 ## Agent Roster
+
+### Compliance Mode (9 agents)
 
 | Agent | Model | Thinking | Scope | Checklist |
 |-------|-------|----------|-------|-----------|
@@ -62,7 +84,21 @@ graph TB
 | composability-exploiter | Sonnet 4.6 | 32K fixed | All 6 repos | C-STATE (25) |
 | price-distorter | Sonnet 4.6 | 32K fixed | All 6 repos | C-MATH (39) |
 
-## Compliance Scoring (0-120)
+### Exploit Mode (3 agents)
+
+| Agent | Model | Thinking | Target |
+|-------|-------|----------|--------|
+| math-exploiter | Sonnet 4.6 | 32K fixed | Rounding/precision in swap math |
+| state-exploiter | Sonnet 4.6 | 32K fixed | State desync between hooks/handlers/core |
+| boundary-exploiter | Sonnet 4.6 | 32K fixed | Trust boundary abuse across repos |
+
+### Pass 1 Boundary Agents (6 agents)
+
+Generated dynamically by `knowledge_gen.py` for each trust boundary: Core-PoolType, Core-Handler, Handler-Hook, Hook-Registry, Diamond Proxy, Transient Storage.
+
+## Scoring
+
+### Compliance (0-120)
 
 | Dimension | Max | Measures |
 |-----------|-----|---------|
@@ -73,7 +109,13 @@ graph TB
 | Thesis | 10 | Hypothesis progression |
 | Hypothesis | 20 | Injected hypothesis completion |
 
-**Grades**: A (108+), B (96+), C (84+), D (72+), F (<72)
+**Grades**: A (108+), B (96+), C (84+), D (72+), F (<72). Best: 112.5.
+
+### Exploit
+
+`compiled_tests x 10 + profitable_tests x 100`. Grade A = profitable exploit found.
+
+**First novel finding**: CP-006 CLOBHelper double-rounding (Medium, exploit mode run 1, $29).
 
 ## Required Tools
 
