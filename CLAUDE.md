@@ -29,11 +29,14 @@ Limit Break AMM security audit framework. This parent directory orchestrates aud
 - Both modes have per-archetype persistent system prompts with knowledge injection.
 - Pass 1 boundary agents (6 Sonnet) also have per-boundary system prompts.
 
-**Active templates**:
-- 9 compliance archetype templates + 3 exploit templates + exploit-developer (wave 2)
+**Active templates** (11 folder-based `*/prompt.md`):
+- 9 compliance archetypes + exploit-user-prompt + knowledge-gen-prompt
 - `black-hat-preamble.md` — shared tool phases (included via `{{PREAMBLE}}`)
 - Per-archetype system prompts in `templates/compliance_system_prompts.py`, `exploit_system_prompts.py`, `boundary_system_prompts.py`
 - Old defensive templates archived in `docs/orchestrator/templates/archive/`
+
+**Verification gates** (exploit mode, `run_audit.py`):
+- Independent Forge test verification → Dedup against FPs → Net-value check (L-017) → Config protection gate
 
 **Run commands**:
 - Compliance: `.venv/bin/python3 -m docs.orchestrator.run_audit --wave 1 --fresh --mode compliance --experiment --description "..."`
@@ -41,5 +44,5 @@ Limit Break AMM security audit framework. This parent directory orchestrates aud
 - Best compliance score: 112.5. First novel finding: CP-006 (exploit mode, $29 run).
 
 For architecture details, see [docs/CODEBASE_MAP.md](docs/CODEBASE_MAP.md).
-<!-- context-sync: 2026-03-31T12:48:54Z -->
-<!-- Recent changes: docs: 80 files (SKILL.md, CLAUDE.md, CODEBASE_MAP.md, hint_generator.py, metadata.json...) -->
+<!-- context-sync: 2026-03-31T15:36:16Z -->
+<!-- Recent changes: docs: 18 files (config_guard.py, run_audit.py, auth-forger.md, compliance_system_prompts.py, composability-exploiter.md...); tests: 2 files (test_config_guard.py, test_system_prompts.py) -->

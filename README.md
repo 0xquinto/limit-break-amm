@@ -104,13 +104,14 @@ graph TB
 
 ```
 docs/
-├── orchestrator/          # Python pipeline (27 modules, 223 tests)
+├── orchestrator/          # Python pipeline (31 modules, 247 tests)
 │   ├── config.py          # Agent configs, wave definitions
 │   ├── run_audit.py       # Entry point
 │   ├── wave_runner.py     # SDK agent spawner
-│   ├── templates/         # 9 archetype prompts + 4 checklists
+│   ├── config_guard.py    # Config protection verification gate
+│   ├── templates/         # 11 archetype prompts + 4 checklists
 │   ├── playbook/          # Cross-run hypothesis persistence
-│   └── tests/             # 219 pytest tests
+│   └── tests/             # 247 pytest tests
 ├── audit_memory/          # Digest, FPs, patterns, lessons
 ├── targets/full-system/   # Artifacts, results, experiments
 ├── CODEBASE_MAP.md        # Full architecture map
