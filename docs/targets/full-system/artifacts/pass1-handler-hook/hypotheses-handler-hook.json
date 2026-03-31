@@ -4,166 +4,194 @@
   "hypotheses": [
     {
       "id": "H-handler-hook-01",
-      "mechanism": "In CLOBHelper.calculateFixedInput (lines 309-315), two consecutive FullMath.mulDivRoundingUp operations compute amountOut from (amountIn, sqrtPriceX96). In AMMStandardHook.validateHandlerOrder (line 215), SqrtPriceCalculator.computeRatioX96 reconstructs sqrtPriceX96 from (amountIn, amountOut). The round-trip is lossy: calculateFixedInput rounds UP twice, inflating amountOut. For prices near MIN_SQRT_RATIO (4295128739), an order with amountIn=1e18 produces amountOut=1 (true value ~0.054, rounded up twice from fractional intermediate). computeRatioX96(1, 1e18) reconstructs sqrtPriceX96 as ~7.92e19, which is ~18 billion times higher than the actual order price of 4.3e9. A maker can place CLOB orders far below minSqrtPriceX96 that PASS the pricing bounds check because the reconstructed price in validateHandlerOrder is inflated by orders of magnitude. This bypasses token creators' price floor protections. The vulnerability is exploitable at any order size when sqrtPriceX96 is low enough that amountIn * sqrtPriceX96^2 / Q96^2 < 1, which holds for virtually all amounts at MIN_SQRT_RATIO.",
-      "functions": ["calculateFixedInput", "validateHandlerOrder", "_enforceTokenHooks", "computeRatioX96"],
+      "mechanism": "In AMMStandardHook.validateHandlerOrder (lines 198-226), the price used for bounds-checking is reconstructed via a round-trip: CLOBHelper.calculateFixedInput(orderAmount, sqrtPriceX96) produces amountOut, then SqrtPriceCalculator.computeRatioX96(amountOut, amountIn) computes the verified price. calculateFixedInput uses two consecutive mulDivRoundingUp (ceiling division) calls, guaranteeing amountOut >= amountIn * P^2 / Q96^2. For small orderAmounts where amountIn * sqrtPriceX96 < Q96 (e.g., amountIn=1, sqrtPriceX96=MIN_SQRT_RATIO=4,295,128,739 << Q96=7.9e28), both ceil steps round up to 1. computeRatioX96(1, 1) returns Q96 ~= 7.9e28. Any realistic minSqrtPriceX96 << Q96, so the check Q96 < minSqrtPriceX96 is FALSE — no revert. The CLOB order is placed with stored price sqrtPriceX96 = P (which may be far below the creator's minimum). The fill later executes at P, bypassing the floor price protection. This works for any orderAmount where amountIn * sqrtPriceX96^2 / Q96^2 < 1, i.e., orderAmount < Q96^2 / sqrtPriceX96^2. At sqrtPriceX96 = 1e18 (realistic market price), this threshold is Q96^2 / (1e18)^2 = (7.9e28)^2 / (1e18)^2 = 6.24e21 tokens, so the bypass works for any orderAmount below ~6.24e21 base units — practically ALL small orders.",
+      "functions": ["validateHandlerOrder", "calculateFixedInput", "computeRatioX96", "_enforceTokenHooks"],
       "lines": {
+        "lbamm-hooks-and-handlers/src/hooks/AMMStandardHook.sol": [198, 208, 210, 211, 215, 217, 218, 221],
         "lbamm-hooks-and-handlers/src/handlers/clob/libraries/CLOBHelper.sol": [309, 313, 314],
-        "lbamm-hooks-and-handlers/src/hooks/AMMStandardHook.sol": [198, 205, 212, 213, 214, 215, 218, 221],
-        "lbamm-hooks-and-handlers/src/handlers/clob/CLOBTransferHandler.sol": [574, 590, 591, 595, 608],
-        "lbamm-hooks-and-handlers/src/hooks/libraries/SqrtPriceCalculator.sol": [28, 49, 50]
+        "lbamm-hooks-and-handlers/src/handlers/clob/CLOBTransferHandler.sol": [574, 590, 594, 595, 607, 608]
       },
       "confidence": "high",
-      "grounded_in": "code-observation: CLOBHelper.sol:313-314 vs AMMStandardHook.sol:215",
-      "suggested_test": "function test_pricingBoundsRoundtripBypass() public {\n    // Setup: Token with minSqrtPriceX96 = 10^20 (reasonable price floor)\n    uint160 minBound = uint160(10 ** 20);\n    uint160 orderPrice = uint160(4295128739); // MIN_SQRT_RATIO\n    uint256 orderAmount = 1e18;\n    \n    // Step 1: calculateFixedInput(1e18, MIN_SQRT_RATIO)\n    // ceil(1e18 * 4.3e9 / 7.9e28) = ceil(5.4e-2) = 1\n    // ceil(1 * 4.3e9 / 7.9e28) = ceil(5.4e-20) = 1\n    uint256 amountOut = CLOBHelper.calculateFixedInput(orderAmount, orderPrice);\n    assertEq(amountOut, 1);\n    \n    // Step 2: computeRatioX96(1, 1e18) = sqrt(1e-18) * 2^96 ~= 7.92e19\n    uint160 reconstructed = SqrtPriceCalculator.computeRatioX96(amountOut, orderAmount);\n    assertGt(reconstructed, minBound); // PASSES: 7.92e19 > 1e20? Actually ~7.9e19 < 1e20\n    // For minBound = 10^19, it passes\n    // The key point: reconstructed >> actual price (4.3e9)\n    \n    // Order at MIN_SQRT_RATIO should be REJECTED but may pass for certain bounds\n    vm.prank(maker);\n    clob.openOrder(tokenA, tokenB, orderPrice, orderAmount, groupKey, 0, hookData);\n}",
+      "grounded_in": "code-observation: AMMStandardHook.sol:215 + CLOBHelper.sol:313-314",
+      "suggested_test": "function test_validateHandlerOrder_minPriceBypass_viaRounding() public {\n    // Setup: tokenA < tokenB (canonical ordering)\n    // _pricingBounds[tokenA][tokenB].minSqrtPriceX96 = REALISTIC_MIN\n    uint160 realisticMin = 7_922_816_251_426_434;  // ~1e-6 * Q96, realistic floor\n    registry.updatePricingBounds(\n        tokenA,\n        toArray(tokenB),\n        toArray(realisticMin),\n        toArray(uint160(type(uint160).max))\n    );\n    // Set TOKEN_SETTINGS_HANDLER_ORDER_VALIDATE_FLAG for tokenA with hook=ammStandardHook\n    TokenSettings memory s;\n    s.tokenHook = address(ammStandardHook);\n    s.packedSettings = TOKEN_SETTINGS_HANDLER_ORDER_VALIDATE_FLAG;\n    amm.setTokenSettings(tokenA, s);\n\n    // Attack: place CLOB order at price WAY below minimum with tiny orderAmount\n    uint160 belowMin = realisticMin / 100;  // 100x below minimum\n    uint256 tinyAmount = 1 wei;\n    // calculateFixedInput(1, belowMin) = 1 (rounds up)\n    // computeRatioX96(1, 1) = Q96 >> realisticMin -> no revert\n    vm.prank(attacker);\n    uint256 nonce = clobHandler.openOrder(\n        tokenA, tokenB,\n        belowMin,       // stored price: 100x below minSqrtPriceX96\n        tinyAmount,\n        groupKey,\n        belowMin,\n        HooksExtraData(new bytes(0), new bytes(0), new bytes(0))\n    );\n    // Assert: order was placed despite violating minSqrtPriceX96\n    // The fill will execute at belowMin price, dumping tokenA at floor-violating rate\n    assertGt(nonce, 0);\n    // Verify stored order uses the violation price\n    (,, uint160 storedPrice,) = clobHandler.getOrder(orderBookKey, nonce);\n    assertEq(storedPrice, belowMin);\n}",
+      "category": null,
+      "source_category": "2a",
+      "coupled_pair": null,
+      "masking_code": {
+        "file": "lbamm-hooks-and-handlers/src/hooks/AMMStandardHook.sol",
+        "line": 215,
+        "pattern": "ternary_clamp",
+        "masks_invariant": "calculateFixedInput double-ceil rounding collapses small-amount orders to 1:1 ratio, making computeRatioX96(1,1)=Q96 satisfy any realistic minSqrtPriceX96 bound regardless of the stored order price"
+      }
+    },
+    {
+      "id": "H-handler-hook-02",
+      "mechanism": "In AMMStandardHook._validatePricingBounds (lines 823-871) for direct swaps (poolType == address(0)), the price ratio is constructed across two separate hook calls using transient storage: beforeSwap (line 839) stores params.amount = swapCache.amountIn (the raw input, confirmed by AMMModule line 2368: swapAmount = swapCache.inputSwap ? swapCache.amountIn : swapCache.amountOut). afterSwap (lines 842-846) reads it and pairs it with params.amount = swapCache.amountOut (the actual output, confirmed by AMMModule line 2425: swapAmount = swapCache.inputSwap ? swapCache.amountOut : swapCache.amountIn). The computed price = sqrt(post_output / pre_input) * Q96. AMMStandardHook charges output hook fees (e.g., tokenFeeBuyBPS, pairedFeeBuyBPS). These fees are SUBTRACTED from amountOut by the AMM BEFORE afterSwap is called (AMMModule._applyOutputTokenFees). Therefore: checked_price = sqrt((amountOut - outputFee) / amountIn) * Q96 < actualExchangePrice. For a direct swap at true price P (above maxSqrtPriceX96 = M), with output fee rate F: checked_price = P * sqrt(1 - F). If F > 1 - (M/P)^2, then checked_price < M and the maxSqrtPriceX96 bound check passes despite the true price exceeding M. For tokens with 10%+ output fees (tokenFeeBuyBPS=1000), any trade at price 1.054x the max bound will be under-reported to the price checker by 10%, bypassing the bound.",
+      "functions": ["_validatePricingBounds", "beforeSwap", "afterSwap", "_executeBeforeSwapHooks", "_executeAfterSwapHooks"],
+      "lines": {
+        "lbamm-hooks-and-handlers/src/hooks/AMMStandardHook.sol": [120, 121, 122, 823, 831, 836, 838, 839, 842, 843, 846, 854, 862, 866],
+        "lbamm-core/src/modules/AMMModule.sol": [2368, 2425]
+      },
+      "confidence": "medium",
+      "grounded_in": "EXP-6",
+      "suggested_test": "function test_directSwap_maxPriceBound_bypassViaOutputFee() public {\n    // Token T has maxSqrtPriceX96 = M and tokenFeeBuyBPS = 1000 (10% output fee)\n    // Direct swap at price P = 1.1 * M (10% above max)\n    // After 10% output fee: checked_price = 1.1*M * sqrt(0.9) = 1.044*M\n    // Wait - fee is on output amount, not on price sqrt:\n    // checked = sqrt(amountOut*(1-0.1) / amountIn) = sqrt(P^2*(1-0.1)) = P*sqrt(0.9) = 1.045*M > M? Hmm.\n    // For bypass: need P*sqrt(1-F) < M, i.e., P < M / sqrt(1-F)\n    // With F=0.5 (50% fee, 5000 BPS): P < M/sqrt(0.5) = M*1.414\n    // At P = 1.4*M, checked = 1.4*M * sqrt(0.5) = 0.99*M < M -> BYPASS!\n    uint160 maxPrice = 1_000_000_000 * uint160(1 << 48); // some max\n    // Set tokenFeeBuyBPS = 5000 (50%)\n    // Execute direct swap at 1.4x maxPrice (true price violates bound)\n    uint256 amountIn = 1e18;\n    uint256 trueAmountOut = amountIn * (1.4 * maxPrice)^2 / Q96^2; // simplified\n    uint256 afterFeeOut = trueAmountOut / 2; // 50% fee\n    // beforeSwap stores amountIn\n    // afterSwap gets afterFeeOut -> computed price < maxPrice -> passes!\n    // Assert: swap at 1.4x max completes when should have reverted\n    vm.prank(attacker);\n    amm.swap(directSwapOrder, \"\");\n    assertGt(IERC20(T).balanceOf(attacker), 0);\n}",
       "category": "state_coupling",
-      "source_category": "2d",
+      "source_category": "2e",
       "coupled_pair": {
-        "state_a": "CLOBHelper.calculateFixedInput output (amountOut with double rounding-up)",
-        "state_b": "SqrtPriceCalculator.computeRatioX96 input reconstructing price from amounts",
-        "invariant": "roundtrip(sqrtPriceX96 -> amounts -> sqrtPriceX96') must preserve |P' - P| < epsilon for bounds enforcement to be meaningful",
-        "gap_contract": "CLOBHelper.sol",
-        "gap_function": "calculateFixedInput",
-        "gap_line": 313
+        "state_a": "DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT (transient: amountIn stored in beforeSwap, before output fees)",
+        "state_b": "params.amount in afterSwap (amountOut AFTER output hook fees are deducted by AMM)",
+        "invariant": "price ratio must use amounts from the same fee-accounting phase",
+        "gap_contract": "AMMStandardHook.sol",
+        "gap_function": "_validatePricingBounds",
+        "gap_line": 842
       },
       "masking_code": null
     },
     {
-      "id": "H-handler-hook-02",
-      "mechanism": "In CLOBHelper.fillOrder (lines 180-239), makers are credited tokenOut via makerTokenBalance[maker] += stepOutput (line 234). The total credited equals amountOut minus fillOutputRemaining. The AMM sends tokenOut to the CLOB AFTER ammHandleTransfer returns (AMMModule.sol lines 2235-2243 sends to swapOrder.recipient = handler). If tokenOut is a fee-on-transfer (FOT) token, the CLOB receives amountOut * (1 - feeRate) actual tokens, but credits makers with the full amountOut - fillOutputRemaining. CLOBTransferHandler.depositToken (lines 362-370) has an explicit balance check rejecting FOT for tokenIn deposits, but NO equivalent check exists for tokenOut received from AMM fills. After afterSwapRefund sends fillOutputRemaining to executor (line 329), the CLOB is short by amountOut * feeRate of tokenOut. This creates first-in-first-out insolvency: early maker withdrawals succeed via withdrawToken (line 407), but later withdrawals fail with insufficient balance. The deficit equals the cumulative FOT fees on all AMM-to-CLOB tokenOut transfers.",
-      "functions": ["fillOrder", "ammHandleTransfer", "afterSwapRefund", "withdrawToken", "depositToken"],
-      "lines": {
-        "lbamm-hooks-and-handlers/src/handlers/clob/libraries/CLOBHelper.sol": [180, 195, 231, 232, 234],
-        "lbamm-hooks-and-handlers/src/handlers/clob/CLOBTransferHandler.sol": [221, 243, 247, 284, 296, 315, 329, 354, 362, 367, 368, 392, 407]
-      },
-      "confidence": "medium",
-      "grounded_in": "EXP-08",
-      "suggested_test": "function test_fotTokenOutCLOBInsolvency() public {\n    // Deploy FOT token with 5% transfer fee\n    FeeOnTransferToken fotToken = new FeeOnTransferToken(500);\n    \n    // Maker1 and Maker2 open CLOB orders: tokenIn -> fotToken\n    vm.prank(maker1);\n    clob.depositToken(address(tokenIn), 1000e18);\n    vm.prank(maker1);\n    clob.openOrder(address(tokenIn), address(fotToken), price, 500e18, gk, 0, hd);\n    vm.prank(maker2);\n    clob.depositToken(address(tokenIn), 1000e18);\n    vm.prank(maker2);\n    clob.openOrder(address(tokenIn), address(fotToken), price, 500e18, gk, 0, hd);\n    \n    // Fill: AMM sends amountOut of fotToken to CLOB (loses 5% to FOT)\n    // CLOB credits both makers with full stepOutput amounts\n    vm.prank(address(amm));\n    clob.ammHandleTransfer(exec, swapOrder, 1000e18, 2000e18, fee, fot, fp);\n    \n    // Maker1 withdraws successfully\n    uint256 m1Balance = clob.makerTokenBalance(address(fotToken), maker1);\n    vm.prank(maker1);\n    clob.withdrawToken(address(fotToken), m1Balance);\n    \n    // Maker2 withdrawal reverts - CLOB is insolvent\n    uint256 m2Balance = clob.makerTokenBalance(address(fotToken), maker2);\n    vm.prank(maker2);\n    vm.expectRevert();\n    clob.withdrawToken(address(fotToken), m2Balance);\n}",
-      "category": "state_coupling",
-      "source_category": "2f",
-      "coupled_pair": {
-        "state_a": "makerTokenBalance[tokenOut][maker] credited in fillOrder",
-        "state_b": "IERC20(tokenOut).balanceOf(address(clob)) actual tokens held",
-        "invariant": "sum(makerTokenBalance[tokenOut][all_makers]) <= IERC20(tokenOut).balanceOf(address(clob))",
-        "gap_contract": "CLOBTransferHandler.sol",
-        "gap_function": "ammHandleTransfer",
-        "gap_line": 234
-      },
-      "masking_code": {
-        "file": "CLOBTransferHandler.sol",
-        "line": 368,
-        "pattern": "silent_guard",
-        "masks_invariant": "depositToken has exact balance check for tokenIn but NO corresponding check exists for tokenOut received from AMM fills"
-      }
-    },
-    {
       "id": "H-handler-hook-03",
-      "mechanism": "In CLOBTransferHandler._enforceTokenHooks (line 591), the actual order sqrtPriceX96 is encoded into handlerOrderParams via abi.encode(orderBookKey, sqrtPriceX96). However, AMMStandardHook.validateHandlerOrder (lines 205-206) marks both handlerOrderParams and hookData as /* unused */ comments and completely ignores them. Instead, it reconstructs the price from (amountIn, amountOut) via SqrtPriceCalculator.computeRatioX96 (line 215). The exact CLOB order price is available in the calldata but is discarded. The hook enforces pricing bounds against an APPROXIMATION of the order price that can differ arbitrarily from the actual price (see H-handler-hook-01). This is a defense-in-depth failure: the handler provides the exact price, but the hook ignores it in favor of a lossy round-trip computation. The handlerOrderParams field was specifically designed for this purpose but the implementation doesn't use it.",
-      "functions": ["_enforceTokenHooks", "validateHandlerOrder", "calculateFixedInput"],
+      "mechanism": "In CLOBHelper.fillOrder (lines 180-239), when all orders are consumed, traverseCLOB returns with nextSqrtPriceX96 = type(uint160).max (the sentinel for 'no orders'). Then ptrUpdatedOrderBucket = ptrOrderBook.priceOrderBucket[type(uint160).max] and ptrUpdatedOrder = _orderIdToOrder(ptrUpdatedOrderBucket.currentOrderId). Since the sentinel bucket has never had orders, currentOrderId == bytes32(0). _orderIdToOrder(bytes32(0)) constructs a storage pointer at slot 0 of CLOBTransferHandler. The Order struct fields are: maker (slot 0), orderNonce (slot 1), inputAmount (slot 2). CLOBTransferHandler storage: slot 0 = nextOrderNonce (uint256). Reading ptrOrder.orderNonce reads slot 1 = base slot of makerTokenBalance mapping = 0 (mapping base slots are unoccupied in Solidity). endingOrderNonce = 0. THEN line 238: ptrOrderBucket.inputAmountRemaining = endingOrderInputRemaining = 0 writes 0 to the sentinel bucket's inputAmountRemaining. This is benign for normal usage, but if a maker places an order at exactly MAX_SQRT_RATIO = type(uint160).max price (allowed: openOrder check at line 106 rejects only sqrtPriceX96 > MAX_SQRT_RATIO, not ==), their order occupies the SENTINEL BUCKET. After any fill exhausts all cheaper orders, the sentinel write zeroes the MAX_SQRT_RATIO bucket's inputAmountRemaining, corrupting the queued order at that price. The maker's order becomes unfillable (inputAmountRemaining=0 causes InsufficientInputToFill) and uncloseable through normal paths.",
+      "functions": ["fillOrder", "traverseCLOB", "openOrder", "_orderIdToOrder"],
       "lines": {
-        "lbamm-hooks-and-handlers/src/handlers/clob/CLOBTransferHandler.sol": [574, 590, 591, 595, 602, 608, 614],
-        "lbamm-hooks-and-handlers/src/hooks/AMMStandardHook.sol": [198, 205, 206, 210, 211, 212, 213, 214, 215]
+        "lbamm-hooks-and-handlers/src/handlers/clob/libraries/CLOBHelper.sol": [106, 180, 188, 193, 218, 237, 238, 255, 274, 281, 285, 287, 288, 289, 290, 295, 337, 339],
+        "lbamm-hooks-and-handlers/src/handlers/clob/CLOBTransferHandler.sol": [35, 41, 43, 45, 47]
       },
       "confidence": "high",
-      "grounded_in": "code-observation: CLOBTransferHandler.sol:591 vs AMMStandardHook.sol:205",
-      "suggested_test": "function test_handlerOrderParamsIgnored() public view {\n    // The handler encodes the EXACT sqrtPriceX96 into handlerOrderParams\n    bytes memory realParams = abi.encode(bytes32(0x1234), uint160(50000));\n    bytes memory garbageParams = hex\"deadbeefcafebabe\";\n    \n    // Both calls produce identical results because handlerOrderParams is unused\n    hook.validateHandlerOrder(maker, true, tokenIn, tokenOut, 100, 200, realParams, \"\");\n    hook.validateHandlerOrder(maker, true, tokenIn, tokenOut, 100, 200, garbageParams, \"\");\n    // Neither call uses the actual order price from handlerOrderParams\n    // Bounds enforcement relies entirely on computeRatioX96(amountOut, amountIn)\n}",
-      "category": null,
-      "source_category": "2d",
-      "coupled_pair": null,
+      "grounded_in": "code-observation: CLOBHelper.sol:106+238+281-295",
+      "suggested_test": "function test_sentinelBucketCorruption_maxSqrtRatioOrder() public {\n    uint160 MAX_PRICE = type(uint160).max; // = MAX_SQRT_RATIO\n    // Maker A places 1000e18 tokens at MAX price (allowed, not > MAX)\n    vm.startPrank(makerA);\n    clobHandler.depositToken(tokenIn, 1000e18);\n    uint256 nonceA = clobHandler.openOrder(\n        tokenIn, tokenOut, MAX_PRICE, 1000e18, groupKey, MAX_PRICE, emptyHookData\n    );\n    vm.stopPrank();\n\n    // Maker B places cheap order that can actually be filled\n    vm.startPrank(makerB);\n    clobHandler.depositToken(tokenIn, 100e18);\n    clobHandler.openOrder(tokenIn, tokenOut, normalPrice, 100e18, groupKey, normalPrice, emptyHookData);\n    vm.stopPrank();\n\n    // AMM fills makerB's order entirely\n    // traverseCLOB exhausts normal-price bucket, advances to sentinel (MAX_PRICE)\n    // Line 238: ptrOrderBucket.inputAmountRemaining = 0 written to MAX_PRICE bucket!\n    vm.prank(address(amm));\n    clobHandler.ammHandleTransfer(\n        executor, swapOrderForCLOB, 100e18, normalFillOutput,\n        exchangeFee, feeOnTop, fillParams\n    );\n\n    // Assert: makerA's order at MAX_PRICE is now corrupted\n    // inputAmountRemaining for MAX_PRICE bucket = 0 (should be 1000e18)\n    (uint256 corrupted,,) = getOrderBucketInfo(tokenIn, tokenOut, groupKey, MAX_PRICE);\n    assertEq(corrupted, 0);  // corrupted! makerA's 1000e18 is locked forever\n\n    // MakerA cannot close (closeOrder would read inputAmountRemaining=0 for current order)\n    vm.expectRevert();\n    vm.prank(makerA);\n    clobHandler.closeOrder(tokenIn, tokenOut, MAX_PRICE, nonceA, groupKey);\n}",
+      "category": "state_coupling",
+      "source_category": "2g",
+      "coupled_pair": {
+        "state_a": "OrderBucket.inputAmountRemaining at sentinel price type(uint160).max (written by fillOrder line 238)",
+        "state_b": "Order.inputAmount for orders legitimately placed at MAX_SQRT_RATIO price",
+        "invariant": "The sentinel bucket at type(uint160).max must remain zeroed; orders at that exact price share the bucket and get corrupted when a fill exhausts all cheaper orders",
+        "gap_contract": "CLOBHelper.sol",
+        "gap_function": "fillOrder",
+        "gap_line": 238
+      },
       "masking_code": null
     },
     {
       "id": "H-handler-hook-04",
-      "mechanism": "In CLOBTransferHandler.openOrder (line 534), _enforceTokenHooks calls AMMStandardHook.validateHandlerOrder to check the order's price against current pricing bounds. When orders are filled later via ammHandleTransfer (lines 271-282), CLOBHelper.fillOrder executes WITHOUT re-validating against current pricing bounds. This creates a TOCTOU gap: if a token creator tightens pricing bounds via registryUpdatePricingBounds after orders are placed, pre-existing orders at now-out-of-bounds prices remain fillable. The AMM's beforeSwap/afterSwap hooks validate the POOL PRICE during fills, but the pool price and the individual CLOB ORDER prices are distinct quantities. The CLOB distributes output to makers based on ORDER prices (via calculateFixedInput at each price level), while the pool determines overall amountIn/amountOut. A CLOB order priced below new bounds can still execute as long as the aggregate pool-level swap stays within bounds. This means token creators cannot retroactively enforce tighter pricing bounds on existing CLOB orders.",
-      "functions": ["openOrder", "_enforceTokenHooks", "ammHandleTransfer", "fillOrder", "validateHandlerOrder", "registryUpdatePricingBounds"],
+      "mechanism": "In AMMStandardHook.registryUpdateTokenSettings (lines 519-525), the registry PUSH sets _tokenSettings[token] = tokenSettings verbatim, including the initialized field. In _getOrFetchTokenSettings (lines 907-919), the local cache is consulted via _tokenSettings[token].initialized. If the registry sends a settings struct with initialized=false (e.g., a full off-chain JSON struct with the field absent defaults to false, or a reset operation), the cached entry has tradingIsPaused set correctly but initialized=false. On the next swap call, _getOrFetchTokenSettings sees initialized=false and calls SETTINGS_REGISTRY.getTokenSettings(token). If the registry has NOT yet propagated the pause (registry state lags the push), the re-fetched settings have tradingIsPaused=false — the opposite of what was pushed. The hook's pause mechanism is silently bypassed. Additionally, there is no consistency guarantee: registryUpdateTokenSettings sets the cache, but the next _getOrFetchTokenSettings may re-fetch stale registry data. The window exists between the registry update tx and the registry's internal state update propagation (if the registry itself is multi-step). Victim: token creators relying on the pause mechanism to halt trading.",
+      "functions": ["registryUpdateTokenSettings", "_getOrFetchTokenSettings"],
       "lines": {
-        "lbamm-hooks-and-handlers/src/handlers/clob/CLOBTransferHandler.sol": [482, 534, 221, 271, 275, 276, 279],
-        "lbamm-hooks-and-handlers/src/hooks/AMMStandardHook.sol": [198, 546, 558, 575, 576]
+        "lbamm-hooks-and-handlers/src/hooks/AMMStandardHook.sol": [519, 522, 524, 907, 908, 911, 912, 913, 914, 915, 916]
       },
       "confidence": "medium",
-      "grounded_in": "EXP-03",
-      "suggested_test": "function test_toctouPricingBoundsStaleOrder() public {\n    // Step 1: Set wide pricing bounds\n    vm.prank(registry);\n    hook.registryUpdatePricingBounds(tokenA, pairTokens, minPrices, maxPrices);\n    \n    // Step 2: Maker opens order at price within current bounds\n    uint160 lowPrice = uint160(5000);\n    vm.prank(maker);\n    clob.openOrder(tokenA, tokenB, lowPrice, 100e18, groupKey, 0, hookData);\n    \n    // Step 3: Token creator tightens bounds (raises minimum above lowPrice)\n    vm.prank(registry);\n    hook.registryUpdatePricingBounds(tokenA, pairTokens, newHigherMinPrices, maxPrices);\n    \n    // Step 4: Verify new order at lowPrice would be rejected\n    vm.prank(maker2);\n    vm.expectRevert(AMMStandardHook__InvalidPrice.selector);\n    clob.openOrder(tokenA, tokenB, lowPrice, 100e18, groupKey, 0, hookData);\n    \n    // Step 5: But the OLD order is still fillable!\n    vm.prank(address(amm));\n    clob.ammHandleTransfer(exec, so, 100e18, 500e18, fee, fot, fp);\n    // Assert: Fill succeeds despite order price being below new minimum\n}",
+      "grounded_in": "code-observation: AMMStandardHook.sol:519-525+907-919",
+      "suggested_test": "function test_pauseBypass_initializedFlagNotEnforced() public {\n    // Step 1: Normal operation - token cached with initialized=true, tradingIsPaused=false\n    amm.swap(/* tokenT swap */);  // warms the cache\n\n    // Step 2: Registry sends pause update WITH initialized=false (bug trigger)\n    HookTokenSettings memory pauseSettings = HookTokenSettings({\n        initialized: false,  // <-- registry forgot to set true, or uses default struct\n        tradingIsPaused: true,\n        blockDirectSwaps: false,\n        checkDisabledPools: false,\n        tokenFeeBuyBPS: 0, tokenFeeSellBPS: 0,\n        pairedFeeBuyBPS: 0, pairedFeeSellBPS: 0,\n        minFeeAmount: 0, maxFeeAmount: 0,\n        poolTypeWhitelistId: 0,\n        pairedTokenWhitelistId: 0,\n        lpWhitelistId: 0\n    });\n    vm.prank(address(registry));\n    ammStandardHook.registryUpdateTokenSettings(tokenT, pauseSettings);\n    // Cache now: initialized=false, tradingIsPaused=true\n\n    // Step 3: Registry still returns OLD settings (tradingIsPaused=false)\n    vm.mockCall(\n        address(registry),\n        abi.encodeWithSelector(ICreatorHookSettingsRegistry.isTokenInitialized.selector, tokenT),\n        abi.encode(true)\n    );\n    vm.mockCall(\n        address(registry),\n        abi.encodeWithSelector(ICreatorHookSettingsRegistry.getTokenSettings.selector, tokenT),\n        abi.encode(HookTokenSettings({ initialized: true, tradingIsPaused: false /* ... */ }))\n    );\n\n    // Step 4: Swap proceeds - _getOrFetchTokenSettings re-fetches stale registry data\n    // Expected: revert(AMMStandardHook__TradingPaused)\n    // Actual: swap succeeds (uses stale registry data)\n    vm.prank(attacker);\n    amm.swap(/* tokenT swap */);  // should revert but doesn't\n    assertGt(receivedAmount, 0);\n}",
       "category": "state_coupling",
       "source_category": "2e",
       "coupled_pair": {
-        "state_a": "_pricingBounds[token][pairedToken] in AMMStandardHook (updatable by registry)",
-        "state_b": "Order prices in orderBooks[key].priceOrderBucket[sqrtPriceX96] (set at openOrder time, immutable)",
-        "invariant": "All fillable CLOB orders should have prices within current pricing bounds",
-        "gap_contract": "CLOBTransferHandler.sol",
-        "gap_function": "ammHandleTransfer",
-        "gap_line": 275
+        "state_a": "_tokenSettings[token].initialized (local AMMStandardHook cache flag)",
+        "state_b": "SETTINGS_REGISTRY.getTokenSettings(token) (authoritative settings, may be stale relative to push)",
+        "invariant": "registryUpdateTokenSettings must always produce initialized=true so the next swap uses the pushed settings, not a re-fetch of potentially stale registry data",
+        "gap_contract": "AMMStandardHook.sol",
+        "gap_function": "registryUpdateTokenSettings",
+        "gap_line": 522
       },
       "masking_code": null
     },
     {
       "id": "H-handler-hook-05",
-      "mechanism": "In AMMStandardHook._validatePricingBounds (lines 823-871), DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT (0xFFFFFFFFFFFFFFFF) is a single Tstorish slot storing the beforeSwap amount for afterSwap price computation in direct swaps. In AMMModule._executeBeforeSwapHooks (lines 2360-2399), beforeSwap is called for tokenIn's hook (line 2371) then tokenOut's hook (line 2382). If both tokens use the SAME AMMStandardHook instance, the second beforeSwap overwrites the slot. Currently benign: both calls receive identical swapAmount (computed once at line 2368). However, this is a fragile design — a single shared slot for two independent hook invocations. If the AMM is upgraded to deduct the first hook's fee before calling the second hook (a natural optimization), the amounts would differ and afterSwap for tokenIn would read tokenOut's amount, computing an incorrect price. The slot naming suggests it was designed for a single direct-swap use case, not for the two-hook-calls-per-swap reality.",
-      "functions": ["_validatePricingBounds", "_executeBeforeSwapHooks", "_executeAfterSwapHooks"],
+      "mechanism": "In CLOBTransferHandler.ammHandleTransfer (lines 221-300), the ICLOBHook(hook).validateExecutor external call (lines 254-265) executes BEFORE CLOBHelper.fillOrder (line 275). The validateExecutor hook receives full fill context: executor address, swapOrder (recipient=CLOBTransferHandler, tokenIn, tokenOut, amountSpecified), amountIn, amountOut, exchangeFee, feeOnTop, hookData. This hook is an arbitrary external contract (set by the order book creator via groupKey encoding). The nonReentrant modifier on ammHandleTransfer prevents direct re-entry into CLOBTransferHandler functions. HOWEVER: the hook can call the AMM (which is NOT locked by CLOBTransferHandler's nonReentrant). If the AMM does not have its own reentrancy lock during the handler callback, the hook can execute a SECOND swap via the AMM, which calls a DIFFERENT handler (not the CLOB handler, since the CLOB is locked) or calls the CLOB handler via a new AMM entry that doesn't hold the reentrancy lock. More concretely: the hook sees exact fill prices (amountIn/amountOut ratio) before the fill executes. It can front-run the fill by: (1) opening/closing CLOB orders via openOrder/closeOrder (blocked by nonReentrant), OR (2) calling the AMM directly to execute a competing swap against the same pool, using the known fill price to profit from arbitrage. The critical window is between validateExecutor observing the price and fillOrder committing the fill.",
+      "functions": ["ammHandleTransfer", "validateExecutor", "fillOrder"],
       "lines": {
-        "lbamm-hooks-and-handlers/src/hooks/AMMStandardHook.sol": [66, 823, 833, 834, 835, 838, 839, 840, 842, 843, 844, 846],
-        "lbamm-core/src/modules/AMMModule.sol": [2360, 2368, 2370, 2371, 2381, 2382, 2417, 2425, 2427, 2428, 2438, 2439]
-      },
-      "confidence": "low",
-      "grounded_in": "EXP-04",
-      "suggested_test": "function test_directSwapSlotCollisionSameHook() public {\n    // Setup: Both tokenA and tokenB use same AMMStandardHook, both have bounds\n    // Execute direct swap\n    \n    // Verify: slot is shared by inspecting storage\n    vm.prank(address(amm));\n    hook.beforeSwap(context, swapParamsTokenIn, \"\"); // writes amountA\n    \n    // Read the slot value after first beforeSwap\n    uint256 slotAfterA;\n    assembly { slotAfterA := tload(0xFFFFFFFFFFFFFFFF) }\n    \n    vm.prank(address(amm));\n    hook.beforeSwap(context, swapParamsTokenOut, \"\"); // overwrites with amountB\n    \n    uint256 slotAfterB;\n    assembly { slotAfterB := tload(0xFFFFFFFFFFFFFFFF) }\n    \n    // Currently: slotAfterA == slotAfterB (same swapAmount)\n    // But if fees were applied between calls, they'd differ\n    assertEq(slotAfterA, slotAfterB);\n    \n    // afterSwap for tokenIn will read slotAfterB (tokenOut's value)\n    vm.prank(address(amm));\n    hook.afterSwap(context, swapParamsTokenIn, \"\"); // reads wrong value if amounts differ\n}",
-      "category": "state_coupling",
-      "source_category": "2b",
-      "coupled_pair": {
-        "state_a": "DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT written by tokenIn's beforeSwap",
-        "state_b": "DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT read by tokenIn's afterSwap",
-        "invariant": "Value read by afterSwap(tokenIn) must equal value written by beforeSwap(tokenIn), not tokenOut's value",
-        "gap_contract": "AMMStandardHook.sol",
-        "gap_function": "_validatePricingBounds",
-        "gap_line": 839
-      },
-      "masking_code": {
-        "file": "AMMModule.sol",
-        "line": 2368,
-        "pattern": "silent_guard",
-        "masks_invariant": "Both beforeSwap calls receive identical swapAmount, hiding the shared-slot collision"
-      }
-    },
-    {
-      "id": "H-handler-hook-06",
-      "mechanism": "In CLOBHelper.fillOrder (lines 180-239), each step computes stepOutput = calculateFixedInput(stepInput, currentPrice) using mulDivRoundingUp twice (lines 210, 213). Rounding UP means each maker receives ceil(true_output). For orders at extreme prices near MIN_SQRT_RATIO, the true output per step is near zero but rounds up to 1 wei. With N such orders, the cumulative output consumed is N wei (all from rounding), charged against fillOutputRemaining (line 232). If the AMM provides amountOut < N, the fill reverts with InsufficientOutputToFill (line 229). This creates a griefing DoS: a maker places many minimum-size orders at MIN_SQRT_RATIO. Each consumes 1 wei of AMM output via rounding. A large number of such orders can cause legitimate fills to revert because the cumulative rounding exceeds the expected output for that price range. The group minimum order size (getGroupKeyMinimumOrder) limits the attack's capital efficiency but doesn't prevent it — the minimum determines input size, not output size, and output rounds to 1 regardless of input size at MIN_SQRT_RATIO.",
-      "functions": ["fillOrder", "calculateFixedInput"],
-      "lines": {
-        "lbamm-hooks-and-handlers/src/handlers/clob/libraries/CLOBHelper.sol": [180, 195, 196, 201, 205, 206, 210, 213, 228, 229, 231, 232, 234, 309, 313, 314]
+        "lbamm-hooks-and-handlers/src/handlers/clob/CLOBTransferHandler.sol": [221, 229, 253, 254, 255, 264, 265, 271, 275, 281, 296]
       },
       "confidence": "medium",
-      "grounded_in": "code-observation: CLOBHelper.sol:210-213",
-      "suggested_test": "function test_cumulativeRoundingDoSOnFill() public {\n    uint160 minPrice = uint160(4295128739); // MIN_SQRT_RATIO\n    uint256 orderSize = getGroupKeyMinimumOrder(groupKey);\n    \n    // Place 100 orders at MIN_SQRT_RATIO\n    for (uint i = 0; i < 100; i++) {\n        vm.prank(makers[i]);\n        clob.depositToken(tokenIn, orderSize);\n        vm.prank(makers[i]);\n        clob.openOrder(tokenIn, tokenOut, minPrice, orderSize, gk, 0, hd);\n    }\n    \n    // Each order: calculateFixedInput(orderSize, MIN_SQRT_RATIO) = 1 wei\n    // Total output needed: 100 wei (all from rounding)\n    // If AMM provides only 50 wei output for this price range:\n    uint256 ammOutput = 50;\n    \n    // Fill reverts at order #51\n    vm.prank(address(amm));\n    vm.expectRevert(CLOBTransferHandler__InsufficientOutputToFill.selector);\n    clob.ammHandleTransfer(exec, so, 100 * orderSize, ammOutput, fee, fot, fp);\n}",
+      "grounded_in": "EXP-3",
+      "suggested_test": "function test_validateExecutor_frontRun_viaAMM() public {\n    // Setup: CLOB order book with MaliciousHook as validator\n    // MaliciousHook.validateExecutor() calls amm.swap() to front-run\n    MaliciousExecutorHook malHook = new MaliciousExecutorHook(address(amm));\n    bytes32 groupKey = clobHandler.generateGroupKey(address(malHook), 1, 0);\n\n    // Maker opens large order\n    vm.prank(maker);\n    clobHandler.depositToken(tokenIn, 10000e18);\n    clobHandler.openOrder(tokenIn, tokenOut, fillPrice, 10000e18, groupKey, fillPrice, emptyHookData);\n\n    // Normal executor tries to fill via AMM\n    // AMM calls ammHandleTransfer -> validateExecutor fires\n    // malHook sees: amountIn=10000e18, amountOut=X at fillPrice\n    // malHook calls amm.swap() for a competing trade BEFORE fillOrder runs\n    // This competes with the same pool, front-running the fill\n    uint256 malHookBalanceBefore = IERC20(tokenOut).balanceOf(address(malHook));\n    \n    vm.prank(executor);\n    amm.swap(/* CLOB fill swap */, fillParams);\n    \n    uint256 malHookProfit = IERC20(tokenOut).balanceOf(address(malHook)) - malHookBalanceBefore;\n    // If AMM allows nested calls from the hook, malHook extracted value front-running the fill\n    assertGt(malHookProfit, 0);\n}",
       "category": null,
-      "source_category": "2a",
+      "source_category": "2b",
       "coupled_pair": null,
       "masking_code": null
     },
     {
-      "id": "H-handler-hook-07",
-      "mechanism": "In CLOBHelper.fillOrder (lines 180-239), when a bucket is exhausted and traverseCLOB (line 218) reaches the end of the order book, it returns data from the sentinel price level at type(uint160).max. At line 289, _orderIdToOrder(ptrUpdatedOrderBucket.currentOrderId) is called. If the sentinel bucket's currentOrderId is bytes32(0), _orderIdToOrder(0) resolves to storage slot 0. In CLOBTransferHandler, slot 0 is nextOrderNonce (line 35, the first state variable after immutables). The Order struct at slot 0 maps to: maker = low 160 bits of nextOrderNonce (slot 0), orderNonce = value at slot 1 (makerTokenBalance mapping base = 0), inputAmount = value at slot 2 (orderBooks mapping base = 0). The check at line 220 relies on orderInputRemaining == 0 (returned from line 290 as ptrUpdatedOrderBucket.inputAmountRemaining). For the sentinel bucket, inputAmountRemaining should be 0 (never written). But if any code path accidentally writes to the sentinel bucket's storage, this assumption breaks. The sentinel price type(uint160).max is used as an end-of-list marker in the linked list (line 115-116 in openOrder). If someone opens an order at a price equal to type(uint160).max, the openOrder check at line 106 allows it (sqrtPriceX96 <= MAX_SQRT_RATIO, and MAX_SQRT_RATIO < type(uint160).max). But the price linked list at line 115-116 uses type(uint160).max as a sentinel. An order at MAX_SQRT_RATIO would be just below the sentinel and handled normally.",
-      "functions": ["fillOrder", "traverseCLOB", "_orderIdToOrder", "openOrder"],
+      "id": "H-handler-hook-06",
+      "mechanism": "In CLOBHelper.traverseCLOB (lines 255-297), when nextOrderId == bytes32(0) (bucket is empty after consuming current order), the code does: ptrOrderBucket.nextOrder[currentOrderId] = bytes32(0) and ptrOrderBucket.previousOrder[bytes32(0)] = bytes32(0). The second write sets previousOrder[0] = 0, which is the SENTINEL tracking the TAIL of the order queue. This correctly resets the sentinel when the bucket empties. However, between the sentinel reset and when a NEW order is opened in the same bucket, there is a structural inconsistency: nextOrder[bytes32(0)] may still point to the old currentOrderId (which was cleaned: nextOrder[currentOrderId] = 0, but nextOrder[bytes32(0)] may still hold a pointer from openOrder line 157: ptrOrderBucket.nextOrder[lastOrderId] = thisOrderId where lastOrderId can be bytes32(0) for the first order). Specifically: in openOrder, line 155: lastOrderId = ptrOrderBucket.previousOrder[bytes32(0)]. If previousOrder[bytes32(0)] was reset to 0 by traverseCLOB, and a new order C is opened: lastOrderId=0, nextOrder[0]=C, previousOrder[0]=C, previousOrder[C]=0. But if nextOrder[bytes32(0)] was set to some OLD order id B from a previous openOrder (before the traversal reset it), this stale pointer lingers. When the fill loop in fillOrder checks nextOrder[currentOrderId], it uses the currentOrderId from ptrOrderBucket.currentOrderId, not from nextOrder[bytes32(0)]. So this stale pointer is never read in the fill path. The close path uses nextOrder[orderId] for the specific order, not nextOrder[bytes32(0)]. This appears safe, but deserves confirmation via symbolic execution.",
+      "functions": ["traverseCLOB", "openOrder", "fillOrder"],
       "lines": {
-        "lbamm-hooks-and-handlers/src/handlers/clob/libraries/CLOBHelper.sol": [106, 107, 115, 116, 180, 193, 218, 220, 222, 274, 275, 285, 288, 289, 290, 337, 338, 339],
-        "lbamm-hooks-and-handlers/src/handlers/clob/CLOBTransferHandler.sol": [35, 41, 43]
+        "lbamm-hooks-and-handlers/src/handlers/clob/libraries/CLOBHelper.sol": [147, 153, 154, 155, 156, 157, 158, 159, 160, 161, 162, 255, 267, 268, 271, 272, 274, 281]
       },
-      "confidence": "medium",
-      "grounded_in": "code-observation: CLOBHelper.sol:289 + CLOBTransferHandler.sol:35",
-      "suggested_test": "function test_orderIdToOrderSlotZeroCollision() public {\n    // Verify: _orderIdToOrder(bytes32(0)) maps to storage slot 0\n    // In CLOBTransferHandler, slot 0 = nextOrderNonce\n    \n    // Create some orders to increment nextOrderNonce\n    for (uint i = 0; i < 10; i++) {\n        vm.prank(maker);\n        clob.openOrder(tIn, tOut, price, minOrder, gk, 0, hd);\n    }\n    // nextOrderNonce is now 10\n    // Storage slot 0 contains 10\n    \n    // If traverseCLOB reaches end of book, it calls:\n    // _orderIdToOrder(ptrUpdatedOrderBucket.currentOrderId)\n    // For sentinel bucket at type(uint160).max, currentOrderId should be 0\n    // _orderIdToOrder(0) -> slot 0 -> reads nextOrderNonce as Order.maker\n    \n    // The Order at slot 0:\n    // .maker = address(uint160(10)) = 0x...00A\n    // .orderNonce = storage[1] = 0 (mapping base)\n    // .inputAmount = storage[2] = 0 (mapping base)\n    \n    // fillOrder reads ptrOrder.orderNonce = 0 at line 237\n    // This returns 0 as endingOrderNonce, which is valid nonce for first order\n    // Potential confusion in event emission and tracking\n}",
+      "confidence": "low",
+      "grounded_in": "code-observation: CLOBHelper.sol:155-163+267-272",
+      "suggested_test": "function test_sentinel_nextOrder_stalePointer() public {\n    // Open order A (first in bucket) -> nextOrder[0]=A, previousOrder[0]=A\n    vm.prank(maker);\n    uint256 nonceA = openSingleOrder(100e18);\n    \n    // Fill A completely -> traverseCLOB with nextOrderId=0\n    // Sets: nextOrder[A]=0, previousOrder[0]=0\n    // Note: nextOrder[0] still = A from openOrder! (stale)\n    fillAllOrders(100e18);\n    \n    // Open order B -> lastOrderId = previousOrder[0] = 0\n    // nextOrder[0] = B (overwrites stale A pointer)\n    // previousOrder[0] = B, previousOrder[B] = 0\n    uint256 nonceB = openSingleOrder(200e18);\n    \n    // Open order C -> lastOrderId = previousOrder[0] = B\n    // nextOrder[B] = C, previousOrder[0] = C, previousOrder[C] = B\n    uint256 nonceC = openSingleOrder(300e18);\n    \n    // Fill B and C -> verify queue integrity throughout\n    fillAllOrders(200e18);  // fills B\n    fillAllOrders(300e18);  // fills C\n    \n    // Assert: queue is clean, no stale pointer corruption\n    (uint256 inputRemaining,,) = getOrderBucketInfo(...);\n    assertEq(inputRemaining, 0);\n    // Open D after full clear, verify clean state\n    uint256 nonceD = openSingleOrder(400e18);\n    assertEq(getOrderBookCurrentPrice(), normalPrice);\n}",
       "category": "state_coupling",
-      "source_category": "2d",
+      "source_category": "2g",
       "coupled_pair": {
-        "state_a": "nextOrderNonce at storage slot 0 (CLOBTransferHandler state variable)",
-        "state_b": "_orderIdToOrder(bytes32(0)) resolving to same slot 0 as Order struct",
-        "invariant": "Sentinel value bytes32(0) used as empty-list marker must never be interpretable as valid order data",
+        "state_a": "OrderBucket.nextOrder[bytes32(0)] (set in openOrder line 157 as head-of-queue forward link)",
+        "state_b": "OrderBucket.previousOrder[bytes32(0)] (sentinel for tail, reset in traverseCLOB line 272)",
+        "invariant": "After traverseCLOB resets previousOrder[0]=0, nextOrder[0] must also be 0 (no dangling forward pointer to consumed orders)",
         "gap_contract": "CLOBHelper.sol",
         "gap_function": "traverseCLOB",
-        "gap_line": 289
+        "gap_line": 272
       },
       "masking_code": {
-        "file": "CLOBHelper.sol",
-        "line": 220,
+        "file": "lbamm-hooks-and-handlers/src/handlers/clob/libraries/CLOBHelper.sol",
+        "line": 267,
         "pattern": "silent_guard",
-        "masks_invariant": "orderInputRemaining == 0 check at line 220 catches empty book case only if the sentinel bucket's inputAmountRemaining is 0 — which depends on no writes to that storage region"
+        "masks_invariant": "traverseCLOB only cleans nextOrder[currentOrderId] and previousOrder[nextOrderId] but not nextOrder[bytes32(0)], leaving stale head pointer on empty buckets"
       }
+    },
+    {
+      "id": "H-handler-hook-08",
+      "mechanism": "In CLOBTransferHandler.afterSwapRefund (lines 315-333), there is NO nonReentrant modifier. The function is called by the AMM AFTER ammHandleTransfer has already completed (and thus released its nonReentrant lock). When token == WRAPPED_NATIVE, the function calls IWrappedNativeExtended(WRAPPED_NATIVE).withdrawToAccount(executor, refundAmount) at line 322, which sends native ETH to the executor address. If executor is a contract, its receive() function executes. At this point, CLOBTransferHandler's transient nonReentrant slot is set to NOT_ENTERED (the ammHandleTransfer modifier already completed its _nonReentrantAfter). Therefore, within the executor's receive() callback, the full suite of nonReentrant functions is available: withdrawToken, openOrder, closeOrder, depositToken. Specifically: makerTokenBalance[tokenOut][executor] was credited by fillOrder during ammHandleTransfer. The executor's callback can call withdrawToken(tokenOut, creditedAmount) to drain those credits while still inside the refund callback, effectively combining the refund (fillOutputRemaining) with an early withdrawal of maker credits — all within a single external callback window. More critically: if the AMM has not yet finalized its own pool state accounting when afterSwapRefund is triggered (possible if the AMM calls handler callbacks mid-settlement), the executor could observe pre-finalization pool state and place new orders or swaps based on it, front-running the settlement. This depends on whether afterSwapRefund is called before or after the AMM updates its internal reserves.",
+      "functions": ["afterSwapRefund", "withdrawToken", "openOrder"],
+      "lines": {
+        "lbamm-hooks-and-handlers/src/handlers/clob/CLOBTransferHandler.sol": [315, 316, 320, 322, 323, 325, 329]
+      },
+      "confidence": "medium",
+      "grounded_in": "EXP-12",
+      "suggested_test": "function test_afterSwapRefund_noReentrancyGuard_wrappedNativeCallback() public {\n    // Deploy: executor is a contract with receive() that calls clob.withdrawToken\n    MaliciousExecutor exec = new MaliciousExecutor(address(clobHandler));\n\n    // Setup: exec has a makerTokenBalance[WNATIVE] credit from prior fill\n    // (simulating a world where exec was also a maker whose order just got filled)\n    vm.prank(address(exec));\n    clobHandler.depositToken(WNATIVE, 500e18);\n    vm.prank(address(exec));\n    uint256 nonce = clobHandler.openOrder(tokenIn, WNATIVE, somePrice, 500e18, groupKey, somePrice, emptyHookData);\n    // ... trigger fill so exec earns makerTokenBalance[WNATIVE][exec] = stepOutput\n\n    // Now exec acts as swap executor that has fillOutputRemaining > 0\n    // AMM calls afterSwapRefund(exec, WNATIVE, refundAmt)\n    // exec.receive() is triggered by withdrawToAccount\n    // exec.receive(): calls clobHandler.withdrawToken(WNATIVE, creditedBalance)\n    // nonReentrant guard is NOT_ENTERED at this point -> proceeds!\n    uint256 balanceBefore = WNATIVE.balanceOf(address(exec));\n    // Simulate the AMM calling afterSwapRefund\n    vm.prank(address(amm));\n    clobHandler.afterSwapRefund(address(exec), WNATIVE, refundAmount);\n\n    // Assert: exec received refundAmount AND extracted makerTokenBalance in same tx\n    uint256 totalReceived = address(exec).balance + WNATIVE.balanceOf(address(exec)) - balanceBefore;\n    assertGt(totalReceived, refundAmount, 'exec extracted more than just refund via callback');\n}",
+      "category": null,
+      "source_category": "2b",
+      "coupled_pair": null,
+      "masking_code": null
+    },
+    {
+      "id": "H-handler-hook-09",
+      "mechanism": "In CLOBTransferHandler._enforceTokenHooks (lines 574-619), the handler calls AMMStandardHook.validateHandlerOrder passing handlerOrderParams = abi.encode(orderBookKey, sqrtPriceX96) at line 591. The AMMStandardHook.validateHandlerOrder implementation (lines 198-226) declares the parameter as /*handlerOrderParams*/ — explicitly unused. Neither the orderBookKey nor the raw sqrtPriceX96 value from it is ever read. The hook recomputes sqrtPriceX96 from (amountIn, amountOut) instead. This creates an unvalidated routing gap: a maker can call openOrder with groupKey pointing to hook=AMMStandardHook but with the orderBookKey ultimately targeting a bucket that is DIFFERENT from what the hook validation intended. Specifically, the groupKey encodes the hook address in upper bits (line 133: `bytes32(uint256(uint160(hook)) << 96)`). A maker can create two order books sharing the same hook but different (minimumOrderBase, minimumOrderScale) combinations. If order book X has tighter price restrictions configured out-of-band and order book Y has looser restrictions (but same hook), the hook validates based purely on (tokenIn, tokenOut, amountIn, amountOut) — it cannot distinguish which order book the order is destined for. Any per-order-book price restriction logic that a sophisticated hook might want to implement is impossible because the orderBookKey is always dropped. This is an architectural gap, not a current exploit, but means the hook cannot enforce order-book-specific rules and protocol extensions relying on orderBookKey routing in validateHandlerOrder will silently receive wrong context.",
+      "functions": ["_enforceTokenHooks", "validateHandlerOrder", "generateGroupKey", "generateOrderBookKey"],
+      "lines": {
+        "lbamm-hooks-and-handlers/src/handlers/clob/CLOBTransferHandler.sol": [526, 529, 530, 531, 534, 574, 591, 594, 607],
+        "lbamm-hooks-and-handlers/src/hooks/AMMStandardHook.sol": [198, 205, 208, 210, 211, 215]
+      },
+      "confidence": "medium",
+      "grounded_in": "code-observation: AMMStandardHook.sol:205 + CLOBTransferHandler.sol:591",
+      "suggested_test": "function test_orderBookKey_ignored_in_validateHandlerOrder() public {\n    // Two order books: OB_A (restrictive) and OB_B (permissive), both use ammStandardHook\n    bytes32 groupKeyA = clobHandler.generateGroupKey(address(ammStandardHook), 100, 18); // large minimum\n    bytes32 groupKeyB = clobHandler.generateGroupKey(address(ammStandardHook), 1, 0);   // tiny minimum\n\n    bytes32 orderBookKeyA = clobHandler.generateOrderBookKey(tokenIn, tokenOut, groupKeyA);\n    bytes32 orderBookKeyB = clobHandler.generateOrderBookKey(tokenIn, tokenOut, groupKeyB);\n\n    // Configure pricing bounds ONLY for orderBookKeyA (conceptually)\n    // But hook has NO way to enforce per-orderBook bounds\n    // because validateHandlerOrder receives orderBookKey in handlerOrderParams but ignores it\n\n    // Verify: handlerOrderParams containing orderBookKeyA is passed but ignored\n    vm.prank(maker);\n    // This call targets orderBookKeyB (groupKeyB) but passes hookData that would\n    // include orderBookKeyA context - hook doesn't distinguish\n    uint256 nonce = clobHandler.openOrder(\n        tokenIn, tokenOut, anyValidPrice, validAmount,\n        groupKeyB, anyValidPrice,\n        HooksExtraData(\n            abi.encode(\"tokenIn hook data for OB_A\"),\n            new bytes(0),\n            new bytes(0)\n        )\n    );\n    // Order placed in OB_B despite hookData containing OB_A context\n    // Hook validated against global tokenIn/tokenOut bounds, not per-book bounds\n    assertGt(nonce, 0, 'order placed with mismatched orderBookKey context');\n\n    // A hypothetical order-book-specific bound enforcement would have rejected this\n    // Demonstrates the orderBookKey routing gap\n}",
+      "category": "state_coupling",
+      "source_category": "2c",
+      "coupled_pair": {
+        "state_a": "CLOBTransferHandler.orderBooks[orderBookKey] (targeted by maker's openOrder via groupKey)",
+        "state_b": "AMMStandardHook._pricingBounds[token][pairedToken] (global per-token, not per-order-book)",
+        "invariant": "validateHandlerOrder should receive and validate orderBookKey to enforce per-order-book restrictions; silently ignoring it means all order books sharing a hook get identical validation regardless of intended scope",
+        "gap_contract": "AMMStandardHook.sol",
+        "gap_function": "validateHandlerOrder",
+        "gap_line": 205
+      },
+      "masking_code": {
+        "file": "lbamm-hooks-and-handlers/src/hooks/AMMStandardHook.sol",
+        "line": 205,
+        "pattern": "silent_guard",
+        "masks_invariant": "handlerOrderParams parameter with orderBookKey silently unused; hook cannot distinguish which order book is being targeted"
+      }
+    },
+    {
+      "id": "H-handler-hook-07",
+      "mechanism": "In AMMStandardHook._validatePricingBounds (lines 823-871), for a direct swap (poolType == address(0)), the afterSwap price direction logic at lines 842-843 reconstructs (amount0, amount1) based on `params.inputSwap == zeroForOne`. `zeroForOne = params.tokenIn < params.tokenOut` (line 833). For an input-based direct swap where tokenIn > tokenOut (!zeroForOne case): `inputSwap (true) == zeroForOne (false)` is FALSE, so: `amount0 = params.amount (amountOut)`, `amount1 = stored (amountIn)`. Price = computeRatioX96(amountIn, amountOut) = sqrt(amountIn/amountOut) * Q96. Since tokenIn > tokenOut means tokenIn is token1 and tokenOut is token0 in canonical ordering, the canonical price = sqrt(token1/token0) = sqrt(amountIn/amountOut) * Q96. This IS the correct canonical price. However, the bounds stored in _pricingBounds[token][pairedToken] where token=tokenIn and pairedToken=tokenOut were set via the registry and are expected to match the canonical price when used in beforeSwap/afterSwap for pool swaps (where getCurrentPriceX96 returns canonical price). For the TOKEN that is token1 (higher address), _pricingBounds[token1][token0].minSqrtPriceX96 restricts the canonical price. The validateHandlerOrder function computes the SAME canonical price correctly. BUT: _validatePricingBounds when called for the OUTPUT TOKEN'S hook (hookForInputToken=false), uses `token=tokenOut` and `pairedToken=tokenIn`. For tokenIn>tokenOut case, after the swap, the output token is token0 and bounds = _pricingBounds[token0][token1]. The price check uses canonical sqrt(token1/token0) but the bounds for token0 vs token1 may be set expecting the INVERSE. If the token creator sets bounds for token0 thinking 'the price of my token0 should be between X and Y' in terms of token0/token1, but the canonical format is token1/token0, the bounds are inverted. This creates a semantic mismatch where the creator's intended price floor becomes a ceiling and vice versa for token0.",
+      "functions": ["_validatePricingBounds", "afterSwap", "registryUpdatePricingBounds"],
+      "lines": {
+        "lbamm-hooks-and-handlers/src/hooks/AMMStandardHook.sol": [112, 113, 161, 162, 823, 833, 842, 843, 846, 854, 858, 862, 866],
+        "lbamm-hooks-and-handlers/src/hooks/AMMStandardHook.sol": [546, 563, 567, 572, 575, 576]
+      },
+      "confidence": "low",
+      "grounded_in": "code-observation: AMMStandardHook.sol:842-843",
+      "suggested_test": "function test_pricingBounds_token0_perspective_mismatch() public {\n    // TokenA (low addr = token0), TokenB (high addr = token1)\n    // Creator of TokenA wants: 'price of my token (TokenA) >= 0.01 ETH'\n    // In canonical terms: canonical_price = sqrt(TokenB/TokenA), so if TokenA=0.01ETH,\n    // then TokenA/TokenB = 100, so TokenB/TokenA = 0.01 -> sqrt(0.01)*Q96 = minPrice\n    // Creator sets _pricingBounds[TokenA][TokenB].minSqrtPriceX96 = sqrtRatio(0.01)\n    \n    // Direct swap: sell TokenB (tokenIn=TokenB) to buy TokenA (tokenOut=TokenA)\n    // afterSwap hook for TokenA (hookForInputToken=false, tokenOut=TokenA=token0)\n    // bounds = _pricingBounds[TokenA][TokenB]\n    // zeroForOne = TokenB < TokenA ? FALSE (TokenB > TokenA)\n    // !zeroForOne -> amount0=amountOut(TokenA), amount1=stored(amountIn=TokenB)\n    // price = sqrt(amountIn/amountOut) = sqrt(TokenB/TokenA)\n    // This IS the canonical price, correctly checked against minSqrtPriceX96.\n    // So actually correct here. Let's check the OPPOSITE:\n    // Direct swap: sell TokenA (tokenIn=TokenA) to buy TokenB (tokenOut=TokenB)\n    // afterSwap hook for TokenA (hookForInputToken=true, token=TokenA=token0)\n    // zeroForOne = TokenA < TokenB = TRUE\n    // inputSwap==zeroForOne -> TRUE: amount0=stored(amountIn=TokenA), amount1=amountOut(TokenB)\n    // price = sqrt(amountOut/amountIn) = sqrt(TokenB/TokenA) = canonical\n    // ALSO correct.\n    // So actually the price check is symmetric. Confirm via Halmos.\n    // This is a 'rule out' test to validate the boundary is safe.\n    // If the test passes, hypothesis is invalidated (good).\n    assertEq(priceFromAfterSwap_selling_tokenA, canonicalPrice);\n    assertEq(priceFromAfterSwap_buying_tokenA, canonicalPrice);\n}",
+      "category": null,
+      "source_category": "2d",
+      "coupled_pair": null,
+      "masking_code": null
     }
   ]
 }

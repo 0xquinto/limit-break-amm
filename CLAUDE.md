@@ -39,5 +39,5 @@ Limit Break AMM security audit framework. This parent directory orchestrates aud
 - Best score: 112.5 (read `experiments.tsv` for current trajectory)
 
 For architecture details, see [docs/CODEBASE_MAP.md](docs/CODEBASE_MAP.md).
-<!-- context-sync: 2026-03-30T12:25:01Z -->
-<!-- Recent changes: Config changed: config.py; Scoring changed: compliance.py, compliance_continuation.py, experiment.py, test_compliance_hypothesis.py -->
+<!-- context-sync: 2026-03-31T00:05:00Z -->
+<!-- Recent changes: docs: 13 files (confirmed-patterns.md, digest.md, false-positives.md, lessons-learned.md, exploit-2026-03-30.md...) -->

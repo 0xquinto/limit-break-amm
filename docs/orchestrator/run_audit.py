@@ -1278,7 +1278,16 @@ def main():
                     agent.extra_context["hints"] = hints[agent.name]
             print(f"Exploit mode: {len(WAVE_EXPLOIT.agents)} agents, hints for {len(hints)} agents")
         else:
-            print(f"Exploit mode: {len(WAVE_EXPLOIT.agents)} agents, no human hints")
+            # Auto-generate hints from accumulated knowledge (no domain expertise needed)
+            from .hint_generator import generate_hints
+            auto_hints_path = ARTIFACTS_DIR / "auto-hints.md"
+            generate_hints(max_per_agent=5, output_path=auto_hints_path)
+            hints = _parse_hints(str(auto_hints_path))
+            for agent in WAVE_EXPLOIT.agents:
+                if agent.name in hints:
+                    agent.extra_context["hints"] = hints[agent.name]
+            injected = sum(1 for a in WAVE_EXPLOIT.agents if a.extra_context.get("hints"))
+            print(f"Exploit mode: {len(WAVE_EXPLOIT.agents)} agents, auto-hints for {injected} agents")
 
     if args.wave:
         if args.dry_run:
