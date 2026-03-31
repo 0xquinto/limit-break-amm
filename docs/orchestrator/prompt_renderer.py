@@ -136,92 +136,25 @@ def _load_checklist(agent_name: str) -> str:
 # --- Exploit knowledge builder ---
 
 def build_exploit_knowledge(agent_name: str, scope: list[str]) -> str:
-    """Compact knowledge block for exploit system prompts (~420 tokens).
+    """Offensive guidance for exploit system prompts.
 
-    Reads the same sources as compliance mode but formats for attack-first agents.
-    Injected into the system prompt (persists across all turns).
+    FP/Guardian/rejected-sub filtering is handled upstream by hint_generator.py
+    (the sole gatekeeper). This function only injects positive-direction knowledge:
+    regression patterns, invariants, tools, and lessons.
     """
     import json as _json
     parts = []
 
-    # ── Rejection cross-reference: known issues already submitted and rejected ──
-    # These overlap between confirmed patterns, tactical failures, and FP-SUB entries.
-    # Agents must NOT re-report these unless they find a NOVEL variant with higher severity.
-    _REJECTED_KEYWORDS = {
-        # FP-SUB02: validateHandlerOrder sqrtPriceX96==0
-        "validateHandlerOrder", "sqrtPriceX96==0", "computeRatioX96 overflow",
-        # FP-SUB01: setTokenSettings desync
-        "setTokenSettings", "initialized flag",
-        # FP-SUB03-08: other rejected submissions
-        "double-rounding 1 wei", "getCurrentPriceX96 stale", "zero-amount swap",
-        "swapExtraData silent", "tick traversal gas", "feeOnTop not signed",
-        # CP-001/HOOK-001: stale transient storage (known, low severity)
-        "stale transient storage", "HOOK-001", "DIRECT_SWAP_BEFORE_SWAP_AMOUNT",
-        # CP-003: same as FP-SUB02
-        "missing sqrtPriceX96==0",
-    }
-
-    def _is_rejected(text: str) -> bool:
-        text_lower = text.lower()
-        return any(kw.lower() in text_lower for kw in _REJECTED_KEYWORDS)
-
-    # 1. Confirmed patterns — only include if NOT already rejected
-    patterns_path = MEMORY_DIR / "confirmed-patterns.md"
-    if patterns_path.exists():
-        content = patterns_path.read_text()
-        import re
-        cp_matches = re.findall(r'### (CP-\S+): (.+)', content)
-        novel = [(cp_id, summary) for cp_id, summary in cp_matches if not _is_rejected(summary)]
-        if novel:
-            parts.append("KNOWN VULNERABILITIES (test for NOVEL variants only — original bugs already submitted):")
-            for cp_id, summary in novel[:4]:
-                parts.append(f"- {cp_id}: {summary}")
-        # Always warn about rejected ones
-        rejected = [(cp_id, summary) for cp_id, summary in cp_matches if _is_rejected(summary)]
-        if rejected:
-            parts.append("\nALREADY SUBMITTED AND REJECTED (do NOT re-report unless you find a HIGHER severity variant):")
-            for cp_id, summary in rejected:
-                parts.append(f"- {cp_id}: {summary} — REJECTED by judges")
-
-    # 2. Tactical failures — only include if NOT already rejected
-    playbook_path = Path(__file__).parent / "playbook" / "failure_classifications.jsonl"
-    if playbook_path.exists():
-        tactical = []
-        for line in playbook_path.read_text().splitlines():
-            if not line.strip():
-                continue
-            entry = _json.loads(line)
-            if entry.get("failure_class") == "tactical":
-                detail = entry.get("detail", "")
-                if not _is_rejected(detail):
-                    tactical.append(entry)
-        if tactical:
-            parts.append("\nUNPROVEN BUT PLAUSIBLE (test code failed, concept may be right):")
-            for t in tactical[:5]:
-                parts.append(f"- {t['hypothesis_id']}: {t['detail'][:120]}")
-
-    # 3. Top FPs + rejected submissions — don't waste turns
-    fps = parse_false_positives()
-    top_fps = sorted(fps, key=lambda f: -f.confidence)[:8]
-    # Add rejected submissions explicitly
-    sub_fps = [fp for fp in fps if fp.id.startswith("FP-SUB")]
-    all_blocklist = list({fp.id: fp for fp in (top_fps + sub_fps)}.values())
-    if all_blocklist:
-        parts.append("\nDO NOT INVESTIGATE — KNOWN FALSE POSITIVES + REJECTED SUBMISSIONS:")
-        for fp in sorted(all_blocklist, key=lambda f: f.id):
-            prefix = "REJECTED" if fp.id.startswith("FP-SUB") else "FP"
-            parts.append(f"- {fp.id} [{prefix}]: {fp.vector[:80]}")
-
-    # 4. Regression cases — known exploit patterns mapped to this codebase
+    # 1. Regression cases — known exploit patterns mapped to this codebase
     regression_path = Path(__file__).parent / "regression_cases.json"
     if regression_path.exists():
         cases = _json.loads(regression_path.read_text())
         if cases:
-            parts.append("\nKNOWN EXPLOIT PATTERNS (test against this code):")
+            parts.append("KNOWN EXPLOIT PATTERNS (test against this code):")
             for c in cases[:5]:
                 parts.append(f"- {c.get('id', '?')}: {c.get('title', c.get('description', '?'))[:100]}")
 
-    # 5. Invariants to break
+    # 2. Invariants to break
     invariant_path = Path(__file__).parent.parent / "framework" / "amm-invariant-catalog.md"
     if invariant_path.exists():
         content = invariant_path.read_text()
@@ -239,26 +172,7 @@ def build_exploit_knowledge(agent_name: str, scope: list[str]) -> str:
             for inv_id, desc in relevant[:4]:
                 parts.append(f"- {inv_id}: {desc}")
 
-    # 6. Guardian audit known findings — DO NOT duplicate these
-    guardian_path = ARTIFACTS_DIR / "guardian-audit-findings.md"
-    if guardian_path.exists():
-        content = guardian_path.read_text()
-        import re
-        # Extract the quick lookup table rows
-        rows = re.findall(r'\| ([A-Z]-\d+) \| (.+?) \| (\w+) \| .+? \| (\w+)', content)
-        if rows:
-            acknowledged = [(fid, title.strip(), sev) for fid, title, sev, status in rows if status == "Acknowledged"]
-            resolved = [(fid, title.strip(), sev) for fid, title, sev, status in rows if status == "Resolved"]
-            if acknowledged:
-                parts.append("\nGUARDIAN AUDIT — ACKNOWLEDGED (not fixed, but ALREADY KNOWN — only report NOVEL variants):")
-                for fid, title, sev in acknowledged:
-                    parts.append(f"- {fid} [{sev}]: {title}")
-            if resolved:
-                parts.append("\nGUARDIAN AUDIT — RESOLVED (already fixed — do NOT report unless fix is incomplete):")
-                for fid, title, sev in resolved[:8]:
-                    parts.append(f"- {fid} [{sev}]: {title}")
-
-    # 7. Phase 0 highlights
+    # 3. Phase 0 highlights
     phase0_dir = ARTIFACTS_DIR / "phase0"
     if phase0_dir.exists():
         scope_repos = [r.rstrip("/") for r in scope]
@@ -272,7 +186,7 @@ def build_exploit_knowledge(agent_name: str, scope: list[str]) -> str:
             for h in highlights:
                 parts.append(f"- {h}")
 
-    # 7. Tools
+    # 4. Tools
     parts.append("\nTOOLS (use these — don't just rely on Forge):")
     parts.append("- Quick math check: chisel (Solidity REPL, type expressions directly)")
     parts.append("- Symbolic proof: halmos --contract X --function check_ --loop 4")
@@ -284,7 +198,7 @@ def build_exploit_knowledge(agent_name: str, scope: list[str]) -> str:
     parts.append("- Pattern search: Skill(\"variant-analysis:variant-analysis\") when you find ANY suspicious pattern")
     parts.append("- Semgrep: Skill(\"static-analysis:semgrep\") for cross-file taint tracking")
 
-    # 8. Key lessons from 19 runs
+    # 5. Key lessons from 20+ runs
     parts.append("\nLESSONS FROM 19 PRIOR RUNS:")
     parts.append("- Exploit COMPOSITION across contracts, not individual functions")
     parts.append("- Rounding consistently favors protocol — look for the exception")

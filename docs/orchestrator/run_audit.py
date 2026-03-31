@@ -501,16 +501,32 @@ async def run_exploit_wave(
         print(f"    Report: {'yes' if has_report else 'no'}")
         print(f"    Sidecar: {sidecar_size:,} bytes {'(fallback)' if sidecar_size < 500 else ''}")
 
-    # 3. Collect sidecars
+    # 3. Collect sidecars (multi-path: flat, subdir, draft fallback)
     import json
     sidecars = []
     for agent in wave.agents:
-        sidecar_path = ARTIFACTS_DIR / f"findings-{agent.name}.json"
-        if sidecar_path.exists():
+        flat_path = ARTIFACTS_DIR / f"findings-{agent.name}.json"
+        subdir_path = ARTIFACTS_DIR / f"wave{wave.number}-{agent.name}" / "findings.json"
+        draft_path = ARTIFACTS_DIR / f"findings-{agent.name}-draft.json"
+
+        sidecar_path = None
+        if flat_path.exists():
+            sidecar_path = flat_path
+        elif subdir_path.exists():
+            sidecar_path = subdir_path
+        elif draft_path.exists():
+            print(f"  {agent.name}: promoting draft sidecar")
+            sidecar_path = draft_path
+
+        if sidecar_path:
             try:
-                sidecars.append(json.loads(sidecar_path.read_text()))
+                data = json.loads(sidecar_path.read_text())
+                data.setdefault("agent_name", agent.name)
+                sidecars.append(data)
             except json.JSONDecodeError:
-                print(f"  WARNING: {agent.name} sidecar unreadable")
+                print(f"  WARNING: {agent.name} sidecar unreadable at {sidecar_path}")
+        else:
+            print(f"  WARNING: {agent.name} — no sidecar found (checked flat, subdir, draft)")
 
     # 4a. Independent Forge test verification
     print(f"\nVerification gates:")

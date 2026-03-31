@@ -22,6 +22,55 @@ PLAYBOOK_DIR = Path(__file__).parent / "playbook"
 MEMORY_DIR = PROJECT_ROOT / "docs" / "audit_memory"
 REGRESSION_CASES = Path(__file__).parent / "regression_cases.json"
 
+# ── Centralized rejection filter ──
+# All known dead ends: FPs, rejected submissions, Guardian findings, stale tstore.
+# hint_generator is the sole gatekeeper — agents never see filtered hints.
+_REJECTED_KEYWORDS = {
+    # FP-SUB02: validateHandlerOrder sqrtPriceX96==0
+    "validateHandlerOrder", "sqrtPriceX96==0", "computeRatioX96 overflow",
+    # FP-SUB01: setTokenSettings desync
+    "setTokenSettings", "initialized flag",
+    # FP-SUB03-08: other rejected submissions
+    "double-rounding 1 wei", "getCurrentPriceX96 stale", "zero-amount swap",
+    "swapExtraData silent", "tick traversal gas", "feeOnTop not signed",
+    # CP-001/HOOK-001: stale transient storage (known, low severity)
+    "stale transient storage", "HOOK-001", "DIRECT_SWAP_BEFORE_SWAP_AMOUNT",
+    # CP-003: same as FP-SUB02
+    "missing sqrtPriceX96==0",
+    # FP-EXP01: height-bucket quantization (net-value neutral rebalancing)
+    "height-bucket", "quantization", "over-withdrawal",
+}
+
+
+def _is_rejected(text: str) -> bool:
+    """Check if text matches any known dead-end keyword."""
+    text_lower = text.lower()
+    return any(kw.lower() in text_lower for kw in _REJECTED_KEYWORDS)
+
+
+def _load_fp_vectors() -> set[str]:
+    """Load FP vector keywords from false-positives.md for broad matching."""
+    from .prompt_renderer import parse_false_positives
+    fps = parse_false_positives()
+    vectors = set()
+    for fp in fps:
+        # Extract key phrases from each FP vector
+        for word in re.findall(r'[A-Za-z_]{6,}', fp.vector):
+            vectors.add(word.lower())
+    return vectors
+
+
+def _load_guardian_titles() -> set[str]:
+    """Load Guardian audit finding titles for dedup."""
+    guardian_path = ARTIFACTS_DIR / "guardian-audit-findings.md"
+    if not guardian_path.exists():
+        return set()
+    content = guardian_path.read_text()
+    titles = set()
+    for match in re.findall(r'\| [A-Z]-\d+ \| (.+?) \|', content):
+        titles.add(match.strip().lower())
+    return titles
+
 
 @dataclass
 class HintSource:
@@ -256,12 +305,29 @@ def generate_hints(
     Returns the markdown content. Optionally writes to output_path.
     """
     # Collect all hints from all sources
-    all_hints = (
+    raw_hints = (
         _load_tactical_failures()
         + _load_blind_spots()
         + _load_confirmed_pattern_variants()
         + _load_lead_observations()
     )
+
+    # Filter out known dead ends before hints reach agents
+    guardian_titles = _load_guardian_titles()
+    pre_filter = len(raw_hints)
+    all_hints = []
+    for hint in raw_hints:
+        if _is_rejected(hint.text):
+            continue
+        if _is_rejected(hint.id):
+            continue
+        # Check against Guardian finding titles
+        if any(gt in hint.text.lower() for gt in guardian_titles if len(gt) > 10):
+            continue
+        all_hints.append(hint)
+    filtered = pre_filter - len(all_hints)
+    if filtered:
+        print(f"  Hint filter: {filtered}/{pre_filter} hints removed (known FPs/rejected/Guardian)")
 
     # Group by agent
     by_agent: dict[str, list[HintSource]] = {}

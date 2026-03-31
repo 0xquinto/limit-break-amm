@@ -113,8 +113,8 @@ For GAPS items: add the missing documentation.
 ### Universal checks (included in each subagent prompt)
 
 1. **File paths** — verify every backtick-quoted path exists on disk
-2. **Counts and lists** — verify any enumerated list (e.g., "6 modules") matches reality (use `ls`, `wc -l`, `grep -c`)
-3. **Commands** — verify documented commands actually run (try them)
+2. **Counts and lists** — verify any enumerated list (e.g., "6 modules") matches reality (use `ls`, `wc -l`, `grep -c`). For test counts or anything requiring a project runtime, read CLAUDE.md/MEMORY.md first to find the correct interpreter or venv (e.g., `.venv/bin/python3` not `python3`).
+3. **Commands** — verify documented commands actually run (try them). Use the project's documented interpreter/toolchain from CLAUDE.md/MEMORY.md.
 4. **Version/config references** — spot-check 3-5 claims against source files
 5. **Dead links** — fix or remove any broken references
 6. **Cross-reference consistency** — check that sections within the file agree with each other, and that claims across context files agree (e.g., a Features section saying "39 features, v6" while Architecture says "features=13" is a contradiction). A simple "do sections agree?" pass catches this without reading code.

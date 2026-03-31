@@ -1,0 +1,492 @@
+{
+  "version": 1,
+  "generated": "2026-03-31T16:03:09.492362+00:00",
+  "claims": [
+    {
+      "file": "CLAUDE.md",
+      "line": 27,
+      "line_pattern": "- `compliance` \u2014 9 agents (7 Opus + 2 Sonnet), full checklists, compliance scoring. Builds the knowledge base.",
+      "claim_value": "9",
+      "unit": "agents",
+      "verify_command": null,
+      "compare": "exact"
+    },
+    {
+      "file": "CLAUDE.md",
+      "line": 28,
+      "line_pattern": "- `exploit` \u2014 3 Sonnet agents, attack-focused system prompts, exploit scoring. Consumes the knowledge base.",
+      "claim_value": "3",
+      "unit": "agents",
+      "verify_command": null,
+      "compare": "exact"
+    },
+    {
+      "file": "README.md",
+      "line": 7,
+      "line_pattern": "A Python pipeline with two modes: **compliance mode** spawns 9 agents to map the attack surface and build a knowledge ba",
+      "claim_value": "9",
+      "unit": "agents",
+      "verify_command": null,
+      "compare": "exact"
+    },
+    {
+      "file": "README.md",
+      "line": 7,
+      "line_pattern": "A Python pipeline with two modes: **compliance mode** spawns 9 agents to map the attack surface and build a knowledge ba",
+      "claim_value": "3",
+      "unit": "agents",
+      "verify_command": null,
+      "compare": "exact"
+    },
+    {
+      "file": "README.md",
+      "line": 63,
+      "line_pattern": "**Phase 0**: Slither + Aderyn on all 6 repos (scripted, no LLM)",
+      "claim_value": "6",
+      "unit": "repos",
+      "verify_command": null,
+      "compare": "exact"
+    },
+    {
+      "file": "README.md",
+      "line": 65,
+      "line_pattern": "**Wave 1**: 9 agents investigate hypotheses + run checklists (500 turns max)",
+      "claim_value": "9",
+      "unit": "agents",
+      "verify_command": null,
+      "compare": "exact"
+    },
+    {
+      "file": "README.md",
+      "line": 73,
+      "line_pattern": "### Compliance Mode (9 agents)",
+      "claim_value": "9",
+      "unit": "agents",
+      "verify_command": null,
+      "compare": "exact"
+    },
+    {
+      "file": "README.md",
+      "line": 77,
+      "line_pattern": "| precision-sniper | Opus 4.6 | adaptive | All 6 repos | C-MATH (39) |",
+      "claim_value": "6",
+      "unit": "repos",
+      "verify_command": null,
+      "compare": "exact"
+    },
+    {
+      "file": "README.md",
+      "line": 78,
+      "line_pattern": "| state-desync | Opus 4.6 | adaptive | All 6 repos | C-STATE (25) |",
+      "claim_value": "6",
+      "unit": "repos",
+      "verify_command": null,
+      "compare": "exact"
+    },
+    {
+      "file": "README.md",
+      "line": 80,
+      "line_pattern": "| cross-boundary | Opus 4.6 | adaptive | All 6 repos | C-BOUNDARY (22) |",
+      "claim_value": "6",
+      "unit": "repos",
+      "verify_command": null,
+      "compare": "exact"
+    },
+    {
+      "file": "README.md",
+      "line": 81,
+      "line_pattern": "| math-deep-diver | Opus 4.6 | adaptive | 4 repos | C-MATH (39) |",
+      "claim_value": "4",
+      "unit": "repos",
+      "verify_command": null,
+      "compare": "exact"
+    },
+    {
+      "file": "README.md",
+      "line": 82,
+      "line_pattern": "| insolvency-engineer | Opus 4.6 | adaptive | 4 repos | C-STATE (25) |",
+      "claim_value": "4",
+      "unit": "repos",
+      "verify_command": null,
+      "compare": "exact"
+    },
+    {
+      "file": "README.md",
+      "line": 84,
+      "line_pattern": "| composability-exploiter | Sonnet 4.6 | 32K fixed | All 6 repos | C-STATE (25) |",
+      "claim_value": "6",
+      "unit": "repos",
+      "verify_command": null,
+      "compare": "exact"
+    },
+    {
+      "file": "README.md",
+      "line": 85,
+      "line_pattern": "| price-distorter | Sonnet 4.6 | 32K fixed | All 6 repos | C-MATH (39) |",
+      "claim_value": "6",
+      "unit": "repos",
+      "verify_command": null,
+      "compare": "exact"
+    },
+    {
+      "file": "README.md",
+      "line": 87,
+      "line_pattern": "### Exploit Mode (3 agents)",
+      "claim_value": "3",
+      "unit": "agents",
+      "verify_command": null,
+      "compare": "exact"
+    },
+    {
+      "file": "README.md",
+      "line": 95,
+      "line_pattern": "### Pass 1 Boundary Agents (6 agents)",
+      "claim_value": "6",
+      "unit": "agents",
+      "verify_command": null,
+      "compare": "exact"
+    },
+    {
+      "file": "README.md",
+      "line": 106,
+      "line_pattern": "| Tool Breadth | 20 | 7 required tools used |",
+      "claim_value": "7",
+      "unit": "tools",
+      "verify_command": null,
+      "compare": "exact"
+    },
+    {
+      "file": "docs/CODEBASE_MAP.md",
+      "line": 13,
+      "line_pattern": "This is the **orchestration framework** for the Limit Break AMM security audit. It does not contain Solidity source code",
+      "claim_value": "6",
+      "unit": "repos",
+      "verify_command": null,
+      "compare": "exact"
+    },
+    {
+      "file": "docs/CODEBASE_MAP.md",
+      "line": 215,
+      "line_pattern": "| precision-sniper | Opus (max_reasoning) | adaptive | All 6 repos | C-MATH (39 items) |",
+      "claim_value": "6",
+      "unit": "repos",
+      "verify_command": null,
+      "compare": "exact"
+    },
+    {
+      "file": "docs/CODEBASE_MAP.md",
+      "line": 215,
+      "line_pattern": "| precision-sniper | Opus (max_reasoning) | adaptive | All 6 repos | C-MATH (39 items) |",
+      "claim_value": "39",
+      "unit": "items",
+      "verify_command": null,
+      "compare": "exact"
+    },
+    {
+      "file": "docs/CODEBASE_MAP.md",
+      "line": 216,
+      "line_pattern": "| state-desync | Opus (max_reasoning) | adaptive | All 6 repos | C-STATE (25 items) |",
+      "claim_value": "6",
+      "unit": "repos",
+      "verify_command": null,
+      "compare": "exact"
+    },
+    {
+      "file": "docs/CODEBASE_MAP.md",
+      "line": 216,
+      "line_pattern": "| state-desync | Opus (max_reasoning) | adaptive | All 6 repos | C-STATE (25 items) |",
+      "claim_value": "25",
+      "unit": "items",
+      "verify_command": null,
+      "compare": "exact"
+    },
+    {
+      "file": "docs/CODEBASE_MAP.md",
+      "line": 217,
+      "line_pattern": "| auth-forger | Opus (max_reasoning) | adaptive | hooks, core | C-AUTH (22 items) |",
+      "claim_value": "22",
+      "unit": "items",
+      "verify_command": null,
+      "compare": "exact"
+    },
+    {
+      "file": "docs/CODEBASE_MAP.md",
+      "line": 218,
+      "line_pattern": "| cross-boundary | Opus (max_reasoning) | adaptive | All 6 repos | C-BOUNDARY (22 items) |",
+      "claim_value": "6",
+      "unit": "repos",
+      "verify_command": null,
+      "compare": "exact"
+    },
+    {
+      "file": "docs/CODEBASE_MAP.md",
+      "line": 218,
+      "line_pattern": "| cross-boundary | Opus (max_reasoning) | adaptive | All 6 repos | C-BOUNDARY (22 items) |",
+      "claim_value": "22",
+      "unit": "items",
+      "verify_command": null,
+      "compare": "exact"
+    },
+    {
+      "file": "docs/CODEBASE_MAP.md",
+      "line": 219,
+      "line_pattern": "| math-deep-diver | Opus (audit_balanced) | adaptive | fixed, dynamic, core, hooks | C-MATH (39 items) |",
+      "claim_value": "39",
+      "unit": "items",
+      "verify_command": null,
+      "compare": "exact"
+    },
+    {
+      "file": "docs/CODEBASE_MAP.md",
+      "line": 220,
+      "line_pattern": "| insolvency-engineer | Opus (audit_balanced) | adaptive | core, dynamic, fixed, hooks | C-STATE (25 items) |",
+      "claim_value": "25",
+      "unit": "items",
+      "verify_command": null,
+      "compare": "exact"
+    },
+    {
+      "file": "docs/CODEBASE_MAP.md",
+      "line": 221,
+      "line_pattern": "| extension-hijacker | Opus (audit_balanced) | adaptive | hooks, core | C-BOUNDARY (22 items) |",
+      "claim_value": "22",
+      "unit": "items",
+      "verify_command": null,
+      "compare": "exact"
+    },
+    {
+      "file": "docs/CODEBASE_MAP.md",
+      "line": 222,
+      "line_pattern": "| composability-exploiter | Sonnet (fast_reasoning) | 32K fixed | All 6 repos | C-STATE (25 items) |",
+      "claim_value": "6",
+      "unit": "repos",
+      "verify_command": null,
+      "compare": "exact"
+    },
+    {
+      "file": "docs/CODEBASE_MAP.md",
+      "line": 222,
+      "line_pattern": "| composability-exploiter | Sonnet (fast_reasoning) | 32K fixed | All 6 repos | C-STATE (25 items) |",
+      "claim_value": "25",
+      "unit": "items",
+      "verify_command": null,
+      "compare": "exact"
+    },
+    {
+      "file": "docs/CODEBASE_MAP.md",
+      "line": 223,
+      "line_pattern": "| price-distorter | Sonnet (fast_reasoning) | 32K fixed | All 6 repos | C-MATH (39 items) |",
+      "claim_value": "6",
+      "unit": "repos",
+      "verify_command": null,
+      "compare": "exact"
+    },
+    {
+      "file": "docs/CODEBASE_MAP.md",
+      "line": 223,
+      "line_pattern": "| price-distorter | Sonnet (fast_reasoning) | 32K fixed | All 6 repos | C-MATH (39 items) |",
+      "claim_value": "39",
+      "unit": "items",
+      "verify_command": null,
+      "compare": "exact"
+    },
+    {
+      "file": "docs/CODEBASE_MAP.md",
+      "line": 225,
+      "line_pattern": "## Compliance Scoring (6 Dimensions, 120 max)",
+      "claim_value": "6",
+      "unit": "dimensions",
+      "verify_command": null,
+      "compare": "exact"
+    },
+    {
+      "file": "docs/CODEBASE_MAP.md",
+      "line": 230,
+      "line_pattern": "| Tool Breadth | 20 | 7 required tools used (Slither, Aderyn, Forge, Halmos, Medusa, audit-context, entry-point) |",
+      "claim_value": "7",
+      "unit": "tools",
+      "verify_command": null,
+      "compare": "exact"
+    },
+    {
+      "file": "docs/CODEBASE_MAP.md",
+      "line": 293,
+      "line_pattern": "**18 files changed** since last sync.",
+      "claim_value": "18",
+      "unit": "files",
+      "verify_command": null,
+      "compare": "exact"
+    },
+    {
+      "file": "docs/CODEBASE_MAP.md",
+      "line": 295,
+      "line_pattern": "- **docs**: 18 files (config_guard.py, run_audit.py, auth-forger.md, compliance_system_prompts.py, composability-exploit",
+      "claim_value": "18",
+      "unit": "files",
+      "verify_command": null,
+      "compare": "exact"
+    },
+    {
+      "file": "docs/SYSTEM_GUIDE.md",
+      "line": 12,
+      "line_pattern": "3. [Repository Layout](#3-repository-layout)",
+      "claim_value": "3",
+      "unit": "repos",
+      "verify_command": null,
+      "compare": "exact"
+    },
+    {
+      "file": "docs/SYSTEM_GUIDE.md",
+      "line": 240,
+      "line_pattern": "| `precision-sniper` | Math boundary / rounding | All repos | C-MATH (39 items) |",
+      "claim_value": "39",
+      "unit": "items",
+      "verify_command": null,
+      "compare": "exact"
+    },
+    {
+      "file": "docs/SYSTEM_GUIDE.md",
+      "line": 241,
+      "line_pattern": "| `math-deep-diver` | Deep math analysis | Fixed, Dynamic, Core, Hooks | C-MATH (39 items) |",
+      "claim_value": "39",
+      "unit": "items",
+      "verify_command": null,
+      "compare": "exact"
+    },
+    {
+      "file": "docs/SYSTEM_GUIDE.md",
+      "line": 242,
+      "line_pattern": "| `price-distorter` | Cross-venue price manipulation | All repos | C-MATH (39 items) |",
+      "claim_value": "39",
+      "unit": "items",
+      "verify_command": null,
+      "compare": "exact"
+    },
+    {
+      "file": "docs/SYSTEM_GUIDE.md",
+      "line": 243,
+      "line_pattern": "| `state-desync` | Cross-module state divergence | All repos | C-STATE (25 items) |",
+      "claim_value": "25",
+      "unit": "items",
+      "verify_command": null,
+      "compare": "exact"
+    },
+    {
+      "file": "docs/SYSTEM_GUIDE.md",
+      "line": 244,
+      "line_pattern": "| `composability-exploiter` | Multi-step composition attacks | All repos | C-STATE (25 items) |",
+      "claim_value": "25",
+      "unit": "items",
+      "verify_command": null,
+      "compare": "exact"
+    },
+    {
+      "file": "docs/SYSTEM_GUIDE.md",
+      "line": 245,
+      "line_pattern": "| `insolvency-engineer` | Bad debt / reserve drain | All repos | C-STATE (25 items) |",
+      "claim_value": "25",
+      "unit": "items",
+      "verify_command": null,
+      "compare": "exact"
+    },
+    {
+      "file": "docs/SYSTEM_GUIDE.md",
+      "line": 246,
+      "line_pattern": "| `auth-forger` | Permit / signature forging | All repos | C-AUTH (22 items) |",
+      "claim_value": "22",
+      "unit": "items",
+      "verify_command": null,
+      "compare": "exact"
+    },
+    {
+      "file": "docs/SYSTEM_GUIDE.md",
+      "line": 247,
+      "line_pattern": "| `cross-boundary` | Trust boundary violations | All repos | C-BOUNDARY (22 items) |",
+      "claim_value": "22",
+      "unit": "items",
+      "verify_command": null,
+      "compare": "exact"
+    },
+    {
+      "file": "docs/SYSTEM_GUIDE.md",
+      "line": 248,
+      "line_pattern": "| `extension-hijacker` | Hook / handler abuse | Hooks, Core | C-BOUNDARY (22 items) |",
+      "claim_value": "22",
+      "unit": "items",
+      "verify_command": null,
+      "compare": "exact"
+    },
+    {
+      "file": "docs/SYSTEM_GUIDE.md",
+      "line": 296,
+      "line_pattern": "2. **Systematic Assumption Identification** \u2014 7 Feynman categories (value ranges, ordering, ownership, timing, atomicity",
+      "claim_value": "7",
+      "unit": "categories",
+      "verify_command": null,
+      "compare": "exact"
+    },
+    {
+      "file": "docs/SYSTEM_GUIDE.md",
+      "line": 310,
+      "line_pattern": "### 6 Dimensions (0\u2013120 total)",
+      "claim_value": "6",
+      "unit": "dimensions",
+      "verify_command": null,
+      "compare": "exact"
+    },
+    {
+      "file": "docs/SYSTEM_GUIDE.md",
+      "line": 502,
+      "line_pattern": "| Pass 1 (knowledge gen) | Opus 4.6 | 6 boundary agents | ~$52 |",
+      "claim_value": "6",
+      "unit": "agents",
+      "verify_command": null,
+      "compare": "exact"
+    },
+    {
+      "file": "docs/SYSTEM_GUIDE.md",
+      "line": 503,
+      "line_pattern": "| Wave 1 (offense) | Opus 4.6 | 9 archetype agents | ~$91 |",
+      "claim_value": "9",
+      "unit": "agents",
+      "verify_command": null,
+      "compare": "exact"
+    },
+    {
+      "file": "docs/SYSTEM_GUIDE.md",
+      "line": 512,
+      "line_pattern": "2. **Phase 0 artifacts** (240KB Slither+Aderyn output sent to all agents) \u2014 28%",
+      "claim_value": "240",
+      "unit": "KB",
+      "verify_command": null,
+      "compare": "approximate"
+    },
+    {
+      "file": "docs/SYSTEM_GUIDE.md",
+      "line": 513,
+      "line_pattern": "3. **Agent scope misalignment** (some agents receive all 6 repos but only audit 2-3) \u2014 23%",
+      "claim_value": "6",
+      "unit": "repos",
+      "verify_command": null,
+      "compare": "exact"
+    },
+    {
+      "file": "docs/SYSTEM_GUIDE.md",
+      "line": 514,
+      "line_pattern": "4. **Hypothesis verbosity** (100-200 word mechanisms \u00d7 15 per agent) \u2014 6%",
+      "claim_value": "15",
+      "unit": "agent",
+      "verify_command": null,
+      "compare": "exact"
+    },
+    {
+      "file": "docs/SYSTEM_GUIDE.md",
+      "line": 560,
+      "line_pattern": "6. Fee growth overflow is intentional (Q128.128 wraps by design, Uniswap v3 pattern)",
+      "claim_value": "3",
+      "unit": "pattern",
+      "verify_command": null,
+      "compare": "exact"
+    }
+  ]
+}
