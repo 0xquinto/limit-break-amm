@@ -289,7 +289,8 @@ def build_exploit_knowledge(agent_name: str, scope: list[str]) -> str:
     parts.append("- Exploit COMPOSITION across contracts, not individual functions")
     parts.append("- Rounding consistently favors protocol — look for the exception")
     parts.append("- Cross-boundary denomination mismatches are the highest-signal pattern")
-    parts.append("- 0 findings from autonomous agents across all runs — human hints are critical")
+    parts.append("- CRITICAL: When claiming profit, check BOTH token balances. A USDC surplus with a WETH deficit of equal value is rebalancing, NOT theft. Compute net P&L across ALL tokens at pool price.")
+    parts.append("- First confirmed finding (CP-006) came from following tactical failures, not human hints")
 
     return "\n".join(parts)
 

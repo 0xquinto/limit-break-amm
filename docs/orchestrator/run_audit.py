@@ -512,6 +512,50 @@ async def run_exploit_wave(
             except json.JSONDecodeError:
                 print(f"  WARNING: {agent.name} sidecar unreadable")
 
+    # 4a. Independent Forge test verification
+    print(f"\nVerification gates:")
+    for sc in sidecars:
+        agent_name = sc.get("agent_name", "?")
+        try:
+            verify_result = verify_agent_tests(sc, agent_name)
+            compiled = sum(1 for v in verify_result.values() if v.get("compiled"))
+            failed = sum(1 for v in verify_result.values() if not v.get("compiled"))
+            print(f"  {agent_name} test verification: {compiled} compiled, {failed} failed")
+            # Override self-reported counts with verified counts
+            sc["tests_compiled_verified"] = compiled
+        except Exception as e:
+            print(f"  {agent_name} test verification error: {e}")
+
+    # 4b. Dedup against known findings (FPs + confirmed patterns + rejected subs)
+    from .safety import match_finding_to_fp
+    from .prompt_renderer import parse_false_positives
+    fps = parse_false_positives()
+    dedup_count = 0
+    for sc in sidecars:
+        for finding in sc.get("findings", []):
+            match = match_finding_to_fp(finding, fps)
+            if match:
+                finding["_dedup_match"] = match.id
+                finding["_novel"] = False
+                dedup_count += 1
+            else:
+                finding["_novel"] = True
+    if dedup_count:
+        print(f"  Dedup: {dedup_count} findings matched known FPs/rejected subs")
+    else:
+        print(f"  Dedup: all findings appear novel")
+
+    # 4c. Flag findings that need net-value verification
+    needs_net_check = 0
+    for sc in sidecars:
+        for finding in sc.get("findings", []):
+            ev = finding.get("extractable_value", "")
+            if ev and finding.get("status") == "confirmed":
+                finding["_needs_net_value_check"] = True
+                needs_net_check += 1
+    if needs_net_check:
+        print(f"  Net-value: {needs_net_check} findings claim profit — VERIFY BOTH TOKENS before submitting (L-017)")
+
     wave_result = score_exploit_wave(sidecars)
 
     print(f"\n{'='*60}")
