@@ -475,6 +475,32 @@ async def run_exploit_wave(
     # 2. Spawn agents
     results = await run_wave(wave, prompts)
 
+    # 2b. Collect agent logs and write per-agent diagnostics
+    print(f"\nAgent diagnostics:")
+    for agent in wave.agents:
+        # Check what files the agent created (test files, reports, logs)
+        import glob as _glob
+        agent_tests = []
+        for repo in agent.scope:
+            agent_tests.extend(_glob.glob(f"{repo}/test/*Exploit*") + _glob.glob(f"{repo}/test/*exploit*"))
+        # Check for agent log (written by wave_runner if available)
+        log_path = ARTIFACTS_DIR / f"agent-log-{agent.name}.jsonl"
+        log_lines = 0
+        if log_path.exists():
+            log_lines = len(log_path.read_text().splitlines())
+        # Check for report
+        report_path = ARTIFACTS_DIR / f"wave1-{agent.name}" / "report.md"
+        flat_report = ARTIFACTS_DIR / f"{agent.name}-report.md"
+        has_report = report_path.exists() or flat_report.exists()
+        # Sidecar info
+        sidecar_path = ARTIFACTS_DIR / f"findings-{agent.name}.json"
+        sidecar_size = sidecar_path.stat().st_size if sidecar_path.exists() else 0
+        print(f"  {agent.name}:")
+        print(f"    Tests on disk: {len(agent_tests)} files {agent_tests[:3]}")
+        print(f"    Agent log: {log_lines} lines")
+        print(f"    Report: {'yes' if has_report else 'no'}")
+        print(f"    Sidecar: {sidecar_size:,} bytes {'(fallback)' if sidecar_size < 500 else ''}")
+
     # 3. Collect sidecars
     import json
     sidecars = []
