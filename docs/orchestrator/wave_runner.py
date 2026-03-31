@@ -38,6 +38,7 @@ from .config import (
 )
 from .model_profiles import resolve_profile, AUDIT_SYSTEM_PROMPT
 from .templates.exploit_system_prompts import EXPLOIT_BASE_PROMPTS, build_exploit_system_prompt
+from .templates.compliance_system_prompts import COMPLIANCE_BASE_PROMPTS, build_compliance_system_prompt
 
 # Must unset before SDK spawns CLI subprocess — nested session check
 os.environ.pop("CLAUDECODE", None)
@@ -93,6 +94,18 @@ def _log(msg: str) -> None:
     """Log + print with immediate flush — enables both structured logging and run_monitor.py."""
     _logger.info(msg)
     print(msg, flush=True)
+
+
+def _get_system_prompt(agent) -> str:
+    """Select the best system prompt for an agent.
+
+    Priority: exploit-specific → compliance-specific → generic fallback.
+    """
+    if agent.name in EXPLOIT_BASE_PROMPTS:
+        return build_exploit_system_prompt(agent.name, agent.scope)
+    if agent.name in COMPLIANCE_BASE_PROMPTS:
+        return build_compliance_system_prompt(agent.name, agent.scope)
+    return AUDIT_SYSTEM_PROMPT
 
 
 @dataclass
@@ -170,9 +183,7 @@ async def _run_agent(
         model=agent.resolved_model,
         max_turns=agent.max_turns,
         permission_mode=agent.permission_mode,
-        system_prompt=(build_exploit_system_prompt(agent.name, agent.scope)
-                       if agent.name in EXPLOIT_BASE_PROMPTS
-                       else AUDIT_SYSTEM_PROMPT),
+        system_prompt=_get_system_prompt(agent),
         setting_sources=["user", "project", "local"],
         thinking=thinking,
     )
