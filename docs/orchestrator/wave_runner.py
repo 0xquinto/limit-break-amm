@@ -49,6 +49,9 @@ os.environ.pop("CLAUDE_CODE_ENTRYPOINT", None)
 # See: https://github.com/anthropics/claude-agent-sdk-python/issues/730
 os.environ["CLAUDE_CODE_STREAM_CLOSE_TIMEOUT"] = "3600000"
 
+# Compact at 50% context (default 95%) — keeps context healthy for 190+ turn agents
+os.environ.setdefault("CLAUDE_AUTOCOMPACT_PCT_OVERRIDE", "50")
+
 # Load secrets from .env (CERTORAKEY, etc.) so spawned agents inherit them
 _dotenv_path = PROJECT_ROOT / ".env"
 if _dotenv_path.exists():

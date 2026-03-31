@@ -165,3 +165,23 @@ class TestKnowledgeInjection:
             result = build_exploit_system_prompt("math-exploiter", ["lbamm-core"])
         assert isinstance(result, str)
         assert len(result) > 0
+
+
+import os
+
+
+class TestEnvironmentSetup:
+    """Environment variables set by wave_runner module load."""
+
+    def test_autocompact_override_set(self):
+        """Early compaction should be enabled for long-running agents."""
+        import docs.orchestrator.wave_runner  # noqa: F401
+        assert os.environ.get("CLAUDE_AUTOCOMPACT_PCT_OVERRIDE") == "50", (
+            "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE not set to 50 — "
+            "agents running 190+ turns will degrade in late context"
+        )
+
+    def test_stream_close_timeout_set(self):
+        """Stream close timeout should be 1 hour for long-running agents."""
+        import docs.orchestrator.wave_runner  # noqa: F401
+        assert os.environ.get("CLAUDE_CODE_STREAM_CLOSE_TIMEOUT") == "3600000"
