@@ -105,3 +105,37 @@ class TestSpawnValidation:
             result = _get_system_prompt(agent)
             assert isinstance(result, str)
             assert len(result) > 0
+
+
+from pathlib import Path
+from unittest.mock import patch
+from docs.orchestrator.wave_runner import _write_prompts_to_disk
+from docs.orchestrator.config import WaveConfig, AgentConfig
+
+
+class TestSystemPromptArtifacts:
+    """System prompts must be written to disk alongside spawn prompts."""
+
+    def test_system_prompts_written_to_disk(self, tmp_path):
+        wave = WaveConfig(
+            number=1,
+            name="test",
+            agents=[
+                AgentConfig(name="precision-sniper", role="black-hat",
+                            template="precision-sniper", scope=["lbamm-core"]),
+            ],
+        )
+        spawn_prompts = {"precision-sniper": "spawn prompt content"}
+
+        with patch("docs.orchestrator.wave_runner.ARTIFACTS_DIR", tmp_path):
+            _write_prompts_to_disk(wave, spawn_prompts)
+
+        prompt_dir = tmp_path / "wave1-prompts"
+        # Spawn prompt written
+        assert (prompt_dir / "precision-sniper.md").exists()
+        # System prompt also written
+        sp_path = prompt_dir / "precision-sniper-system.md"
+        assert sp_path.exists(), "System prompt not written to artifact trail"
+        content = sp_path.read_text()
+        assert "precision-sniper" in content
+        assert len(content) > 100

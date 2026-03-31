@@ -138,14 +138,21 @@ def log_safety_event(agent_name: str, event_type: str, detail: object) -> dict:
 
 
 def _write_prompts_to_disk(wave: WaveConfig, prompts: dict[str, str]) -> dict[str, str]:
-    """Write rendered prompts to disk for agents to read. Returns {name: abs_path}."""
+    """Write rendered prompts + system prompts to disk for audit trail. Returns {name: abs_path}."""
     prompt_dir = ARTIFACTS_DIR / f"wave{wave.number}-prompts"
     prompt_dir.mkdir(parents=True, exist_ok=True)
+    agents_by_name = {a.name: a for a in wave.agents}
     paths = {}
     for name, prompt in prompts.items():
         path = prompt_dir / f"{name}.md"
         path.write_text(prompt)
         paths[name] = str(path)
+        # Write system prompt for audit trail
+        agent = agents_by_name.get(name)
+        if agent:
+            sp = _get_system_prompt(agent)
+            sp_path = prompt_dir / f"{name}-system.md"
+            sp_path.write_text(sp)
     return paths
 
 
