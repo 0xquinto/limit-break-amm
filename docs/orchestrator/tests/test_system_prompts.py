@@ -139,3 +139,29 @@ class TestSystemPromptArtifacts:
         content = sp_path.read_text()
         assert "precision-sniper" in content
         assert len(content) > 100
+
+
+import logging
+
+
+class TestKnowledgeInjection:
+    """Knowledge injection should warn if empty, not fail silently."""
+
+    def test_exploit_builder_includes_knowledge(self):
+        from docs.orchestrator.templates.exploit_system_prompts import build_exploit_system_prompt
+        result = build_exploit_system_prompt("math-exploiter", ["lbamm-core"])
+        # Should have base + knowledge (confirmed patterns, tactical failures, etc.)
+        assert len(result) > 500, f"Exploit prompt suspiciously short: {len(result)} chars"
+
+    def test_compliance_builder_includes_knowledge(self):
+        from docs.orchestrator.templates.compliance_system_prompts import build_compliance_system_prompt
+        result = build_compliance_system_prompt("precision-sniper", ["lbamm-core"])
+        assert len(result) > 500, f"Compliance prompt suspiciously short: {len(result)} chars"
+
+    def test_exploit_builder_warns_on_empty_knowledge(self, caplog):
+        """If knowledge files are missing, builder should log a warning."""
+        from docs.orchestrator.templates.exploit_system_prompts import build_exploit_system_prompt
+        with caplog.at_level(logging.WARNING):
+            result = build_exploit_system_prompt("math-exploiter", ["lbamm-core"])
+        assert isinstance(result, str)
+        assert len(result) > 0

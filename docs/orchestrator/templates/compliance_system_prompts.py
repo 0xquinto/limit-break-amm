@@ -245,6 +245,7 @@ def build_compliance_system_prompt(agent_name: str, scope: list[str]) -> str:
     Same knowledge injection as exploit mode, but behavioral framing
     emphasizes coverage and honest failure classification over exploit-only focus.
     """
+    import logging
     from ..prompt_renderer import build_exploit_knowledge
 
     base = COMPLIANCE_BASE_PROMPTS.get(agent_name, "")
@@ -252,4 +253,8 @@ def build_compliance_system_prompt(agent_name: str, scope: list[str]) -> str:
         return base
 
     knowledge = build_exploit_knowledge(agent_name, scope)
+    if not knowledge.strip():
+        logging.getLogger("orchestrator.prompts").warning(
+            f"[{agent_name}] Knowledge injection returned empty — using base prompt only"
+        )
     return f"{base}\n\n{knowledge}"
