@@ -92,7 +92,7 @@ limit-break-amm/                      # This repo (framework only)
 │   ├── SYSTEM_GUIDE.md                # Canonical human-readable pipeline spec (640 lines)
 │   ├── CODEBASE_MAP.md                # This file
 │   │
-│   ├── orchestrator/                  # Python pipeline (27 modules)
+│   ├── orchestrator/                  # Python pipeline (28 modules)
 │   │   ├── config.py                  # Paths, agents, waves, boundaries
 │   │   ├── model_profiles.py          # 6 model profiles (Opus/Sonnet/Haiku)
 │   │   ├── run_audit.py               # Entry point — full pipeline orchestration
@@ -136,7 +136,7 @@ limit-break-amm/                      # This repo (framework only)
 │   │   │   ├── failure_classifications.jsonl
 │   │   │   └── metadata.json          # Run counter
 │   │   │
-│   │   └── tests/                     # 218+ pytest tests
+│   │   └── tests/                     # 161+ pytest tests
 │   │
 │   ├── audit_memory/                  # Hierarchical audit memory
 │   │   ├── digest.md                  # ~200 token summary (injected into all agents)
@@ -163,7 +163,7 @@ limit-break-amm/                      # This repo (framework only)
 │   ├── framework/                     # Shared methodology docs
 │   │   ├── agent-boilerplate.md       # Universal agent onboarding
 │   │   ├── tool-guide.md              # CLI tool usage guide
-│   │   ├── amm-invariant-catalog.md   # 18 named invariants
+│   │   ├── amm-invariant-catalog.md   # 21 named invariants
 │   │   └── value-lifecycle-lenses.md  # 3-lens cross-boundary methodology
 │   │
 │   ├── plans/                         # Architecture plans
@@ -238,7 +238,7 @@ Grades: A (90+), B (80+), C (70+), D (60+), F (<60)
 digest.md (200 tokens, always injected)
 ├── false-positives.md (55+ FPs, scoped by agent role, confidence >= 80)
 ├── confirmed-patterns.md (6 real patterns, always injected)
-├── lessons-learned.md (8 lessons, filtered by audience)
+├── lessons-learned.md (9 lessons, filtered by audience)
 └── run-episodes/ (per-run records, NOT injected — used for distillation)
 
 playbook/
@@ -285,10 +285,8 @@ playbook/
 
 If cartographer helped you, consider starring: https://github.com/kingbootoshi/cartographer - please!
 
-## Recent Changes (auto-synced 2026-03-30)
+## Recent Changes (auto-synced 2026-03-31)
 
-**19 files changed** since last sync.
+**13 files changed** since last sync.
 
-- **config**: 1 files (config.py)
-- **orchestrator**: 13 files (compliance.py, compliance_continuation.py, config.py, experiment.py, generate_gotchas.py...)
-- **scoring**: 4 files (compliance.py, compliance_continuation.py, experiment.py, test_compliance_hypothesis.py)
+- **docs**: 13 files (confirmed-patterns.md, digest.md, false-positives.md, lessons-learned.md, exploit-2026-03-30.md...)

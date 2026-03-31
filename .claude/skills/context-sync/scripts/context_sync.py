@@ -351,6 +351,7 @@ def main():
         save_state(STATE_FILE, current_commit)
         if not quiet:
             print(f"First run — checkpoint initialized at {current_commit[:8]}")
+            print("Proceed to validation — first run is the most important time to check for stale content.")
         sys.exit(0)
 
     if last_commit == current_commit:
