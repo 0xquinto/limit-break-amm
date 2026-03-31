@@ -556,6 +556,16 @@ async def run_exploit_wave(
     if needs_net_check:
         print(f"  Net-value: {needs_net_check} findings claim profit — VERIFY BOTH TOKENS before submitting (L-017)")
 
+    # 4d. Config protection gate — flag agents that weakened build configs
+    from .config_guard import check_config_modifications
+    config_violations = check_config_modifications()
+    if config_violations:
+        print(f"  Config protection: {len(config_violations)} warning(s)")
+        for v in config_violations:
+            print(f"    WARNING: {v['file']} — {v['message']}")
+    else:
+        print(f"  Config protection: clean (no build configs modified)")
+
     wave_result = score_exploit_wave(sidecars)
 
     print(f"\n{'='*60}")
