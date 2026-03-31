@@ -39,6 +39,9 @@ _REJECTED_KEYWORDS = {
     "missing sqrtPriceX96==0",
     # FP-EXP01: height-bucket quantization (net-value neutral rebalancing)
     "height-bucket", "quantization", "over-withdrawal",
+    # Dead-end verdicts — hints that already concluded no exploit path
+    "moved to ruled_out", "no current exploit path", "no exploit path",
+    "code structure prevents", "prevents double-counting",
 }
 
 
@@ -46,18 +49,6 @@ def _is_rejected(text: str) -> bool:
     """Check if text matches any known dead-end keyword."""
     text_lower = text.lower()
     return any(kw.lower() in text_lower for kw in _REJECTED_KEYWORDS)
-
-
-def _load_fp_vectors() -> set[str]:
-    """Load FP vector keywords from false-positives.md for broad matching."""
-    from .prompt_renderer import parse_false_positives
-    fps = parse_false_positives()
-    vectors = set()
-    for fp in fps:
-        # Extract key phrases from each FP vector
-        for word in re.findall(r'[A-Za-z_]{6,}', fp.vector):
-            vectors.add(word.lower())
-    return vectors
 
 
 def _load_guardian_titles() -> set[str]:
@@ -81,8 +72,64 @@ class HintSource:
     agent_target: str  # which exploit agent should get this
 
 
+def _load_hypotheses_index() -> dict[str, dict]:
+    """Load full hypothesis data from hypotheses.jsonl, indexed by ID."""
+    path = PLAYBOOK_DIR / "hypotheses.jsonl"
+    if not path.exists():
+        return {}
+    index: dict[str, dict] = {}
+    for line in path.read_text().splitlines():
+        if not line.strip():
+            continue
+        entry = json.loads(line)
+        hid = entry.get("id", "")
+        if hid:
+            index[hid] = entry
+    return index
+
+
+def _enrich_hint(failure_detail: str, hypothesis: dict | None) -> str:
+    """Build an enriched hint from failure classification + full hypothesis.
+
+    Pulls function names, line numbers, mechanism, and suggested test
+    from the hypothesis to give agents actionable context.
+    """
+    if not hypothesis:
+        return failure_detail[:300]
+
+    parts = []
+
+    # Mechanism (the core insight — truncated to keep hints digestible)
+    mechanism = hypothesis.get("mechanism", "")
+    if mechanism:
+        parts.append(mechanism[:400])
+
+    # Functions and lines
+    functions = hypothesis.get("functions", [])
+    lines = hypothesis.get("lines", {})
+    if functions:
+        parts.append(f"Functions: {', '.join(functions[:4])}")
+    if lines:
+        for file, line_nums in list(lines.items())[:2]:
+            short_file = file.split("/")[-1]
+            parts.append(f"{short_file}: L{','.join(str(n) for n in line_nums[:6])}")
+
+    # Suggested test skeleton
+    test = hypothesis.get("suggested_test", "")
+    if test:
+        # Just the function signature + key assertions
+        test_lines = [l for l in test.split("\n") if l.strip() and ("assert" in l.lower() or "function" in l.lower())]
+        if test_lines:
+            parts.append(f"Test skeleton: {' | '.join(l.strip() for l in test_lines[:3])}")
+
+    # What failed last time
+    parts.append(f"Prior attempt: {failure_detail[:150]}")
+
+    return "\n".join(parts)
+
+
 def _load_tactical_failures() -> list[HintSource]:
-    """Load tactical failures — the highest-value hint source.
+    """Load tactical failures enriched with full hypothesis data.
 
     These are hypotheses where the concept was right but the exploit
     test failed for a specific reason. The next agent should try
@@ -91,6 +138,8 @@ def _load_tactical_failures() -> list[HintSource]:
     path = PLAYBOOK_DIR / "failure_classifications.jsonl"
     if not path.exists():
         return []
+
+    hypotheses = _load_hypotheses_index()
 
     # Deduplicate by hypothesis_id (keep latest/most detailed)
     by_id: dict[str, dict] = {}
@@ -135,9 +184,11 @@ def _load_tactical_failures() -> list[HintSource]:
         elif "overflow" in detail.lower() or "reentrancy" in detail.lower():
             priority = 2
 
+        enriched = _enrich_hint(detail, hypotheses.get(hid))
+
         hints.append(HintSource(
             id=hid,
-            text=detail[:300],
+            text=enriched,
             priority=priority,
             source="tactical_failure",
             agent_target=agent,
@@ -246,8 +297,6 @@ def _load_lead_observations() -> list[HintSource]:
             sidecar = json.loads(sidecar_path.read_text())
         except (json.JSONDecodeError, KeyError):
             continue
-
-        agent = sidecar.get("agent", sidecar.get("agent_name", "?"))
 
         # Additional findings (observations, not exploits)
         for obs in sidecar.get("additional_findings", []):
