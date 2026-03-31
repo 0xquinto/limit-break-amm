@@ -101,6 +101,9 @@ def _get_system_prompt(agent) -> str:
     """Select the best system prompt for an agent.
 
     Priority: exploit → compliance → boundary → generic fallback.
+    All 18 configured agents (9 compliance + 3 exploit + 6 boundary) have
+    dedicated prompts. The generic fallback exists only as a safety net
+    for future agents added without a matching prompt entry.
     """
     if agent.name in EXPLOIT_BASE_PROMPTS:
         return build_exploit_system_prompt(agent.name, agent.scope)
@@ -108,6 +111,7 @@ def _get_system_prompt(agent) -> str:
         return build_compliance_system_prompt(agent.name, agent.scope)
     if agent.name in BOUNDARY_BASE_PROMPTS:
         return build_boundary_system_prompt(agent.name)
+    _log(f"  WARNING: [{agent.name}] No dedicated system prompt — using generic fallback")
     return AUDIT_SYSTEM_PROMPT
 
 
