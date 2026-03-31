@@ -402,6 +402,21 @@ async def run_wave(
     _log(f"  Summary [{status_label}]: {len(agent_usage)} agents, {total_turns} turns, "
           f"${total_cost:.2f} total, {failed} failed, {partial} partial")
 
+    # Per-agent cost breakdown
+    for entry in agent_usage:
+        name = entry.get("agent", "?")
+        cost = entry.get("total_cost_usd") or 0
+        turns = entry.get("num_turns") or 0
+        inp = entry.get("input_tokens", 0)
+        out = entry.get("output_tokens", 0)
+        cache_read = entry.get("cache_read_input_tokens", 0)
+        cache_create = entry.get("cache_creation_input_tokens", 0)
+        total_inp = inp + cache_read + cache_create
+        cache_pct = (cache_read / total_inp * 100) if total_inp > 0 else 0
+        stop = entry.get("stop_reason", "?")
+        _log(f"    {name:25s} ${cost:6.2f}  {turns:>3d} turns  "
+             f"{total_inp:>10,} in+{out:>7,} out  cache={cache_pct:.0f}%  [{stop}]")
+
     # 5. Build results from disk artifacts
     if skip_artifact_collection:
         return []
