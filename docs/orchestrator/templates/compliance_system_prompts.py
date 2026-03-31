@@ -239,6 +239,19 @@ OUTPUT: Write sidecar to docs/targets/full-system/artifacts/findings-extension-h
 }
 
 
+_TACTICAL_FORMAT = """
+TACTICAL FAILURE FORMAT: When classifying a finding as "tactical", include this structure:
+{
+  "status": "tactical",
+  "what_failed": "exact test name or approach that failed",
+  "why_failed": "compilation error / reverted / wrong setup / ran out of turns",
+  "what_to_try_next": "specific next step another agent should take",
+  "files_touched": ["list of files you read or modified"],
+  "confidence": "high/medium/low that this IS exploitable"
+}
+This structured format ensures the next agent can pick up exactly where you left off."""
+
+
 def build_compliance_system_prompt(agent_name: str, scope: list[str]) -> str:
     """Build full compliance system prompt: base + knowledge block.
 
@@ -257,4 +270,4 @@ def build_compliance_system_prompt(agent_name: str, scope: list[str]) -> str:
         logging.getLogger("orchestrator.prompts").warning(
             f"[{agent_name}] Knowledge injection returned empty — using base prompt only"
         )
-    return f"{base}\n\n{knowledge}"
+    return f"{base}\n\n{knowledge}\n{_TACTICAL_FORMAT}"

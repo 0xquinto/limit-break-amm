@@ -185,3 +185,23 @@ class TestEnvironmentSetup:
         """Stream close timeout should be 1 hour for long-running agents."""
         import docs.orchestrator.wave_runner  # noqa: F401
         assert os.environ.get("CLAUDE_CODE_STREAM_CLOSE_TIMEOUT") == "3600000"
+
+
+class TestTacticalFailureInstruction:
+    """System prompts should instruct agents on structured tactical failure format."""
+
+    def test_compliance_prompts_include_tactical_format(self):
+        from docs.orchestrator.templates.compliance_system_prompts import build_compliance_system_prompt
+        for name in ["precision-sniper", "state-desync", "auth-forger"]:
+            result = build_compliance_system_prompt(name, ["lbamm-core"])
+            assert "what_failed" in result or "TACTICAL FAILURE" in result, (
+                f"Compliance agent {name} missing tactical failure format instruction"
+            )
+
+    def test_exploit_prompts_include_tactical_format(self):
+        from docs.orchestrator.templates.exploit_system_prompts import build_exploit_system_prompt
+        for name in ["math-exploiter", "state-exploiter", "boundary-exploiter"]:
+            result = build_exploit_system_prompt(name, ["lbamm-core"])
+            assert "what_failed" in result or "TACTICAL FAILURE" in result, (
+                f"Exploit agent {name} missing tactical failure format instruction"
+            )
