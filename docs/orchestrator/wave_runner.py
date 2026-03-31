@@ -39,6 +39,7 @@ from .config import (
 from .model_profiles import resolve_profile, AUDIT_SYSTEM_PROMPT
 from .templates.exploit_system_prompts import EXPLOIT_BASE_PROMPTS, build_exploit_system_prompt
 from .templates.compliance_system_prompts import COMPLIANCE_BASE_PROMPTS, build_compliance_system_prompt
+from .templates.boundary_system_prompts import BOUNDARY_BASE_PROMPTS, build_boundary_system_prompt
 
 # Must unset before SDK spawns CLI subprocess — nested session check
 os.environ.pop("CLAUDECODE", None)
@@ -99,12 +100,14 @@ def _log(msg: str) -> None:
 def _get_system_prompt(agent) -> str:
     """Select the best system prompt for an agent.
 
-    Priority: exploit-specific → compliance-specific → generic fallback.
+    Priority: exploit → compliance → boundary → generic fallback.
     """
     if agent.name in EXPLOIT_BASE_PROMPTS:
         return build_exploit_system_prompt(agent.name, agent.scope)
     if agent.name in COMPLIANCE_BASE_PROMPTS:
         return build_compliance_system_prompt(agent.name, agent.scope)
+    if agent.name in BOUNDARY_BASE_PROMPTS:
+        return build_boundary_system_prompt(agent.name)
     return AUDIT_SYSTEM_PROMPT
 
 
