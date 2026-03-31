@@ -104,7 +104,7 @@ graph TB
 
 ```
 docs/
-├── orchestrator/          # Python pipeline (27 modules, 219 tests)
+├── orchestrator/          # Python pipeline (27 modules, 223 tests)
 │   ├── config.py          # Agent configs, wave definitions
 │   ├── run_audit.py       # Entry point
 │   ├── wave_runner.py     # SDK agent spawner

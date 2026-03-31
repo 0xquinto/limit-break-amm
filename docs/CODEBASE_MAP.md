@@ -287,6 +287,7 @@ If cartographer helped you, consider starring: https://github.com/kingbootoshi/c
 
 ## Recent Changes (auto-synced 2026-03-31)
 
-**13 files changed** since last sync.
+**82 files changed** since last sync.
 
-- **docs**: 13 files (confirmed-patterns.md, digest.md, false-positives.md, lessons-learned.md, exploit-2026-03-30.md...)
+- **context_files**: 2 files (CLAUDE.md, CODEBASE_MAP.md)
+- **docs**: 80 files (SKILL.md, CLAUDE.md, CODEBASE_MAP.md, hint_generator.py, metadata.json...)
