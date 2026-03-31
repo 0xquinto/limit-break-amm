@@ -94,3 +94,14 @@ class TestConfigPromptAlignment:
                 f"Exploit agent '{agent.name}' not in EXPLOIT_BASE_PROMPTS. "
                 f"Will fall through to compliance or generic prompt."
             )
+
+
+class TestSpawnValidation:
+    """System prompt must be validated before agent spawn."""
+
+    def test_get_system_prompt_returns_string(self):
+        for name in list(COMPLIANCE_BASE_PROMPTS) + list(EXPLOIT_BASE_PROMPTS) + list(BOUNDARY_BASE_PROMPTS):
+            agent = _mock_agent(name, ["lbamm-core"])
+            result = _get_system_prompt(agent)
+            assert isinstance(result, str)
+            assert len(result) > 0

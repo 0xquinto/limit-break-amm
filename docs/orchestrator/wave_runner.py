@@ -181,12 +181,16 @@ async def _run_agent(
             # Adaptive: Opus self-regulates thinking depth per turn
             thinking = {"type": "adaptive"}
 
+    system_prompt = _get_system_prompt(agent)
+    assert system_prompt, f"[{agent.name}] System prompt is empty — check prompt dictionaries"
+    _log(f"  [{agent.name}] System prompt: {len(system_prompt):,} chars")
+
     options = ClaudeAgentOptions(
         cwd=str(PROJECT_ROOT),
         model=agent.resolved_model,
         max_turns=agent.max_turns,
         permission_mode=agent.permission_mode,
-        system_prompt=_get_system_prompt(agent),
+        system_prompt=system_prompt,
         setting_sources=["user", "project", "local"],
         thinking=thinking,
     )
