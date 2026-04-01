@@ -95,9 +95,9 @@ limit-break-amm/                      # This repo (framework only)
 │   ├── orchestrator/                  # Python pipeline (31 modules)
 │   │   ├── config.py                  # Paths, agents, waves, boundaries
 │   │   ├── model_profiles.py          # 6 model profiles (Opus/Sonnet/Haiku)
-│   │   ├── run_audit.py               # Entry point — full pipeline orchestration
+│   │   ├── run_audit.py               # Entry point — pipeline, hints parsing, multi-path sidecar collection
 │   │   ├── wave_runner.py             # SDK agent spawner (asyncio, retry, circuit breaker)
-│   │   ├── prompt_renderer.py         # Template + memory assembly
+│   │   ├── prompt_renderer.py         # Template + scoped memory injection + exploit knowledge builder
 │   │   ├── knowledge_gen.py           # Pass 1 boundary agents → hypotheses
 │   │   ├── knowledge_compliance.py    # Pass 1 hypothesis quality scoring
 │   │   ├── playbook.py                # Cross-run hypothesis persistence (JSONL)
@@ -122,7 +122,7 @@ limit-break-amm/                      # This repo (framework only)
 │   │   ├── run_postprocess.py         # Standalone re-synthesis
 │   │   ├── config_guard.py            # Git-diff guard for build configs
 │   │   ├── exploit_scorer.py          # Exploit sidecar scoring formula
-│   │   ├── hint_generator.py          # Tactical failure → exploit hints
+│   │   ├── hint_generator.py          # Centralized FP filter + 4-source hint generator
 │   │   │
 │   │   ├── templates/                 # Agent prompt templates
 │   │   │   ├── black-hat-preamble.md  # Shared methodology (all agents)
@@ -288,9 +288,8 @@ playbook/
 
 If cartographer helped you, consider starring: https://github.com/kingbootoshi/cartographer - please!
 
-## Recent Changes (auto-synced 2026-03-31)
+## Recent Changes (auto-synced 2026-04-01)
 
-**3 files changed** since last sync.
+**7 files changed** since last sync.
 
-- **context_files**: 1 files (CLAUDE.md)
-- **docs**: 3 files (SKILL.md, CLAUDE.md, README.md)
+- **docs**: 7 files (wave_runner.py, 2026-04-01-coverage-sweep.md, 2026-04-01-file-inventory.md, 2026-04-01-trace-analyzer.md, 2026-03-31-file-inventory-prepass-design.md...)

@@ -44,5 +44,5 @@ Limit Break AMM security audit framework. This parent directory orchestrates aud
 - Best compliance score: 112.5. First novel finding: CP-006 (exploit mode, $29 run).
 
 For architecture details, see [docs/CODEBASE_MAP.md](docs/CODEBASE_MAP.md).
-<!-- context-sync: 2026-03-31T16:03:09Z -->
-<!-- Recent changes: docs: 3 files (SKILL.md, CLAUDE.md, README.md) -->
+<!-- context-sync: 2026-04-01T15:03:25Z -->
+<!-- Recent changes: docs: 7 files (wave_runner.py, 2026-04-01-coverage-sweep.md, 2026-04-01-file-inventory.md, 2026-04-01-trace-analyzer.md, 2026-03-31-file-inventory-prepass-design.md...) -->

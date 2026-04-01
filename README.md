@@ -65,6 +65,8 @@ graph TB
 **Wave 1**: 9 agents investigate hypotheses + run checklists (500 turns max)
 **Compliance Gates**: Sidecar gate → Kill gate (7 filters) → FP pre-filter → Regression check
 **Compliance Scoring**: 6-dimension (0-120), experiment tracking via TSV
+**Hint Generation**: `hint_generator.py` aggregates 4 knowledge layers (tactical failures, blind spots, confirmed patterns, agent observations), filters known dead ends via centralized `_REJECTED_KEYWORDS` + Guardian title matching, then routes to agents by domain
+**Hypothesis Testing**: Agents use backward reasoning — assume theft, trace to mechanism, write Forge test, refute or confirm
 **Exploit Gates**: Forge test verification → Dedup against FPs → Net-value check (L-017) → Config protection
 **Exploit Scoring**: `compiled_tests x 10 + profitable_tests x 100`
 
