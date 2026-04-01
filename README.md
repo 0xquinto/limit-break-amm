@@ -148,14 +148,14 @@ Generated dynamically by `knowledge_gen.py` for each trust boundary: Core-PoolTy
 
 ```
 docs/
-├── orchestrator/          # Python pipeline (31 modules, 247 tests)
+├── orchestrator/          # Python pipeline (34 modules, 283 tests)
 │   ├── config.py          # Agent configs, wave definitions
 │   ├── run_audit.py       # Entry point
 │   ├── wave_runner.py     # SDK agent spawner
 │   ├── config_guard.py    # Config protection verification gate
 │   ├── templates/         # 11 archetype prompts + 4 checklists
 │   ├── playbook/          # Cross-run hypothesis persistence
-│   └── tests/             # 247 pytest tests
+│   └── tests/             # 283 pytest tests
 ├── audit_memory/          # Digest, FPs, patterns, lessons
 ├── targets/full-system/   # Artifacts, results, experiments
 ├── CODEBASE_MAP.md        # Full architecture map

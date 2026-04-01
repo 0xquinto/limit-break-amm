@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generated": "2026-03-31T16:03:09.492362+00:00",
+  "generated": "2026-04-01T19:28:47.755851+00:00",
   "claims": [
     {
       "file": "CLAUDE.md",
@@ -8,7 +8,7 @@
       "line_pattern": "- `compliance` \u2014 9 agents (7 Opus + 2 Sonnet), full checklists, compliance scoring. Builds the knowledge base.",
       "claim_value": "9",
       "unit": "agents",
-      "verify_command": null,
+      "verify_command": ".venv/bin/python3 -c \"from docs.orchestrator.config import WAVE_BH1; print(len(WAVE_BH1.agents))\"",
       "compare": "exact"
     },
     {
@@ -17,7 +17,7 @@
       "line_pattern": "- `exploit` \u2014 3 Sonnet agents, attack-focused system prompts, exploit scoring. Consumes the knowledge base.",
       "claim_value": "3",
       "unit": "agents",
-      "verify_command": null,
+      "verify_command": ".venv/bin/python3 -c \"from docs.orchestrator.config import WAVE_EXPLOIT; print(len(WAVE_EXPLOIT.agents))\"",
       "compare": "exact"
     },
     {
@@ -44,7 +44,7 @@
       "line_pattern": "**Phase 0**: Slither + Aderyn on all 6 repos (scripted, no LLM)",
       "claim_value": "6",
       "unit": "repos",
-      "verify_command": null,
+      "verify_command": ".venv/bin/python3 -c \"from docs.orchestrator.config import REPOS; print(len(REPOS))\"",
       "compare": "exact"
     },
     {
@@ -58,7 +58,7 @@
     },
     {
       "file": "README.md",
-      "line": 73,
+      "line": 75,
       "line_pattern": "### Compliance Mode (9 agents)",
       "claim_value": "9",
       "unit": "agents",
@@ -67,34 +67,34 @@
     },
     {
       "file": "README.md",
-      "line": 77,
+      "line": 79,
       "line_pattern": "| precision-sniper | Opus 4.6 | adaptive | All 6 repos | C-MATH (39) |",
       "claim_value": "6",
       "unit": "repos",
-      "verify_command": null,
-      "compare": "exact"
-    },
-    {
-      "file": "README.md",
-      "line": 78,
-      "line_pattern": "| state-desync | Opus 4.6 | adaptive | All 6 repos | C-STATE (25) |",
-      "claim_value": "6",
-      "unit": "repos",
-      "verify_command": null,
+      "verify_command": ".venv/bin/python3 -c \"from docs.orchestrator.config import REPOS; print(len(REPOS))\"",
       "compare": "exact"
     },
     {
       "file": "README.md",
       "line": 80,
-      "line_pattern": "| cross-boundary | Opus 4.6 | adaptive | All 6 repos | C-BOUNDARY (22) |",
+      "line_pattern": "| state-desync | Opus 4.6 | adaptive | All 6 repos | C-STATE (25) |",
       "claim_value": "6",
       "unit": "repos",
-      "verify_command": null,
+      "verify_command": ".venv/bin/python3 -c \"from docs.orchestrator.config import REPOS; print(len(REPOS))\"",
       "compare": "exact"
     },
     {
       "file": "README.md",
-      "line": 81,
+      "line": 82,
+      "line_pattern": "| cross-boundary | Opus 4.6 | adaptive | All 6 repos | C-BOUNDARY (22) |",
+      "claim_value": "6",
+      "unit": "repos",
+      "verify_command": ".venv/bin/python3 -c \"from docs.orchestrator.config import REPOS; print(len(REPOS))\"",
+      "compare": "exact"
+    },
+    {
+      "file": "README.md",
+      "line": 83,
       "line_pattern": "| math-deep-diver | Opus 4.6 | adaptive | 4 repos | C-MATH (39) |",
       "claim_value": "4",
       "unit": "repos",
@@ -103,7 +103,7 @@
     },
     {
       "file": "README.md",
-      "line": 82,
+      "line": 84,
       "line_pattern": "| insolvency-engineer | Opus 4.6 | adaptive | 4 repos | C-STATE (25) |",
       "claim_value": "4",
       "unit": "repos",
@@ -112,25 +112,25 @@
     },
     {
       "file": "README.md",
-      "line": 84,
+      "line": 86,
       "line_pattern": "| composability-exploiter | Sonnet 4.6 | 32K fixed | All 6 repos | C-STATE (25) |",
       "claim_value": "6",
       "unit": "repos",
-      "verify_command": null,
-      "compare": "exact"
-    },
-    {
-      "file": "README.md",
-      "line": 85,
-      "line_pattern": "| price-distorter | Sonnet 4.6 | 32K fixed | All 6 repos | C-MATH (39) |",
-      "claim_value": "6",
-      "unit": "repos",
-      "verify_command": null,
+      "verify_command": ".venv/bin/python3 -c \"from docs.orchestrator.config import REPOS; print(len(REPOS))\"",
       "compare": "exact"
     },
     {
       "file": "README.md",
       "line": 87,
+      "line_pattern": "| price-distorter | Sonnet 4.6 | 32K fixed | All 6 repos | C-MATH (39) |",
+      "claim_value": "6",
+      "unit": "repos",
+      "verify_command": ".venv/bin/python3 -c \"from docs.orchestrator.config import REPOS; print(len(REPOS))\"",
+      "compare": "exact"
+    },
+    {
+      "file": "README.md",
+      "line": 89,
       "line_pattern": "### Exploit Mode (3 agents)",
       "claim_value": "3",
       "unit": "agents",
@@ -139,7 +139,7 @@
     },
     {
       "file": "README.md",
-      "line": 95,
+      "line": 97,
       "line_pattern": "### Pass 1 Boundary Agents (6 agents)",
       "claim_value": "6",
       "unit": "agents",
@@ -148,7 +148,7 @@
     },
     {
       "file": "README.md",
-      "line": 106,
+      "line": 108,
       "line_pattern": "| Tool Breadth | 20 | 7 required tools used |",
       "claim_value": "7",
       "unit": "tools",
@@ -161,7 +161,7 @@
       "line_pattern": "This is the **orchestration framework** for the Limit Break AMM security audit. It does not contain Solidity source code",
       "claim_value": "6",
       "unit": "repos",
-      "verify_command": null,
+      "verify_command": ".venv/bin/python3 -c \"from docs.orchestrator.config import REPOS; print(len(REPOS))\"",
       "compare": "exact"
     },
     {
@@ -170,7 +170,7 @@
       "line_pattern": "| precision-sniper | Opus (max_reasoning) | adaptive | All 6 repos | C-MATH (39 items) |",
       "claim_value": "6",
       "unit": "repos",
-      "verify_command": null,
+      "verify_command": ".venv/bin/python3 -c \"from docs.orchestrator.config import REPOS; print(len(REPOS))\"",
       "compare": "exact"
     },
     {
@@ -179,7 +179,7 @@
       "line_pattern": "| precision-sniper | Opus (max_reasoning) | adaptive | All 6 repos | C-MATH (39 items) |",
       "claim_value": "39",
       "unit": "items",
-      "verify_command": null,
+      "verify_command": "grep -c '^-' docs/orchestrator/templates/checklist-math.md",
       "compare": "exact"
     },
     {
@@ -188,7 +188,7 @@
       "line_pattern": "| state-desync | Opus (max_reasoning) | adaptive | All 6 repos | C-STATE (25 items) |",
       "claim_value": "6",
       "unit": "repos",
-      "verify_command": null,
+      "verify_command": ".venv/bin/python3 -c \"from docs.orchestrator.config import REPOS; print(len(REPOS))\"",
       "compare": "exact"
     },
     {
@@ -197,7 +197,7 @@
       "line_pattern": "| state-desync | Opus (max_reasoning) | adaptive | All 6 repos | C-STATE (25 items) |",
       "claim_value": "25",
       "unit": "items",
-      "verify_command": null,
+      "verify_command": "grep -c '^-' docs/orchestrator/templates/checklist-state.md",
       "compare": "exact"
     },
     {
@@ -206,7 +206,7 @@
       "line_pattern": "| auth-forger | Opus (max_reasoning) | adaptive | hooks, core | C-AUTH (22 items) |",
       "claim_value": "22",
       "unit": "items",
-      "verify_command": null,
+      "verify_command": "grep -c '^-' docs/orchestrator/templates/checklist-auth.md",
       "compare": "exact"
     },
     {
@@ -215,7 +215,7 @@
       "line_pattern": "| cross-boundary | Opus (max_reasoning) | adaptive | All 6 repos | C-BOUNDARY (22 items) |",
       "claim_value": "6",
       "unit": "repos",
-      "verify_command": null,
+      "verify_command": ".venv/bin/python3 -c \"from docs.orchestrator.config import REPOS; print(len(REPOS))\"",
       "compare": "exact"
     },
     {
@@ -224,7 +224,7 @@
       "line_pattern": "| cross-boundary | Opus (max_reasoning) | adaptive | All 6 repos | C-BOUNDARY (22 items) |",
       "claim_value": "22",
       "unit": "items",
-      "verify_command": null,
+      "verify_command": "grep -c '^-' docs/orchestrator/templates/checklist-boundary.md",
       "compare": "exact"
     },
     {
@@ -233,7 +233,7 @@
       "line_pattern": "| math-deep-diver | Opus (audit_balanced) | adaptive | fixed, dynamic, core, hooks | C-MATH (39 items) |",
       "claim_value": "39",
       "unit": "items",
-      "verify_command": null,
+      "verify_command": "grep -c '^-' docs/orchestrator/templates/checklist-math.md",
       "compare": "exact"
     },
     {
@@ -242,7 +242,7 @@
       "line_pattern": "| insolvency-engineer | Opus (audit_balanced) | adaptive | core, dynamic, fixed, hooks | C-STATE (25 items) |",
       "claim_value": "25",
       "unit": "items",
-      "verify_command": null,
+      "verify_command": "grep -c '^-' docs/orchestrator/templates/checklist-state.md",
       "compare": "exact"
     },
     {
@@ -251,7 +251,7 @@
       "line_pattern": "| extension-hijacker | Opus (audit_balanced) | adaptive | hooks, core | C-BOUNDARY (22 items) |",
       "claim_value": "22",
       "unit": "items",
-      "verify_command": null,
+      "verify_command": "grep -c '^-' docs/orchestrator/templates/checklist-boundary.md",
       "compare": "exact"
     },
     {
@@ -260,7 +260,7 @@
       "line_pattern": "| composability-exploiter | Sonnet (fast_reasoning) | 32K fixed | All 6 repos | C-STATE (25 items) |",
       "claim_value": "6",
       "unit": "repos",
-      "verify_command": null,
+      "verify_command": ".venv/bin/python3 -c \"from docs.orchestrator.config import REPOS; print(len(REPOS))\"",
       "compare": "exact"
     },
     {
@@ -269,7 +269,7 @@
       "line_pattern": "| composability-exploiter | Sonnet (fast_reasoning) | 32K fixed | All 6 repos | C-STATE (25 items) |",
       "claim_value": "25",
       "unit": "items",
-      "verify_command": null,
+      "verify_command": "grep -c '^-' docs/orchestrator/templates/checklist-state.md",
       "compare": "exact"
     },
     {
@@ -278,7 +278,7 @@
       "line_pattern": "| price-distorter | Sonnet (fast_reasoning) | 32K fixed | All 6 repos | C-MATH (39 items) |",
       "claim_value": "6",
       "unit": "repos",
-      "verify_command": null,
+      "verify_command": ".venv/bin/python3 -c \"from docs.orchestrator.config import REPOS; print(len(REPOS))\"",
       "compare": "exact"
     },
     {
@@ -287,7 +287,7 @@
       "line_pattern": "| price-distorter | Sonnet (fast_reasoning) | 32K fixed | All 6 repos | C-MATH (39 items) |",
       "claim_value": "39",
       "unit": "items",
-      "verify_command": null,
+      "verify_command": "grep -c '^-' docs/orchestrator/templates/checklist-math.md",
       "compare": "exact"
     },
     {
@@ -296,7 +296,7 @@
       "line_pattern": "## Compliance Scoring (6 Dimensions, 120 max)",
       "claim_value": "6",
       "unit": "dimensions",
-      "verify_command": null,
+      "verify_command": "grep -o '\"checklist\"\\|\"tool_breadth\"\\|\"evidence\"\\|\"depth\"\\|\"thesis\"\\|\"hypothesis\"' docs/orchestrator/compliance.py | sort -u | wc -l | tr -d ' '",
       "compare": "exact"
     },
     {
@@ -311,8 +311,8 @@
     {
       "file": "docs/CODEBASE_MAP.md",
       "line": 293,
-      "line_pattern": "**18 files changed** since last sync.",
-      "claim_value": "18",
+      "line_pattern": "**7 files changed** since last sync.",
+      "claim_value": "7",
       "unit": "files",
       "verify_command": null,
       "compare": "exact"
@@ -320,8 +320,8 @@
     {
       "file": "docs/CODEBASE_MAP.md",
       "line": 295,
-      "line_pattern": "- **docs**: 18 files (config_guard.py, run_audit.py, auth-forger.md, compliance_system_prompts.py, composability-exploit",
-      "claim_value": "18",
+      "line_pattern": "- **docs**: 7 files (wave_runner.py, 2026-04-01-coverage-sweep.md, 2026-04-01-file-inventory.md, 2026-04-01-trace-analyz",
+      "claim_value": "7",
       "unit": "files",
       "verify_command": null,
       "compare": "exact"
@@ -341,7 +341,7 @@
       "line_pattern": "| `precision-sniper` | Math boundary / rounding | All repos | C-MATH (39 items) |",
       "claim_value": "39",
       "unit": "items",
-      "verify_command": null,
+      "verify_command": "grep -c '^-' docs/orchestrator/templates/checklist-math.md",
       "compare": "exact"
     },
     {
@@ -350,7 +350,7 @@
       "line_pattern": "| `math-deep-diver` | Deep math analysis | Fixed, Dynamic, Core, Hooks | C-MATH (39 items) |",
       "claim_value": "39",
       "unit": "items",
-      "verify_command": null,
+      "verify_command": "grep -c '^-' docs/orchestrator/templates/checklist-math.md",
       "compare": "exact"
     },
     {
@@ -359,7 +359,7 @@
       "line_pattern": "| `price-distorter` | Cross-venue price manipulation | All repos | C-MATH (39 items) |",
       "claim_value": "39",
       "unit": "items",
-      "verify_command": null,
+      "verify_command": "grep -c '^-' docs/orchestrator/templates/checklist-math.md",
       "compare": "exact"
     },
     {
@@ -368,7 +368,7 @@
       "line_pattern": "| `state-desync` | Cross-module state divergence | All repos | C-STATE (25 items) |",
       "claim_value": "25",
       "unit": "items",
-      "verify_command": null,
+      "verify_command": "grep -c '^-' docs/orchestrator/templates/checklist-state.md",
       "compare": "exact"
     },
     {
@@ -377,7 +377,7 @@
       "line_pattern": "| `composability-exploiter` | Multi-step composition attacks | All repos | C-STATE (25 items) |",
       "claim_value": "25",
       "unit": "items",
-      "verify_command": null,
+      "verify_command": "grep -c '^-' docs/orchestrator/templates/checklist-state.md",
       "compare": "exact"
     },
     {
@@ -386,7 +386,7 @@
       "line_pattern": "| `insolvency-engineer` | Bad debt / reserve drain | All repos | C-STATE (25 items) |",
       "claim_value": "25",
       "unit": "items",
-      "verify_command": null,
+      "verify_command": "grep -c '^-' docs/orchestrator/templates/checklist-state.md",
       "compare": "exact"
     },
     {
@@ -395,7 +395,7 @@
       "line_pattern": "| `auth-forger` | Permit / signature forging | All repos | C-AUTH (22 items) |",
       "claim_value": "22",
       "unit": "items",
-      "verify_command": null,
+      "verify_command": "grep -c '^-' docs/orchestrator/templates/checklist-auth.md",
       "compare": "exact"
     },
     {
@@ -404,7 +404,7 @@
       "line_pattern": "| `cross-boundary` | Trust boundary violations | All repos | C-BOUNDARY (22 items) |",
       "claim_value": "22",
       "unit": "items",
-      "verify_command": null,
+      "verify_command": "grep -c '^-' docs/orchestrator/templates/checklist-boundary.md",
       "compare": "exact"
     },
     {
@@ -413,7 +413,7 @@
       "line_pattern": "| `extension-hijacker` | Hook / handler abuse | Hooks, Core | C-BOUNDARY (22 items) |",
       "claim_value": "22",
       "unit": "items",
-      "verify_command": null,
+      "verify_command": "grep -c '^-' docs/orchestrator/templates/checklist-boundary.md",
       "compare": "exact"
     },
     {
@@ -431,7 +431,7 @@
       "line_pattern": "### 6 Dimensions (0\u2013120 total)",
       "claim_value": "6",
       "unit": "dimensions",
-      "verify_command": null,
+      "verify_command": "grep -o '\"checklist\"\\|\"tool_breadth\"\\|\"evidence\"\\|\"depth\"\\|\"thesis\"\\|\"hypothesis\"' docs/orchestrator/compliance.py | sort -u | wc -l | tr -d ' '",
       "compare": "exact"
     },
     {
@@ -467,7 +467,7 @@
       "line_pattern": "3. **Agent scope misalignment** (some agents receive all 6 repos but only audit 2-3) \u2014 23%",
       "claim_value": "6",
       "unit": "repos",
-      "verify_command": null,
+      "verify_command": ".venv/bin/python3 -c \"from docs.orchestrator.config import REPOS; print(len(REPOS))\"",
       "compare": "exact"
     },
     {

@@ -92,7 +92,7 @@ limit-break-amm/                      # This repo (framework only)
 │   ├── SYSTEM_GUIDE.md                # Canonical human-readable pipeline spec (640 lines)
 │   ├── CODEBASE_MAP.md                # This file
 │   │
-│   ├── orchestrator/                  # Python pipeline (31 modules)
+│   ├── orchestrator/                  # Python pipeline (34 modules)
 │   │   ├── config.py                  # Paths, agents, waves, boundaries
 │   │   ├── model_profiles.py          # 6 model profiles (Opus/Sonnet/Haiku)
 │   │   ├── run_audit.py               # Entry point — pipeline, hints parsing, multi-path sidecar collection
@@ -123,6 +123,9 @@ limit-break-amm/                      # This repo (framework only)
 │   │   ├── config_guard.py            # Git-diff guard for build configs
 │   │   ├── exploit_scorer.py          # Exploit sidecar scoring formula
 │   │   ├── hint_generator.py          # Centralized FP filter + 4-source hint generator
+│   │   ├── trace_analyzer.py          # Post-wave 16-dimension agent intelligence extraction
+│   │   ├── file_inventory.py          # Solidity file inventory + Slither call graph + archetype classification
+│   │   ├── coverage_sweep.py          # Post-wave gap detection + targeted sweep agent spawner
 │   │   │
 │   │   ├── templates/                 # Agent prompt templates
 │   │   │   ├── black-hat-preamble.md  # Shared methodology (all agents)
@@ -139,13 +142,13 @@ limit-break-amm/                      # This repo (framework only)
 │   │   │   ├── failure_classifications.jsonl
 │   │   │   └── metadata.json          # Run counter
 │   │   │
-│   │   └── tests/                     # 247 pytest tests
+│   │   └── tests/                     # 283 pytest tests
 │   │
 │   ├── audit_memory/                  # Hierarchical audit memory
 │   │   ├── digest.md                  # ~200 token summary (injected into all agents)
 │   │   ├── false-positives.md         # 55+ known FPs
 │   │   ├── confirmed-patterns.md      # 6 confirmed vulnerability patterns
-│   │   ├── lessons-learned.md         # 8 procedural lessons
+│   │   ├── lessons-learned.md         # 11 procedural lessons
 │   │   └── run-episodes/              # Per-run episode records
 │   │
 │   ├── targets/full-system/           # Active audit target
@@ -290,6 +293,8 @@ If cartographer helped you, consider starring: https://github.com/kingbootoshi/c
 
 ## Recent Changes (auto-synced 2026-04-01)
 
-**7 files changed** since last sync.
+**39 files changed** since last sync.
 
-- **docs**: 7 files (wave_runner.py, 2026-04-01-coverage-sweep.md, 2026-04-01-file-inventory.md, 2026-04-01-trace-analyzer.md, 2026-03-31-file-inventory-prepass-design.md...)
+- **context_files**: 2 files (CLAUDE.md, CODEBASE_MAP.md)
+- **docs**: 38 files (CLAUDE.md, README.md, CODEBASE_MAP.md, coverage_sweep.py, file_inventory.py...)
+- **tests**: 3 files (test_coverage_sweep.py, test_file_inventory.py, test_trace_analyzer.py)

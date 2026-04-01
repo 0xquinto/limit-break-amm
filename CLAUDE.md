@@ -35,6 +35,11 @@ Limit Break AMM security audit framework. This parent directory orchestrates aud
 - Per-archetype system prompts in `templates/compliance_system_prompts.py`, `exploit_system_prompts.py`, `boundary_system_prompts.py`
 - Old defensive templates archived in `docs/orchestrator/templates/archive/`
 
+**Post-wave coverage pipeline** (34 modules total):
+- `trace_analyzer.py` — 16-dimension intelligence extraction from agent traces
+- `file_inventory.py` — Solidity file scan + Slither call graph + Sonnet archetype classification
+- `coverage_sweep.py` — Gap detection (inventory minus covered) + targeted sweep agent spawner (≥3 uncovered → up to 2 agents)
+
 **Verification gates** (exploit mode, `run_audit.py`):
 - Independent Forge test verification → Dedup against FPs → Net-value check (L-017) → Config protection gate
 
@@ -44,5 +49,5 @@ Limit Break AMM security audit framework. This parent directory orchestrates aud
 - Best compliance score: 112.5. First novel finding: CP-006 (exploit mode, $29 run).
 
 For architecture details, see [docs/CODEBASE_MAP.md](docs/CODEBASE_MAP.md).
-<!-- context-sync: 2026-04-01T15:03:25Z -->
-<!-- Recent changes: docs: 7 files (wave_runner.py, 2026-04-01-coverage-sweep.md, 2026-04-01-file-inventory.md, 2026-04-01-trace-analyzer.md, 2026-03-31-file-inventory-prepass-design.md...) -->
+<!-- context-sync: 2026-04-01T19:37:06Z -->
+<!-- Recent changes: docs: 38 files (CLAUDE.md, README.md, CODEBASE_MAP.md, coverage_sweep.py, file_inventory.py...); tests: 3 files (test_coverage_sweep.py, test_file_inventory.py, test_trace_analyzer.py) -->
