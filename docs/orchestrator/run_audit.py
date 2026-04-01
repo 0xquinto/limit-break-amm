@@ -602,7 +602,20 @@ async def run_exploit_wave(
         print(f"  {a['agent']:25s} score={a['score']:>4d} ({a['grade']}) "
               f"written={a['tests_written']} compiled={a['tests_compiled']} profit={a['tests_showing_profit']}")
 
-    # 5. Experiment logging (optional)
+    # 5. Coverage sweep (if inventory exists)
+    inventory_path = ARTIFACTS_DIR / "file-inventory.json"
+    if inventory_path.exists():
+        from .coverage_sweep import run_coverage_sweep
+        from .file_inventory import load_inventory
+        inv = load_inventory(inventory_path)
+        sweep_sidecars = await run_coverage_sweep(inv, ARTIFACTS_DIR, "exploit", experiment=experiment)
+        if sweep_sidecars:
+            sidecars.extend(sweep_sidecars)
+            # Re-score with sweep results included
+            wave_result = score_exploit_wave(sidecars)
+            print(f"  Updated score with sweep: {wave_result['wave_score']}")
+
+    # 6. Experiment logging (optional)
     if experiment:
         from .experiment import log_experiment, ExperimentResult
         from .run_manager import get_run_info
@@ -1150,6 +1163,15 @@ async def run_single_wave(
         if reflection.get("trigger_agent_reflection"):
             print(f"\n  Score stalled or regressed — spawning diagnostic agent...")
             await _run_diagnostic_agent(reflection, wave.number)
+
+    # ── Coverage sweep (post-wave follow-up for uncovered files) ────────────────
+    if wave.number == 1:
+        inventory_path = ARTIFACTS_DIR / "file-inventory.json"
+        if inventory_path.exists():
+            from .coverage_sweep import run_coverage_sweep
+            from .file_inventory import load_inventory
+            inv = load_inventory(inventory_path)
+            await run_coverage_sweep(inv, ARTIFACTS_DIR, "compliance", experiment=experiment)
 
     # ── Experiment logging (after reflection — reads compliance from disk) ────
     if experiment:
