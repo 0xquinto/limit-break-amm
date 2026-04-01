@@ -31,6 +31,7 @@ from claude_agent_sdk import (
     ResultMessage,
     query,
 )
+from claude_agent_sdk.types import TextBlock, ToolUseBlock, ToolResultBlock
 
 from .config import (
     WaveConfig, AgentConfig, PROJECT_ROOT, ARTIFACTS_DIR, RESULTS_DIR, REPOS,
@@ -98,6 +99,30 @@ def _log(msg: str) -> None:
     """Log + print with immediate flush — enables both structured logging and run_monitor.py."""
     _logger.info(msg)
     print(msg, flush=True)
+
+
+def _serialize_message(message: AssistantMessage, turn: int, elapsed_s: float) -> dict:
+    """Serialize an AssistantMessage to a JSON-safe dict for trace logging."""
+    blocks = []
+    for block in message.content:
+        if isinstance(block, TextBlock):
+            blocks.append({"type": "text", "text": block.text[:5000]})
+        elif isinstance(block, ToolUseBlock):
+            # Truncate large tool inputs (e.g., file writes)
+            inp = {}
+            for k, v in block.input.items():
+                sv = str(v)
+                inp[k] = sv[:2000] if len(sv) > 2000 else v
+            blocks.append({"type": "tool_use", "name": block.name, "id": block.id, "input": inp})
+        elif isinstance(block, ToolResultBlock):
+            content = block.content
+            if isinstance(content, str) and len(content) > 3000:
+                content = content[:3000] + "...[truncated]"
+            blocks.append({
+                "type": "tool_result", "tool_use_id": block.tool_use_id,
+                "content": content, "is_error": block.is_error,
+            })
+    return {"turn": turn, "elapsed_s": round(elapsed_s, 1), "blocks": blocks}
 
 
 def _get_system_prompt(agent) -> str:
@@ -224,13 +249,21 @@ async def _run_agent(
         turn_count = 0
         agent_start = time.monotonic()
 
+        # Trace file: full agent transcript (every tool call, every result)
+        trace_path = ARTIFACTS_DIR / f"trace-{agent.name}.jsonl"
+        trace_file = open(trace_path, "w")
+
         try:
             async for message in query(prompt=prompt, options=options):
                 if isinstance(message, AssistantMessage):
                     turn_count += 1
+                    elapsed_s = time.monotonic() - agent_start
+                    trace_file.write(json.dumps(
+                        _serialize_message(message, turn_count, elapsed_s)
+                    ) + "\n")
+                    trace_file.flush()
                     if turn_count % 25 == 0:
-                        elapsed_s = int(time.monotonic() - agent_start)
-                        _log(f"  [{agent.name}] Turn {turn_count} ({elapsed_s}s elapsed)...")
+                        _log(f"  [{agent.name}] Turn {turn_count} ({int(elapsed_s)}s elapsed)...")
                 elif isinstance(message, ResultMessage):
                     result_msg = message
 
@@ -252,9 +285,11 @@ async def _run_agent(
             else:
                 _log(f"  [{agent.name}] WARNING: no ResultMessage ({turn_count} turns, {int(wall_s)}s)")
 
+            trace_file.close()
             return _AgentRunResult(result_msg=result_msg, turn_count=turn_count, wall_time_s=wall_s)
 
         except Exception as e:
+            trace_file.close()
             wall_s = time.monotonic() - agent_start
             last_error = e
             _log(f"  [{agent.name}] CRASHED (attempt {attempt + 1}) after {turn_count} turns "
