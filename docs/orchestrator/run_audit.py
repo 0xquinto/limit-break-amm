@@ -501,6 +501,14 @@ async def run_exploit_wave(
         print(f"    Report: {'yes' if has_report else 'no'}")
         print(f"    Sidecar: {sidecar_size:,} bytes {'(fallback)' if sidecar_size < 500 else ''}")
 
+    # 2c. Analyze agent traces
+    from .trace_analyzer import analyze_traces
+    analysis_path = RESULTS_DIR / "trace-analysis.json"
+    analysis = analyze_traces(ARTIFACTS_DIR, output_path=analysis_path)
+    covered = len(analysis.get("cross_agent", {}).get("file_overlap", {}))
+    uncovered = len(analysis.get("cross_agent", {}).get("uncovered_files", []))
+    print(f"  Trace analysis: {covered} files covered, {uncovered} uncovered")
+
     # 3. Collect sidecars (multi-path: flat, subdir, draft fallback)
     import json
     sidecars = []
@@ -773,6 +781,14 @@ async def run_single_wave(
 
     # Validate JSON sidecars
     validate_sidecars(wave)
+
+    # Analyze agent traces
+    from .trace_analyzer import analyze_traces
+    analysis_path = RESULTS_DIR / "trace-analysis.json"
+    analysis = analyze_traces(ARTIFACTS_DIR, output_path=analysis_path)
+    covered = len(analysis.get("cross_agent", {}).get("file_overlap", {}))
+    uncovered = len(analysis.get("cross_agent", {}).get("uncovered_files", []))
+    print(f"  Trace analysis: {covered} files covered, {uncovered} uncovered")
 
     # Validate hypothesis_results for agents that received hypotheses
     if wave.number == 1 and agents_with_hypotheses:
