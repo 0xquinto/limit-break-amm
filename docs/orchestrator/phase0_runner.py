@@ -144,6 +144,27 @@ def run_phase0(repo_names: list[str] | None = None) -> dict:
         summary["repos"][name] = {"slither": det, "printers": prn, "aderyn": ady}
 
     index = build_attack_surface_index(PHASE0_DIR)
+
+    # File inventory — Slither call graph + Sonnet classification
+    from .config import ARTIFACTS_DIR
+    from .file_inventory import (
+        _scan_sol_files, generate_inventory_from_classification,
+        _build_reached_from, _inventory_stale,
+    )
+    inventory_path = ARTIFACTS_DIR / "file-inventory.json"
+    repo_paths = [str(REPOS[name]["path"]) for name in repos if name in REPOS and REPOS[name]["path"].exists()]
+    if not inventory_path.exists() or _inventory_stale(inventory_path, repo_paths):
+        print("  Generating file inventory...")
+        files = _scan_sol_files(repo_paths)
+        # Use empty call graph for now — Slither MCP integration is async
+        call_graph = {"reached_by": {}}
+        reached = _build_reached_from(call_graph, files)
+        classification = {}
+        inventory = generate_inventory_from_classification(files, classification, reached, inventory_path)
+        print(f"  File inventory: {len(inventory['files'])} files classified")
+    else:
+        print(f"  File inventory: cached (up to date)")
+
     summary["attack_surface_index"] = str(PHASE0_DIR / "attack_surface_index.json")
     summary["end"] = datetime.now(timezone.utc).isoformat()
     summary["entry_point_count"] = len(index.get("entry_points", []))

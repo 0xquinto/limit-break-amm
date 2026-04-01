@@ -206,6 +206,18 @@ def build_exploit_knowledge(agent_name: str, scope: list[str]) -> str:
     parts.append("- CRITICAL: When claiming profit, check BOTH token balances. A USDC surplus with a WETH deficit of equal value is rebalancing, NOT theft. Compute net P&L across ALL tokens at pool price.")
     parts.append("- First confirmed finding (CP-006) came from following tactical failures, not human hints")
 
+    # 6. Promote uncovered files from inventory
+    inventory_path = ARTIFACTS_DIR / "file-inventory.json"
+    if inventory_path.exists():
+        from .file_inventory import load_inventory, get_entry_points_for_archetype
+        inventory = load_inventory(inventory_path)
+        agent_archetype = agent_name.split("-")[0]
+        promoted = get_entry_points_for_archetype(inventory, agent_archetype, ARTIFACTS_DIR)
+        if promoted:
+            parts.append("\nADDITIONAL ENTRY POINTS (uncovered in prior runs):")
+            for f in promoted[:5]:
+                parts.append(f"- {f['path'].split('/')[-1]} ({f.get('primary', '?')}): {f.get('reasoning', '')[:100]}")
+
     return "\n".join(parts)
 
 
