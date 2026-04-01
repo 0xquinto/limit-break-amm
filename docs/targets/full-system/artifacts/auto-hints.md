@@ -1,6 +1,6 @@
 # Auto-Generated Exploit Hints
 
-<!-- Generated from 34 sources across 5 knowledge layers -->
+<!-- Generated from 32 sources across 3 knowledge layers -->
 
 
 ## math-exploiter
