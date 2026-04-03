@@ -31,19 +31,7 @@ Then read `docs/CODEBASE_MAP.md` for architecture context.
 - Handler caller context: `lbamm-hooks-and-handlers/src/handlers/` (validateHandlerOrder)
 </archetype_definition>
 
-<hypotheses>
-**Specific hypotheses to test:**
-1. Forge permit with arbitrary feeOnTop (unsigned field) → drain extra tokens
-2. Spoof executor context → settle orders with wrong recipient
-3. Replay CLOB order with different nonce context
-4. Redirect fee to attacker address via hook configuration
-5. Signature lacks chainId/nonce binding → replay on another chain or with different nonce → double-spend
-6. Deploy ERC-1271 contract that returns true for any hash → bypass all signature checks → forge any permit
-7. Call flash-loan callback directly (not via flash loan) → get credited without providing capital
-8. Phish user via contract that uses tx.origin → relay their identity to drain funds
-9. Forge cross-module caller context → function trusts msg.sender from wrong module → bypass access control
-10. Reuse permit signature with different `from` address → drain another user's approved tokens
-</hypotheses>
+{{HYPOTHESES}}
 
 {{PREAMBLE}}
 

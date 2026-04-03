@@ -40,19 +40,7 @@ Then read `docs/CODEBASE_MAP.md` for architecture context.
 - `lbamm-hooks-and-handlers/src/hooks/libraries/SqrtPriceCalculator.sol` — price ratio computation
 </archetype_definition>
 
-<hypotheses>
-**Deep-dive methodology (spend 80% of turns here):**
-1. For each math function: what are the edge inputs? (0, 1, max_uint128, max_uint256, type boundaries)
-2. For each mulDiv/mulDivRoundingUp: is rounding direction correct for who pays?
-3. For each cast (uint256→uint128, int256→uint256): what input causes truncation?
-4. For each assembly block: are there unchecked operations that can overflow?
-5. For each fee calculation: does 100% fee, 0% fee, or fee=1 BPS cause unexpected behavior?
-6. For FixedHelper specifically: can height traversal be manipulated to skip liquidity?
-7. For DynamicHelper: can tick crossing at exact boundary create phantom liquidity?
-8. Cross-library: does FeeHelper + pool type math compose correctly? (fee deducted, then swap, vs swap then fee)
-
-**You MUST write at least 10 Forge tests** targeting math edge cases. Quality > quantity but you need concrete evidence.
-</hypotheses>
+{{HYPOTHESES}}
 
 {{PREAMBLE}}
 

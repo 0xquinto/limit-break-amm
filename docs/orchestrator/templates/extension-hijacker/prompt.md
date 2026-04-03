@@ -32,18 +32,7 @@ Then read `docs/CODEBASE_MAP.md` for architecture context.
 - Diamond proxy: `secure-proxy/` (facet management, slot collisions)
 </archetype_definition>
 
-<hypotheses>
-**Specific hypotheses to test:**
-1. Malicious pool type returns fake amounts → steal from LPs
-2. Malicious transfer handler skips actual transfer → core believes funds arrived
-3. Malicious hook manipulates price limits → extract from swappers
-4. Register pool type at address with 6 leading zero bytes → collide with legitimate type
-5. Take over UUPS/beacon implementation before initializer runs → become owner → upgrade to drain
-6. Deploy facet with selector that collides with existing → calls route to attacker's code → steal funds
-7. CREATE2 → destroy → redeploy different code at same trusted address → execute attacker logic
-8. Malicious facet writes to storage slot used by another facet → corrupt core accounting → drain
-9. Exploit facet management to add malicious facet without governance → instant code injection
-</hypotheses>
+{{HYPOTHESES}}
 
 {{PREAMBLE}}
 

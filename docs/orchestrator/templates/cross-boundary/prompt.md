@@ -37,19 +37,7 @@ Then read `docs/CODEBASE_MAP.md` for architecture context.
 5. Write a Forge test crossing the boundary with malicious data
 </archetype_definition>
 
-<hypotheses>
-**Specific hypotheses:**
-1. Pool type returns `amountOut > actual tokens moved` → Core credits user more than received
-2. Transfer handler called with one token pair but swaps a different pair internally
-3. Hook fee callback returns manipulated fee → Core distributes tokens that don't exist
-4. Direct swap bypasses beforeSwap pricing check but afterSwap still reads stale transient slot
-5. Pool type's `addLiquidity` return value doesn't match actual token requirement → LP gets free shares
-6. Two pool types sharing the same pool ID (hash collision) → one writes state the other reads
-7. Registry settings updated between beforeSwap and afterSwap → inconsistent enforcement within single swap
-8. Reentrancy through token transfer callback hits a different facet in the diamond → corrupt shared storage
-
-**For each boundary, write at least 2 Forge tests**: one "happy path" proving the boundary works, one "attack path" trying to exploit it.
-</hypotheses>
+{{HYPOTHESES}}
 
 {{PREAMBLE}}
 

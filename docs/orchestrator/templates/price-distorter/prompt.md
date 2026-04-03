@@ -30,19 +30,7 @@ Then read `docs/CODEBASE_MAP.md` for architecture context.
 - Direct swap bypass: `lbamm-core/src/modules/AMMModule.sol:1864` (directSwap)
 </archetype_definition>
 
-<hypotheses>
-**Specific hypotheses to test:**
-1. Flash loan → self-trade on CLOB at extreme price → AMM reads distorted state → extract on AMM
-2. snapPrice in addLiquidity allows arbitrary price movement → sandwich around snapPrice
-3. SingleProviderPoolType trusts external pricing hook → oracle spoof via controlled hook
-4. Direct swap bypasses pricing bounds checked by hooks
-5. Oracle returns stale price → buy cheap on pool using outdated valuation → sell at real price elsewhere
-6. Oracle read has no bounds → feed extreme price in single tx → extract via arbitrage against bounded venues
-7. TWAP window is short → accumulate position → move TWAP cheaply → profit from contracts using TWAP
-8. Read stale oracle → front-run the update tx → extract delta between stale and fresh price
-9. Controlled hook returns fake sqrtPriceX96 → pool type trusts it → attacker swaps at rigged price
-10. Bypass slippage/deadline params → execute swap at worse-than-expected price → capture the difference
-</hypotheses>
+{{HYPOTHESES}}
 
 {{PREAMBLE}}
 

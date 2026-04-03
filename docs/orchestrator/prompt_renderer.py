@@ -4,6 +4,7 @@ Combines templates with agent-specific scope, wave context, and role-filtered me
 Each agent receives: digest (always), scoped FPs, confirmed patterns, agent lessons.
 """
 
+import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -122,6 +123,80 @@ _CHECKLIST_MAP = {
 }
 
 
+# --- Call-graph injection (P2 gap) ---
+
+# Keywords to filter call-graph entries per archetype group
+_CALL_GRAPH_FOCUS = {
+    "math": ["FixedHelper", "SwapMath", "SqrtPriceMath", "FullMath", "TickMath",
+             "SingleProviderHelper", "FeeHelper", "FixedPoolDecoder", "computeSwap",
+             "mulDiv", "mulDivRoundingUp", "getSqrtRatio", "calculateFixed"],
+    "state": ["addLiquidity", "removeLiquidity", "collectFees", "createPool",
+              "ModuleLiquidity", "ModuleAdmin", "reserve", "feeBalance",
+              "feeGrowthGlobal", "_finalizeSwap", "_updatePool"],
+    "boundary": ["swap", "Hook", "Handler", "CLOB", "Permit", "transferHandler",
+                 "settleDirect", "validateTransfer", "delegatecall", "SecureProxy"],
+    "auth": ["Ownable", "RoleSet", "onlyRole", "setProtocol", "whitelist",
+             "transferValidator", "ADMIN", "MANAGER"],
+}
+
+_AGENT_CALL_GRAPH_GROUP = {
+    "precision-sniper": "math",
+    "math-deep-diver": "math",
+    "price-distorter": "math",
+    "state-desync": "state",
+    "composability-exploiter": "state",
+    "insolvency-engineer": "state",
+    "auth-forger": "auth",
+    "cross-boundary": "boundary",
+    "extension-hijacker": "boundary",
+}
+
+MAX_CALL_GRAPH_LINES = 40
+
+
+def build_call_graph_injection(agent_name: str) -> str:
+    """Build a call-graph snippet filtered for the agent's archetype focus."""
+    inventory_path = ARTIFACTS_DIR / "file-inventory.json"
+    if not inventory_path.exists():
+        return ""
+
+    try:
+        inventory = json.loads(inventory_path.read_text())
+    except (json.JSONDecodeError, OSError):
+        return ""
+
+    # Get the call graph data — may be in "call_graph" or "reached_by" keys
+    call_graph = inventory.get("call_graph", {})
+    if not call_graph:
+        reached = inventory.get("reached_by", {})
+        if reached:
+            call_graph = reached
+
+    if not call_graph:
+        return ""
+
+    group = _AGENT_CALL_GRAPH_GROUP.get(agent_name, "")
+    if not group:
+        return ""
+
+    keywords = _CALL_GRAPH_FOCUS[group]
+    lines = []
+    for caller, callees in call_graph.items():
+        if any(kw in caller for kw in keywords):
+            if isinstance(callees, list):
+                for callee in callees[:5]:  # limit callees per entry
+                    lines.append(f"  {caller} → {callee}")
+            elif isinstance(callees, str):
+                lines.append(f"  {caller} → {callees}")
+
+    if not lines:
+        return ""
+
+    lines = lines[:MAX_CALL_GRAPH_LINES]
+    header = f"## Call Graph ({group} focus, {len(lines)} edges)\n"
+    return header + "\n".join(lines)
+
+
 def _load_checklist(agent_name: str) -> str:
     """Load the per-archetype Phase C checklist for an agent."""
     filename = _CHECKLIST_MAP.get(agent_name, "")
@@ -142,13 +217,12 @@ def build_exploit_knowledge(agent_name: str, scope: list[str]) -> str:
     (the sole gatekeeper). This function only injects positive-direction knowledge:
     regression patterns, invariants, tools, and lessons.
     """
-    import json as _json
     parts = []
 
     # 1. Regression cases — known exploit patterns mapped to this codebase
     regression_path = Path(__file__).parent / "regression_cases.json"
     if regression_path.exists():
-        cases = _json.loads(regression_path.read_text())
+        cases = json.loads(regression_path.read_text())
         if cases:
             parts.append("KNOWN EXPLOIT PATTERNS (test against this code):")
             for c in cases[:5]:
@@ -325,6 +399,32 @@ def render_prompt(agent: AgentConfig, wave: WaveConfig, prior_synthesis: str | N
         gotchas_path = TEMPLATES_DIR / agent.template / "gotchas.md"
         gotchas = gotchas_path.read_text() if gotchas_path.exists() else ""
         prompt = prompt.replace("{{GOTCHAS}}", f"<gotchas>\n{gotchas}\n</gotchas>")
+    if "{{HYPOTHESES}}" in prompt:
+        # Hypotheses come from extra_context (set by run_audit.py) or playbook fallback
+        hyp_content = agent.extra_context.get("HYPOTHESES", "")
+        if not hyp_content:
+            # Try loading from playbook if available
+            try:
+                from .playbook import load_hypotheses
+                hypotheses = load_hypotheses()
+                if hypotheses:
+                    # Filter by archetype relevance and limit
+                    relevant = [h for h in hypotheses if h.get("status") != "rejected"][:15]
+                    if relevant:
+                        lines = ["<hypotheses>", "**Hypotheses from prior runs (test or refute each):**"]
+                        for i, h in enumerate(relevant, 1):
+                            lines.append(f"{i}. [{h.get('priority', 3)}] {h.get('text', '')} — {h.get('target_file', '?')}:{h.get('target_lines', '?')}")
+                        lines.append("</hypotheses>")
+                        hyp_content = "\n".join(lines)
+            except (ImportError, Exception):
+                pass
+        if hyp_content:
+            prompt = prompt.replace("{{HYPOTHESES}}", hyp_content)
+        else:
+            prompt = prompt.replace("{{HYPOTHESES}}", "")
+    if "{{CALL_GRAPH}}" in prompt:
+        cg = build_call_graph_injection(agent.name)
+        prompt = prompt.replace("{{CALL_GRAPH}}", f"<call-graph>\n{cg}\n</call-graph>" if cg else "")
 
     # Replace template variables (runs on full prompt including injected blocks)
     prompt = prompt.replace("{{AGENT_NAME}}", agent.name)

@@ -32,20 +32,7 @@ Then read `docs/CODEBASE_MAP.md` for architecture context.
 - Zero-liquidity fee collection: `amm-pool-type-dynamic/src/DynamicHelper.sol` (fee paths at boundary)
 </archetype_definition>
 
-<hypotheses>
-**Specific hypotheses to test:**
-1. Flash loan → add liquidity → collect fees → remove liquidity with inflated position
-2. Zero-liquidity pool fee accumulation overflow
-3. tokensOwed desync between position and pool accounting
-4. Rounding asymmetry in add vs remove paths
-5. Liquidate own position → collect protocol-funded liquidation bonus → net profit
-6. Create many dust-size positions → each too small to liquidate profitably → protocol absorbs bad debt
-7. Trigger state change before interest accrues → withdraw with stale (lower) debt → leave protocol underpaid
-8. Force token.balanceOf to diverge from cached balance → withdraw based on cached (higher) value
-9. Exploit liquidation incentive math → extract more bonus than the position's risk warrants
-10. Prime pool to low liquidity → run 100+ tiny swaps harvesting truncation → compound into material profit
-11. Flash loan → inflate fee accumulators → collect inflated fees → leave pool undercollateralized
-</hypotheses>
+{{HYPOTHESES}}
 
 {{PREAMBLE}}
 
