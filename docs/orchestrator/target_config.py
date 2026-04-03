@@ -47,6 +47,10 @@ class BoundarySpec:
     exploit_patterns: list[str] = field(default_factory=list)
     routing: dict[str, list[str]] = field(default_factory=dict)
     abbreviation: str = ""
+    # Boundary agent config (Pass 1)
+    agent_profile: str = "fast_reasoning"
+    agent_max_turns: int = 75
+    agent_retry_profile: str = "max_reasoning"
 
 
 @dataclass
@@ -59,6 +63,11 @@ class TargetConfig:
     budget: dict[str, Any]
     custom_detectors: list[str]
     state_coupling_agents: list[str] = field(default_factory=list)
+    boundary_agent_defaults: dict = field(default_factory=lambda: {
+        "profile": "fast_reasoning",
+        "max_turns": 75,
+        "retry_profile": "max_reasoning",
+    })
     _path: Path = field(default=Path("."), repr=False)
 
     def get_repo_prefixes(self) -> dict[str, str]:
@@ -105,6 +114,23 @@ class TargetConfig:
     def get_boundary_names(self) -> dict[str, str]:
         """Return {slug: human_name}."""
         return {b.slug: b.name for b in self.boundaries}
+
+    def get_boundary_agent_config(self, slug: str) -> dict:
+        """Return agent config for a boundary's Pass 1 agent.
+
+        Merges: boundary_agent_defaults ← per-boundary overrides.
+        """
+        defaults = dict(self.boundary_agent_defaults)
+        for b in self.boundaries:
+            if b.slug == slug:
+                if b.agent_profile:
+                    defaults["profile"] = b.agent_profile
+                if b.agent_max_turns:
+                    defaults["max_turns"] = b.agent_max_turns
+                if b.agent_retry_profile:
+                    defaults["retry_profile"] = b.agent_retry_profile
+                break
+        return defaults
 
 
     @property
@@ -189,5 +215,8 @@ def load_target_config(path: Path) -> TargetConfig:
         budget=raw.get("budget", {}),
         custom_detectors=raw.get("custom_detectors", []),
         state_coupling_agents=raw.get("state_coupling_extra_agents", []),
+        boundary_agent_defaults=raw.get("boundary_agent_defaults", {
+            "profile": "fast_reasoning", "max_turns": 75, "retry_profile": "max_reasoning",
+        }),
         _path=path,
     )

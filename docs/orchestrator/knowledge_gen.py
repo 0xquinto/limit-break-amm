@@ -1288,13 +1288,19 @@ async def run_pass1(
 
         agent_name = f"knowledge-gen-{slug}"
         prompts[agent_name] = prompt
+        # Read boundary agent config from target config (or defaults)
+        tc = _tc()
+        if tc:
+            ba_cfg = tc.get_boundary_agent_config(slug)
+        else:
+            ba_cfg = {"profile": "fast_reasoning", "max_turns": 75}
         agents.append(AgentConfig(
             name=agent_name,
             role="black-hat",
             template="knowledge-gen-prompt",
             scope=_get_boundary_contracts().get(slug, []),
-            profile="fast_reasoning",  # Sonnet — hypothesis generation doesn't need Opus
-            max_turns=75,
+            profile=ba_cfg.get("profile", "fast_reasoning"),
+            max_turns=ba_cfg.get("max_turns", 75),
         ))
 
     wave = WaveConfig(number=0, name="pass1-knowledge-gen", agents=agents)
@@ -1371,13 +1377,18 @@ async def run_pass1(
 
             agent_name = f"knowledge-gen-{slug}-retry"
             retry_prompts[agent_name] = retry_prompt
+            tc_retry = _tc()
+            if tc_retry:
+                ba_retry = tc_retry.get_boundary_agent_config(slug)
+            else:
+                ba_retry = {"retry_profile": "max_reasoning", "max_turns": 75}
             retry_agents.append(AgentConfig(
                 name=agent_name,
                 role="black-hat",
                 template="knowledge-gen-prompt",
                 scope=_get_boundary_contracts().get(slug, []),
-                profile="max_reasoning",
-                max_turns=75,
+                profile=ba_retry.get("retry_profile", "max_reasoning"),
+                max_turns=ba_retry.get("max_turns", 75),
             ))
 
         retry_wave = WaveConfig(number=0, name="pass1-retry", agents=retry_agents)
