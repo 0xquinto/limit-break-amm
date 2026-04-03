@@ -14,7 +14,8 @@ from .config import RESULTS_DIR
 
 # Agent name → checklist section (matches prompt_renderer._CHECKLIST_MAP)
 # Counts include original C-items + exploit-grounded probes
-CHECKLIST_EXPECTED: dict[str, int] = {
+# Default fallback — overridden by target config when available
+_DEFAULT_CHECKLIST_EXPECTED: dict[str, int] = {
     "precision-sniper": 39,     # 25 original + 4 exploit probes + 10 dimensional probes
     "math-deep-diver": 39,      # 25 original + 4 exploit probes + 10 dimensional probes
     "price-distorter": 39,      # 25 original + 4 exploit probes + 10 dimensional probes
@@ -25,6 +26,21 @@ CHECKLIST_EXPECTED: dict[str, int] = {
     "cross-boundary": 22,       # 18 original + 4 probes
     "extension-hijacker": 22,   # 18 original + 4 probes
 }
+
+
+def _get_checklist_expected() -> dict[str, int]:
+    """Get checklist expected counts from active target config, falling back to defaults."""
+    try:
+        from . import run_audit
+        tc = getattr(run_audit, '_active_target_config', None)
+        if tc is not None:
+            return tc.get_checklist_expected()
+    except (ImportError, AttributeError):
+        pass
+    return _DEFAULT_CHECKLIST_EXPECTED
+
+
+CHECKLIST_EXPECTED = _DEFAULT_CHECKLIST_EXPECTED  # Static ref for backward compat
 
 # Phase A: 4 base items per repo (A1-A4). A5 (storage layout) only for specific agents.
 PHASE_A_BASE_PER_REPO = 4
@@ -81,7 +97,7 @@ def _score_checklist(sidecar: dict, agent_name: str, num_repos: int) -> tuple[fl
     Phase D (hypothesis-driven) is variable and not counted in expected total.
     """
     meta = sidecar.get("metadata", {})
-    expected_c = CHECKLIST_EXPECTED.get(agent_name, 0)
+    expected_c = _get_checklist_expected().get(agent_name, 0)
     # Phase A: count by tool type, not per-repo (agents count this way)
     phase_a = PHASE_A_BASE_PER_REPO  # 4 base tool types (A1-A4)
     if agent_name in PHASE_A5_AGENTS:

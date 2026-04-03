@@ -353,24 +353,55 @@ def build_memory_block(agent_role: str) -> str:
 """
 
 
-def render_prompt(agent: AgentConfig, wave: WaveConfig, prior_synthesis: str | None = None) -> str:
-    """Render a spawn prompt for an agent by reading its template and injecting context + memory."""
-    # Try target-specific prompt first, then template
-    specific_path = SPAWN_PROMPTS_DIR / f"{agent.name}.md"
-    if specific_path.exists():
-        template = specific_path.read_text()
-    else:
-        # Folder structure first (prompt.md inside folder), flat file fallback
+def render_prompt(agent: AgentConfig, wave: WaveConfig, prior_synthesis: str | None = None,
+                  target_dir: Path | None = None) -> str:
+    """Render a spawn prompt for an agent by reading its template and injecting context + memory.
+
+    Template resolution order:
+    1. Target-specific spawn prompt override: docs/targets/{target}/spawn-prompts/{name}.md
+    2. Target-specific archetype: docs/targets/{target}/archetypes/{template}/prompt.md
+    3. Framework spawn prompt: docs/targets/full-system/spawn-prompts/{name}.md
+    4. Framework archetype folder: docs/orchestrator/templates/{template}/prompt.md
+    5. Framework archetype flat: docs/orchestrator/templates/{template}.md
+    """
+    template = None
+    search_paths = []
+
+    # 1. Target-specific spawn prompt
+    if target_dir:
+        p = target_dir / "spawn-prompts" / f"{agent.name}.md"
+        search_paths.append(p)
+        if p.exists():
+            template = p.read_text()
+
+    # 2. Target-specific archetype
+    if template is None and target_dir:
+        p = target_dir / "archetypes" / agent.template / "prompt.md"
+        search_paths.append(p)
+        if p.exists():
+            template = p.read_text()
+
+    # 3. Framework spawn prompt (default target dir)
+    if template is None:
+        p = SPAWN_PROMPTS_DIR / f"{agent.name}.md"
+        search_paths.append(p)
+        if p.exists():
+            template = p.read_text()
+
+    # 4-5. Framework template (folder then flat)
+    if template is None:
         folder_path = TEMPLATES_DIR / agent.template / "prompt.md"
         flat_path = TEMPLATES_DIR / f"{agent.template}.md"
+        search_paths.extend([folder_path, flat_path])
         if folder_path.exists():
             template = folder_path.read_text()
         elif flat_path.exists():
             template = flat_path.read_text()
-        else:
-            raise FileNotFoundError(
-                f"No template found: {folder_path} or {flat_path} or {specific_path}"
-            )
+
+    if template is None:
+        raise FileNotFoundError(
+            f"No template found for {agent.name}. Searched: {[str(p) for p in search_paths]}"
+        )
 
     # Build scope description
     scope_lines = []
@@ -491,9 +522,10 @@ def render_prompt(agent: AgentConfig, wave: WaveConfig, prior_synthesis: str | N
     return prompt
 
 
-def render_wave_prompts(wave: WaveConfig, prior_synthesis: str | None = None) -> dict[str, str]:
+def render_wave_prompts(wave: WaveConfig, prior_synthesis: str | None = None,
+                        target_dir: Path | None = None) -> dict[str, str]:
     """Render prompts for all agents in a wave."""
     return {
-        agent.name: render_prompt(agent, wave, prior_synthesis)
+        agent.name: render_prompt(agent, wave, prior_synthesis, target_dir=target_dir)
         for agent in wave.agents
     }

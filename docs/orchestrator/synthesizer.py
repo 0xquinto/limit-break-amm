@@ -28,7 +28,8 @@ VALUE_FLOW_KEYWORDS = {"transfer", "safetransfer", "mint", "burn", "fee",
                        "amplification", "paired", "asymmetry"}
 
 # Repo prefix mapping for canonical finding IDs
-REPO_PREFIXES = {
+# Default fallback — overridden by target config when available
+_DEFAULT_REPO_PREFIXES = {
     "lbamm-core": "CORE",
     "amm-pool-type-dynamic": "DYN",
     "lbamm-pool-type-fixed": "FIX",
@@ -36,6 +37,21 @@ REPO_PREFIXES = {
     "lbamm-hooks-and-handlers": "HOOK",
     "secure-proxy": "PROXY",
 }
+
+
+def _get_repo_prefixes() -> dict[str, str]:
+    """Get repo prefixes from active target config, falling back to defaults."""
+    try:
+        from . import run_audit
+        tc = getattr(run_audit, '_active_target_config', None)
+        if tc is not None:
+            return tc.get_repo_prefixes()
+    except (ImportError, AttributeError):
+        pass
+    return _DEFAULT_REPO_PREFIXES
+
+
+REPO_PREFIXES = _DEFAULT_REPO_PREFIXES  # Static reference for backward compat
 
 
 # --- JSON sidecar collection ---
@@ -272,7 +288,7 @@ def assign_canonical_ids(findings: list[dict]) -> list[dict]:
     """Assign canonical finding IDs after dedup and sort."""
     for i, f in enumerate(findings):
         repo = sorted(f.get("repos", ["unknown"]))[0]
-        prefix = REPO_PREFIXES.get(repo, "UNK")
+        prefix = _get_repo_prefixes().get(repo, "UNK")
         f["canonical_id"] = f"{prefix}-{i+1:03d}"
     return findings
 

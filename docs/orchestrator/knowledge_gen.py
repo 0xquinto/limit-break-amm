@@ -17,12 +17,72 @@ from pathlib import Path
 import anyio
 
 from .config import (
-    BOUNDARY_CONTRACTS, BOUNDARY_ROUTING, BOUNDARY_PATTERN_MAP,
-    BOUNDARY_NAMES, BOUNDARY_FOCUS_MAP, BOUNDARY_ABBREVIATIONS,
-    BOUNDARY_SLUGS, STATE_COUPLING_EXTRA_AGENTS,
+    BOUNDARY_CONTRACTS as _DEFAULT_BOUNDARY_CONTRACTS,
+    BOUNDARY_ROUTING as _DEFAULT_BOUNDARY_ROUTING,
+    BOUNDARY_PATTERN_MAP as _DEFAULT_BOUNDARY_PATTERN_MAP,
+    BOUNDARY_NAMES as _DEFAULT_BOUNDARY_NAMES,
+    BOUNDARY_FOCUS_MAP as _DEFAULT_BOUNDARY_FOCUS_MAP,
+    BOUNDARY_ABBREVIATIONS as _DEFAULT_BOUNDARY_ABBREVIATIONS,
+    BOUNDARY_SLUGS as _DEFAULT_BOUNDARY_SLUGS,
+    STATE_COUPLING_EXTRA_AGENTS as _DEFAULT_STATE_COUPLING,
     MAX_HYPOTHESES_PER_AGENT, TEMPLATES_DIR, ARTIFACTS_DIR,
     PROJECT_ROOT, AgentConfig, WaveConfig, REPOS,
 )
+
+
+def _tc():
+    """Get active target config or None."""
+    try:
+        from . import run_audit
+        return getattr(run_audit, '_active_target_config', None)
+    except (ImportError, AttributeError):
+        return None
+
+
+def _get_boundary_contracts():
+    tc = _tc()
+    return tc.get_boundary_contracts() if tc else _DEFAULT_BOUNDARY_CONTRACTS
+
+
+def _get_boundary_routing():
+    tc = _tc()
+    if tc:
+        raw = tc.get_boundary_routing()
+        # Flatten {slug: {group: [agents]}} to {slug: [agents]} (merge all groups)
+        return {slug: [a for agents in groups.values() for a in agents]
+                for slug, groups in raw.items()}
+    return _DEFAULT_BOUNDARY_ROUTING
+
+
+def _get_boundary_pattern_map():
+    tc = _tc()
+    return tc.get_boundary_pattern_map() if tc else _DEFAULT_BOUNDARY_PATTERN_MAP
+
+
+def _get_boundary_names():
+    tc = _tc()
+    return tc.get_boundary_names() if tc else _DEFAULT_BOUNDARY_NAMES
+
+
+def _get_boundary_focus_map():
+    tc = _tc()
+    return tc.get_boundary_focus_map() if tc else _DEFAULT_BOUNDARY_FOCUS_MAP
+
+
+def _get_boundary_abbreviations():
+    tc = _tc()
+    return tc.get_boundary_abbreviations() if tc else _DEFAULT_BOUNDARY_ABBREVIATIONS
+
+
+def _get_boundary_slugs():
+    tc = _tc()
+    return tc.get_boundary_slugs() if tc else _DEFAULT_BOUNDARY_SLUGS
+
+
+def _get_state_coupling_extra_agents():
+    tc = _tc()
+    return tc.state_coupling_agents if tc else _DEFAULT_STATE_COUPLING
+
 
 logger = logging.getLogger(__name__)
 
@@ -192,12 +252,12 @@ def route_hypotheses(hypotheses: list[dict]) -> dict[str, list[dict]]:
         target_agents: set[str] = set()
 
         # Base routing from BOUNDARY_ROUTING
-        base_agents = BOUNDARY_ROUTING.get(boundary, [])
+        base_agents = _get_boundary_routing().get(boundary, [])
         target_agents.update(base_agents)
 
         # State coupling extra routing
         if _is_state_coupling(h):
-            target_agents.update(STATE_COUPLING_EXTRA_AGENTS)
+            target_agents.update(_get_state_coupling_extra_agents())
 
         # If no routing found (no boundary or boundary not in map), use base BOUNDARY_ROUTING fallback
         # (hypothesis still gets routed nowhere — that's expected for unknown boundaries)
@@ -767,7 +827,7 @@ def _load_curated_patterns(
     if not path.exists():
         return ""
 
-    wanted_exps = set(BOUNDARY_PATTERN_MAP.get(boundary_slug, []))
+    wanted_exps = set(_get_boundary_pattern_map().get(boundary_slug, []))
     if not wanted_exps:
         return ""
 
@@ -830,14 +890,14 @@ def _load_prior_ruled_out(
     """Scan findings files for ruled_out_vectors relevant to this boundary.
 
     Reads ``findings-*.json`` in wave_artifacts_dir, extracts ruled_out_vectors
-    whose contracts overlap with BOUNDARY_CONTRACTS[boundary_slug].
+    whose contracts overlap with _get_boundary_contracts()[boundary_slug].
 
     Returns formatted text or empty string if no artifacts found.
     """
     if not wave_artifacts_dir.exists():
         return ""
 
-    boundary_contracts = set(BOUNDARY_CONTRACTS.get(boundary_slug, []))
+    boundary_contracts = set(_get_boundary_contracts().get(boundary_slug, []))
     if not boundary_contracts:
         return ""
 
@@ -905,10 +965,10 @@ def _build_pass1_prompt(
     template_path = TEMPLATES_DIR / "knowledge-gen-prompt" / "prompt.md"
     template = template_path.read_text()
 
-    boundary_name = BOUNDARY_NAMES.get(boundary_slug, boundary_slug)
+    boundary_name = _get_boundary_names().get(boundary_slug, boundary_slug)
 
     # Format contracts list
-    contracts = BOUNDARY_CONTRACTS.get(boundary_slug, [])
+    contracts = _get_boundary_contracts().get(boundary_slug, [])
     contracts_text = "\n".join(f"- `{c}`" for c in contracts)
 
     # Call trees fallback
@@ -919,7 +979,7 @@ def _build_pass1_prompt(
         )
 
     # Focus text
-    focus_text = BOUNDARY_FOCUS_MAP.get(boundary_slug, "No specific focus for this boundary.")
+    focus_text = _get_boundary_focus_map().get(boundary_slug, "No specific focus for this boundary.")
 
     # Curated patterns fallback
     if not curated_patterns or not curated_patterns.strip():
@@ -961,7 +1021,7 @@ def _build_grep_call_map(
 
     Returns a compact listing or empty string if no contracts or no matches.
     """
-    contracts = BOUNDARY_CONTRACTS.get(boundary_slug, [])
+    contracts = _get_boundary_contracts().get(boundary_slug, [])
     if not contracts:
         return ""
 
@@ -1000,7 +1060,7 @@ def build_cost_control_context(
     Used for the cost-control arm of the A/B test to isolate whether
     hypotheses specifically help, or whether any additional context helps.
     """
-    contracts = BOUNDARY_CONTRACTS.get(boundary_slug, [])
+    contracts = _get_boundary_contracts().get(boundary_slug, [])
     if not contracts:
         return ""
 
@@ -1053,7 +1113,7 @@ async def _extract_call_trees(
     if slither_bin is None:
         return ("", 0)
 
-    contracts = BOUNDARY_CONTRACTS.get(boundary_slug, [])
+    contracts = _get_boundary_contracts().get(boundary_slug, [])
     if not contracts:
         return ("", 0)
 
@@ -1167,7 +1227,7 @@ async def run_pass1(
     print(f"  Pass 1 run #{run_counter}")
 
     # Determine boundaries to process
-    all_slugs = list(BOUNDARY_SLUGS.values())
+    all_slugs = list(_get_boundary_slugs().values())
     target_slugs = boundaries if boundaries else all_slugs
 
     # 2. Load prior playbook + ruled-out vectors per boundary
@@ -1235,7 +1295,7 @@ async def run_pass1(
             name=agent_name,
             role="black-hat",
             template="knowledge-gen-prompt",
-            scope=BOUNDARY_CONTRACTS.get(slug, []),
+            scope=_get_boundary_contracts().get(slug, []),
             profile="fast_reasoning",  # Sonnet — hypothesis generation doesn't need Opus
             max_turns=75,
         ))
@@ -1280,7 +1340,7 @@ async def run_pass1(
 
         # Score
         _, total_funcs = call_tree_results.get(slug, ("", 0))
-        relevant_patterns = BOUNDARY_PATTERN_MAP.get(slug, [])
+        relevant_patterns = _get_boundary_pattern_map().get(slug, [])
         scores = score_pass1_boundary(hyps, slug, repo_root, total_funcs, relevant_patterns)
         boundary_hypotheses[slug] = hyps
         boundary_scores[slug] = scores["total"]
@@ -1307,7 +1367,7 @@ async def run_pass1(
             scores = score_pass1_boundary(
                 boundary_hypotheses[slug], slug, repo_root,
                 call_tree_results.get(slug, ("", 0))[1],
-                BOUNDARY_PATTERN_MAP.get(slug, []),
+                _get_boundary_pattern_map().get(slug, []),
             )
             feedback = generate_gate_feedback(scores)
             retry_prompt = original_prompt + f"\n\n## Gate Feedback\n\n{feedback}\n"
@@ -1318,7 +1378,7 @@ async def run_pass1(
                 name=agent_name,
                 role="black-hat",
                 template="knowledge-gen-prompt",
-                scope=BOUNDARY_CONTRACTS.get(slug, []),
+                scope=_get_boundary_contracts().get(slug, []),
                 profile="max_reasoning",
                 max_turns=75,
             ))
@@ -1341,7 +1401,7 @@ async def run_pass1(
                 h["boundary"] = slug
             _, total_funcs = call_tree_results.get(slug, ("", 0))
             scores = score_pass1_boundary(hyps, slug, repo_root, total_funcs,
-                                          BOUNDARY_PATTERN_MAP.get(slug, []))
+                                          _get_boundary_pattern_map().get(slug, []))
             boundary_hypotheses[slug] = hyps
             boundary_scores[slug] = scores["total"]
             print(f"  {slug} retry: {len(hyps)} hypotheses, score={scores['total']:.1f}/100")
@@ -1358,7 +1418,7 @@ async def run_pass1(
     all_passing_hyps: list[dict] = []
     for slug in passing_slugs:
         hyps = boundary_hypotheses.get(slug, [])
-        abbrev = BOUNDARY_ABBREVIATIONS.get(slug, slug[:2].upper())
+        abbrev = _get_boundary_abbreviations().get(slug, slug[:2].upper())
         for seq, h in enumerate(hyps, 1):
             # Assign orchestrator metadata
             h["id"] = f"H-R{run_counter}-{abbrev}-{seq:02d}"
