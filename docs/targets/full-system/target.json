@@ -167,6 +167,7 @@
         "lbamm-pool-type-single-provider/src/SingleProviderPoolType.sol"
       ],
       "focus_keywords": ["Rounding direction", "fee math", "unchecked blocks", "downcast truncation", "precision loss"],
+      "exploit_patterns": ["EXP-01", "EXP-02", "EXP-03", "EXP-07", "EXP-09", "EXP-10", "EXP-11", "EXP-15"],
       "routing": {
         "primary": ["precision-sniper", "math-deep-diver", "price-distorter", "insolvency-engineer"]
       }
@@ -182,6 +183,7 @@
         "lbamm-hooks-and-handlers/src/hooks/AMMStandardHook.sol"
       ],
       "focus_keywords": ["Settlement conservation", "caller validation", "return value trust"],
+      "exploit_patterns": ["EXP-05", "EXP-08", "EXP-09", "EXP-10", "EXP-12", "EXP-13"],
       "routing": {
         "primary": ["auth-forger", "state-desync", "composability-exploiter"]
       }
@@ -195,6 +197,7 @@
         "lbamm-hooks-and-handlers/src/hooks/AMMStandardHook.sol"
       ],
       "focus_keywords": ["Callback ordering", "reentrancy guards", "state read before call"],
+      "exploit_patterns": ["EXP-03", "EXP-04", "EXP-06", "EXP-07", "EXP-08", "EXP-12", "EXP-15"],
       "routing": {
         "primary": ["state-desync", "composability-exploiter", "cross-boundary"]
       }
@@ -208,6 +211,7 @@
         "lbamm-hooks-and-handlers/src/hooks/CreatorHookSettingsRegistry.sol"
       ],
       "focus_keywords": ["Cache consistency", "initialization race", "settings atomicity"],
+      "exploit_patterns": [],
       "routing": {
         "primary": ["extension-hijacker", "state-desync"]
       }
@@ -223,6 +227,7 @@
         "lbamm-core/src/modules/ModuleLiquidity.sol"
       ],
       "focus_keywords": ["Interface collisions", "upgrade paths", "delegatecall context", "selector collisions"],
+      "exploit_patterns": ["EXP-09", "EXP-13", "EXP-14"],
       "routing": {
         "primary": ["cross-boundary", "extension-hijacker"]
       }
@@ -236,11 +241,14 @@
         "lbamm-hooks-and-handlers/src/handlers/clob/CLOBTransferHandler.sol"
       ],
       "focus_keywords": ["Slot lifecycle", "cross-operation leaks", "missing clears on revert"],
+      "exploit_patterns": ["EXP-04", "EXP-06"],
       "routing": {
         "primary": ["state-desync", "cross-boundary", "composability-exploiter"]
       }
     }
   ],
+
+  "state_coupling_extra_agents": ["state-desync", "insolvency-engineer", "composability-exploiter"],
 
   "budget": {
     "max_run_cost_usd": 200,

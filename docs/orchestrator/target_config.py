@@ -44,6 +44,7 @@ class BoundarySpec:
     name: str
     contracts: list[str] = field(default_factory=list)
     focus_keywords: list[str] = field(default_factory=list)
+    exploit_patterns: list[str] = field(default_factory=list)
     routing: dict[str, list[str]] = field(default_factory=dict)
     abbreviation: str = ""
 
@@ -57,6 +58,7 @@ class TargetConfig:
     boundaries: list[BoundarySpec]
     budget: dict[str, Any]
     custom_detectors: list[str]
+    state_coupling_agents: list[str] = field(default_factory=list)
     _path: Path = field(default=Path("."), repr=False)
 
     def get_repo_prefixes(self) -> dict[str, str]:
@@ -87,6 +89,23 @@ class TargetConfig:
     def get_boundary_routing(self) -> dict[str, dict[str, list[str]]]:
         """Return {slug: {agent_group: [agent_names]}}."""
         return {b.slug: b.routing for b in self.boundaries if b.routing}
+
+    def get_boundary_abbreviations(self) -> dict[str, str]:
+        """Return {slug: abbreviation}."""
+        return {b.slug: b.abbreviation for b in self.boundaries if b.abbreviation}
+
+    def get_boundary_focus_map(self) -> dict[str, str]:
+        """Return {slug: focus description string}."""
+        return {b.slug: ", ".join(b.focus_keywords) for b in self.boundaries if b.focus_keywords}
+
+    def get_boundary_pattern_map(self) -> dict[str, list[str]]:
+        """Return {slug: [exploit_pattern_ids]}."""
+        return {b.slug: b.exploit_patterns for b in self.boundaries}
+
+    def get_boundary_names(self) -> dict[str, str]:
+        """Return {slug: human_name}."""
+        return {b.slug: b.name for b in self.boundaries}
+
 
     @property
     def target_dir(self) -> Path:
@@ -169,5 +188,6 @@ def load_target_config(path: Path) -> TargetConfig:
         boundaries=boundaries,
         budget=raw.get("budget", {}),
         custom_detectors=raw.get("custom_detectors", []),
+        state_coupling_agents=raw.get("state_coupling_extra_agents", []),
         _path=path,
     )
