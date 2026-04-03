@@ -1,3 +1,8 @@
+---
+tags: [lessons, audit-memory]
+aliases: [lessons-learned]
+---
+
 # Lessons Learned (Procedural Memory)
 
 > Compressed beliefs extracted from run outcomes. Each has a confidence score.
@@ -82,6 +87,6 @@
 
 ### L-018: Exploit mode + knowledge integration is the highest-ROI configuration
 - **Belief**: 90%
-- **Action**: Run compliance mode to build the knowledge base (FPs, tactical failures, confirmed patterns), then switch to exploit mode with human hints to convert knowledge into findings. $30/run vs $180/run, first confirmed findings in 20+ runs.
+- **Action**: Run compliance mode to build the knowledge base ([[false-positives|FPs]], tactical failures, [[confirmed-patterns]]), then switch to exploit mode with human hints to convert knowledge into findings. $30/run vs $180/run, first confirmed findings in 20+ runs.
 - **Source**: Exploit mode run 2026-03-30 — 2 novel findings from accumulated knowledge of 20 compliance runs
 - **Audience**: both

@@ -1,3 +1,8 @@
+---
+tags: [gaps, research]
+aliases: [intelligence-gaps]
+---
+
 # Intelligence Gaps Analysis
 
 > Identified 2026-04-01 via deep research on AI smart contract security + self-critique of framework.
@@ -9,7 +14,7 @@
 
 Before listing gaps, honest accounting of what was tested:
 
-- **Compliance mode**: 9 agents (7 Opus + 2 Sonnet), full checklists, 389 hypotheses generated. Agents reasoned through all 21 invariants from `amm-invariant-catalog.md`. Best score: 112.5/120.
+- **Compliance mode**: 9 agents (7 Opus + 2 Sonnet), full checklists, 389 hypotheses generated. Agents reasoned through all 21 invariants from [[amm-invariant-catalog]]. Best score: 112.5/120.
 - **Exploit mode**: 3 Sonnet agents, attack-focused system prompts. Resolved 17 of 23 tactical failures.
 - **Manual Forge tests**: Resolved 3 tactical failures with hand-written PoCs.
 - **Aristotle formal verification**: Resolved final 3 tactical failures via targeted Halmos symbolic execution.

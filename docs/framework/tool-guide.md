@@ -1,3 +1,8 @@
+---
+tags: [tools, framework]
+aliases: [tool-guide]
+---
+
 # Tool Usage Guide for Agents
 
 > **ID:** P0-12 | **Generated:** 2026-02-24 | **Method:** manual

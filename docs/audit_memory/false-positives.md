@@ -1,3 +1,8 @@
+---
+tags: [fp-database, audit-memory]
+aliases: [false-positives]
+---
+
 # False Positives Registry
 
 > **Lifecycle**: ADD new entries after each run. UPDATE confidence when re-verified.

@@ -1,3 +1,8 @@
+---
+tags: [methodology, framework]
+aliases: [value-lifecycle-lenses]
+---
+
 # Value Lifecycle Analysis Lenses
 
 > **ID:** VLA-01 | **Generated:** 2026-03-12 | **Method:** manual (Octane MUX case study)
