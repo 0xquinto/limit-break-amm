@@ -28,6 +28,10 @@ from .run_manager import (
     prune_archive,
 )
 
+# Module-level target state (set by main() from --target flag)
+_active_target_dir: Path | None = None
+_active_target_config = None
+
 
 REGRESSION_CASES_PATH = Path(__file__).parent / "regression_cases.json"
 
@@ -465,7 +469,7 @@ async def run_exploit_wave(
     print(f"Agents: {len(wave.agents)} (Sonnet, {wave.agents[0].max_turns} turns each)")
 
     # 1. Render prompts
-    prompts = render_wave_prompts(wave)
+    prompts = render_wave_prompts(wave, target_dir=_active_target_dir)
     for name, prompt in prompts.items():
         out = ARTIFACTS_DIR / "wave1-prompts" / f"{name}.md"
         out.parent.mkdir(parents=True, exist_ok=True)
@@ -761,7 +765,7 @@ async def run_single_wave(
 
     # Render prompts (includes scoped memory injection — scaffold §7a)
     print(f"\nRendering spawn prompts...")
-    prompts = render_wave_prompts(wave, prior_synthesis)
+    prompts = render_wave_prompts(wave, prior_synthesis, target_dir=_active_target_dir)
     for name, prompt in prompts.items():
         print(f"  {name}: {len(prompt)} chars")
 
@@ -1297,14 +1301,21 @@ def main():
 
     # Load target config if target.json exists (graceful: falls back to hardcoded config.py)
     _target_config = None
+    _target_dir = None
     target_json = Path(f"docs/targets/{args.target}/target.json")
     if target_json.exists():
         from .target_config import load_target_config
         _target_config = load_target_config(target_json)
+        _target_dir = _target_config.target_dir
         print(f"Target: {_target_config.name} ({len(_target_config.repos)} repos, "
               f"{sum(len(a) for a in _target_config.agents.values())} agents)")
     else:
         print(f"Target: {args.target} (no target.json, using hardcoded config)")
+
+    # Store globally so helper functions can access
+    global _active_target_dir, _active_target_config
+    _active_target_dir = _target_dir
+    _active_target_config = _target_config
 
     if args.status:
         info = get_run_info()
@@ -1375,7 +1386,7 @@ def main():
             from docs.orchestrator.templates.boundary_system_prompts import BOUNDARY_BASE_PROMPTS as _BBP
             wave = _cfg_ref.WAVES[args.wave - 1]
             prior = read_synthesis(args.wave - 1) if args.wave > 1 else None
-            prompts = render_wave_prompts(wave, prior)
+            prompts = render_wave_prompts(wave, prior, target_dir=_active_target_dir)
             agents_by_name = {a.name: a for a in wave.agents}
             for name, prompt in prompts.items():
                 out = Path(f"/tmp/audit-dry-run-{name}.md")
