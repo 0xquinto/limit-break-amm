@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 import pytest
 
-from docs.orchestrator.compliance import score_agent, AgentCompliance, CHECKLIST_EXPECTED
+from docs.orchestrator.compliance import score_agent, AgentCompliance
 from docs.orchestrator.compliance_continuation import (
     build_continuation_prompt,
     _identify_gaps,

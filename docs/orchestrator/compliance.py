@@ -12,24 +12,8 @@ from pathlib import Path
 from .config import RESULTS_DIR
 
 
-# Agent name → checklist section (matches prompt_renderer._CHECKLIST_MAP)
-# Counts include original C-items + exploit-grounded probes
-# Default fallback — overridden by target config when available
-_DEFAULT_CHECKLIST_EXPECTED: dict[str, int] = {
-    "precision-sniper": 39,     # 25 original + 4 exploit probes + 10 dimensional probes
-    "math-deep-diver": 39,      # 25 original + 4 exploit probes + 10 dimensional probes
-    "price-distorter": 39,      # 25 original + 4 exploit probes + 10 dimensional probes
-    "state-desync": 25,         # 20 original + 5 probes
-    "composability-exploiter": 25,  # 20 original + 5 probes
-    "insolvency-engineer": 25,  # 20 original + 5 probes
-    "auth-forger": 22,          # 19 original + 3 probes
-    "cross-boundary": 22,       # 18 original + 4 probes
-    "extension-hijacker": 22,   # 18 original + 4 probes
-}
-
-
 def _get_checklist_expected() -> dict[str, int]:
-    """Get checklist expected counts from active target config, falling back to defaults."""
+    """Get checklist expected counts from active target config. Required."""
     try:
         from . import run_audit
         tc = getattr(run_audit, '_active_target_config', None)
@@ -37,10 +21,8 @@ def _get_checklist_expected() -> dict[str, int]:
             return tc.get_checklist_expected()
     except (ImportError, AttributeError):
         pass
-    return _DEFAULT_CHECKLIST_EXPECTED
-
-
-CHECKLIST_EXPECTED = _DEFAULT_CHECKLIST_EXPECTED  # Static ref for backward compat
+    # No target config loaded — return empty (agents score 0 on checklist dimension)
+    return {}
 
 # Phase A: 4 base items per repo (A1-A4). A5 (storage layout) only for specific agents.
 PHASE_A_BASE_PER_REPO = 4

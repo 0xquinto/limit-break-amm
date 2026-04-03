@@ -27,20 +27,8 @@ VALUE_FLOW_KEYWORDS = {"transfer", "safetransfer", "mint", "burn", "fee",
                        "denomination", "conversion", "decimals", "precision",
                        "amplification", "paired", "asymmetry"}
 
-# Repo prefix mapping for canonical finding IDs
-# Default fallback — overridden by target config when available
-_DEFAULT_REPO_PREFIXES = {
-    "lbamm-core": "CORE",
-    "amm-pool-type-dynamic": "DYN",
-    "lbamm-pool-type-fixed": "FIX",
-    "lbamm-pool-type-single-provider": "SP",
-    "lbamm-hooks-and-handlers": "HOOK",
-    "secure-proxy": "PROXY",
-}
-
-
 def _get_repo_prefixes() -> dict[str, str]:
-    """Get repo prefixes from active target config, falling back to defaults."""
+    """Get repo prefixes from active target config. Required."""
     try:
         from . import run_audit
         tc = getattr(run_audit, '_active_target_config', None)
@@ -48,10 +36,9 @@ def _get_repo_prefixes() -> dict[str, str]:
             return tc.get_repo_prefixes()
     except (ImportError, AttributeError):
         pass
-    return _DEFAULT_REPO_PREFIXES
-
-
-REPO_PREFIXES = _DEFAULT_REPO_PREFIXES  # Static reference for backward compat
+    # Fallback: derive from REPOS in config.py (single source)
+    from .config import REPOS
+    return {name: name[:4].upper() for name in REPOS}
 
 
 # --- JSON sidecar collection ---

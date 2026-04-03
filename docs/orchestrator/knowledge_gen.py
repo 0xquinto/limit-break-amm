@@ -17,14 +17,6 @@ from pathlib import Path
 import anyio
 
 from .config import (
-    BOUNDARY_CONTRACTS as _DEFAULT_BOUNDARY_CONTRACTS,
-    BOUNDARY_ROUTING as _DEFAULT_BOUNDARY_ROUTING,
-    BOUNDARY_PATTERN_MAP as _DEFAULT_BOUNDARY_PATTERN_MAP,
-    BOUNDARY_NAMES as _DEFAULT_BOUNDARY_NAMES,
-    BOUNDARY_FOCUS_MAP as _DEFAULT_BOUNDARY_FOCUS_MAP,
-    BOUNDARY_ABBREVIATIONS as _DEFAULT_BOUNDARY_ABBREVIATIONS,
-    BOUNDARY_SLUGS as _DEFAULT_BOUNDARY_SLUGS,
-    STATE_COUPLING_EXTRA_AGENTS as _DEFAULT_STATE_COUPLING,
     MAX_HYPOTHESES_PER_AGENT, TEMPLATES_DIR, ARTIFACTS_DIR,
     PROJECT_ROOT, AgentConfig, WaveConfig, REPOS,
 )
@@ -39,49 +31,54 @@ def _tc():
         return None
 
 
+def _cfg(name: str):
+    """Lazy import a constant from config.py (fallback only)."""
+    from . import config
+    return getattr(config, name)
+
+
 def _get_boundary_contracts():
     tc = _tc()
-    return tc.get_boundary_contracts() if tc else _DEFAULT_BOUNDARY_CONTRACTS
+    return tc.get_boundary_contracts() if tc else _cfg("BOUNDARY_CONTRACTS")
 
 
 def _get_boundary_routing():
     tc = _tc()
     if tc:
         raw = tc.get_boundary_routing()
-        # Flatten {slug: {group: [agents]}} to {slug: [agents]} (merge all groups)
         return {slug: [a for agents in groups.values() for a in agents]
                 for slug, groups in raw.items()}
-    return _DEFAULT_BOUNDARY_ROUTING
+    return _cfg("BOUNDARY_ROUTING")
 
 
 def _get_boundary_pattern_map():
     tc = _tc()
-    return tc.get_boundary_pattern_map() if tc else _DEFAULT_BOUNDARY_PATTERN_MAP
+    return tc.get_boundary_pattern_map() if tc else _cfg("BOUNDARY_PATTERN_MAP")
 
 
 def _get_boundary_names():
     tc = _tc()
-    return tc.get_boundary_names() if tc else _DEFAULT_BOUNDARY_NAMES
+    return tc.get_boundary_names() if tc else _cfg("BOUNDARY_NAMES")
 
 
 def _get_boundary_focus_map():
     tc = _tc()
-    return tc.get_boundary_focus_map() if tc else _DEFAULT_BOUNDARY_FOCUS_MAP
+    return tc.get_boundary_focus_map() if tc else _cfg("BOUNDARY_FOCUS_MAP")
 
 
 def _get_boundary_abbreviations():
     tc = _tc()
-    return tc.get_boundary_abbreviations() if tc else _DEFAULT_BOUNDARY_ABBREVIATIONS
+    return tc.get_boundary_abbreviations() if tc else _cfg("BOUNDARY_ABBREVIATIONS")
 
 
 def _get_boundary_slugs():
     tc = _tc()
-    return tc.get_boundary_slugs() if tc else _DEFAULT_BOUNDARY_SLUGS
+    return tc.get_boundary_slugs() if tc else _cfg("BOUNDARY_SLUGS")
 
 
 def _get_state_coupling_extra_agents():
     tc = _tc()
-    return tc.state_coupling_agents if tc else _DEFAULT_STATE_COUPLING
+    return tc.state_coupling_agents if tc else _cfg("STATE_COUPLING_EXTRA_AGENTS")
 
 
 logger = logging.getLogger(__name__)
