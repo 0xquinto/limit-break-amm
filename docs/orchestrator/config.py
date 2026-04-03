@@ -13,8 +13,19 @@ SPAWN_PROMPTS_DIR = TARGETS_DIR / "spawn-prompts"
 RESULTS_DIR = TARGETS_DIR / "results"
 ARCHIVE_DIR = ARTIFACTS_DIR / "archive"
 FRAMEWORK_DIR = PROJECT_ROOT / "docs" / "framework"
-MEMORY_DIR = PROJECT_ROOT / "docs" / "audit_memory"
+MEMORY_DIR = PROJECT_ROOT / "docs" / "audit_memory"  # Default; overridden by get_memory_dir()
 TEMPLATES_DIR = Path(__file__).parent / "templates"
+
+
+def get_memory_dir(target_name: str = "full-system") -> Path:
+    """Return the audit memory directory for a target.
+
+    Checks target-specific dir first, falls back to global.
+    """
+    target_memory = PROJECT_ROOT / "docs" / "targets" / target_name / "audit_memory"
+    if target_memory.exists():
+        return target_memory
+    return MEMORY_DIR
 
 # Safety constants
 MAX_CONCURRENT_AGENTS = 9  # backpressure semaphore limit
