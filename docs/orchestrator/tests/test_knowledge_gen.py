@@ -487,11 +487,11 @@ contract AMMModule {
 """
     (contract_dir / "AMMModule.sol").write_text(sol_content)
 
-    # Monkeypatch BOUNDARY_CONTRACTS to use our tmp paths
+    # Monkeypatch boundary contracts getter to use our tmp paths
     monkeypatch.setattr(
         knowledge_gen,
-        "BOUNDARY_CONTRACTS",
-        {"test-boundary": ["lbamm-core/src/modules/AMMModule.sol"]},
+        "_get_boundary_contracts",
+        lambda: {"test-boundary": ["lbamm-core/src/modules/AMMModule.sol"]},
     )
 
     result = knowledge_gen._build_grep_call_map("test-boundary", tmp_path)
@@ -505,8 +505,8 @@ def test_build_grep_call_map_empty_contracts(monkeypatch):
 
     monkeypatch.setattr(
         knowledge_gen,
-        "BOUNDARY_CONTRACTS",
-        {"empty-boundary": []},
+        "_get_boundary_contracts",
+        lambda: {"empty-boundary": []},
     )
 
     result = knowledge_gen._build_grep_call_map("empty-boundary", Path("/tmp"))
@@ -571,8 +571,8 @@ def test_build_cost_control_context_truncates(tmp_path, monkeypatch):
 
     monkeypatch.setattr(
         knowledge_gen,
-        "BOUNDARY_CONTRACTS",
-        {"core-pooltype": ["lbamm-core/src/modules/AMMModule.sol"]},
+        "_get_boundary_contracts",
+        lambda: {"core-pooltype": ["lbamm-core/src/modules/AMMModule.sol"]},
     )
 
     result = build_cost_control_context("core-pooltype", tmp_path, target_tokens=3000)
@@ -590,8 +590,8 @@ def test_build_cost_control_context_header(tmp_path, monkeypatch):
 
     monkeypatch.setattr(
         knowledge_gen,
-        "BOUNDARY_CONTRACTS",
-        {"core-pooltype": ["lbamm-core/src/modules/AMMModule.sol"]},
+        "_get_boundary_contracts",
+        lambda: {"core-pooltype": ["lbamm-core/src/modules/AMMModule.sol"]},
     )
 
     result = build_cost_control_context("core-pooltype", tmp_path)
@@ -609,8 +609,8 @@ def test_build_cost_control_context_no_hypothesis_format(tmp_path, monkeypatch):
 
     monkeypatch.setattr(
         knowledge_gen,
-        "BOUNDARY_CONTRACTS",
-        {"core-pooltype": ["lbamm-core/src/modules/AMMModule.sol"]},
+        "_get_boundary_contracts",
+        lambda: {"core-pooltype": ["lbamm-core/src/modules/AMMModule.sol"]},
     )
 
     result = build_cost_control_context("core-pooltype", tmp_path)
