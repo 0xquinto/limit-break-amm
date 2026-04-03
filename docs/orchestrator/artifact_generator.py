@@ -248,15 +248,29 @@ def run_aderyn(repo_name: str, repo_path: Path) -> Path | None:
     return output
 
 
-def run_custom_detectors(repo_name: str, repo_path: Path) -> Path | None:
-    """Run custom Slither detectors on a repo."""
+def run_custom_detectors(repo_name: str, repo_path: Path,
+                         detector_names: list[str] | None = None) -> Path | None:
+    """Run custom Slither detectors on a repo.
+
+    Args:
+        detector_names: List of detector slugs to run. If None, runs all detectors
+                       found in the custom_detectors/ directory.
+    """
     output = PHASE0_DIR / f"{repo_name}-custom-detectors.md"
     detectors_dir = Path(__file__).parent / "custom_detectors"
+
+    if detector_names is None:
+        # Default: all known detectors (backward compat)
+        detector_names = ["transient-storage-leak", "diamond-slot-collision",
+                         "hook-reentrancy", "unchecked-delegatecall-return"]
+
+    if not detector_names:
+        return None  # No detectors configured for this target
 
     # Run Slither with custom detector plugins
     result = subprocess.run(
         ["slither", ".", "--ignore-compile", "--exclude-dependencies",
-         "--detect", "transient-storage-leak,diamond-slot-collision,hook-reentrancy,unchecked-delegatecall-return",
+         "--detect", ",".join(detector_names),
          "--plugin-dir", str(detectors_dir),
          "--checklist", "--markdown-root", str(repo_path) + "/"],
         cwd=str(repo_path),
