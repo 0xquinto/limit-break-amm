@@ -102,6 +102,13 @@ def _ensure_hypothesis_dict(obj: object) -> dict:
     before parsing. Pattern from agent-zero #1236 and StructuredRAG failures.
     """
     if isinstance(obj, dict):
+        # Normalize schema drift: map alternate field names to canonical ones
+        if "line_ranges" in obj and "lines" not in obj:
+            obj["lines"] = obj["line_ranges"]
+        if "forge_test_skeleton" in obj and "suggested_test" not in obj:
+            obj["suggested_test"] = obj["forge_test_skeleton"]
+        if "references" in obj and "grounded_in" not in obj:
+            obj["grounded_in"] = obj["references"]
         return obj
     if isinstance(obj, str):
         text = obj.strip()
