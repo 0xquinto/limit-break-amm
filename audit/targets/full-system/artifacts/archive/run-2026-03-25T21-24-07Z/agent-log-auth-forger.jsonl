@@ -1,0 +1,38 @@
+{"event": "start", "agent": "auth-forger", "wave": 1, "timestamp": "2026-03-25T00:00:00Z"}
+{"event": "phase_a", "tool": "slither", "status": "success", "findings": 35, "repos": ["lbamm-hooks-and-handlers"]}
+{"event": "phase_a", "tool": "aderyn", "status": "error", "reason": "fatal crash v0.6.8"}
+{"event": "phase_a", "tool": "slither_call_graph", "status": "success", "contract": "CLOBTransferHandler"}
+{"event": "phase_b", "tool": "audit-context-building", "status": "success", "contracts_analyzed": ["CLOBTransferHandler", "PermitTransferHandler", "AMMStandardHook"]}
+{"event": "phase_b", "tool": "entry-point-analyzer", "status": "success", "entry_points_found": 12}
+{"event": "phase_c", "item": "C1", "status": "ruled_out", "test": "test_C1_hookCallbackAccessControl"}
+{"event": "phase_c", "item": "C2", "status": "ruled_out", "test": "test_C2_CLOBSettlementCallerCheck + test_C2_PermitSettlementCallerCheck"}
+{"event": "phase_c", "item": "C3", "status": "ruled_out", "test": "test_C3_permitReplayProtection"}
+{"event": "phase_c", "item": "C4", "status": "ruled_out", "test": "test_C4_signedFieldsFeeOnTopBounded"}
+{"event": "phase_c", "item": "C5", "status": "ruled_out", "test": "test_C5_fullCLOBLifecycle"}
+{"event": "phase_c", "item": "C6", "status": "ruled_out", "test": "test_C6_partialFillLifecycle"}
+{"event": "phase_c", "item": "C7", "status": "ruled_out", "test": "test_C7_afterSwapRefundPartialFillRounding"}
+{"event": "phase_c", "item": "C8", "status": "ruled_out", "test": "test_C8_openOrderNonceAutoIncrement"}
+{"event": "phase_c", "item": "C9", "status": "ruled_out", "test": "test_C9_closeOrderNotMaker"}
+{"event": "phase_c", "item": "C10", "status": "ruled_out", "test": "test_C10_withdrawExceedsBalance"}
+{"event": "phase_c", "item": "C11", "status": "ruled_out", "test": "test_C11_directCLOBCallBlocked"}
+{"event": "phase_c", "item": "C12", "status": "ruled_out", "test": "test_C12_directSwapEnforcesHooks"}
+{"event": "phase_c", "item": "C13", "status": "ruled_out", "test": "test_C13_solvencyAfterCLOBOperation"}
+{"event": "phase_c", "item": "C14", "status": "ruled_out", "test": "test_C14_noValueCreation"}
+{"event": "phase_c", "item": "C15", "status": "ruled_out", "test": "test_C15_expansionSettingsEnforced"}
+{"event": "phase_c", "item": "C16", "status": "ruled_out", "tool_error": "halmos parsing failure", "test": "test_C16_validateHandlerOrderPricingBounds"}
+{"event": "phase_c", "item": "C17", "status": "ruled_out", "tool_error": "halmos parsing failure", "test": "test_C17_sqrtPriceCalculatorZeroInput"}
+{"event": "phase_c", "item": "C18", "status": "ruled_out", "tool_error": "medusa constructor args", "test": "forge tests cover surface"}
+{"event": "phase_c", "item": "C19", "status": "ruled_out", "tool_error": "medusa constructor args", "test": "forge tests cover surface"}
+{"event": "phase_c", "item": "C20", "status": "ruled_out", "test": "test_C20_unsignedFeeOnTopByDesign"}
+{"event": "phase_c", "item": "C21", "status": "ruled_out", "test": "test_C21_crossChainPermitReplayBlocked"}
+{"event": "phase_c", "item": "C22", "status": "ruled_out", "test": "test_C22_swapExtraDataMalformed"}
+{"event": "phase_d", "hypothesis": "H-R4-CH-01", "status": "dismissed", "failure_class": "strategic"}
+{"event": "phase_d", "hypothesis": "H-R4-CH-02", "status": "dismissed", "failure_class": "strategic"}
+{"event": "phase_d", "hypothesis": "H-R4-CH-03", "status": "dismissed", "failure_class": "strategic"}
+{"event": "phase_d", "hypothesis": "H-R4-CH-04", "status": "dismissed", "failure_class": "strategic"}
+{"event": "phase_d", "hypothesis": "H-R4-CH-05", "status": "dismissed", "failure_class": "strategic"}
+{"event": "phase_d", "hypothesis": "H-R4-CH-06", "status": "tested", "failure_class": "tactical"}
+{"event": "phase_d", "hypothesis": "H-R4-CH-07", "status": "dismissed", "failure_class": "strategic"}
+{"event": "phase_d", "hypothesis": "H-R4-CH-09", "status": "dismissed", "failure_class": "strategic"}
+{"event": "phase_d", "hypothesis": "H-R4-CH-10", "status": "dismissed", "failure_class": "strategic"}
+{"event": "complete", "agent": "auth-forger", "wave": 1, "findings": 0, "ruled_out": 29, "hypotheses_tested": 9, "tests_passing": 39}

@@ -1,0 +1,9 @@
+{"agent": "extension-hijacker", "thesis": "Malicious pool type returns fake amounts to steal from LPs", "status": "ruled_out", "evidence": "Core caps output at AMMModule:1559 + balance delta check at :2208"}
+{"agent": "extension-hijacker", "thesis": "Malicious transfer handler skips actual transfer", "status": "ruled_out", "evidence": "Core balance delta verification at AMMModule:2206-2213 is handler-independent"}
+{"agent": "extension-hijacker", "thesis": "Malicious hook manipulates price limits", "status": "ruled_out", "evidence": "Hooks return fees only (bounded by BPS). Pool type determines price. Core handles transfers."}
+{"agent": "extension-hijacker", "thesis": "Pool type address collision via CREATE2 mining", "status": "ruled_out", "evidence": "2^48 work for specific collision + no retroactive effect on existing pools"}
+{"agent": "extension-hijacker", "thesis": "UUPS/beacon takeover before initialization", "status": "ruled_out", "evidence": "System uses diamond proxy (EIP-2535), not UUPS/beacon"}
+{"agent": "extension-hijacker", "thesis": "Selector collision in diamond facets", "status": "ruled_out", "evidence": "diamondCut is admin-only, no external selector injection"}
+{"agent": "extension-hijacker", "thesis": "CREATE2 destroy-redeploy at trusted address", "status": "ruled_out", "evidence": "EIP-6780 makes selfdestruct non-destructive on cancun EVM"}
+{"agent": "extension-hijacker", "thesis": "Cross-facet storage slot corruption", "status": "ruled_out", "evidence": "All 4 modules have 0 local slots. Unified diamond storage at 0x9A1D."}
+{"agent": "extension-hijacker", "thesis": "Facet management bypass for code injection", "status": "ruled_out", "evidence": "diamondCut admin-only with no bypass path"}

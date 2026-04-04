@@ -1,0 +1,21 @@
+{"ts":"2026-03-27T19:00:00Z","phase":"A","action":"read_codebase","files":["lbamm-core/src/modules/AMMModule.sol","lbamm-core/src/modules/ModuleFeeCollection.sol","lbamm-core/src/LimitBreakAMM.sol","lbamm-core/src/libraries/FeeHelper.sol"],"notes":"Read core AMM (~3500 lines), fee collection, entry points, fee math"}
+{"ts":"2026-03-27T19:05:00Z","phase":"A","action":"read_codebase","files":["amm-pool-type-dynamic/src/DynamicPoolType.sol","lbamm-pool-type-fixed/src/FixedPoolType.sol","lbamm-hooks-and-handlers/src/hooks/AMMStandardHook.sol","lbamm-core/src/modules/ModuleAdmin.sol"],"notes":"Read pool types, hooks, admin module for state desync vectors"}
+{"ts":"2026-03-27T19:15:00Z","phase":"B","action":"slither_mcp","target":"lbamm-core","detectors":"High/Medium","result":"All detectors triaged as known FPs; reentrancy in admin module is nonReentrant-protected"}
+{"ts":"2026-03-27T19:20:00Z","phase":"B","action":"aderyn","target":"lbamm-core","result":"1 High (FP: admin reentrancy), 9 Low (informational)"}
+{"ts":"2026-03-27T19:30:00Z","phase":"B","action":"entry_point_analysis","target":"AMMModule","result":"Mapped swap/liquidity/fee entry points with reentrancy guard flags"}
+{"ts":"2026-03-27T19:35:00Z","phase":"B","action":"audit_context_building","functions":["_executeQueuedHookFeesByHookTransfers","_finalizeSwapCollectFundsAndDisburse","collectHookFeesByHook"],"result":"Ultra-granular analysis of flag clearing, settlement flow, fee routing"}
+{"ts":"2026-03-27T19:45:00Z","phase":"C","action":"hypothesis_test","id":"SD-RO-01","vector":"Flag clearing enables direct collectHookFeesByHook","result":"dismissed","reason":"tokensOwed decremented before transfer; ENTERED blocks nonReentrant"}
+{"ts":"2026-03-27T19:50:00Z","phase":"C","action":"hypothesis_test","id":"SD-RO-02","vector":"ETH refund callback reentrancy","result":"dismissed","reason":"ENTERED bit blocks AMM re-entry; pool state already updated"}
+{"ts":"2026-03-27T19:55:00Z","phase":"C","action":"hypothesis_test","id":"SD-RO-03","vector":"Cross-contract reentrancy AMM-CLOB","result":"dismissed","reason":"Separate guards; msg.sender check; FOT rejected"}
+{"ts":"2026-03-27T20:00:00Z","phase":"C","action":"hypothesis_test","id":"SD-RO-04","vector":"Transient storage slot leaking","result":"dismissed","reason":"By-design (FP #1 in digest)"}
+{"ts":"2026-03-27T20:05:00Z","phase":"C","action":"hypothesis_test","id":"SD-RO-05","vector":"Output swap rounding extraction","result":"dismissed","reason":"Protocol-favorable rounding confirmed in 25 iterations"}
+{"ts":"2026-03-27T20:10:00Z","phase":"C","action":"hypothesis_test","id":"SD-RO-06","vector":"Multi-hop output fee amplification","result":"dismissed","reason":"Correct hop propagation verified"}
+{"ts":"2026-03-27T20:15:00Z","phase":"C","action":"hypothesis_test","id":"SD-RO-07","vector":"Non-token hook fee key mismatch","result":"dismissed","reason":"tokenFor==tokenFee always true for pool/liq hooks"}
+{"ts":"2026-03-27T20:20:00Z","phase":"C","action":"hypothesis_test","id":"SD-RO-08","vector":"Pool type state desync via direct calls","result":"dismissed","reason":"globalState[msg.sender] isolation"}
+{"ts":"2026-03-27T20:25:00Z","phase":"C","action":"hypothesis_test","id":"SD-RO-09","vector":"Reserve-balance desync from exchange fees","result":"dismissed","reason":"Balance check at line 2208; conservation verified"}
+{"ts":"2026-03-27T20:30:00Z","phase":"C","action":"hypothesis_test","id":"SD-RO-10","vector":"Cumulative rounding drift","result":"dismissed","reason":"100 swaps, no profit"}
+{"ts":"2026-03-27T20:35:00Z","phase":"C","action":"hypothesis_test","id":"SD-RO-11","vector":"Flash loan + swap round-trip","result":"dismissed","reason":"Net loss from fees"}
+{"ts":"2026-03-27T20:40:00Z","phase":"C","action":"hypothesis_test","id":"SD-RO-12","vector":"Near-boundary reserve drain","result":"dismissed","reason":"Constant product bounds; underflow prevented"}
+{"ts":"2026-03-27T20:45:00Z","phase":"D","action":"forge_test","files":8,"tests":335,"passing":335,"notes":"All state-desync tests pass across 8 test files"}
+{"ts":"2026-03-27T21:00:00Z","phase":"D","action":"invariant_verification","invariants":10,"all_hold":true}
+{"ts":"2026-03-27T22:00:00Z","phase":"E","action":"write_deliverables","findings":0,"ruled_out":12,"tests":335}

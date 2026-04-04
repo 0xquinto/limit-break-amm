@@ -1,0 +1,242 @@
+{
+  "agent_name": "auth-forger",
+  "agent_role": "Authorization & Settlement Forger",
+  "wave": 1,
+  "findings": [],
+  "ruled_out_vectors": [
+    {
+      "vector": "KV-1: Zero-price bypass via computeRatioX96 overflow in validateHandlerOrder",
+      "why_ruled_out": "CLOBHelper.openOrder enforces sqrtPriceX96 in [MIN_SQRT_RATIO, MAX_SQRT_RATIO] at L106-108. validateHandlerOrder receives amounts derived from bounded prices via calculateFixedInput. With orderAmount capped at uint128 and sqrtPriceX96 bounded, computeRatioX96 computes back approximately the same sqrtPriceX96 — overflow to 0 requires amounts outside CLOB-enforced bounds. Even if 0 were returned, the minSqrtPriceX96 check (0 < min for any nonzero min) would catch it. The only gap is when only max bounds are set (min==0), but the amounts cannot trigger overflow given CLOB constraints. Additionally, _validatePricingBounds in afterSwap explicitly reverts on sqrtPriceX96==0 (L847-849), providing a separate safety net for pool swaps.",
+      "test_file": "structural analysis — mathematical proof that calculateFixedInput(uint128_max, MAX_SQRT_RATIO) produces amounts whose ratio computes back to ~MAX_SQRT_RATIO within uint160",
+      "repos": ["lbamm-hooks-and-handlers"],
+      "contracts": ["AMMStandardHook.sol", "CLOBTransferHandler.sol", "SqrtPriceCalculator.sol"],
+      "functions": ["_enforceTokenHooks", "validateHandlerOrder", "computeRatioX96"],
+      "keywords": ["sqrtPriceX96", "zero", "bypass", "overflow", "pricing-bounds", "computeRatioX96", "validateHandlerOrder"]
+    },
+    {
+      "vector": "KV-2: Direct handler call bypassing pricing enforcement",
+      "why_ruled_out": "CLOBTransferHandler.ammHandleTransfer requires msg.sender == AMM at L230-232. PermitTransferHandler.ammHandleTransfer requires msg.sender == AMM at L115-117. afterSwapRefund also requires msg.sender == AMM at L316-318. No public executeSwap function exists. All CLOB state-changing functions (depositToken, withdrawToken, openOrder, closeOrder) are nonReentrant. Direct handler call is impossible without AMM context.",
+      "test_file": "code review — msg.sender check is definitive",
+      "repos": ["lbamm-hooks-and-handlers"],
+      "contracts": ["CLOBTransferHandler.sol", "AMMStandardHook.sol"],
+      "functions": ["executeSwap", "beforeSwap", "afterSwap"],
+      "keywords": ["pricing", "bypass", "direct", "handler", "direct-swap", "pricing-bounds", "flag-dependency"]
+    },
+    {
+      "vector": "KV-3: Settings sync gap between Registry and Hook",
+      "why_ruled_out": "setTokenSettings at CreatorHookSettingsRegistry:366 requires LibOwnership.requireCallerIsTokenOrContractOwnerOrAdmin. memSettings.initialized is set true at L377 before storage write at L378. The sync to hooks via hooksToSync at L396-398 passes the original settings. The desync is documented as intentional design (registry comments L24-30). No economic exploit path from stale initialized flag — it only determines whether the hook fetches from registry or uses cache.",
+      "test_file": "code review — desync is intentional design per CreatorHookSettingsRegistry NatSpec",
+      "repos": ["lbamm-hooks-and-handlers"],
+      "contracts": ["CLOBTransferHandler.sol", "CreatorHookSettingsRegistry.sol"],
+      "functions": ["setTokenSettings"],
+      "keywords": ["setTokenSettings", "sync", "stale", "initialized", "memSettings", "gas-waste"]
+    },
+    {
+      "vector": "KV-4: Transient storage leak in DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT",
+      "why_ruled_out": "Known Low finding (HOOK-001/CP-001). In _validatePricingBounds at AMMStandardHook:839, beforeSwap writes amount to transient slot 0xFFFFFFFFFFFFFFFF. afterSwap reads it at L842-844 to compute price ratio. The slot is not cleared after read. However: (1) transient storage is per-transaction and cleared between txs, (2) stale value only affects direct swap pricing validation within same tx, (3) the next beforeSwap call overwrites the value, (4) reserve accounting uses computed swap amounts from AMMModule, not transient values. No demonstrated economic extraction path.",
+      "test_file": "lbamm-hooks-and-handlers/test/audit/poc/TransientSlotTheft.t.sol",
+      "repos": ["lbamm-hooks-and-handlers"],
+      "contracts": ["AMMHooksTransferHandler.sol", "AMMStandardHook.sol"],
+      "functions": ["beforeSwap"],
+      "keywords": ["transient", "tstore", "clear", "direct", "swap", "transient-storage", "stale-read", "direct-swap", "DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT"]
+    },
+    {
+      "vector": "feeOnTop manipulation via unsigned permit field",
+      "why_ruled_out": "feeOnTop is intentionally excluded from SWAP_TYPEHASH (Constants.sol:35). The signer's total exposure is capped by permitAmount/permitLimitAmount which ARE signed. The AMM's fee collection deducts feeOnTop from netAmountIn AFTER the permit transfer, so it comes from the executor's contribution, not the signer's tokens. CODEBASE_MAP gotcha #5 confirms intentional design.",
+      "test_file": "code review — Constants.sol L35, PermitTransferHandler additionalDataHash construction",
+      "repos": ["lbamm-hooks-and-handlers"],
+      "contracts": ["PermitTransferHandler.sol"],
+      "functions": ["_executeFillOrKillPermit", "_executePartialFillPermit"],
+      "keywords": ["feeOnTop", "unsigned", "permit", "SWAP_TYPEHASH"]
+    },
+    {
+      "vector": "Cosigner bypass when cosigner==address(0)",
+      "why_ruled_out": "_validateCosignature returns at L426 when cosigner==address(0). This is the signer's explicit opt-out choice embedded in their EIP-712 signature. Without cosigner, the permit is still replay-protected by PermitC bitmap nonces (fill-or-kill) or salt+order fill tracking (partial fill). No third-party victim.",
+      "test_file": "code review — PermitTransferHandler.sol L426-428",
+      "repos": ["lbamm-hooks-and-handlers"],
+      "contracts": ["PermitTransferHandler.sol"],
+      "functions": ["_validateCosignature"],
+      "keywords": ["cosigner", "bypass", "address(0)"]
+    },
+    {
+      "vector": "Fake permitProcessor to steal funds",
+      "why_ruled_out": "The permitProcessor is specified by the signer in the permit data and is part of the signed data (PermitC validates against permit processor). A malicious processor returning no error without transferring tokens would be caught by AMMModule._finalizeSwapCollectFundsAndDisburse which validates balance changes.",
+      "test_file": "code review — AMMModule balance validation",
+      "repos": ["lbamm-hooks-and-handlers", "lbamm-core"],
+      "contracts": ["PermitTransferHandler.sol", "AMMModule.sol"],
+      "functions": ["ammHandleTransfer", "_finalizeSwapCollectFundsAndDisburse"],
+      "keywords": ["permitProcessor", "fake", "balance-check"]
+    },
+    {
+      "vector": "ERC-1271 always-true contract forging any permit",
+      "why_ruled_out": "A malicious ERC-1271 contract that returns true for any hash can only approve permits where 'from' == the malicious contract's address. PermitC validates the signer matches the 'from' field. Self-signing is not an attack — the contract drains its own funds.",
+      "test_file": "code review — ERC-1271 scope is self-only",
+      "repos": ["lbamm-hooks-and-handlers"],
+      "contracts": ["PermitTransferHandler.sol"],
+      "functions": ["_executeFillOrKillPermit"],
+      "keywords": ["ERC-1271", "isValidSignature", "forge"]
+    },
+    {
+      "vector": "Operator precedence in setPricingBounds",
+      "why_ruled_out": "Verified via Forge test. In Solidity 0.8.24, uint160 | bool is a type error, forcing the compiler to interpret | as bitwise OR between uint160 operands first. The Solidity type system prevents the C-style precedence bug.",
+      "test_file": "/tmp/test_prec/test/TestPrec2.t.sol",
+      "repos": ["lbamm-hooks-and-handlers"],
+      "contracts": ["AMMStandardHook.sol", "CreatorHookSettingsRegistry.sol"],
+      "functions": ["registryUpdatePricingBounds", "setPricingBounds"],
+      "keywords": ["operator-precedence", "setPricingBounds", "isSet"]
+    },
+    {
+      "vector": "Permit replay with different from address",
+      "why_ruled_out": "The 'from' address is part of the PermitC signature verification. PermitC validates the signature against the owner parameter. Changing 'from' invalidates the signature.",
+      "test_file": "code review — PermitC signature verification",
+      "repos": ["lbamm-hooks-and-handlers"],
+      "contracts": ["PermitTransferHandler.sol"],
+      "functions": ["_executeFillOrKillPermit", "_executePartialFillPermit"],
+      "keywords": ["replay", "from", "signature", "PermitC"]
+    },
+    {
+      "vector": "Cosigner nonce bitmap collision",
+      "why_ruled_out": "Nonce consumption uses XOR + check pattern at L462-464. After XOR, if the result bit is 0, the nonce was already consumed and the function reverts. 256 nonces per bucket (uint256 bitmap, shifted by NONCE_TO_BUCKET_SHIFT=8). Correct implementation.",
+      "test_file": "code review — PermitTransferHandler.sol L460-468",
+      "repos": ["lbamm-hooks-and-handlers"],
+      "contracts": ["PermitTransferHandler.sol"],
+      "functions": ["_consumeCosignerNonce"],
+      "keywords": ["nonce", "bitmap", "collision", "XOR"]
+    },
+    {
+      "vector": "Hook callback access control bypass (INV-H01)",
+      "why_ruled_out": "beforeSwap, afterSwap, validateAddLiquidity, validatePoolCreation all call _requireCallerIsAMM() which checks msg.sender == AMM. validateHandlerOrder is view-only. Registry update functions check _requireCallerIsRegistry(). Complete access control coverage on all state-changing functions.",
+      "test_file": "code review — AMMStandardHook.sol L110, L159, L253, L312, L394, L441, L485, L553",
+      "repos": ["lbamm-hooks-and-handlers"],
+      "contracts": ["AMMStandardHook.sol"],
+      "functions": ["beforeSwap", "afterSwap", "validateAddLiquidity", "validatePoolCreation"],
+      "keywords": ["access-control", "hook", "callback", "msg.sender"]
+    },
+    {
+      "vector": "Partial fill ratio manipulation to drain signer",
+      "why_ruled_out": "In _executePartialFillPermit, maxAmountIn uses FullMath.mulDiv which rounds DOWN (conservative for signer). For output-based: maxAmountIn = permitLimitAmount * amountOut / (-permitAmountSpecified). For input-based: maxAmountIn = permitAmountSpecified * amountOut / permitLimitAmount. PermitC tracks cumulative fills via orderStartAmount, preventing total drain. minimumFillAmount == requestedFillAmount == amountIn ensures PermitC fills exactly the requested amount or reverts.",
+      "test_file": "code review — PermitTransferHandler.sol L316-343, L381-395",
+      "repos": ["lbamm-hooks-and-handlers"],
+      "contracts": ["PermitTransferHandler.sol"],
+      "functions": ["_executePartialFillPermit"],
+      "keywords": ["partial-fill", "ratio", "manipulation", "mulDiv", "rounding"]
+    },
+    {
+      "vector": "Dust-loop extraction via CLOB orders",
+      "why_ruled_out": "CLOBHelper.calculateFixedInput uses FullMath.mulDivRoundingUp — rounds UP, meaning maker receives MORE output per step (favors makers, not attacker). Minimum order size enforced by group key. Known FP (FP-C03).",
+      "test_file": "analysis + FP-C03 reference",
+      "repos": ["lbamm-hooks-and-handlers"],
+      "contracts": ["CLOBHelper.sol", "CLOBTransferHandler.sol"],
+      "functions": ["calculateFixedInput", "fillOrder"],
+      "keywords": ["dust", "rounding", "loop", "extraction", "mulDivRoundingUp"]
+    },
+    {
+      "vector": "CLOB openOrder reentrancy via ICLOBHook.validateMaker callback",
+      "why_ruled_out": "openOrder is protected by nonReentrant modifier (TstorishReentrancyGuard). The validateMaker callback cannot reenter any CLOB function. All other state-changing CLOB functions also have nonReentrant.",
+      "test_file": "code review — CLOBTransferHandler.sol L490 nonReentrant modifier",
+      "repos": ["lbamm-hooks-and-handlers"],
+      "contracts": ["CLOBTransferHandler.sol"],
+      "functions": ["openOrder"],
+      "keywords": ["reentrancy", "openOrder", "validateMaker", "nonReentrant"]
+    },
+    {
+      "vector": "Permit mutation — replay with mutated unsigned fields",
+      "why_ruled_out": "SWAP_TYPEHASH covers: partialFill, recipient, amountSpecified, limitAmount, tokenOut, exchangeFeeRecipient, exchangeFeeBPS, cosigner, hook. The additionalDataHash is included in PermitC signature validation. Only feeOnTop is unsigned, and it doesn't increase signer exposure (see feeOnTop vector). PermitC nonces/salt prevent replay.",
+      "test_file": "code review — Constants.sol L35-38, PermitTransferHandler additionalDataHash construction",
+      "repos": ["lbamm-hooks-and-handlers"],
+      "contracts": ["PermitTransferHandler.sol"],
+      "functions": ["_executeFillOrKillPermit", "_executePartialFillPermit"],
+      "keywords": ["permit", "mutation", "replay", "SWAP_TYPEHASH"]
+    },
+    {
+      "vector": "Storage-slot collision via deployed facet",
+      "why_ruled_out": "Diamond storage uses slot 0x9A1D. Keccak-based slot allocation for mappings makes collision computationally infeasible. Pool type addresses must have 6 leading zero bytes. No delegatecall from hooks to attacker-controlled contracts.",
+      "test_file": "structural analysis — keccak collision infeasibility",
+      "repos": ["lbamm-core"],
+      "contracts": ["LBAMMStorage.sol"],
+      "functions": [],
+      "keywords": ["storage", "collision", "diamond", "delegatecall"]
+    },
+    {
+      "vector": "CLOB order nonce replay with different context",
+      "why_ruled_out": "Order nonces are monotonically increasing (nextOrderNonce++ at L538). closeOrder validates maker == msg.sender at CLOBHelper L36 and inputAmount > 0 at L39-40. Filled orders have inputAmount set to 0 at L216. No path to replay a closed/filled order nonce.",
+      "test_file": "code review — CLOBTransferHandler.sol L538, CLOBHelper.sol L36-41, L216",
+      "repos": ["lbamm-hooks-and-handlers"],
+      "contracts": ["CLOBTransferHandler.sol", "CLOBHelper.sol"],
+      "functions": ["openOrder", "closeOrder", "fillOrder"],
+      "keywords": ["nonce", "replay", "CLOB", "order"]
+    },
+    {
+      "vector": "Registry reentrancy via hooksToSync callback",
+      "why_ruled_out": "setTokenSettings calls IAMMStandardHook(hooksToSync[i]).registryUpdateTokenSettings at L397. Hook targets are admin-controlled. registryUpdateTokenSettings only updates local cache (_tokenSettings mapping) and emits an event. No token transfers, no callback to arbitrary code.",
+      "test_file": "code review — CreatorHookSettingsRegistry.sol L397, AMMStandardHook registryUpdateTokenSettings",
+      "repos": ["lbamm-hooks-and-handlers"],
+      "contracts": ["CreatorHookSettingsRegistry.sol", "AMMStandardHook.sol"],
+      "functions": ["setTokenSettings", "registryUpdateTokenSettings"],
+      "keywords": ["reentrancy", "registry", "sync", "callback"]
+    },
+    {
+      "vector": "Forged hook callback — call hook directly with fake pool identity",
+      "why_ruled_out": "_requireCallerIsAMM on all state-changing hook functions checks msg.sender == AMM (immutable). Hook registration is admin-controlled via setTokenSettings. External callers cannot invoke hooks with spoofed AMM identity.",
+      "test_file": "code review — AMMStandardHook._requireCallerIsAMM()",
+      "repos": ["lbamm-hooks-and-handlers"],
+      "contracts": ["AMMStandardHook.sol"],
+      "functions": ["beforeSwap", "afterSwap", "_requireCallerIsAMM"],
+      "keywords": ["forged", "hook", "caller", "fake", "pool"]
+    }
+  ],
+  "theft_theses": [
+    {
+      "thesis": "Forge permit with arbitrary feeOnTop to drain extra tokens from signer",
+      "victim": "Permit signer",
+      "asset": "Signer's approved tokens beyond intended amount",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Call CLOB handler directly to settle orders without AMM pricing",
+      "victim": "CLOB order makers",
+      "asset": "Maker deposited tokens",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Bypass pricing bounds via computeRatioX96 overflow returning 0",
+      "victim": "Token creators relying on pricing bounds",
+      "asset": "Token value via extreme price manipulation",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    }
+  ],
+  "metadata": {
+    "num_turns": 65,
+    "tool_uses": 58,
+    "files_read": 35,
+    "tools_run": {
+      "phase0_artifacts": {"read": true},
+      "slither": {"ran": true, "repos": ["lbamm-hooks-and-handlers"], "high": 5, "medium": 25, "note": "run_detectors via MCP"},
+      "aderyn": {"ran": true, "repos": ["lbamm-hooks-and-handlers"], "findings": 10, "note": "read phase0 output; aderyn crashes with fatal compiler bug on direct run"},
+      "forge": {"ran": true, "tests_written": 32, "tests_passed": 32, "note": "AuthForgerInvariantTests.t.sol + AuthForgerHalmos.t.sol"},
+      "halmos": {"ran": true, "note": "check_computeRatioX96_no_zero_in_valid_range — timeout, 43 paths explored, no counterexample. File: test/audit/AuthForgerHalmos.t.sol"},
+      "medusa": {"ran": false, "reason": "CLOBTransferHandler requires constructor args (AMM, wrappedNative); no medusa.json config in repo"},
+      "audit-context-building": {"ran": false, "reason": "read phase0 artifacts instead"},
+      "entry-point-analyzer": {"ran": false, "reason": "used slither list_functions instead"}
+    },
+    "theses_tested": 3,
+    "theses_confirmed": 0,
+    "theses_ruled_out": 3,
+    "checklist_items_completed": "A: 3/5, B: 3/3, C: 17/19, D: 4/4, E: 10/10",
+    "checklist_detail": {
+      "phase_a": "A1 (slither detectors — 30 findings, H:5 M:25, none novel), A2 (slither function list), A3 (aderyn via phase0 — crashes on direct run). A4 (custom detectors — slither CLI not available, used MCP). A5 (storage layout — not applicable for auth-forger archetype)",
+      "phase_b": "B1 (context via phase0 artifacts + deep code reading), B2 (entry points via slither list_functions + manual trace), B3 (call graph via code reading of beforeSwap→_validatePricingBounds→SqrtPriceCalculator chain)",
+      "phase_c_auth": "C1 PASS (INV-H01 hook access control), C2 PASS (INV-H02 handler access control), C3 PASS (INV-P01 cosigner nonce), C4 PASS (INV-P02 SWAP_TYPEHASH), C5 PASS (full lifecycle), C6 PASS (partial fill return), C7 PASS (afterSwapRefund access control), C8 PASS (nonce uniqueness), C9 PASS (closeOrder invalid nonce), C10 PASS (withdraw > deposited), C11 PASS (no executeSwap), C12 PASS (directSwap pricing analysis), C13 PASS (solvency multi-cycle), C14 PASS (no value creation), C15 PASS (expansion settings admin-only), C16 Halmos TIMEOUT (43 paths, no counterexample), C17 same as C16. C18 NOT_RUN (medusa needs config), C19 NOT_RUN (medusa needs config)",
+      "phase_d": "4/4 (KV-1 through KV-4 all checked with exact required sidecar fields)",
+      "phase_e": "All 10 hypotheses from Target Map investigated and ruled out with test or code evidence"
+    },
+    "lens_coverage": {
+      "L1_value_tracing": "Traced feeOnTop from additionalDataHash construction through AMMModule fee deduction. Traced CLOB fill amounts through calculateFixedInput to makerTokenBalance. Traced permit transfer amounts through PermitC to AMM balance. No denomination mismatch found.",
+      "L2_paired_op_diffing": "Compared fill-or-kill vs partial-fill permit paths — FoK uses swapOrder amounts in hash, partial uses permit amounts, both protected by PermitC. Compared depositToken vs withdrawToken — symmetric balance checks. Compared openOrder vs closeOrder — both correctly update makerTokenBalance.",
+      "L3_amplification_factor": "Checked calculateFixedInput multiplication (amountIn * sqrtPriceX96^2 / Q96^2) — FullMath handles overflow. Checked mulDiv in partial fill ratio — rounds down (conservative). No amplification path found."
+    }
+  }
+}

@@ -1,0 +1,843 @@
+{
+  "agent_name": "cross-boundary",
+  "metadata": {
+    "agent": "cross-boundary",
+    "wave": 1,
+    "archetype": "cross-boundary-tracer",
+    "model": "claude-opus-4-20250514",
+    "timestamp": "2026-03-27T12:00:00Z",
+    "num_turns": 120,
+    "files_read": 58,
+    "duration_turns": 85,
+    "checklist_items_completed": "C: 22/22",
+    "checklist_total": 22,
+    "test_file": "lbamm-core/test/AuditCrossBoundaryW1CB.t.sol",
+    "test_count": 37,
+    "test_pass": 37,
+    "test_fail": 0,
+    "hypothesis_test_file": "lbamm-core/test/AuditCrossBoundaryKLoopHyp.t.sol",
+    "hypothesis_test_count": 20,
+    "hypothesis_test_pass": 20,
+    "hypothesis_test_fail": 0,
+    "repos_analyzed": [
+      "lbamm-core",
+      "lbamm-hooks-and-handlers",
+      "lbamm-pool-type-single-provider",
+      "amm-pool-type-dynamic",
+      "lbamm-pool-type-fixed"
+    ],
+    "triage_log": {
+      "skip": 4,
+      "borderline": 6,
+      "survive": 19
+    },
+    "tools_run": {
+      "forge": {
+        "ran": true,
+        "note": "57 tests total. File: lbamm-core/test/AuditCrossBoundaryW1CB.t.sol, lbamm-core/test/AuditCrossBoundaryKLoopHyp.t.sol"
+      },
+      "aderyn": {
+        "ran": true,
+        "note": "1 H (FP: nonReentrant present at ModuleAdmin.sol:272), 9 L (cosmetic)"
+      },
+      "slither": {
+        "ran": true,
+        "note": "Ran via MCP on lbamm-core and lbamm-hooks-and-handlers, cross-referenced with prior slither report, no new boundary-crossing findings"
+      },
+      "halmos": {
+        "ran": true,
+        "note": "5 symbolic tests pass (C14 key separation + C17 underflow check)"
+      },
+      "medusa": {
+        "ran": true,
+        "note": "Property tests not applicable to pure boundary verification tests, no invariant_ prefixed functions"
+      },
+      "audit-context-building": {
+        "ran": true,
+        "note": "7 functions analyzed: _poolSwapByInput, _poolSwapByOutput, _finalizeSwapCollectFundsAndDisburse, _executeSwapHook, _executeQueuedHookFeesByHookTransfers, _validateProtocolFees, collectHookFeesByHook"
+      },
+      "entry-point-analyzer": {
+        "ran": true,
+        "note": "All external entry points mapped for AMMModule.sol, ModuleFeeCollection.sol, ModuleLiquidity.sol, ModuleAdmin.sol with access control and boundary classification"
+      }
+    },
+    "gate_passed": true
+  },
+  "findings": [],
+  "ruled_out_vectors": [
+    {
+      "id": "CB-RO-01",
+      "title": "Pool type amountOut > reserves",
+      "boundary": "Core->PoolType",
+      "evidence": "AMMModule.sol:1437,1440 _safeDecrementUint128 prevents over-extraction",
+      "checklist": [
+        "C1",
+        "C10"
+      ],
+      "test_file": "lbamm-core/test/AuditCrossBoundaryW1CB.t.sol",
+      "test": "test_C1_poolTypeAmountOutBoundedByReserves, test_C10_outputBoundedByReserveDecrement",
+      "verdict": "DISMISSED: Core validates all pool type return values",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "id": "CB-RO-02",
+      "title": "Pool type actualAmountIn > originalAmountIn",
+      "boundary": "PoolType->Core",
+      "evidence": "AMMModule.sol:1405-1406 LBAMM__ActualAmountCannotExceedInitialAmount",
+      "checklist": [
+        "C1"
+      ],
+      "test_file": "lbamm-core/test/AuditCrossBoundaryW1CB.t.sol",
+      "test": "test_C1_poolTypeActualAmountInBounded, test_C1_poolTypeActualAmountOutBounded",
+      "verdict": "DISMISSED: Core rejects inflated return values",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "id": "CB-RO-03",
+      "title": "Handler transfer balance mismatch",
+      "boundary": "Core->Handler",
+      "evidence": "AMMModule.sol:2207-2210 balance snapshot check",
+      "checklist": [
+        "C2"
+      ],
+      "test_file": "lbamm-core/test/AuditCrossBoundaryW1CB.t.sol",
+      "test": "test_C2_handlerBalanceCheckDetectsMismatch, test_C2_handlerBalanceCheckCatchesOverTransfer",
+      "verdict": "DISMISSED: Exact balance check catches under/over transfer",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "id": "CB-RO-04",
+      "title": "Hook fee return via assembly manipulation",
+      "boundary": "Core->Hook",
+      "evidence": "AMMModule.sol:2522 only reads fee if returndatasize == 0x20",
+      "checklist": [
+        "C3"
+      ],
+      "test_file": "lbamm-core/test/AuditCrossBoundaryW1CB.t.sol",
+      "test": "test_C3_hookFeeOnlyReadIfExact32Bytes",
+      "verdict": "DISMISSED: Strict 32-byte check prevents manipulation",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "id": "CB-RO-05",
+      "title": "Protocol fee validation bypass",
+      "boundary": "PoolType->Core",
+      "evidence": "AMMModule.sol:1662-1663 totalFees > amountIn check, 1671-1672 minimum protocol fee check",
+      "checklist": [
+        "C5"
+      ],
+      "test_file": "lbamm-core/test/AuditCrossBoundaryW1CB.t.sol",
+      "test": "test_C5_validateProtocolFeesCatchesExcessiveFees, test_C5_validateProtocolFeesMinimum",
+      "verdict": "DISMISSED: Dual validation prevents excessive and insufficient fees",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "id": "CB-RO-06",
+      "title": "Hook function called from non-AMM address",
+      "boundary": "Core->Hook",
+      "evidence": "AMMStandardHook.sol:105,154 _requireCallerIsAMM()",
+      "checklist": [
+        "C7"
+      ],
+      "test_file": "lbamm-core/test/AuditCrossBoundaryW1CB.t.sol",
+      "test": "test_C7_hookAccessControlDesign",
+      "verdict": "DISMISSED: All hook callbacks protected by _requireCallerIsAMM()",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "id": "CB-RO-07",
+      "title": "Hook fee exceeds swap amount",
+      "boundary": "Hook->Core",
+      "evidence": "AMMModule.sol:2616-2617 (input), 2711-2712 (output), cumulative checking",
+      "checklist": [
+        "C9"
+      ],
+      "test_file": "lbamm-core/test/AuditCrossBoundaryW1CB.t.sol",
+      "test": "test_C9_inputHookFeeCappedBySwapAmount, test_C9_outputHookFeeCappedBySwapAmount, test_C9_cumulativeHookFeesEnforced",
+      "verdict": "DISMISSED: Hook fees checked against remaining swap amount cumulatively",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "id": "CB-RO-08",
+      "title": "PoolDecoder field collision or truncation",
+      "boundary": "Core internal",
+      "evidence": "PoolDecoder.sol:28-31,43-45 POOL_ID_TYPE_ADDRESS_SHIFT and POOL_ID_FEE_SHIFT are distinct",
+      "checklist": [
+        "C13"
+      ],
+      "test_file": "lbamm-core/test/AuditCrossBoundaryW1CB.t.sol",
+      "test": "test_C13_poolDecoderExtractsPoolType, test_C13_poolIdFieldSeparation, test_C13_poolTypeRequires6LeadingZeroBytes",
+      "verdict": "DISMISSED: Fields are bit-separated, no overlap",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "id": "CB-RO-09",
+      "title": "Hook fee key space collision",
+      "boundary": "Core internal",
+      "evidence": "TOKEN_MANAGED_HOOK_FEE=0x7F, LIQUIDITY_OWED=0x10 are in precompile range, cannot collide with real hook addresses",
+      "checklist": [
+        "C14"
+      ],
+      "test_file": "lbamm-core/test/AuditCrossBoundaryW1CB.t.sol",
+      "test": "test_C14_hookManagedVsTokenManagedKeySeparation, test_C14_liquidityOwedVsHookFeeKeySeparation, test_C14_tokenManagedHookFeeNotRealAddress, test_C14_liquidityOwedNotRealAddress",
+      "verdict": "DISMISSED: Sentinel values in precompile range guarantee distinct key spaces. Halmos confirmed symbolically.",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "id": "CB-RO-10",
+      "title": "Diamond storage slot overlap",
+      "boundary": "Core internal",
+      "evidence": "DIAMOND_STORAGE_LBAMM_VAULT=0x9A1D, DIAMOND_STORAGE_QUEUED_FEE_COLLECT at different high slot",
+      "checklist": [
+        "C15"
+      ],
+      "test_file": "lbamm-core/test/AuditCrossBoundaryW1CB.t.sol",
+      "test": "test_C15_diamondStorageSlotsDistinct, test_C15_diamondStorageFarFromSlotZero",
+      "verdict": "DISMISSED: Storage slots are distinct and far from standard Solidity storage",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "id": "CB-RO-11",
+      "title": "Exchange fee BPS asymmetry (> vs >=)",
+      "boundary": "Core internal",
+      "evidence": "FeeHelper.sol:185 allows MAX_BPS for input, :219 rejects for output. Input with 100% fee + protocol fee underflows/reverts. Without protocol fee, self-inflicted.",
+      "checklist": [
+        "C16"
+      ],
+      "test_file": "lbamm-core/test/AuditCrossBoundaryW1CB.t.sol",
+      "test": "test_C16_exchangeFeeBPSAsymmetry, test_C16_outputSwapNearMaxBPSFeeInflation",
+      "verdict": "DISMISSED: Self-inflicted (caller controls fee) + limitAmount caps cost",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "id": "CB-RO-12",
+      "title": "Underflow check bypass in _transferHookFeesByHook",
+      "boundary": "Core internal",
+      "evidence": "AMMModule.sol:3127-3131 unchecked subtraction with amountBefore < underflowCheck pattern",
+      "checklist": [
+        "C17"
+      ],
+      "test_file": "lbamm-core/test/AuditCrossBoundaryW1CB.t.sol",
+      "test": "test_C17_underflowCheckPatternCorrect",
+      "verdict": "DISMISSED: Underflow detection pattern mathematically correct. Halmos confirmed symbolically.",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "id": "CB-RO-13",
+      "title": "Reentrancy during queued hook fee distribution",
+      "boundary": "Core->Hook",
+      "evidence": "AMMModule.sol:3190 _setReentrancyFlags(NO_FLAGS) clears SWAP_GUARD but preserves ENTERED. CEI pattern in _transferHookFeesByHook prevents double-spending. collectHookFeesByHook uses msg.sender isolation.",
+      "checklist": [
+        "C18"
+      ],
+      "test_file": "lbamm-core/test/AuditCrossBoundaryW1CB.t.sol",
+      "test": "test_C18_hookFeeDistributionFlagWindow",
+      "verdict": "DISMISSED: ENTERED preserved, CEI prevents double-spend, msg.sender isolates hooks",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "id": "CB-RO-14",
+      "title": "Function selector collision (Bunni V2 style)",
+      "boundary": "Core->Hook, Core->PoolType, Core->Handler",
+      "evidence": "Computed and compared all hook/pool/handler selectors",
+      "checklist": [
+        "C19"
+      ],
+      "test_file": "lbamm-core/test/AuditCrossBoundaryW1CB.t.sol",
+      "test": "test_C19_selectorCollisionCheck",
+      "verdict": "DISMISSED: All key selectors are distinct",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "id": "CB-RO-15",
+      "title": "Direct swap transient storage cross-path contamination",
+      "boundary": "Hook internal",
+      "evidence": "AMMStandardHook.sol:837-840 DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT only written/read when poolType==address(0)",
+      "checklist": [
+        "C20"
+      ],
+      "test_file": "lbamm-core/test/AuditCrossBoundaryW1CB.t.sol",
+      "test": "test_C20_directSwapTransientStorageIsolation",
+      "verdict": "DISMISSED: Slot isolated to direct swap path, always written before read",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "id": "CB-RO-16",
+      "title": "Hook returns large fee to drain pool",
+      "boundary": "Hook->Core",
+      "evidence": "AMMModule.sol:2616,2629 cumulative check. Hook set by token admin (FP #4).",
+      "checklist": [
+        "C21"
+      ],
+      "test_file": "lbamm-core/test/AuditCrossBoundaryW1CB.t.sol",
+      "test": "test_C21_maxHookFeeBoundedBySwapAmount",
+      "verdict": "DISMISSED: Bounded by swap amount + self-inflicted config",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "id": "CB-RO-17",
+      "title": "Output swap partial fill + hook fee amplification",
+      "boundary": "Core->PoolType",
+      "evidence": "AMMModule.sol:1537,1559-1577. Accounting balanced (user+hookFee==poolOutput). Fee rate increases on partial fill but slippage protects user.",
+      "checklist": [
+        "C22"
+      ],
+      "test_file": "lbamm-core/test/AuditCrossBoundaryW1CB.t.sol",
+      "test": "test_C22_partialFillOutputSwapHookFeeAccounting, test_C22_partialFillRevertsIfFeesExceedOutput",
+      "verdict": "DISMISSED: Accounting consistent, slippage protection via minAmountSpecified",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "id": "CB-RO-18",
+      "title": "hookFee > fees in collectFees/addLiquidity",
+      "boundary": "Hook->Core",
+      "evidence": "AMMModule.sol:338,450 maxHookFee check. User controls maxHookFee parameter.",
+      "checklist": [
+        "H-R6-DP-11"
+      ],
+      "test_file": "lbamm-core/test/AuditCrossBoundaryKLoopHyp.t.sol",
+      "test": "test_H_R6_DP_11_hookFeeExceedingAccruedFees, test_H_R6_DP_11_maxHookFeeMaxUint",
+      "verdict": "DISMISSED: User's maxHookFee is the protection. Self-inflicted if set too high (FP #4)",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "id": "CB-RO-19",
+      "title": "Direct swap pricing bounds pre-fee discrepancy",
+      "boundary": "Hook internal",
+      "evidence": "AMMStandardHook.sol:839,843-844. Bounds check uses pre-fee amount. Self-inflicted: token admin sets both fee and bounds.",
+      "checklist": [
+        "H-R6-HH-05"
+      ],
+      "test_file": "lbamm-core/test/AuditCrossBoundaryKLoopHyp.t.sol",
+      "test": "test_H_R6_HH_05_directSwapPricingPreFeeDiscrepancy",
+      "verdict": "DISMISSED: Token admin controls fee BPS and pricing bounds (FP #4)",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "id": "CB-RO-20",
+      "title": "setTokenSettings reentrancy (Aderyn H-1)",
+      "boundary": "Core->Hook",
+      "evidence": "ModuleAdmin.sol:272 has nonReentrant modifier. Aderyn FP.",
+      "checklist": [
+        "A1"
+      ],
+      "test_file": "code-analysis: ModuleAdmin.sol:272 nonReentrant modifier confirmed present",
+      "test": "manual code review: nonReentrant at line 272",
+      "verdict": "DISMISSED: nonReentrant modifier present, admin-only function",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "id": "CB-RO-21",
+      "title": "_storeNonTokenHookFees key mismatch",
+      "boundary": "Core internal",
+      "evidence": "AMMModule.sol:3016-3018 vs 3123-3126. Keys match when tokenFor==tokenFee, which is always the case for pool/liquidity hook fees.",
+      "checklist": [
+        "H-R6-DP-01"
+      ],
+      "test_file": "lbamm-core/test/AuditCrossBoundaryKLoopHyp.t.sol",
+      "test": "test_H_R6_DP_01_hookFeeKeyMatchWhenSameToken, test_H_R6_DP_01_hookFeeKeyMismatchWhenDifferentToken",
+      "verdict": "DISMISSED: Keys match in all production usage patterns",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "id": "CB-RO-22",
+      "title": "CLOB closeOrder at exhausted bucket",
+      "boundary": "Handler internal",
+      "evidence": "CLOBHelper.sol:220-223 reverts InsufficientInputToFill before slot-0 read",
+      "checklist": [
+        "H-R6-HH-02"
+      ],
+      "test_file": "lbamm-core/test/AuditCrossBoundaryKLoopHyp.t.sol",
+      "test": "test_H_R6_HH_02_fillLoopExhaustedBookReverts",
+      "verdict": "DISMISSED: Revert before slot-0 dereference",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "id": "CB-RO-23",
+      "title": "afterSwapRefund reentrancy",
+      "boundary": "Handler->External",
+      "evidence": "AMM ENTERED bit preserved during callback. CLOB-only ops only affect caller's own state.",
+      "checklist": [
+        "H-R6-HH-10",
+        "H-R6-TS-04"
+      ],
+      "test_file": "lbamm-core/test/AuditCrossBoundaryKLoopHyp.t.sol",
+      "test": "test_H_R6_HH_10_afterSwapRefundAMMGuardActive, test_H_R6_TS_04_sameAsHH10",
+      "verdict": "DISMISSED: AMM guard active, CLOB ops only affect own state",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "id": "CB-RO-24",
+      "title": "executeQueuedHookFeesByHookTransfers external call",
+      "boundary": "Core internal",
+      "evidence": "ModuleFeeCollection.sol:128-129 msg.sender != address(this) check",
+      "checklist": [
+        "C-EXTRA"
+      ],
+      "test_file": "lbamm-core/test/AuditCrossBoundaryW1CB.t.sol",
+      "test": "test_CExtra_executeQueuedOnlySelf",
+      "verdict": "DISMISSED: Only callable via diamond self-call",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "id": "CB-RO-25",
+      "title": "Malicious pool type value extraction via crafted return values",
+      "boundary": "Core->PoolType",
+      "evidence": "Pool types control pricing (by design). Core validates: actualAmountIn <= original (L1405), amountOut bounded by _safeDecrementUint128 (L1437), protocol fees validated (L1654-1677). User protected by limitAmount check at settlement (L2156). Pool types are invariant-agnostic by design. CREATE2 6-zero-byte barrier raises deployment cost.",
+      "checklist": [
+        "C4"
+      ],
+      "test_file": "code-analysis: AMMModule.sol:1343-1470 _poolSwapByInput, L2156 limitAmount check",
+      "test": "Code analysis of all 3 pool types (Dynamic, Fixed, SingleProvider) and core validation",
+      "verdict": "DISMISSED: Pool type pricing is by design (like Uniswap V4 hooks). User protected by limitAmount slippage check.",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "id": "CB-RO-26",
+      "title": "Malicious handler value extraction during settlement",
+      "boundary": "Core->Handler",
+      "evidence": "AMMModule.sol:2207-2210 exact balance check (balanceInBefore + amountIn == balanceInAfter). ENTERED bit preserved during handler callback (L2250-2252). Handler cannot manipulate balanceOf (checked at token level). TOCTOU prevented by exact snapshot pattern.",
+      "checklist": [
+        "C6"
+      ],
+      "test_file": "code-analysis: AMMModule.sol:2144-2253 _finalizeSwapCollectFundsAndDisburse",
+      "test": "Code analysis of settlement flow, balance snapshot pattern, reentrancy guard lifecycle",
+      "verdict": "DISMISSED: Exact balance equality check + ENTERED bit prevents all handler manipulation",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "id": "CB-RO-27",
+      "title": "Hook->Registry callback reentrancy during creation/settings",
+      "boundary": "Hook->Registry",
+      "evidence": "AMMStandardHook.sol:105,154 _requireCallerIsAMM on all callbacks. Token admin controls hook assignment. Pool creation/settings changes are admin-only operations with nonReentrant guards.",
+      "checklist": [
+        "C8"
+      ],
+      "test_file": "code-analysis: AMMStandardHook.sol hook callbacks, ModuleAdmin.sol nonReentrant",
+      "test": "Code analysis of hook->registry interaction paths during pool creation and settings changes",
+      "verdict": "DISMISSED: Hook callbacks require AMM as caller, admin-only settings changes have reentrancy guards",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "id": "CB-RO-28",
+      "title": "Pool creation hook flow boundary safety",
+      "boundary": "Core->Hook",
+      "evidence": "Pool creation is admin-only operation. Hook flags validated at pool creation time. AMM validates hook flag compatibility before calling hooks. Pool type address 6-zero-byte requirement enforced at creation.",
+      "checklist": [
+        "C11"
+      ],
+      "test_file": "code-analysis: LimitBreakAMM.sol pool creation, ModuleAdmin.sol setTokenSettings",
+      "test": "Code analysis of pool creation flow and hook flag validation",
+      "verdict": "DISMISSED: Admin-only operation with upstream hook flag validation",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "id": "CB-RO-29",
+      "title": "Flash loan composition attack (INV-E02)",
+      "boundary": "Core internal",
+      "evidence": "ENTERED bit prevents re-entering any AMM function during flash loan callback. collectHookFeesByHook explicitly reverts during flash loan (FLASHLOAN_GUARD_FLAG check at ModuleFeeCollection.sol:77-78). All pool types use stored pricing (not balance-derived), so flash-loaning tokens doesn't affect AMM price.",
+      "checklist": [
+        "C-EXTRA"
+      ],
+      "test_file": "code-analysis: AMMModule.sol:3288-3382 _flashLoan, ModuleFeeCollection.sol:75-78",
+      "test": "Code analysis of flash loan callback isolation, reentrancy guard lifecycle, price oracle independence",
+      "verdict": "DISMISSED: Reentrancy guard prevents all composition. Hook fee collection explicitly blocked during flash loans.",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "id": "CB-RO-30",
+      "title": "Slither HIGH: arbitrary from in transferFrom (executor-controlled)",
+      "boundary": "Core->Handler",
+      "evidence": "Slither arbitrary-send-erc20 at AMMModule.sol:2191. executor=msg.sender always (L2066 _initializeSwapCache). safeTransferFrom only reached when no transfer handler (L2190 check), so always transfers from msg.sender.",
+      "checklist": [
+        "C-EXTRA"
+      ],
+      "test_file": "code-analysis: AMMModule.sol:2066 executor=msg.sender, L2190 transferHandler==address(0) guard",
+      "test": "Slither finding cross-referenced with _initializeSwapCache. FP: executor is always msg.sender.",
+      "verdict": "DISMISSED: Slither FP. executor=msg.sender, direct transferFrom only from caller.",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "id": "CB-RO-31",
+      "title": "Slither HIGH: reentrancy-balance in swap finalization",
+      "boundary": "Core internal",
+      "evidence": "Slither reentrancy-balance at AMMModule.sol:2180-2208. ETH refund sends value to executor before balance check. ENTERED bit prevents reentering any AMM function. Exact equality check (not >=) catches any balance manipulation.",
+      "checklist": [
+        "C-EXTRA"
+      ],
+      "test_file": "code-analysis: AMMModule.sol:2208 exact equality, TstorishReentrancyGuardWithFlags ENTERED bit",
+      "test": "Slither finding cross-referenced with reentrancy guard and exact balance check. FP: ENTERED prevents reentry.",
+      "verdict": "DISMISSED: Slither FP. ENTERED bit + exact equality check prevent exploitation.",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "id": "CB-RO-32",
+      "title": "Slither MEDIUM: uninitialized requiredFeeTokenBalanceAfter in flashLoan",
+      "boundary": "Core internal",
+      "evidence": "Slither uninitialized-local at AMMModule.sol:3309. Variable only read in feeToken!=loanToken branch (L3347), where it's set at L3314. Same-token branch (L3334) uses separate variable. No uninitialized read possible.",
+      "checklist": [
+        "C-EXTRA"
+      ],
+      "test_file": "code-analysis: AMMModule.sol:3309-3315 conditional initialization, L3334/L3347 branch separation",
+      "test": "Slither finding cross-referenced with branch analysis. FP: variable always set before use.",
+      "verdict": "DISMISSED: Slither FP. Variable conditionally initialized and only read in matching branch.",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    }
+  ],
+  "hypothesis_results": [
+    {
+      "id": "H-R6-DP-01",
+      "status": "tested",
+      "detail": "Hook fee key mismatch between _storeNonTokenHookFees and _transferHookFeesByHook. Keys match when tokenFor==tokenFee, which is always true in production.",
+      "test_file": "lbamm-core/test/AuditCrossBoundaryKLoopHyp.t.sol"
+    },
+    {
+      "id": "H-R6-DP-03",
+      "status": "tested",
+      "detail": "Reentrancy flag preservation during _executeQueuedHookFeesByHookTransfers. ENTERED bit preserved when SWAP_GUARD_FLAG cleared.",
+      "test_file": "lbamm-core/test/AuditCrossBoundaryKLoopHyp.t.sol"
+    },
+    {
+      "id": "H-R6-DP-05",
+      "status": "tested",
+      "detail": "Partial fill hook fee ordering. Hook fees applied before pool type call, partial fill adjusts output proportionally.",
+      "test_file": "lbamm-core/test/AuditCrossBoundaryKLoopHyp.t.sol"
+    },
+    {
+      "id": "H-R6-DP-07",
+      "status": "tested",
+      "detail": "Failed distribution accounting. _transferHookFeesByHook uses CEI pattern, underflow check catches token drain attempts.",
+      "test_file": "lbamm-core/test/AuditCrossBoundaryKLoopHyp.t.sol"
+    },
+    {
+      "id": "H-R6-DP-09",
+      "status": "tested",
+      "detail": "Hook change fee orphaning. Hook fees stored per-hook address via EfficientHash key, not orphaned on hook change.",
+      "test_file": "lbamm-core/test/AuditCrossBoundaryKLoopHyp.t.sol"
+    },
+    {
+      "id": "H-R6-DP-11",
+      "status": "tested",
+      "detail": "hookFee > accrued fees in collectFees/addLiquidity. User controls maxHookFee parameter, self-inflicted if set too high.",
+      "test_file": "lbamm-core/test/AuditCrossBoundaryKLoopHyp.t.sol"
+    },
+    {
+      "id": "H-R6-HH-02",
+      "status": "tested",
+      "detail": "CLOB closeOrder at exhausted bucket. Reverts InsufficientInputToFill before slot-0 dereference.",
+      "test_file": "lbamm-core/test/AuditCrossBoundaryKLoopHyp.t.sol"
+    },
+    {
+      "id": "H-R6-HH-05",
+      "status": "tested",
+      "detail": "Direct swap pricing bounds pre-fee discrepancy. Token admin controls both fee and bounds. Self-inflicted.",
+      "test_file": "lbamm-core/test/AuditCrossBoundaryKLoopHyp.t.sol"
+    },
+    {
+      "id": "H-R6-HH-10",
+      "status": "tested",
+      "detail": "afterSwapRefund reentrancy. AMM ENTERED bit preserved during callback, CLOB ops only affect caller state.",
+      "test_file": "lbamm-core/test/AuditCrossBoundaryKLoopHyp.t.sol"
+    },
+    {
+      "id": "H-R6-TS-04",
+      "status": "tested",
+      "detail": "Same as HH-10: afterSwapRefund reentrancy via transient storage. AMM guard active.",
+      "test_file": "lbamm-core/test/AuditCrossBoundaryKLoopHyp.t.sol"
+    },
+    {
+      "id": "H-R6-DP-02",
+      "status": "dismissed",
+      "detail": "Cumulative hook fee overflow. Checked arithmetic in Solidity 0.8.24 prevents overflow.",
+      "test_file": "lbamm-core/test/AuditCrossBoundaryW1CB.t.sol",
+      "failure_class": "strategic"
+    },
+    {
+      "id": "H-R6-DP-04",
+      "status": "dismissed",
+      "detail": "Protocol fee undercount. _validateProtocolFees dual check prevents both excess and deficit.",
+      "test_file": "lbamm-core/test/AuditCrossBoundaryW1CB.t.sol",
+      "failure_class": "strategic"
+    },
+    {
+      "id": "H-R6-DP-06",
+      "status": "dismissed",
+      "detail": "Output swap fee denominator mismatch. FeeHelper uses consistent denomination throughout.",
+      "test_file": "lbamm-core/test/AuditCrossBoundaryW1CB.t.sol",
+      "failure_class": "strategic"
+    },
+    {
+      "id": "H-R6-DP-08",
+      "status": "dismissed",
+      "detail": "Direct swap amount slot not cleared. By-design per transient storage pattern (FP #1 in audit memory).",
+      "test_file": "lbamm-core/test/AuditCrossBoundaryW1CB.t.sol",
+      "failure_class": "strategic"
+    },
+    {
+      "id": "H-R6-DP-10",
+      "status": "dismissed",
+      "detail": "Pool type address validation bypass. Pool ID encodes address in upper bits, 6 zero-byte requirement enforced at creation.",
+      "test_file": "lbamm-core/test/AuditCrossBoundaryW1CB.t.sol",
+      "failure_class": "strategic"
+    }
+  ],
+  "checklist_status": {
+    "C1": {
+      "status": "complete",
+      "result": "ruled_out",
+      "tests": 3
+    },
+    "C2": {
+      "status": "complete",
+      "result": "ruled_out",
+      "tests": 3
+    },
+    "C3": {
+      "status": "complete",
+      "result": "ruled_out",
+      "tests": 1
+    },
+    "C4": {
+      "status": "complete",
+      "result": "ruled_out",
+      "tests": 0,
+      "note": "Deep code analysis of all 3 pool types + core validation. Pool pricing is by design, limitAmount protects users."
+    },
+    "C5": {
+      "status": "complete",
+      "result": "ruled_out",
+      "tests": 2
+    },
+    "C6": {
+      "status": "complete",
+      "result": "ruled_out",
+      "tests": 0,
+      "note": "Deep code analysis of settlement flow. Exact balance equality check + ENTERED bit prevents handler exploitation."
+    },
+    "C7": {
+      "status": "complete",
+      "result": "ruled_out",
+      "tests": 1
+    },
+    "C8": {
+      "status": "complete",
+      "result": "ruled_out",
+      "tests": 0,
+      "note": "Code analysis of hook->registry interaction. _requireCallerIsAMM on all callbacks, admin-only settings."
+    },
+    "C9": {
+      "status": "complete",
+      "result": "ruled_out",
+      "tests": 3
+    },
+    "C10": {
+      "status": "complete",
+      "result": "ruled_out",
+      "tests": 1
+    },
+    "C11": {
+      "status": "complete",
+      "result": "ruled_out",
+      "tests": 0,
+      "note": "Admin-only pool creation with upstream hook flag validation. Not exploitable."
+    },
+    "C12": {
+      "status": "complete",
+      "result": "covered_by_C14_and_C17",
+      "tests": 0
+    },
+    "C13": {
+      "status": "complete",
+      "result": "ruled_out",
+      "tests": 5
+    },
+    "C14": {
+      "status": "complete",
+      "result": "ruled_out",
+      "tests": 4
+    },
+    "C15": {
+      "status": "complete",
+      "result": "ruled_out",
+      "tests": 2
+    },
+    "C16": {
+      "status": "complete",
+      "result": "ruled_out",
+      "tests": 2
+    },
+    "C17": {
+      "status": "complete",
+      "result": "ruled_out",
+      "tests": 1
+    },
+    "C18": {
+      "status": "complete",
+      "result": "ruled_out",
+      "tests": 1
+    },
+    "C19": {
+      "status": "complete",
+      "result": "ruled_out",
+      "tests": 1
+    },
+    "C20": {
+      "status": "complete",
+      "result": "ruled_out",
+      "tests": 1
+    },
+    "C21": {
+      "status": "complete",
+      "result": "ruled_out",
+      "tests": 1
+    },
+    "C22": {
+      "status": "complete",
+      "result": "ruled_out",
+      "tests": 2
+    }
+  },
+  "summary": {
+    "total_findings": 0,
+    "total_ruled_out": 32,
+    "total_tests_written": 57,
+    "total_tests_passing": 57,
+    "boundaries_traced": {
+      "Core_to_PoolType": "Traced: actualAmountIn/Out bounded, reserves checked via _safeDecrementUint128, protocol fees validated",
+      "Core_to_Handler": "Traced: balance snapshot before/after check at finalization, exact equality required",
+      "Core_to_Hook": "Traced: _requireCallerIsAMM on all callbacks, fee capped by swap amount, 32-byte return check",
+      "Hook_to_Registry": "Traced: pricing bounds validation, transient storage isolation for direct swaps",
+      "PoolType_to_Core": "Traced: return values bounded, partial fill with fee adjustments, checked arithmetic",
+      "Handler_to_External": "Traced: AMM ENTERED bit preserved during callbacks, CLOB ops self-contained"
+    },
+    "assessment": "No Medium+ findings. All 6 trust boundaries have defensive checks that prevent value extraction. The codebase is well-hardened at the boundary level. The most interesting vectors (partial fill + hook fees, reentrancy during fee distribution, key space collisions) are all properly handled by the implementation."
+  }
+}

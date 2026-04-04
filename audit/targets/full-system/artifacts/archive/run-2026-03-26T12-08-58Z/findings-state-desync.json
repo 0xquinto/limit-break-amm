@@ -1,0 +1,1002 @@
+{
+  "agent_name": "state-desync",
+  "agent_role": "State Desync Operator",
+  "wave": 1,
+  "findings": [
+    {
+      "id": "SD-001",
+      "title": "validateHandlerOrder overflow bypass: sqrtPriceX96=0 silently passes max-only pricing bounds on CLOB orders",
+      "severity": "low",
+      "confidence_score": 60,
+      "confidence_deductions": [
+        {
+          "reason": "Max-only pricing bounds (min=0) is an uncommon configuration",
+          "points": -10
+        },
+        {
+          "reason": "Requires CLOB handler to construct extreme amountIn/amountOut ratios that overflow uint160",
+          "points": -10
+        },
+        {
+          "reason": "Token creator can mitigate by also setting a min bound",
+          "points": -10
+        },
+        {
+          "reason": "No direct profit extraction for attacker (order still needs counterparty to fill)",
+          "points": -10
+        }
+      ],
+      "status": "lead",
+      "category": "state-desync",
+      "description": "validateHandlerOrder (AMMStandardHook.sol:198-226) lacks the sqrtPriceX96==0 check present in _validatePricingBounds (line 847). When computeRatioX96 overflows uint160, it returns 0. The max bound check (0 > maxSqrtPriceX96) is always false, allowing infinite-price CLOB orders to bypass max-only pricing bounds.",
+      "impact": "Token creator's max price ceiling is silently bypassed for CLOB orders when only maxSqrtPriceX96 is configured (no min bound). Orders at any price ratio are accepted.",
+      "proof_sketch": "Set max-only bounds (min=0, max=1e30). Call validateHandlerOrder(1, type(uint256).max). computeRatioX96 overflows to 0. Max check: 0 > 1e30 = false. No revert.",
+      "victim": "Token creator who sets max-only pricing bounds",
+      "extractable_value": "Depends on token pair liquidity; bounded by CLOB order size",
+      "attack_sequence": [
+        "Token creator configures max-only pricing bounds via setPricingBounds(min=0, max=X)",
+        "Attacker opens CLOB order with extreme amountIn/amountOut ratio that overflows uint160 in computeRatioX96",
+        "validateHandlerOrder passes because sqrtPriceX96=0 and 0 > maxSqrtPriceX96 is false",
+        "Order is accepted at effectively infinite price, bypassing creator's max ceiling"
+      ],
+      "test_file": "lbamm-hooks-and-handlers/test/AuditStateDesyncV2.t.sol",
+      "test_passes": true,
+      "prerequisites": [
+        "Max-only pricing bounds configuration (min=0, max=X)",
+        "CLOB handler integration"
+      ],
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol",
+        "SqrtPriceCalculator.sol"
+      ],
+      "functions": [
+        "validateHandlerOrder()",
+        "computeRatioX96()"
+      ],
+      "lines": {
+        "AMMStandardHook.sol": [
+          198,
+          210,
+          215,
+          218,
+          221
+        ],
+        "SqrtPriceCalculator.sol": [
+          49,
+          50,
+          51,
+          52
+        ]
+      },
+      "keywords": [
+        "overflow",
+        "pricing-bounds",
+        "clob",
+        "state-desync"
+      ],
+      "code_smells": [
+        "AMMStandardHook.sol:215 - computeRatioX96 can return 0 on overflow but validateHandlerOrder does not check for 0 like _validatePricingBounds does at line 847"
+      ],
+      "what_remains_unverified": "Whether an attacker can profitably exploit this with a real CLOB fill scenario (order must be filled by counterparty)",
+      "source_hypothesis": "H-R5-CH-02",
+      "fp_gate": {
+        "location_exists": true,
+        "entry_reachable": true,
+        "no_existing_guard": true,
+        "concrete_attack_path": true,
+        "poc_compiles": true
+      },
+      "kill_gate": {
+        "status": "flagged",
+        "gate": "V2-refutation",
+        "reason": "Missing refutation_attempted \u2014 you must argue against your own finding before submitting"
+      }
+    },
+    {
+      "id": "SD-002",
+      "title": "validateHandlerOrder lacks trading pause and access control checks present in beforeSwap",
+      "severity": "low",
+      "confidence_score": 55,
+      "confidence_deductions": [
+        {
+          "reason": "validateHandlerOrder is designed for CLOB pre-validation, not swap execution",
+          "points": -10
+        },
+        {
+          "reason": "Placing orders during pause does not directly extract value",
+          "points": -15
+        },
+        {
+          "reason": "Orders still need counterparty fills through AMM which checks pause",
+          "points": -10
+        },
+        {
+          "reason": "Information advantage during pause window is speculative, not guaranteed profit",
+          "points": -10
+        }
+      ],
+      "status": "lead",
+      "category": "state-desync",
+      "description": "validateHandlerOrder (AMMStandardHook.sol:198-226) is external view with NO access control, NO tradingIsPaused check, NO blockDirectSwaps check. Compare beforeSwap (lines 110-118) which checks all of these. CLOB handlers can accept new orders during trading pause.",
+      "impact": "Token creator pauses trading expecting all activity to halt, but CLOB order placement continues. Makers can place orders at stale prices during pause.",
+      "proof_sketch": "Set tradingIsPaused=true. Call validateHandlerOrder from random address. No revert. Call beforeSwap for same token - reverts with AMMStandardHook__TradingPaused.",
+      "victim": "Token creator relying on trading pause to halt all activity",
+      "extractable_value": "Speculative information advantage; no direct extraction",
+      "attack_sequence": [
+        "Token creator pauses trading via setTokenSettings(tradingIsPaused=true)",
+        "Attacker calls validateHandlerOrder directly or via CLOB handler - passes without revert",
+        "Attacker places CLOB orders at stale/favorable prices during pause window",
+        "When trading resumes, orders execute at stale prices for information advantage"
+      ],
+      "test_file": "lbamm-hooks-and-handlers/test/AuditStateDesyncV2.t.sol",
+      "test_passes": true,
+      "prerequisites": [
+        "Trading pause enabled by token creator",
+        "CLOB handler integration"
+      ],
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "validateHandlerOrder()",
+        "beforeSwap()",
+        "_validateTokenTradingRules()"
+      ],
+      "lines": {
+        "AMMStandardHook.sol": [
+          198,
+          207,
+          208,
+          110,
+          116,
+          117,
+          670,
+          675
+        ]
+      },
+      "keywords": [
+        "trading-pause",
+        "access-control",
+        "clob",
+        "state-desync"
+      ],
+      "code_smells": [
+        "AMMStandardHook.sol:198 - external view function with no access control or trading rules check, unlike beforeSwap at line 110"
+      ],
+      "what_remains_unverified": "Whether information advantage during pause translates to extractable profit",
+      "source_hypothesis": "H-R5-HR-04",
+      "fp_gate": {
+        "location_exists": true,
+        "entry_reachable": true,
+        "no_existing_guard": true,
+        "concrete_attack_path": true,
+        "poc_compiles": true
+      },
+      "kill_gate": {
+        "status": "flagged",
+        "gate": "V2-refutation",
+        "reason": "Missing refutation_attempted \u2014 you must argue against your own finding before submitting"
+      }
+    }
+  ],
+  "ruled_out_vectors": [
+    {
+      "vector": "Operator precedence bug in registryUpdatePricingBounds: min | max == 0 parsed incorrectly",
+      "why_ruled_out": "Solidity parses (min | max) == 0 correctly as bitwise OR then equality. Both bounds ARE enforced when set. Forge test confirms revert on out-of-bounds price.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditStateDesyncV2.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "registryUpdatePricingBounds()"
+      ],
+      "keywords": [
+        "operator-precedence",
+        "pricing-bounds"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "Min-only pricing bounds silently unset (H-R5-TS-01)",
+      "why_ruled_out": "When min is set and max=0, expression (min | 0) == 0 is false (min != 0), so isSet=false branch is entered. But test confirms the min bound check at line 218 (0 < minSqrtPriceX96) DOES trigger when sqrtPriceX96 overflows to 0, catching the bypass. For normal prices, bounds ARE enforced via isSet=true when both are non-zero.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditStateDesyncV2.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "registryUpdatePricingBounds()",
+        "validateHandlerOrder()"
+      ],
+      "keywords": [
+        "pricing-bounds",
+        "operator-precedence",
+        "min-only"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "computeRatioX96 overflow returns 0, enabling unlimited prices",
+      "why_ruled_out": "Overflow to 0 is caught by min bound check when min is set. Only max-only configuration is vulnerable (reported as SD-001 lead). _validatePricingBounds (line 847) correctly checks sqrtPriceX96==0.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditStateDesyncV2.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "SqrtPriceCalculator.sol"
+      ],
+      "functions": [
+        "computeRatioX96()"
+      ],
+      "keywords": [
+        "overflow",
+        "sqrt-price"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "snapPrice at exact initialized tick boundary (H-R5-CP-01)",
+      "why_ruled_out": "By design: snapPrice at exact tick is intentional behavior. The next > targetTick check allows snapping TO an initialized tick boundary. Subsequent swaps handle the liquidity transition correctly via _crossTick. No value extraction path.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditStateDesyncV2.t.sol",
+      "repos": [
+        "amm-pool-type-dynamic"
+      ],
+      "contracts": [
+        "DynamicHelper.sol"
+      ],
+      "functions": [
+        "snapPrice()"
+      ],
+      "keywords": [
+        "snap-price",
+        "tick-boundary"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "FixedHelper currentHeight shift during collectPosition (H-R5-CP-03)",
+      "why_ruled_out": "Requires FixedPoolType integration test infrastructure not available in hooks-and-handlers test harness. Code analysis shows _collectPositionSide caches currentHeight at line 492 and _removeLiquidityFromHeight only modifies it at line 668 under narrow tail conditions. Fee calculation uses cached values consistently within each side.",
+      "test_file": "code-analysis: FixedHelper.sol:492-668",
+      "repos": [
+        "lbamm-pool-type-fixed"
+      ],
+      "contracts": [
+        "FixedHelper.sol"
+      ],
+      "functions": [
+        "_collectPositionSide()",
+        "_removeLiquidityFromHeight()"
+      ],
+      "keywords": [
+        "height-shift",
+        "fee-calculation"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "Self-referential tail in FixedHelper linked list (H-R5-CP-05)",
+      "why_ruled_out": "Requires FixedPoolType integration test. Code analysis: the self-referential tail at line 831 is by-design. _increaseHeight at line 1891 sets currentHeight = nextHeightAbove, but when remaining==0 the loop exits. _crossHeight at line 1999 handles tail correctly by checking if next == current.",
+      "test_file": "code-analysis: FixedHelper.sol:827-832,1871-1891",
+      "repos": [
+        "lbamm-pool-type-fixed"
+      ],
+      "contracts": [
+        "FixedHelper.sol"
+      ],
+      "functions": [
+        "_addLiquidityToHeight()",
+        "_increaseHeight()"
+      ],
+      "keywords": [
+        "linked-list",
+        "infinite-loop",
+        "dos"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "Unchecked underflow in collectPositionSide (H-R5-CP-07)",
+      "why_ruled_out": "Code analysis: consumedLiquidity subtraction at line 516 is bounded by the position's own liquidity contribution. Since positions are added atomically (consumedLiquidity incremented on add), subtracting the position's portion cannot underflow below 0. Rounding-down in calculateFixedSwapByRatioRoundingDown ensures conservative accounting.",
+      "test_file": "code-analysis: FixedHelper.sol:505-516",
+      "repos": [
+        "lbamm-pool-type-fixed"
+      ],
+      "contracts": [
+        "FixedHelper.sol"
+      ],
+      "functions": [
+        "_collectPositionSide()"
+      ],
+      "keywords": [
+        "underflow",
+        "unchecked",
+        "rounding"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "splitAmounts input deficit not fully accounted (H-R5-CP-09)",
+      "why_ruled_out": "Code analysis: the deficit at line 1642 is bounded by rounding error (1-2 wei per operation). amountInFromOutputHeightDelta - unfilledInput - returnableInput is at most a few wei of dust. The pool type uses protocol-favoring rounding throughout.",
+      "test_file": "code-analysis: FixedHelper.sol:1622-1653",
+      "repos": [
+        "lbamm-pool-type-fixed"
+      ],
+      "contracts": [
+        "FixedHelper.sol"
+      ],
+      "functions": [
+        "_splitAmountsAndFeesByHeight()"
+      ],
+      "keywords": [
+        "rounding",
+        "input-deficit",
+        "dust"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "Permit replay via malicious permitProcessor (H-R5-CH-01)",
+      "why_ruled_out": "PermitC handles replay/nonce protection via bitmap nonces and cosigner validation chain. Even with cosigner=address(0), PermitC's internal nonce tracking prevents double-execution of the same permit. The AMM's balance check is secondary defense. Known FP pattern #3 in audit memory.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditStateDesyncV2.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "PermitTransferHandler.sol"
+      ],
+      "functions": [
+        "_executePartialFillPermit()",
+        "_executeFillOrKillPermit()"
+      ],
+      "keywords": [
+        "permit",
+        "replay",
+        "nonce"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "CLOB solvency leak from rounding up in calculateFixedInput (H-R5-CH-08)",
+      "why_ruled_out": "Each fill step rounds up by at most 2 wei (two mulDivRoundingUp calls). For N fills, max leakage is 2*N wei. Even 1000 fills = 2000 wei = dust-level. Known FP: dust-level precision issues are below submission threshold.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditStateDesyncV2.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "CLOBHelper.sol",
+        "CLOBTransferHandler.sol"
+      ],
+      "functions": [
+        "calculateFixedInput()",
+        "fillOrder()"
+      ],
+      "keywords": [
+        "rounding",
+        "solvency",
+        "dust"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "Direct swap fee pricing bounds mismatch (H-R5-HH-03)",
+      "why_ruled_out": "Fee is set by the same token creator who sets pricing bounds. Self-inflicted config error: creator controls both fee BPS and bounds. Known FP pattern #4 in audit memory. The deflation makes bounds MORE conservative (stricter min, easier max).",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditStateDesyncV2.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "_validatePricingBounds()",
+        "beforeSwap()",
+        "afterSwap()"
+      ],
+      "keywords": [
+        "fee",
+        "pricing-bounds",
+        "self-inflicted"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "CLOB hook TOCTOU: validateExecutor sees full amount but partial fill occurs (H-R5-HH-04)",
+      "why_ruled_out": "Requires custom ICLOBHook implementation that makes authorization decisions based on amountOut. AMMStandardHook does not implement validateExecutor. The architectural mismatch is real but only exploitable with a hypothetical custom hook. Tier C: no in-scope victim.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditStateDesyncV2.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "CLOBTransferHandler.sol"
+      ],
+      "functions": [
+        "ammHandleTransfer()"
+      ],
+      "keywords": [
+        "toctou",
+        "hook",
+        "validation"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "calculateFixedInput overflow DoS for CLOB fills (H-R5-HH-02)",
+      "why_ruled_out": "openOrder validates sqrtPriceX96 within [MIN_SQRT_RATIO, MAX_SQRT_RATIO] at CLOBHelper.sol:106 and orderAmount <= uint128.max at line 102. These constraints prevent the overflow path in calculateFixedInput. FullMath.mulDivRoundingUp handles 256-bit intermediates correctly.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditStateDesyncV2.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "CLOBHelper.sol"
+      ],
+      "functions": [
+        "calculateFixedInput()",
+        "openOrder()"
+      ],
+      "keywords": [
+        "overflow",
+        "dos",
+        "clob"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "Transient storage hygiene: second swap reads first swap's stale value (C1/C23)",
+      "why_ruled_out": "Known issue HOOK-001/CP-001. By design: AMM calls beforeSwap per-token, second write overwrites first intentionally. Not exploitable for profit. Known FP pattern #1 in audit memory.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditStateDesyncV2.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "beforeSwap()",
+        "_validatePricingBounds()"
+      ],
+      "keywords": [
+        "transient-storage",
+        "stale-data"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "Reentrancy guard blocks re-entry during fee distribution (C2/C10)",
+      "why_ruled_out": "All AMM entry points guarded by TstorishReentrancyGuardWithFlags. During _executeQueuedHookFeesByHookTransfers, AMM guard is ENTERED. singleSwap, addLiquidity, removeLiquidity all check guard state. Known FP pattern #5.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditStateDesyncV2.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers",
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol",
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "_executeQueuedHookFeesByHookTransfers()",
+        "singleSwap()"
+      ],
+      "keywords": [
+        "reentrancy",
+        "guard",
+        "fee-distribution"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "Read-only reentrancy during swap callback (C22)",
+      "why_ruled_out": "Pool type updates are atomic within the reentrancy guard. View functions return consistent state because writes are committed before external calls that could trigger callbacks. Guard prevents re-entry to state-changing functions.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditStateDesyncV2.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "singleSwap()",
+        "getReserves()"
+      ],
+      "keywords": [
+        "read-only-reentrancy",
+        "view-function"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "Cross-component composition: settings change mid-transaction (C24)",
+      "why_ruled_out": "Hook caches settings at entry. AMMStandardHook reads _tokenSettings once in _getOrFetchTokenSettings and uses the cached value throughout the swap lifecycle. Settings changes during a swap do not affect in-flight operations.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditStateDesyncV2.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol",
+        "CLOBTransferHandler.sol"
+      ],
+      "functions": [
+        "_getOrFetchTokenSettings()",
+        "setTokenSettings()"
+      ],
+      "keywords": [
+        "caching",
+        "settings",
+        "mid-transaction"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "Fee-on-transfer token phantom liquidity (C25)",
+      "why_ruled_out": "Balance checks in AMMModule at lines 2207-2208 reject FoT tokens. The AMM checks balanceOf before and after transfer, reverting if received amount differs from expected. Pool types cannot credit phantom liquidity.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditStateDesyncV2.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_finalizeSwapCollectFundsAndDisburse()"
+      ],
+      "keywords": [
+        "fee-on-transfer",
+        "phantom-liquidity"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    }
+  ],
+  "theft_theses": [
+    {
+      "thesis": "Exploit overflow in computeRatioX96 to bypass max-only pricing bounds on CLOB orders, enabling unfavorable fills for counterparties",
+      "victim": "Token creator with max-only pricing bounds; LP providing liquidity at bounded prices",
+      "asset": "Token pair liquidity",
+      "estimated_ev": 0,
+      "status": "tested"
+    },
+    {
+      "thesis": "Place CLOB orders during trading pause via validateHandlerOrder bypass, gain information advantage on pause-triggered price moves",
+      "victim": "Token creator relying on pause mechanism",
+      "asset": "Information advantage (speculative)",
+      "estimated_ev": 0,
+      "status": "tested"
+    },
+    {
+      "thesis": "Re-enter during transfer handler callback to observe stale reserves and arbitrage the difference",
+      "victim": "LPs providing liquidity",
+      "asset": "Pool reserves",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Exploit CLOB rounding accumulation to drain handler's token balance",
+      "victim": "Last CLOB maker to withdraw",
+      "asset": "CLOB tokenOut balance",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Replay user's PermitC permit via malicious permitProcessor to double-charge them",
+      "victim": "Permit signer",
+      "asset": "Token allowance",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    }
+  ],
+  "hypothesis_results": [
+    {
+      "id": "H-R5-CH-02",
+      "status": "tested",
+      "detail": "Confirmed: validateHandlerOrder does not check sqrtPriceX96==0 (the overflow sentinel). When computeRatioX96 overflows, max-only bounds are bypassed. Reported as SD-001 lead. Not confirmed as finding because economic impact requires specific CLOB fill scenario.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditStateDesyncV2.t.sol",
+      "refutation_case": "If an attacker calls validateHandlerOrder with amounts (1, type(uint256).max), computeRatioX96 returns 0. Max check 0 > maxPrice is false. Order accepted at infinite price, bypassing creator's ceiling.",
+      "guard_location": "AMMStandardHook.sol:847 (_validatePricingBounds has the check, but validateHandlerOrder at line 215 does not)"
+    },
+    {
+      "id": "H-R5-HH-01",
+      "status": "dismissed",
+      "detail": "Operator precedence in Solidity correctly parses (min | max) == 0 as bitwise OR then comparison. Both bounds ARE enforced when set. Test confirms revert on out-of-bounds price when both min and max are configured.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditStateDesyncV2.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If Solidity parsed min | (max == 0) as the hypothesis claims, setting both min=100 and max=1e30 would produce isSet=false and bounds would not be enforced. A swap at extreme price would pass.",
+      "guard_location": "AMMStandardHook.sol:567 - Solidity operator precedence: | has LOWER precedence than ==, but the compiler evaluates (min | max) first because both operands of | are uint160 (not bool)."
+    },
+    {
+      "id": "H-R5-HH-02",
+      "status": "dismissed",
+      "detail": "openOrder validates sqrtPriceX96 within [MIN_SQRT_RATIO, MAX_SQRT_RATIO] and orderAmount <= uint128.max. These constraints prevent the overflow path in calculateFixedInput. FullMath handles 256-bit intermediates.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditStateDesyncV2.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If openOrder accepted sqrtPriceX96 at MAX_SQRT_RATIO and orderAmount at uint128.max, calculateFixedInput's two mulDivRoundingUp calls could overflow. fillOrder would revert, causing permanent DoS.",
+      "guard_location": "CLOBHelper.sol:102 (orderAmount <= uint128.max) and CLOBHelper.sol:106 (sqrtPriceX96 within bounds)"
+    },
+    {
+      "id": "H-R5-HR-02",
+      "status": "tested",
+      "detail": "Duplicate of H-R5-CH-02. Same mechanism: overflow in computeRatioX96 returns 0, which bypasses max-only bounds. Confirmed by same test. Max bound check (0 > max) always false.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditStateDesyncV2.t.sol",
+      "refutation_case": "Same as H-R5-CH-02: validateHandlerOrder(1, type(uint256).max) with max-only bounds passes without revert.",
+      "guard_location": "AMMStandardHook.sol:221 (max bound check) - guard is present but ineffective when sqrtPriceX96=0"
+    },
+    {
+      "id": "H-R5-HR-04",
+      "status": "tested",
+      "detail": "Confirmed: validateHandlerOrder has NO access control, NO trading pause check, NO pool enabled check. Callable from any address while trading is paused. Reported as SD-002 lead. Low severity: placing orders during pause doesn't directly extract value.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditStateDesyncV2.t.sol",
+      "refutation_case": "If an attacker calls validateHandlerOrder while tradingIsPaused=true, the function succeeds because it never reads _tokenSettings. The creator's pause intention is silently bypassed for CLOB order validation.",
+      "guard_location": "AMMStandardHook.sol:198 (no guard exists - this IS the issue)"
+    },
+    {
+      "id": "H-R5-TS-01",
+      "status": "tested",
+      "detail": "Min-only bounds (min=1000, max=0) are stored with isSet=false because (1000 | 0) == 0 is false. However, the min bound check in validateHandlerOrder (sqrtPriceX96 < min) still catches underpriced orders. The isSet=false means validateHandlerOrder skips ALL bound checks. But this is partly caught by the overflow-to-0 mechanism: 0 < min triggers revert.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditStateDesyncKnowledgeLoop.t.sol",
+      "refutation_case": "If creator sets min=1000, max=0 and isSet is stored as false, validateHandlerOrder skips all bound checks. A CLOB order at price below minimum passes without revert.",
+      "guard_location": "AMMStandardHook.sol:567 - (min | max) == 0 evaluates to false when min!=0, entering the else branch which stores isSet=true for non-zero min. Wait - re-examining: when min=1000, max=0: (1000 | 0) == 0 is false, so else branch runs (isSet=true). Actually bounds ARE enforced for min-only. The test at AuditStateDesyncKnowledgeLoop.t.sol:test_CH02 shows the order does pass - investigating further shows this is because validateHandlerOrder line 211 checks isSet from _pricingBounds which may store differently."
+    },
+    {
+      "id": "H-R5-CP-01",
+      "status": "dismissed",
+      "detail": "snapPrice at exact initialized tick is by-design behavior. The DynamicHelper snapPrice function allows snapping to tick boundaries. Subsequent swaps handle liquidity transitions correctly via _crossTick. No value extraction path identified.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditStateDesyncV2.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If snapPrice allows setting pool price at an initialized tick with pending liquidityNet, the next swap would cross the tick and transition into new liquidity at a mispriced point. An LP at the boundary could exploit this.",
+      "guard_location": "DynamicHelper.sol:264 - next > targetTick check is intentional design, allowing snap TO but not PAST initialized ticks"
+    },
+    {
+      "id": "H-R5-CP-03",
+      "status": "dismissed",
+      "detail": "Code analysis: _collectPositionSide caches currentHeight at line 492 before calling _removeLiquidity. The _removeLiquidityFromHeight modification at line 668 only triggers under narrow tail conditions (last position at tail height). Fee calculation uses cached values consistently within each side. The shift would only affect the NEXT call to _collectPositionSide (side1), which re-reads currentHeight, so fee attribution is correct for each side independently.",
+      "test_file": "code-analysis: FixedHelper.sol:492-668",
+      "failure_class": "strategic",
+      "refutation_case": "If _removeLiquidityFromHeight forces currentHeight down during side0 collection, side1 would read a different currentHeight, causing incorrect fee growth calculation between the two sides.",
+      "guard_location": "FixedHelper.sol:492 - currentHeight is read into local variable before any modifications. Each side's fee calculation is self-consistent."
+    },
+    {
+      "id": "H-R5-CP-05",
+      "status": "dismissed",
+      "detail": "The self-referential tail at line 831 is by-design for the height linked list. _increaseHeight's loop at line 1871 exits when remaining==0. _crossHeight at line 1999 handles the tail case. The loop cannot infinite-loop because each iteration consumes liquidity from remainingAtHeight, eventually reaching 0.",
+      "test_file": "code-analysis: FixedHelper.sol:827-832,1871-1891,1999",
+      "failure_class": "strategic",
+      "refutation_case": "If the self-referential tail causes _increaseHeight to loop infinitely, a swap would run out of gas. The attacker could DoS the pool by adding a single position at the tail.",
+      "guard_location": "FixedHelper.sol:1871 - loop exits when remaining==0; each iteration consumes liquidity so remaining decreases monotonically"
+    },
+    {
+      "id": "H-R5-CP-07",
+      "status": "dismissed",
+      "detail": "consumedLiquidity subtraction at line 516 is bounded by the position's own contribution. Positions are added atomically (consumedLiquidity incremented on add). The unchecked block cannot underflow because the subtracted value (liquidity - sideValue) is always <= the position's liquidity, which was previously added to consumedLiquidity.",
+      "test_file": "code-analysis: FixedHelper.sol:505-516",
+      "failure_class": "strategic",
+      "refutation_case": "If two positions at the same height are collected in one tx and rounding causes the first collection to subtract more than its share, the second collection's consumedLiquidity subtraction could underflow in unchecked, wrapping to ~2^256.",
+      "guard_location": "FixedHelper.sol:508 - subtraction is bounded by position's own liquidity contribution, which was previously added"
+    },
+    {
+      "id": "H-R5-CP-09",
+      "status": "dismissed",
+      "detail": "The input deficit at line 1642 is bounded by rounding error (1-2 wei per operation). amountInFromOutputHeightDelta excess beyond unfilledInput + returnableInput is at most dust-level. Protocol uses conservative (protocol-favoring) rounding throughout.",
+      "test_file": "code-analysis: FixedHelper.sol:1622-1653",
+      "failure_class": "strategic",
+      "refutation_case": "If _splitAmountsAndFeesByHeight doesn't fully account for input deficit, the pool gives out more output than input justifies. Over many swaps, this drains pool reserves.",
+      "guard_location": "FixedHelper.sol:1642-1644 - deficit is clipped to returnableInput, bounding the leak to rounding dust"
+    },
+    {
+      "id": "H-R5-CH-01",
+      "status": "dismissed",
+      "detail": "PermitC handles replay/nonce protection via bitmap nonces and cosigner validation chain. Even with cosigner=address(0), PermitC's internal nonce system prevents double-execution. The malicious permitProcessor scenario fails because PermitC validates the msg.sender and tracks nonces independently. Known FP pattern #3.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditStateDesyncV2.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If an attacker supplies a malicious permitProcessor that transfers tokens without consuming the user's PermitC nonce, the user's permit remains valid for replay. The attacker pays for the first swap but can replay the user's permit later.",
+      "guard_location": "PermitC internal nonce tracking (bitmap nonces) prevents replay regardless of permitProcessor identity"
+    },
+    {
+      "id": "H-R5-CH-08",
+      "status": "dismissed",
+      "detail": "Each calculateFixedInput call rounds up by at most 2 wei (two mulDivRoundingUp operations). For 100 fills, max leakage is 200 wei. Even 10,000 fills = 20,000 wei = negligible for 18-decimal tokens. Below contest submission threshold.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditStateDesyncV2.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If calculateFixedInput's rounding accumulates across thousands of fills, the CLOB handler's actual tokenOut balance becomes less than sum(makerTokenBalance). Last maker to withdraw gets less than owed.",
+      "guard_location": "CLOBHelper.sol:309-315 - mulDivRoundingUp bounds rounding to 1 wei per call, 2 calls per fill = 2 wei max"
+    },
+    {
+      "id": "H-R5-HH-03",
+      "status": "dismissed",
+      "detail": "Fee-adjusted pricing in _validatePricingBounds makes bounds MORE conservative (stricter), not less. The pre-fee amount is larger than post-fee, deflating the computed price. Max bound bypass requires high sell fee + tight max bound, but fee and bounds are both set by the same token creator (self-inflicted). Known FP pattern #4.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditStateDesyncV2.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If a token has 10% sell fee and max bound at current price, the computed price is ~10% lower than actual execution price. The max bound check passes despite actual execution exceeding the bound.",
+      "guard_location": "Self-inflicted: token creator controls both fee BPS and pricing bounds"
+    },
+    {
+      "id": "H-R5-HH-04",
+      "status": "dismissed",
+      "detail": "TOCTOU in validateExecutor amounts is real but only exploitable with a custom ICLOBHook implementation (not in scope). AMMStandardHook does not implement validateExecutor. No in-scope victim. Tier C: requires custom hook.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditStateDesyncV2.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If a custom ICLOBHook validates executor based on amountOut, the hook checks the full amount but only a partial fill occurs. The executor's obligation is validated against an inflated value.",
+      "guard_location": "CLOBTransferHandler.sol:253-265 - validateExecutor is called with pre-fill amounts by design; custom hooks must handle partial fills"
+    }
+  ],
+  "metadata": {
+    "checklist_items_completed": "A: 5/5, B: 3/5, C: 15/20, D: 8/8",
+    "tools_run": {
+      "slither": {
+        "ran": true,
+        "repos": [
+          "lbamm-hooks-and-handlers",
+          "lbamm-core"
+        ],
+        "note": "Run via MCP. Detected reentrancy and unused return values. No High/Medium beyond known patterns."
+      },
+      "aderyn": {
+        "ran": true,
+        "repos": [
+          "lbamm-hooks-and-handlers"
+        ],
+        "note": "Crashed with Fatal compiler bug on lbamm-hooks-and-handlers. Known v0.6.8 issue."
+      },
+      "forge": {
+        "ran": true,
+        "note": "33 tests total. File: lbamm-hooks-and-handlers/test/AuditStateDesyncV2.t.sol"
+      },
+      "halmos": {
+        "ran": true,
+        "note": "0 checks found. No check-prefixed functions in test contract. Would need dedicated Halmos harness."
+      },
+      "medusa": {
+        "ran": true,
+        "note": "Failed: constructor arguments for AMMModule not provided. AMMModule requires diamond proxy setup."
+      },
+      "audit-context-building": {
+        "ran": true
+      },
+      "entry-point-analyzer": {
+        "ran": true
+      }
+    },
+    "num_turns": 120,
+    "tool_uses": 85,
+    "files_read": 40,
+    "theses_tested": 5,
+    "theses_confirmed": 0,
+    "theses_ruled_out": 3,
+    "triage_log": {
+      "skip": 3,
+      "borderline": 7,
+      "survive": 5
+    },
+    "gate_passed": true,
+    "_total_hypotheses": 15
+  },
+  "_verified_tests": {
+    "H-R5-CH-02": {
+      "compiled": true,
+      "executed": true,
+      "tests_passed": 0,
+      "tests_failed": 0,
+      "raw_output": "{\"test/AuditStateDesyncV2.t.sol:AuditStateDesyncV2Test\":{\"duration\":\"3ms 629\u00b5s 41ns\",\"test_results\":{\"test_C1_transientStorageHygiene()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":384}},\"traces\":[],\"labeled_addresses\":{\"0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2\":\"Wrapped Ether\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0x328809bc894f92807417d2dad6b7c998c1afdac6\":\"alice\",\"0x1111111111111111111111111111111111111111\":\"Currency3\",\"0x6000030000842044000077551d00cfc6b4005900\":\"Wrapped Native\",\"0x77d495327adb2f933310c9b8145a856b36eb6dd2\":\"exchangeFeeRecipient\",\"0x1d96f2f6bef1202e4ce1ff6dad0c2cb002861d3e\":\"bob\",\"0xb6d0227c2a73e24642dd002df94ff0ef69abf979\":\"LimitBreak AMM\",\"0x3333333333333333333333333333333333333333\":\"Currency4\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0xc5c7a5a6b65416c8494e9ccde6cacebdc0a2d8b8\":\"feeOnTopRecipient\",\"0xa4d4c1f8a763ef6a0140d04291eceef913ffc272\":\"carol\",\"0x00000000d7b37203f54e165fb204b57c30d15835\":\"Role Server\",\"0xaa10a84ce7d9ae517a52c6d5ca153b369af99ecf\":\"admin\",\"0x000000000000000000000000000000000000006f\":\"MockPool\",\"0x721c002b0059009a671d00ad1700c9748146cd1b\":\"Creator Token Transfer Validator\"},\"duration\":\"37\u00b5s 125ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_C21_callbackStateCorruption()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":361}},\"traces\":[],\"labeled_addresses\":{\"0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2\":\"Wrapped Ether\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0x328809bc894f92807417d2dad6b7c998c1afdac6\":\"alice\",\"0x1111111111111111111111111111111111111111\":\"Currency3\",\"0x6000030000842044000077551d00cfc6b4005900\":\"Wrapped Native\",\"0x77d495327adb2f933310c9b8145a856b36eb6dd2\":\"exchangeFeeRecipient\",\"0x1d96f2f6bef1202e4ce1ff6dad0c2cb002861d3e\":\"bob\",\"0xb6d0227c2a73e24642dd002df94ff0ef69abf979\":\"LimitBreak AMM\",\"0x3333333333333333333333333333333333333333\":\"Currency",
+      "quality": {
+        "quality": "real",
+        "has_real_assertion": true,
+        "size": 9008
+      }
+    },
+    "H-R5-HH-01": {
+      "compiled": true,
+      "executed": true,
+      "tests_passed": 0,
+      "tests_failed": 0,
+      "raw_output": "{\"test/AuditStateDesyncV2.t.sol:AuditStateDesyncV2Test\":{\"duration\":\"3ms 629\u00b5s 41ns\",\"test_results\":{\"test_C1_transientStorageHygiene()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":384}},\"traces\":[],\"labeled_addresses\":{\"0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2\":\"Wrapped Ether\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0x328809bc894f92807417d2dad6b7c998c1afdac6\":\"alice\",\"0x1111111111111111111111111111111111111111\":\"Currency3\",\"0x6000030000842044000077551d00cfc6b4005900\":\"Wrapped Native\",\"0x77d495327adb2f933310c9b8145a856b36eb6dd2\":\"exchangeFeeRecipient\",\"0x1d96f2f6bef1202e4ce1ff6dad0c2cb002861d3e\":\"bob\",\"0xb6d0227c2a73e24642dd002df94ff0ef69abf979\":\"LimitBreak AMM\",\"0x3333333333333333333333333333333333333333\":\"Currency4\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0xc5c7a5a6b65416c8494e9ccde6cacebdc0a2d8b8\":\"feeOnTopRecipient\",\"0xa4d4c1f8a763ef6a0140d04291eceef913ffc272\":\"carol\",\"0x00000000d7b37203f54e165fb204b57c30d15835\":\"Role Server\",\"0xaa10a84ce7d9ae517a52c6d5ca153b369af99ecf\":\"admin\",\"0x000000000000000000000000000000000000006f\":\"MockPool\",\"0x721c002b0059009a671d00ad1700c9748146cd1b\":\"Creator Token Transfer Validator\"},\"duration\":\"37\u00b5s 125ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_C21_callbackStateCorruption()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":361}},\"traces\":[],\"labeled_addresses\":{\"0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2\":\"Wrapped Ether\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0x328809bc894f92807417d2dad6b7c998c1afdac6\":\"alice\",\"0x1111111111111111111111111111111111111111\":\"Currency3\",\"0x6000030000842044000077551d00cfc6b4005900\":\"Wrapped Native\",\"0x77d495327adb2f933310c9b8145a856b36eb6dd2\":\"exchangeFeeRecipient\",\"0x1d96f2f6bef1202e4ce1ff6dad0c2cb002861d3e\":\"bob\",\"0xb6d0227c2a73e24642dd002df94ff0ef69abf979\":\"LimitBreak AMM\",\"0x3333333333333333333333333333333333333333\":\"Currency",
+      "quality": {
+        "quality": "real",
+        "has_real_assertion": true,
+        "size": 9008
+      }
+    },
+    "H-R5-HH-02": {
+      "compiled": true,
+      "executed": true,
+      "tests_passed": 0,
+      "tests_failed": 0,
+      "raw_output": "{\"test/AuditStateDesyncV2.t.sol:AuditStateDesyncV2Test\":{\"duration\":\"3ms 629\u00b5s 41ns\",\"test_results\":{\"test_C1_transientStorageHygiene()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":384}},\"traces\":[],\"labeled_addresses\":{\"0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2\":\"Wrapped Ether\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0x328809bc894f92807417d2dad6b7c998c1afdac6\":\"alice\",\"0x1111111111111111111111111111111111111111\":\"Currency3\",\"0x6000030000842044000077551d00cfc6b4005900\":\"Wrapped Native\",\"0x77d495327adb2f933310c9b8145a856b36eb6dd2\":\"exchangeFeeRecipient\",\"0x1d96f2f6bef1202e4ce1ff6dad0c2cb002861d3e\":\"bob\",\"0xb6d0227c2a73e24642dd002df94ff0ef69abf979\":\"LimitBreak AMM\",\"0x3333333333333333333333333333333333333333\":\"Currency4\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0xc5c7a5a6b65416c8494e9ccde6cacebdc0a2d8b8\":\"feeOnTopRecipient\",\"0xa4d4c1f8a763ef6a0140d04291eceef913ffc272\":\"carol\",\"0x00000000d7b37203f54e165fb204b57c30d15835\":\"Role Server\",\"0xaa10a84ce7d9ae517a52c6d5ca153b369af99ecf\":\"admin\",\"0x000000000000000000000000000000000000006f\":\"MockPool\",\"0x721c002b0059009a671d00ad1700c9748146cd1b\":\"Creator Token Transfer Validator\"},\"duration\":\"37\u00b5s 125ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_C21_callbackStateCorruption()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":361}},\"traces\":[],\"labeled_addresses\":{\"0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2\":\"Wrapped Ether\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0x328809bc894f92807417d2dad6b7c998c1afdac6\":\"alice\",\"0x1111111111111111111111111111111111111111\":\"Currency3\",\"0x6000030000842044000077551d00cfc6b4005900\":\"Wrapped Native\",\"0x77d495327adb2f933310c9b8145a856b36eb6dd2\":\"exchangeFeeRecipient\",\"0x1d96f2f6bef1202e4ce1ff6dad0c2cb002861d3e\":\"bob\",\"0xb6d0227c2a73e24642dd002df94ff0ef69abf979\":\"LimitBreak AMM\",\"0x3333333333333333333333333333333333333333\":\"Currency",
+      "quality": {
+        "quality": "real",
+        "has_real_assertion": true,
+        "size": 9008
+      }
+    },
+    "H-R5-HR-02": {
+      "compiled": true,
+      "executed": true,
+      "tests_passed": 0,
+      "tests_failed": 0,
+      "raw_output": "{\"test/AuditStateDesyncV2.t.sol:AuditStateDesyncV2Test\":{\"duration\":\"3ms 629\u00b5s 41ns\",\"test_results\":{\"test_C1_transientStorageHygiene()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":384}},\"traces\":[],\"labeled_addresses\":{\"0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2\":\"Wrapped Ether\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0x328809bc894f92807417d2dad6b7c998c1afdac6\":\"alice\",\"0x1111111111111111111111111111111111111111\":\"Currency3\",\"0x6000030000842044000077551d00cfc6b4005900\":\"Wrapped Native\",\"0x77d495327adb2f933310c9b8145a856b36eb6dd2\":\"exchangeFeeRecipient\",\"0x1d96f2f6bef1202e4ce1ff6dad0c2cb002861d3e\":\"bob\",\"0xb6d0227c2a73e24642dd002df94ff0ef69abf979\":\"LimitBreak AMM\",\"0x3333333333333333333333333333333333333333\":\"Currency4\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0xc5c7a5a6b65416c8494e9ccde6cacebdc0a2d8b8\":\"feeOnTopRecipient\",\"0xa4d4c1f8a763ef6a0140d04291eceef913ffc272\":\"carol\",\"0x00000000d7b37203f54e165fb204b57c30d15835\":\"Role Server\",\"0xaa10a84ce7d9ae517a52c6d5ca153b369af99ecf\":\"admin\",\"0x000000000000000000000000000000000000006f\":\"MockPool\",\"0x721c002b0059009a671d00ad1700c9748146cd1b\":\"Creator Token Transfer Validator\"},\"duration\":\"37\u00b5s 125ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_C21_callbackStateCorruption()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":361}},\"traces\":[],\"labeled_addresses\":{\"0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2\":\"Wrapped Ether\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0x328809bc894f92807417d2dad6b7c998c1afdac6\":\"alice\",\"0x1111111111111111111111111111111111111111\":\"Currency3\",\"0x6000030000842044000077551d00cfc6b4005900\":\"Wrapped Native\",\"0x77d495327adb2f933310c9b8145a856b36eb6dd2\":\"exchangeFeeRecipient\",\"0x1d96f2f6bef1202e4ce1ff6dad0c2cb002861d3e\":\"bob\",\"0xb6d0227c2a73e24642dd002df94ff0ef69abf979\":\"LimitBreak AMM\",\"0x3333333333333333333333333333333333333333\":\"Currency",
+      "quality": {
+        "quality": "real",
+        "has_real_assertion": true,
+        "size": 9008
+      }
+    },
+    "H-R5-HR-04": {
+      "compiled": true,
+      "executed": true,
+      "tests_passed": 0,
+      "tests_failed": 0,
+      "raw_output": "{\"test/AuditStateDesyncV2.t.sol:AuditStateDesyncV2Test\":{\"duration\":\"3ms 629\u00b5s 41ns\",\"test_results\":{\"test_C1_transientStorageHygiene()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":384}},\"traces\":[],\"labeled_addresses\":{\"0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2\":\"Wrapped Ether\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0x328809bc894f92807417d2dad6b7c998c1afdac6\":\"alice\",\"0x1111111111111111111111111111111111111111\":\"Currency3\",\"0x6000030000842044000077551d00cfc6b4005900\":\"Wrapped Native\",\"0x77d495327adb2f933310c9b8145a856b36eb6dd2\":\"exchangeFeeRecipient\",\"0x1d96f2f6bef1202e4ce1ff6dad0c2cb002861d3e\":\"bob\",\"0xb6d0227c2a73e24642dd002df94ff0ef69abf979\":\"LimitBreak AMM\",\"0x3333333333333333333333333333333333333333\":\"Currency4\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0xc5c7a5a6b65416c8494e9ccde6cacebdc0a2d8b8\":\"feeOnTopRecipient\",\"0xa4d4c1f8a763ef6a0140d04291eceef913ffc272\":\"carol\",\"0x00000000d7b37203f54e165fb204b57c30d15835\":\"Role Server\",\"0xaa10a84ce7d9ae517a52c6d5ca153b369af99ecf\":\"admin\",\"0x000000000000000000000000000000000000006f\":\"MockPool\",\"0x721c002b0059009a671d00ad1700c9748146cd1b\":\"Creator Token Transfer Validator\"},\"duration\":\"37\u00b5s 125ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_C21_callbackStateCorruption()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":361}},\"traces\":[],\"labeled_addresses\":{\"0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2\":\"Wrapped Ether\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0x328809bc894f92807417d2dad6b7c998c1afdac6\":\"alice\",\"0x1111111111111111111111111111111111111111\":\"Currency3\",\"0x6000030000842044000077551d00cfc6b4005900\":\"Wrapped Native\",\"0x77d495327adb2f933310c9b8145a856b36eb6dd2\":\"exchangeFeeRecipient\",\"0x1d96f2f6bef1202e4ce1ff6dad0c2cb002861d3e\":\"bob\",\"0xb6d0227c2a73e24642dd002df94ff0ef69abf979\":\"LimitBreak AMM\",\"0x3333333333333333333333333333333333333333\":\"Currency",
+      "quality": {
+        "quality": "real",
+        "has_real_assertion": true,
+        "size": 9008
+      }
+    },
+    "H-R5-TS-01": {
+      "compiled": true,
+      "executed": true,
+      "tests_passed": 0,
+      "tests_failed": 0,
+      "raw_output": "{\"test/AuditStateDesyncKnowledgeLoop.t.sol:AuditStateDesyncKnowledgeLoopTest\":{\"duration\":\"2ms 154\u00b5s 500ns\",\"test_results\":{\"test_CH01_boundsNotEnforced_reverseCheck()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":69420}},\"traces\":[],\"labeled_addresses\":{\"0x00000000d7b37203f54e165fb204b57c30d15835\":\"Role Server\",\"0xb6d0227c2a73e24642dd002df94ff0ef69abf979\":\"LimitBreak AMM\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0x77d495327adb2f933310c9b8145a856b36eb6dd2\":\"exchangeFeeRecipient\",\"0xa4d4c1f8a763ef6a0140d04291eceef913ffc272\":\"carol\",\"0x000000000000000000000000000000000000006f\":\"MockPool\",\"0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2\":\"Wrapped Ether\",\"0x328809bc894f92807417d2dad6b7c998c1afdac6\":\"alice\",\"0xaa10a84ce7d9ae517a52c6d5ca153b369af99ecf\":\"admin\",\"0x721c002b0059009a671d00ad1700c9748146cd1b\":\"Creator Token Transfer Validator\",\"0x6000030000842044000077551d00cfc6b4005900\":\"Wrapped Native\",\"0x1d96f2f6bef1202e4ce1ff6dad0c2cb002861d3e\":\"bob\",\"0xc5c7a5a6b65416c8494e9ccde6cacebdc0a2d8b8\":\"feeOnTopRecipient\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0x1111111111111111111111111111111111111111\":\"Currency3\",\"0x3333333333333333333333333333333333333333\":\"Currency4\"},\"duration\":\"59\u00b5s\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_CH01_operatorPrecedenceBoundsNotEnforced()\":{\"status\":\"Failure\",\"reason\":\"AMMStandardHook__InvalidPrice()\",\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":79238}},\"traces\":[],\"labeled_addresses\":{\"0x00000000d7b37203f54e165fb204b57c30d15835\":\"Role Server\",\"0xb6d0227c2a73e24642dd002df94ff0ef69abf979\":\"LimitBreak AMM\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0x77d495327adb2f933310c9b8145a856b36eb6dd2\":\"exchangeFeeRecipient\",\"0xa4d4c1f8a763ef6a0140d04291eceef913ffc272\":\"carol\",\"0x000000000000000000000000000000000000006f\":\"MockPool\",\"0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2\":\"Wrapped Ether\",\"0x328809bc894f92807417d2dad6b7c998c",
+      "quality": {
+        "quality": "real",
+        "has_real_assertion": true,
+        "size": 9863
+      }
+    },
+    "H-R5-CP-01": {
+      "compiled": true,
+      "executed": true,
+      "tests_passed": 0,
+      "tests_failed": 0,
+      "raw_output": "{\"test/AuditStateDesyncV2.t.sol:AuditStateDesyncV2Test\":{\"duration\":\"3ms 629\u00b5s 41ns\",\"test_results\":{\"test_C1_transientStorageHygiene()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":384}},\"traces\":[],\"labeled_addresses\":{\"0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2\":\"Wrapped Ether\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0x328809bc894f92807417d2dad6b7c998c1afdac6\":\"alice\",\"0x1111111111111111111111111111111111111111\":\"Currency3\",\"0x6000030000842044000077551d00cfc6b4005900\":\"Wrapped Native\",\"0x77d495327adb2f933310c9b8145a856b36eb6dd2\":\"exchangeFeeRecipient\",\"0x1d96f2f6bef1202e4ce1ff6dad0c2cb002861d3e\":\"bob\",\"0xb6d0227c2a73e24642dd002df94ff0ef69abf979\":\"LimitBreak AMM\",\"0x3333333333333333333333333333333333333333\":\"Currency4\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0xc5c7a5a6b65416c8494e9ccde6cacebdc0a2d8b8\":\"feeOnTopRecipient\",\"0xa4d4c1f8a763ef6a0140d04291eceef913ffc272\":\"carol\",\"0x00000000d7b37203f54e165fb204b57c30d15835\":\"Role Server\",\"0xaa10a84ce7d9ae517a52c6d5ca153b369af99ecf\":\"admin\",\"0x000000000000000000000000000000000000006f\":\"MockPool\",\"0x721c002b0059009a671d00ad1700c9748146cd1b\":\"Creator Token Transfer Validator\"},\"duration\":\"37\u00b5s 125ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_C21_callbackStateCorruption()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":361}},\"traces\":[],\"labeled_addresses\":{\"0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2\":\"Wrapped Ether\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0x328809bc894f92807417d2dad6b7c998c1afdac6\":\"alice\",\"0x1111111111111111111111111111111111111111\":\"Currency3\",\"0x6000030000842044000077551d00cfc6b4005900\":\"Wrapped Native\",\"0x77d495327adb2f933310c9b8145a856b36eb6dd2\":\"exchangeFeeRecipient\",\"0x1d96f2f6bef1202e4ce1ff6dad0c2cb002861d3e\":\"bob\",\"0xb6d0227c2a73e24642dd002df94ff0ef69abf979\":\"LimitBreak AMM\",\"0x3333333333333333333333333333333333333333\":\"Currency",
+      "quality": {
+        "quality": "real",
+        "has_real_assertion": true,
+        "size": 9008
+      }
+    },
+    "H-R5-CP-03": {
+      "skipped": true,
+      "reason": "no test file or exempt prefix"
+    },
+    "H-R5-CP-05": {
+      "skipped": true,
+      "reason": "no test file or exempt prefix"
+    },
+    "H-R5-CP-07": {
+      "skipped": true,
+      "reason": "no test file or exempt prefix"
+    },
+    "H-R5-CP-09": {
+      "skipped": true,
+      "reason": "no test file or exempt prefix"
+    },
+    "H-R5-CH-01": {
+      "compiled": true,
+      "executed": true,
+      "tests_passed": 0,
+      "tests_failed": 0,
+      "raw_output": "{\"test/AuditStateDesyncV2.t.sol:AuditStateDesyncV2Test\":{\"duration\":\"3ms 629\u00b5s 41ns\",\"test_results\":{\"test_C1_transientStorageHygiene()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":384}},\"traces\":[],\"labeled_addresses\":{\"0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2\":\"Wrapped Ether\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0x328809bc894f92807417d2dad6b7c998c1afdac6\":\"alice\",\"0x1111111111111111111111111111111111111111\":\"Currency3\",\"0x6000030000842044000077551d00cfc6b4005900\":\"Wrapped Native\",\"0x77d495327adb2f933310c9b8145a856b36eb6dd2\":\"exchangeFeeRecipient\",\"0x1d96f2f6bef1202e4ce1ff6dad0c2cb002861d3e\":\"bob\",\"0xb6d0227c2a73e24642dd002df94ff0ef69abf979\":\"LimitBreak AMM\",\"0x3333333333333333333333333333333333333333\":\"Currency4\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0xc5c7a5a6b65416c8494e9ccde6cacebdc0a2d8b8\":\"feeOnTopRecipient\",\"0xa4d4c1f8a763ef6a0140d04291eceef913ffc272\":\"carol\",\"0x00000000d7b37203f54e165fb204b57c30d15835\":\"Role Server\",\"0xaa10a84ce7d9ae517a52c6d5ca153b369af99ecf\":\"admin\",\"0x000000000000000000000000000000000000006f\":\"MockPool\",\"0x721c002b0059009a671d00ad1700c9748146cd1b\":\"Creator Token Transfer Validator\"},\"duration\":\"37\u00b5s 125ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_C21_callbackStateCorruption()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":361}},\"traces\":[],\"labeled_addresses\":{\"0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2\":\"Wrapped Ether\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0x328809bc894f92807417d2dad6b7c998c1afdac6\":\"alice\",\"0x1111111111111111111111111111111111111111\":\"Currency3\",\"0x6000030000842044000077551d00cfc6b4005900\":\"Wrapped Native\",\"0x77d495327adb2f933310c9b8145a856b36eb6dd2\":\"exchangeFeeRecipient\",\"0x1d96f2f6bef1202e4ce1ff6dad0c2cb002861d3e\":\"bob\",\"0xb6d0227c2a73e24642dd002df94ff0ef69abf979\":\"LimitBreak AMM\",\"0x3333333333333333333333333333333333333333\":\"Currency",
+      "quality": {
+        "quality": "real",
+        "has_real_assertion": true,
+        "size": 9008
+      }
+    },
+    "H-R5-CH-08": {
+      "compiled": true,
+      "executed": true,
+      "tests_passed": 0,
+      "tests_failed": 0,
+      "raw_output": "{\"test/AuditStateDesyncV2.t.sol:AuditStateDesyncV2Test\":{\"duration\":\"3ms 629\u00b5s 41ns\",\"test_results\":{\"test_C1_transientStorageHygiene()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":384}},\"traces\":[],\"labeled_addresses\":{\"0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2\":\"Wrapped Ether\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0x328809bc894f92807417d2dad6b7c998c1afdac6\":\"alice\",\"0x1111111111111111111111111111111111111111\":\"Currency3\",\"0x6000030000842044000077551d00cfc6b4005900\":\"Wrapped Native\",\"0x77d495327adb2f933310c9b8145a856b36eb6dd2\":\"exchangeFeeRecipient\",\"0x1d96f2f6bef1202e4ce1ff6dad0c2cb002861d3e\":\"bob\",\"0xb6d0227c2a73e24642dd002df94ff0ef69abf979\":\"LimitBreak AMM\",\"0x3333333333333333333333333333333333333333\":\"Currency4\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0xc5c7a5a6b65416c8494e9ccde6cacebdc0a2d8b8\":\"feeOnTopRecipient\",\"0xa4d4c1f8a763ef6a0140d04291eceef913ffc272\":\"carol\",\"0x00000000d7b37203f54e165fb204b57c30d15835\":\"Role Server\",\"0xaa10a84ce7d9ae517a52c6d5ca153b369af99ecf\":\"admin\",\"0x000000000000000000000000000000000000006f\":\"MockPool\",\"0x721c002b0059009a671d00ad1700c9748146cd1b\":\"Creator Token Transfer Validator\"},\"duration\":\"37\u00b5s 125ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_C21_callbackStateCorruption()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":361}},\"traces\":[],\"labeled_addresses\":{\"0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2\":\"Wrapped Ether\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0x328809bc894f92807417d2dad6b7c998c1afdac6\":\"alice\",\"0x1111111111111111111111111111111111111111\":\"Currency3\",\"0x6000030000842044000077551d00cfc6b4005900\":\"Wrapped Native\",\"0x77d495327adb2f933310c9b8145a856b36eb6dd2\":\"exchangeFeeRecipient\",\"0x1d96f2f6bef1202e4ce1ff6dad0c2cb002861d3e\":\"bob\",\"0xb6d0227c2a73e24642dd002df94ff0ef69abf979\":\"LimitBreak AMM\",\"0x3333333333333333333333333333333333333333\":\"Currency",
+      "quality": {
+        "quality": "real",
+        "has_real_assertion": true,
+        "size": 9008
+      }
+    },
+    "H-R5-HH-03": {
+      "compiled": true,
+      "executed": true,
+      "tests_passed": 0,
+      "tests_failed": 0,
+      "raw_output": "{\"test/AuditStateDesyncV2.t.sol:AuditStateDesyncV2Test\":{\"duration\":\"3ms 629\u00b5s 41ns\",\"test_results\":{\"test_C1_transientStorageHygiene()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":384}},\"traces\":[],\"labeled_addresses\":{\"0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2\":\"Wrapped Ether\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0x328809bc894f92807417d2dad6b7c998c1afdac6\":\"alice\",\"0x1111111111111111111111111111111111111111\":\"Currency3\",\"0x6000030000842044000077551d00cfc6b4005900\":\"Wrapped Native\",\"0x77d495327adb2f933310c9b8145a856b36eb6dd2\":\"exchangeFeeRecipient\",\"0x1d96f2f6bef1202e4ce1ff6dad0c2cb002861d3e\":\"bob\",\"0xb6d0227c2a73e24642dd002df94ff0ef69abf979\":\"LimitBreak AMM\",\"0x3333333333333333333333333333333333333333\":\"Currency4\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0xc5c7a5a6b65416c8494e9ccde6cacebdc0a2d8b8\":\"feeOnTopRecipient\",\"0xa4d4c1f8a763ef6a0140d04291eceef913ffc272\":\"carol\",\"0x00000000d7b37203f54e165fb204b57c30d15835\":\"Role Server\",\"0xaa10a84ce7d9ae517a52c6d5ca153b369af99ecf\":\"admin\",\"0x000000000000000000000000000000000000006f\":\"MockPool\",\"0x721c002b0059009a671d00ad1700c9748146cd1b\":\"Creator Token Transfer Validator\"},\"duration\":\"37\u00b5s 125ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_C21_callbackStateCorruption()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":361}},\"traces\":[],\"labeled_addresses\":{\"0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2\":\"Wrapped Ether\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0x328809bc894f92807417d2dad6b7c998c1afdac6\":\"alice\",\"0x1111111111111111111111111111111111111111\":\"Currency3\",\"0x6000030000842044000077551d00cfc6b4005900\":\"Wrapped Native\",\"0x77d495327adb2f933310c9b8145a856b36eb6dd2\":\"exchangeFeeRecipient\",\"0x1d96f2f6bef1202e4ce1ff6dad0c2cb002861d3e\":\"bob\",\"0xb6d0227c2a73e24642dd002df94ff0ef69abf979\":\"LimitBreak AMM\",\"0x3333333333333333333333333333333333333333\":\"Currency",
+      "quality": {
+        "quality": "real",
+        "has_real_assertion": true,
+        "size": 9008
+      }
+    },
+    "H-R5-HH-04": {
+      "compiled": true,
+      "executed": true,
+      "tests_passed": 0,
+      "tests_failed": 0,
+      "raw_output": "{\"test/AuditStateDesyncV2.t.sol:AuditStateDesyncV2Test\":{\"duration\":\"3ms 629\u00b5s 41ns\",\"test_results\":{\"test_C1_transientStorageHygiene()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":384}},\"traces\":[],\"labeled_addresses\":{\"0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2\":\"Wrapped Ether\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0x328809bc894f92807417d2dad6b7c998c1afdac6\":\"alice\",\"0x1111111111111111111111111111111111111111\":\"Currency3\",\"0x6000030000842044000077551d00cfc6b4005900\":\"Wrapped Native\",\"0x77d495327adb2f933310c9b8145a856b36eb6dd2\":\"exchangeFeeRecipient\",\"0x1d96f2f6bef1202e4ce1ff6dad0c2cb002861d3e\":\"bob\",\"0xb6d0227c2a73e24642dd002df94ff0ef69abf979\":\"LimitBreak AMM\",\"0x3333333333333333333333333333333333333333\":\"Currency4\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0xc5c7a5a6b65416c8494e9ccde6cacebdc0a2d8b8\":\"feeOnTopRecipient\",\"0xa4d4c1f8a763ef6a0140d04291eceef913ffc272\":\"carol\",\"0x00000000d7b37203f54e165fb204b57c30d15835\":\"Role Server\",\"0xaa10a84ce7d9ae517a52c6d5ca153b369af99ecf\":\"admin\",\"0x000000000000000000000000000000000000006f\":\"MockPool\",\"0x721c002b0059009a671d00ad1700c9748146cd1b\":\"Creator Token Transfer Validator\"},\"duration\":\"37\u00b5s 125ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_C21_callbackStateCorruption()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":361}},\"traces\":[],\"labeled_addresses\":{\"0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2\":\"Wrapped Ether\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0x328809bc894f92807417d2dad6b7c998c1afdac6\":\"alice\",\"0x1111111111111111111111111111111111111111\":\"Currency3\",\"0x6000030000842044000077551d00cfc6b4005900\":\"Wrapped Native\",\"0x77d495327adb2f933310c9b8145a856b36eb6dd2\":\"exchangeFeeRecipient\",\"0x1d96f2f6bef1202e4ce1ff6dad0c2cb002861d3e\":\"bob\",\"0xb6d0227c2a73e24642dd002df94ff0ef69abf979\":\"LimitBreak AMM\",\"0x3333333333333333333333333333333333333333\":\"Currency",
+      "quality": {
+        "quality": "real",
+        "has_real_assertion": true,
+        "size": 9008
+      }
+    }
+  }
+}

@@ -1,0 +1,162 @@
+{
+  "agent_id": "insolvency-engineer",
+  "wave": 1,
+  "model": "claude-opus-4-6",
+  "archetype": "insolvency-engineer",
+  "profit_question": "Can I leave the protocol with bad debt while I leave with good assets?",
+  "scope": ["lbamm-core", "amm-pool-type-dynamic"],
+  "checklist": "C-STATE",
+  "checklist_completed": 25,
+  "checklist_total": 25,
+  "test_file": "lbamm-core/test/AuditInsolvency.t.sol",
+  "tests_passed": 75,
+  "tests_failed": 0,
+  "findings": [],
+  "ruled_out_vectors": [
+    {
+      "id": "ROV-001",
+      "vector": "Fee-on-transfer phantom liquidity",
+      "severity_if_exploitable": "critical",
+      "reason": "_collectToken (AMMModule.sol:2913-2920) enforces strict balance check: balance_after == balance_before + amount. FOT tokens always revert.",
+      "test": "test_C25_fee_on_transfer_token_blocked",
+      "confidence": "high"
+    },
+    {
+      "id": "ROV-002",
+      "vector": "Reentrancy during _executeQueuedHookFeesByHookTransfers",
+      "severity_if_exploitable": "critical",
+      "reason": "_transferHookFeesByHook follows CEI: storage.tokensOwed[key] decremented before safeTransfer. Even with flags cleared at line 3190, double-spend prevented by underflow check.",
+      "test": "test_C10_reentrancy_guard_blocks_swap_during_swap",
+      "confidence": "high"
+    },
+    {
+      "id": "ROV-003",
+      "vector": "Read-only reentrancy exposing stale state",
+      "severity_if_exploitable": "high",
+      "reason": "_poolSwapByInput updates reserves (lines 1435-1443) before _finalizeSwapCollectFundsAndDisburse transfers tokens. VIEW calls during transfer see committed state.",
+      "test": "test_C22_read_only_reentrancy_safe",
+      "confidence": "high"
+    },
+    {
+      "id": "ROV-004",
+      "vector": "Transient storage stale read (SIR pattern)",
+      "severity_if_exploitable": "high",
+      "reason": "beforeSwap always overwrites DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT. Second swap in same TX sees its own write, not first swap's value.",
+      "test": "test_C23_transient_storage_stale_read_SIR",
+      "confidence": "high"
+    },
+    {
+      "id": "ROV-005",
+      "vector": "Cross-component settings desync (Cork pattern)",
+      "severity_if_exploitable": "high",
+      "reason": "setTokenSettings requires nonReentrant modifier. Cannot change settings mid-swap. Hooks read fresh settings per-call.",
+      "test": "test_C24_cross_component_cork_pattern",
+      "confidence": "high"
+    },
+    {
+      "id": "ROV-006",
+      "vector": "Callback state corruption (Bunni/Curve pattern)",
+      "severity_if_exploitable": "critical",
+      "reason": "TstorishReentrancyGuardWithFlags blocks all state-changing reentry during swap. MaliciousToken callback cannot corrupt pool state.",
+      "test": "test_C21_callback_state_corruption_bunni_curve",
+      "confidence": "high"
+    },
+    {
+      "id": "ROV-007",
+      "vector": "Round-trip swap profit extraction",
+      "severity_if_exploitable": "critical",
+      "reason": "Constant-product x*y=k with fee deduction. Round trip always loses fees. Fuzz tested with 25 random amounts.",
+      "test": "test_INV_S02_no_profitable_round_trip_fuzz",
+      "confidence": "high"
+    },
+    {
+      "id": "ROV-008",
+      "vector": "Flash loan profit extraction",
+      "severity_if_exploitable": "critical",
+      "reason": "Flash loan balance check + swap fees prevent net profit. Both direct and via-pool-swap paths tested.",
+      "test": "test_C9_flash_loan_swap_no_profit",
+      "confidence": "high"
+    },
+    {
+      "id": "ROV-009",
+      "vector": "Dust swap rounding accumulation",
+      "severity_if_exploitable": "medium",
+      "reason": "SqrtPriceMath rounds UP for input, DOWN for output — protocol always benefits. 100 1-wei swaps confirmed no pool loss.",
+      "test": "test_INV_SW03_1000_dust_swaps_no_pool_loss",
+      "confidence": "high"
+    },
+    {
+      "id": "ROV-010",
+      "vector": "tokensOwed double-collect",
+      "severity_if_exploitable": "critical",
+      "reason": "CEI pattern: storage decremented before transfer. Hash-isolated per (owner,token). Underflow check prevents over-withdrawal.",
+      "test": "test_hypothesis_tokensOwed_no_double_collect",
+      "confidence": "high"
+    },
+    {
+      "id": "ROV-011",
+      "vector": "balanceOf divergence extraction",
+      "severity_if_exploitable": "high",
+      "reason": "Direct token transfers to AMM create surplus (balance > reserves), not deficit. Swap uses cached reserve state, not balanceOf.",
+      "test": "test_hypothesis_balanceOf_divergence_no_extraction",
+      "confidence": "high"
+    },
+    {
+      "id": "ROV-012",
+      "vector": "Cross-pool arbitrage value leak",
+      "severity_if_exploitable": "high",
+      "reason": "Fees prevent profitable round-trips across pools. Each pool independently solvent after cross-pool operations.",
+      "test": "test_C15_cross_pool_arbitrage_no_value_leak",
+      "confidence": "high"
+    },
+    {
+      "id": "ROV-013",
+      "vector": "Protocol fee toggle extraction window",
+      "severity_if_exploitable": "medium",
+      "reason": "setProtocolFees only affects future swaps. No pending state can be manipulated for extraction.",
+      "test": "test_hypothesis_protocol_fee_toggle_no_extraction",
+      "confidence": "high"
+    },
+    {
+      "id": "ROV-014",
+      "vector": "addLiquidity + swap atomic extraction",
+      "severity_if_exploitable": "high",
+      "reason": "Reserves updated atomically. _collectToken balance check prevents phantom liquidity.",
+      "test": "test_hypothesis_add_liquidity_swap_same_tx",
+      "confidence": "high"
+    },
+    {
+      "id": "ROV-015",
+      "vector": "_storeNonTokenHookFees hash key mismatch",
+      "severity_if_exploitable": "info",
+      "reason": "Self-consistent: tokenFor==tokenFee in all 8 callers. At worst causes fund-lock for hooks misusing the interface.",
+      "test": null,
+      "confidence": "high"
+    },
+    {
+      "id": "ROV-016",
+      "vector": "Fee accumulator overflow via extreme swaps",
+      "severity_if_exploitable": "high",
+      "reason": "uint128 fee balances with _safeIncrementUint128 overflow check. 30 large swaps confirmed no overflow.",
+      "test": "test_hypothesis_fee_overflow_extreme_swaps",
+      "confidence": "high"
+    },
+    {
+      "id": "ROV-017",
+      "vector": "Rounding asymmetry in add vs remove liquidity",
+      "severity_if_exploitable": "critical",
+      "reason": "SqrtPriceMath.getAmount0Delta/getAmount1Delta: positive liquidityChange (add) rounds UP, negative (remove) rounds DOWN. Protocol always net positive.",
+      "test": null,
+      "confidence": "high"
+    },
+    {
+      "id": "ROV-018",
+      "vector": "Flash loan fee accumulator inflation",
+      "severity_if_exploitable": "critical",
+      "reason": "Flash loan fees stored in protocolFees mapping, NOT in pool feeBalance. Separate accounting prevents inflation of LP-claimable fees.",
+      "test": "test_INV_E02_no_flash_loan_profit",
+      "confidence": "high"
+    }
+  ],
+  "summary": "No exploitable insolvency vectors found. The protocol employs robust defenses: strict balance checks reject fee-on-transfer tokens, CEI pattern prevents reentrancy-based double-spend, transient storage is overwritten per-swap, and rounding always favors the protocol. 18 vectors systematically ruled out with 75 passing Forge tests including 5 fuzz campaigns."
+}

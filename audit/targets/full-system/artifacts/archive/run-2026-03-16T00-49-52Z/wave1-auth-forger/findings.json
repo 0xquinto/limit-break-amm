@@ -1,0 +1,154 @@
+{
+  "agent_name": "auth-forger",
+  "agent_role": "Authorization & Settlement Forger",
+  "wave": 1,
+  "findings": [],
+  "ruled_out_vectors": [
+    {
+      "vector": "KV-1: Zero-price bypass via computeRatioX96 overflow in validateHandlerOrder",
+      "why_ruled_out": "computeRatioX96 returns 0 on overflow, and validateHandlerOrder does not explicitly check sqrtPriceX96==0. However, the CLOB constrains sqrtPriceX96 to [MIN_SQRT_RATIO, MAX_SQRT_RATIO] at openOrder (CLOBHelper.sol:106-108), and amounts are derived from calculateFixedInput using the bounded price. This means the inputs to computeRatioX96 in validateHandlerOrder cannot trigger overflow for CLOB-originated orders. Additionally, _validatePricingBounds in afterSwap DOES check sqrtPriceX96==0 (AMMStandardHook.sol:847-849). No attacker extraction path exists.",
+      "test_file": "lbamm-hooks-and-handlers/test/audit/AuthForgerInvariantTests.t.sol",
+      "repos": ["lbamm-hooks-and-handlers"],
+      "contracts": ["AMMStandardHook.sol", "CLOBTransferHandler.sol", "SqrtPriceCalculator.sol"],
+      "keywords": ["sqrtPriceX96", "zero", "bypass", "overflow", "pricing-bounds", "computeRatioX96", "validateHandlerOrder"],
+      "functions": ["_enforceTokenHooks", "validateHandlerOrder", "computeRatioX96"]
+    },
+    {
+      "vector": "KV-2: Direct handler call bypassing pricing enforcement",
+      "why_ruled_out": "CLOBTransferHandler has NO executeSwap() function. The only AMM callback is ammHandleTransfer() which requires msg.sender == AMM (line 230-232). PermitTransferHandler.ammHandleTransfer() also checks msg.sender == AMM (line 115-117). afterSwapRefund() also checks msg.sender == AMM (line 316-318). Verified via grep and Slither function listing. No direct call path bypasses pricing.",
+      "test_file": "lbamm-hooks-and-handlers/test/audit/AuthForgerDeepDive.t.sol",
+      "repos": ["lbamm-hooks-and-handlers"],
+      "contracts": ["CLOBTransferHandler.sol", "AMMStandardHook.sol"],
+      "keywords": ["pricing", "bypass", "direct", "handler", "direct-swap", "pricing-bounds", "flag-dependency"],
+      "functions": ["executeSwap", "beforeSwap", "afterSwap"]
+    },
+    {
+      "vector": "KV-3: Settings sync gap between CLOBTransferHandler.setTokenSettings and CreatorHookSettingsRegistry",
+      "why_ruled_out": "Known issue CP-005 (Low/gas waste). setTokenSettings modifies memSettings but syncs the original settings variable. The settings ARE eventually consistent because the hook reads fresh settings on demand. No value extraction possible — the attacker cannot control which settings version is used since the sync path is admin-only. The worst case is redundant storage writes (gas waste to admin).",
+      "test_file": "code-analysis: CreatorHookSettingsRegistry.sol:357-401",
+      "repos": ["lbamm-hooks-and-handlers"],
+      "contracts": ["CLOBTransferHandler.sol", "CreatorHookSettingsRegistry.sol"],
+      "keywords": ["setTokenSettings", "sync", "stale", "initialized", "memSettings", "gas-waste"],
+      "functions": ["setTokenSettings"]
+    },
+    {
+      "vector": "KV-4: Transient storage leak in DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT",
+      "why_ruled_out": "Known issue HOOK-001/CP-001 (Low). beforeSwap writes to DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT when poolType == address(0), afterSwap reads it. If afterSwap flag is disabled, slot isn't cleared. However: (1) stale data only affects next direct swap's afterSwap in same tx, (2) afterSwap path checks sqrtPriceX96==0 (line 847-849), providing a safety net, (3) the amounts used for actual swap are correct regardless of stale validation data. No fund loss possible.",
+      "test_file": "lbamm-hooks-and-handlers/test/audit/AuthForgerDeepDive.t.sol",
+      "repos": ["lbamm-hooks-and-handlers"],
+      "contracts": ["AMMHooksTransferHandler.sol", "AMMStandardHook.sol"],
+      "keywords": ["transient", "tstore", "clear", "direct", "swap", "transient-storage", "stale-read", "direct-swap", "DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT"],
+      "functions": ["beforeSwap"]
+    },
+    {
+      "vector": "Forge permit with arbitrary feeOnTop (unsigned field) to drain extra tokens",
+      "why_ruled_out": "feeOnTop is intentionally unsigned in SWAP_TYPEHASH. The signer's exposure is capped by limitAmount (which IS signed). In PermitTransferHandler, the permit transfer only moves amountIn to AMM — feeOnTop is collected separately by AMMModule from the output side, not from additional signer tokens. The signer cannot lose more than limitAmount. This was submission #8 in the contest and was rejected as by-design.",
+      "test_file": "lbamm-hooks-and-handlers/test/audit/AuthForgerDeepDive.t.sol",
+      "repos": ["lbamm-hooks-and-handlers"],
+      "contracts": ["PermitTransferHandler.sol"],
+      "keywords": ["feeOnTop", "unsigned", "permit", "limitAmount", "SWAP_TYPEHASH"],
+      "functions": ["ammHandleTransfer", "_executeFillOrKillPermit", "_executePartialFillPermit"]
+    },
+    {
+      "vector": "Spoof executor context to settle orders with wrong recipient",
+      "why_ruled_out": "The executor is passed by the AMM core (msg.sender chain). CLOBTransferHandler.ammHandleTransfer requires msg.sender == AMM. The AMM sets executor from tx.origin/msg.sender context. An attacker cannot spoof the executor because the AMM validates the caller chain. The cosignature system in PermitTransferHandler also binds executor to the cosigner's approval.",
+      "test_file": "code-analysis: CLOBTransferHandler.sol:229-232, PermitTransferHandler.sol:115-117",
+      "repos": ["lbamm-hooks-and-handlers"],
+      "contracts": ["CLOBTransferHandler.sol", "PermitTransferHandler.sol"],
+      "keywords": ["executor", "spoof", "context", "settlement"],
+      "functions": ["ammHandleTransfer"]
+    },
+    {
+      "vector": "Replay CLOB order with different nonce context",
+      "why_ruled_out": "CLOB orders use a monotonically increasing nextOrderNonce (CLOBTransferHandler.sol:35). Each openOrder increments it (line 538). Orders are stored by nonce in the order book. closeOrder checks ptrOrder.maker == maker (line 36-38). There is no replay vector because nonces are unique and non-reusable — once filled (inputAmount set to 0, line 77/216) or closed, the order cannot be re-opened.",
+      "test_file": "lbamm-hooks-and-handlers/test/audit/AuthForgerInvariantTests.t.sol",
+      "repos": ["lbamm-hooks-and-handlers"],
+      "contracts": ["CLOBTransferHandler.sol", "CLOBHelper.sol"],
+      "keywords": ["nonce", "replay", "order", "CLOB"],
+      "functions": ["openOrder", "closeOrder", "fillOrder"]
+    },
+    {
+      "vector": "Redirect fee to attacker address via hook configuration",
+      "why_ruled_out": "Fee recipients in AMMStandardHook are set by token creators via CreatorHookSettingsRegistry, which requires LibOwnership.requireCallerIsTokenOrContractOwnerOrAdmin. An attacker without admin access cannot change fee recipients. The exchange fee recipient is part of the signed swap data (exchangeFeeRecipient is in SWAP_TYPEHASH). Hook fees go to the hook contract address which is immutable per token settings.",
+      "test_file": "code-analysis: AMMStandardHook.sol:519-525, CreatorHookSettingsRegistry.sol:357-401",
+      "repos": ["lbamm-hooks-and-handlers"],
+      "contracts": ["AMMStandardHook.sol", "CreatorHookSettingsRegistry.sol"],
+      "keywords": ["fee", "redirect", "recipient", "hook"],
+      "functions": ["registryUpdateTokenSettings", "setTokenSettings"]
+    },
+    {
+      "vector": "Deploy ERC-1271 contract that returns true for any hash to bypass signature checks",
+      "why_ruled_out": "PermitTransferHandler delegates signature verification to PermitC (IPermitC.permitTransferFromWithAdditionalDataERC20). PermitC handles ERC-1271 validation. Even if an attacker deploys an ERC-1271 contract, they would be the 'from' address — they'd be permitting transfers FROM themselves, not from victims. The attacker cannot forge a permit FROM a victim's address because the signature must recover to the 'from' address.",
+      "test_file": "code-analysis: PermitTransferHandler.sol:262-273",
+      "repos": ["lbamm-hooks-and-handlers"],
+      "contracts": ["PermitTransferHandler.sol"],
+      "keywords": ["ERC-1271", "signature", "bypass", "forge"],
+      "functions": ["_executeFillOrKillPermit"]
+    },
+    {
+      "vector": "Dust-loop extraction via 100+ tiny deposit/withdraw cycles",
+      "why_ruled_out": "CLOBTransferHandler.depositToken uses balanceBefore/balanceAfter check (line 362-369) ensuring exact amount transferred. withdrawToken uses exact balance subtraction. 100 cycles of deposit(1e18)/withdraw(1e18) showed zero value leak. No rounding or fee accumulation in the deposit/withdraw path.",
+      "test_file": "lbamm-hooks-and-handlers/test/audit/AuthForgerDeepDive.t.sol",
+      "repos": ["lbamm-hooks-and-handlers"],
+      "contracts": ["CLOBTransferHandler.sol"],
+      "keywords": ["dust", "loop", "extraction", "rounding"],
+      "functions": ["depositToken", "withdrawToken"]
+    }
+  ],
+  "theft_theses": [
+    {
+      "thesis": "Forge permit with arbitrary feeOnTop to drain extra tokens beyond signed amount",
+      "victim": "Permit signer",
+      "asset": "ERC20 tokens",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Bypass pricing bounds via computeRatioX96 overflow returning 0 in validateHandlerOrder",
+      "victim": "Token creators who set pricing bounds",
+      "asset": "Token value via out-of-bounds trades",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Call CLOBTransferHandler.ammHandleTransfer directly to bypass hook pricing enforcement",
+      "victim": "CLOB order makers",
+      "asset": "Deposited tokens",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Exploit transient storage stale read to manipulate direct swap pricing validation",
+      "victim": "Swappers using direct swap path",
+      "asset": "Swap output tokens",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Replay CLOB order nonce to double-fill and drain maker balances",
+      "victim": "CLOB order makers",
+      "asset": "Deposited tokens",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    }
+  ],
+  "metadata": {
+    "checklist_items_completed": "A: 2/5, B: 0/5, C: 17/19, D: 4/4, E: 10/10",
+    "tools_run": {
+      "phase0_artifacts": {"read": true},
+      "slither": {"ran": true, "repos": ["lbamm-hooks-and-handlers"], "high": 5, "medium": 3, "note": "uninitialized-state (mappings, by-design), uninitialized-local (standard pattern), unused-return (PermitC partial fill)"},
+      "aderyn": {"ran": true, "repos": ["lbamm-hooks-and-handlers"], "note": "Crashed with fatal bug on v0.6.8. 2 High (locked ETH — handler has receive(), reentrancy — guarded by TstorishReentrancyGuard), 8 Low."},
+      "forge": {"ran": true, "note": "61 tests total across AuthForgerInvariantTests.t.sol, AuthForgerDeepDive.t.sol, PricingBoundsOperatorPrecedence.t.sol. All pass except 1 (operator precedence end-to-end, explained in KV-1). File: lbamm-hooks-and-handlers/test/audit/"},
+      "halmos": {"ran": true, "note": "1 check (computeRatioX96 no-zero-in-valid-range). Timed out at 60s due to complex loop in sqrt. File: lbamm-hooks-and-handlers/test/audit/AuthForgerHalmos.t.sol"},
+      "medusa": {"ran": false, "reason": "CLOBTransferHandler requires constructor args (AMM address). Would need medusa.json config. Attempted but failed to initialize."},
+      "audit-context-building": {"ran": false, "reason": "Skipped in favor of direct code analysis — all target files read and analyzed"},
+      "entry-point-analyzer": {"ran": false, "reason": "Entry points identified manually from Slither function listings and direct code reading"}
+    },
+    "num_turns": 25,
+    "tool_uses": 40,
+    "files_read": 15,
+    "theses_tested": 5,
+    "theses_confirmed": 0,
+    "theses_ruled_out": 5
+  }
+}

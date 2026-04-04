@@ -1,0 +1,136 @@
+{
+  "covered": [
+    "EXP-02",
+    "EXP-03",
+    "EXP-04",
+    "EXP-06",
+    "EXP-07",
+    "EXP-09",
+    "EXP-10",
+    "EXP-11",
+    "EXP-12",
+    "EXP-15"
+  ],
+  "blind_spots": [
+    {
+      "id": "EXP-01",
+      "source": "cetus-2025-05",
+      "title": "Precision overflow in sqrt price calculation (Cetus $223M)",
+      "contracts": [
+        "SqrtPriceCalculator.sol",
+        "DynamicPoolType.sol"
+      ],
+      "functions": [
+        "computeRatioX96",
+        "swapByInput",
+        "swapByOutput"
+      ],
+      "category": "precision",
+      "keywords": [
+        "overflow",
+        "sqrtPrice",
+        "computeRatioX96",
+        "precision",
+        "zero",
+        "near-zero",
+        "tick",
+        "Q64.96"
+      ]
+    },
+    {
+      "id": "EXP-05",
+      "source": "eip712-patterns",
+      "title": "Unsigned permit field exploitation (feeOnTop not signed)",
+      "contracts": [
+        "PermitTransferHandler.sol"
+      ],
+      "functions": [
+        "executeSwap"
+      ],
+      "category": "signature",
+      "keywords": [
+        "feeOnTop",
+        "unsigned",
+        "permit",
+        "signature",
+        "SWAP_TYPEHASH",
+        "EIP-712",
+        "mutation"
+      ]
+    },
+    {
+      "id": "EXP-08",
+      "source": "cork-2025-05",
+      "title": "Cross-component trust composition exploit (Cork $12M)",
+      "contracts": [
+        "AMMModule.sol",
+        "CLOBTransferHandler.sol",
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "_finalizeSwapCollectFundsAndDisburse",
+        "executeSwap",
+        "beforeSwap",
+        "afterSwap"
+      ],
+      "category": "composition",
+      "keywords": [
+        "composition",
+        "trust",
+        "boundary",
+        "component",
+        "handler",
+        "hook",
+        "precondition",
+        "independent"
+      ]
+    },
+    {
+      "id": "EXP-13",
+      "source": "swapnet-2026-01",
+      "title": "User-supplied calldata injection (SwapNet $13.4M)",
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "multiSwap",
+        "singleSwap"
+      ],
+      "category": "input-validation",
+      "keywords": [
+        "swapExtraData",
+        "calldata",
+        "arbitrary",
+        "redirect",
+        "bytes",
+        "user-supplied",
+        "malformed"
+      ]
+    },
+    {
+      "id": "EXP-14",
+      "source": "diamond-research-2025",
+      "title": "Diamond proxy selector collision across facets",
+      "contracts": [
+        "AMMModule.sol",
+        "ModuleAdmin.sol",
+        "ModuleFeeCollection.sol",
+        "ModuleLiquidity.sol"
+      ],
+      "functions": [],
+      "category": "proxy",
+      "keywords": [
+        "selector",
+        "collision",
+        "facet",
+        "diamond",
+        "4-byte",
+        "proxy",
+        "delegatecall",
+        "storage"
+      ]
+    }
+  ],
+  "coverage_pct": 66.7,
+  "summary": "10/15 exploit patterns covered (66.7%). Blind spots:\n  - EXP-01: Precision overflow in sqrt price calculation (Cetus $223M)\n  - EXP-05: Unsigned permit field exploitation (feeOnTop not signed)\n  - EXP-08: Cross-component trust composition exploit (Cork $12M)\n  - EXP-13: User-supplied calldata injection (SwapNet $13.4M)\n  - EXP-14: Diamond proxy selector collision across facets"
+}

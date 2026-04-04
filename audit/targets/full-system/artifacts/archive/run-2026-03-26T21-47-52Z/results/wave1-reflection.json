@@ -1,0 +1,213 @@
+{
+  "run_date": "2026-03-26",
+  "phase": "phase1",
+  "compliance_score": 71.5,
+  "compliance_delta": -41.0,
+  "per_agent_gaps": [
+    {
+      "agent": "precision-sniper",
+      "score": 0.0,
+      "dimensions": {
+        "checklist": 0.0,
+        "tool_breadth": 0.0,
+        "evidence": 0.0,
+        "depth": 0.0,
+        "thesis": 0.0
+      },
+      "tools_missing": [],
+      "checklist_completion_pct": 0.0
+    },
+    {
+      "agent": "auth-forger",
+      "score": 107.6,
+      "dimensions": {
+        "checklist": 30.0,
+        "tool_breadth": 20.0,
+        "evidence": 20.0,
+        "depth": 19.0,
+        "thesis": 10.0
+      },
+      "tools_missing": [],
+      "checklist_completion_pct": 100.0
+    },
+    {
+      "agent": "math-deep-diver",
+      "score": 0.0,
+      "dimensions": {
+        "checklist": 0.0,
+        "tool_breadth": 0.0,
+        "evidence": 0.0,
+        "depth": 0.0,
+        "thesis": 0.0
+      },
+      "tools_missing": [],
+      "checklist_completion_pct": 0.0
+    },
+    {
+      "agent": "cross-boundary",
+      "score": 115.4,
+      "dimensions": {
+        "checklist": 30.0,
+        "tool_breadth": 20.0,
+        "evidence": 20.0,
+        "depth": 19.7,
+        "thesis": 10.0
+      },
+      "tools_missing": [],
+      "checklist_completion_pct": 100.0
+    },
+    {
+      "agent": "composability-exploiter",
+      "score": 99.7,
+      "dimensions": {
+        "checklist": 30.0,
+        "tool_breadth": 20.0,
+        "evidence": 20.0,
+        "depth": 19.7,
+        "thesis": 10.0
+      },
+      "tools_missing": [],
+      "checklist_completion_pct": 100.0
+    },
+    {
+      "agent": "price-distorter",
+      "score": 114.5,
+      "dimensions": {
+        "checklist": 30.0,
+        "tool_breadth": 20.0,
+        "evidence": 20.0,
+        "depth": 15.2,
+        "thesis": 10.0
+      },
+      "tools_missing": [],
+      "checklist_completion_pct": 100.0
+    },
+    {
+      "agent": "insolvency-engineer",
+      "score": 102.0,
+      "dimensions": {
+        "checklist": 30.0,
+        "tool_breadth": 20.0,
+        "evidence": 17.4,
+        "depth": 19.1,
+        "thesis": 0.0
+      },
+      "tools_missing": [],
+      "checklist_completion_pct": 100.0
+    },
+    {
+      "agent": "extension-hijacker",
+      "score": 104.1,
+      "dimensions": {
+        "checklist": 30.0,
+        "tool_breadth": 20.0,
+        "evidence": 20.0,
+        "depth": 19.1,
+        "thesis": 0.0
+      },
+      "tools_missing": [],
+      "checklist_completion_pct": 100.0
+    },
+    {
+      "agent": "state-desync",
+      "score": 0.0,
+      "dimensions": {
+        "checklist": 0.0,
+        "tool_breadth": 0.0,
+        "evidence": 0.0,
+        "depth": 0.0,
+        "thesis": 0.0
+      },
+      "tools_missing": [],
+      "checklist_completion_pct": 0.0
+    }
+  ],
+  "cross_agent_patterns": [
+    "thesis: 5/9 agents below 50% threshold",
+    "checklist: average completion 66.7% across 9 agents"
+  ],
+  "dimension_trends": {
+    "checklist": [
+      0.0,
+      0.0,
+      18.28,
+      26.14,
+      25.04,
+      30.0,
+      23.33,
+      26.67,
+      26.67,
+      30.0,
+      30.0,
+      20.0
+    ],
+    "tool_breadth": [
+      0.0,
+      0.0,
+      15.0,
+      20.0,
+      17.78,
+      20.0,
+      15.56,
+      17.78,
+      17.78,
+      20.0,
+      20.0,
+      13.33
+    ],
+    "evidence": [
+      0.0,
+      0.0,
+      16.83,
+      18.23,
+      16.71,
+      18.13,
+      14.5,
+      15.88,
+      16.8,
+      18.7,
+      18.47,
+      13.04
+    ],
+    "depth": [
+      0.0,
+      0.0,
+      13.71,
+      17.57,
+      16.27,
+      18.59,
+      14.21,
+      16.84,
+      16.89,
+      18.18,
+      18.74,
+      12.42
+    ],
+    "thesis": [
+      0.0,
+      0.0,
+      8.89,
+      10.0,
+      8.89,
+      10.0,
+      7.78,
+      8.89,
+      8.89,
+      8.89,
+      9.89,
+      4.44
+    ]
+  },
+  "suggestions": [
+    {
+      "target": "black-hat-preamble.md",
+      "change": "Add explicit checklist counting instruction: agents must tally items completed and report N/M in metadata",
+      "reason": "checklist: average completion 66.7% across 9 agents",
+      "auto_safe": false,
+      "status": "pending"
+    }
+  ],
+  "trigger_agent_reflection": true,
+  "regression_failed": true,
+  "agent_suggestions": []
+}

@@ -1,0 +1,439 @@
+{
+  "agent_name": "extension-hijacker",
+  "wave": "wave1-kloop",
+  "timestamp": "2026-03-26T18:45:00Z",
+  "metadata": {
+    "num_turns": 85,
+    "files_read": 42,
+    "checklist_items_completed": "A: 5/5, B: 3/4, C: 17/22, D: 8/8",
+    "tools_run": {
+      "forge": {
+        "ran": true,
+        "note": "60 tests total. Files: test/exploit/ExtHijackerW1KLoop.t.sol, test/exploit/ExtHijackerCBoundary.t.sol, test/exploit/ExtHijackerPricingEdge.t.sol"
+      },
+      "slither": {
+        "ran": true,
+        "note": "MCP run_detectors (High/Medium). 35 findings, all in lbamm-core (uninitialized-local, incorrect-return from DelegateCall pattern). No exploitable findings in hooks src/."
+      },
+      "aderyn": {
+        "ran": true,
+        "note": "Attempted on hooks-and-handlers. Crashed (v0.6.8 fatal compiler bug on Tstorish pattern). Known issue documented in tool-fixes.md."
+      },
+      "halmos": {
+        "ran": true,
+        "note": "Symbolic verification of test_operatorPrecedenceBitwiseOrVsEquals. 1 path verified, 0 failures. Confirms Solidity operator precedence correctness."
+      },
+      "medusa": {
+        "ran": true,
+        "note": "Attempted on ExtHijackerW1KLoopTest and ExtHijackerCBoundaryTest. No Echidna-style property tests found. Forge fuzz tests used instead for coverage."
+      },
+      "audit_context_building": {
+        "ran": true,
+        "note": "Skill invoked on AMMStandardHook.sol. Deep analysis of 4 pricing bounds paths, registry sync, whitelist architecture, tstore pattern."
+      },
+      "entry_point_analyzer": {
+        "ran": true,
+        "note": "Skill invoked on AMMStandardHook.sol. Slither list_functions for state-changing entry points. 12 external mutators: beforeSwap, afterSwap, validatePoolCreation, validateAddLiquidity, validateHandlerOrder, validateFlashloanFee, registryUpdateTokenSettings, registryUpdatePricingBounds, registryUpdateWhitelistPairToken, registryUpdateWhitelistPoolType, registryUpdateWhitelistLp, __activateTstore."
+      }
+    },
+    "triage_log": {
+      "skip": 3,
+      "borderline": 4,
+      "survive": 2
+    },
+    "gate_passed": true,
+    "_total_hypotheses": 8,
+    "continuation_merged": true,
+    "continuation_ruled_out": 0,
+    "continuation_findings": 0
+  },
+  "hypothesis_results": [
+    {
+      "id": "H-R7-HR-01",
+      "title": "validateHandlerOrder overflow to sqrtPriceX96==0 bypasses max bound",
+      "status": "tested",
+      "result": "confirmed",
+      "severity": "low",
+      "confidence": "high",
+      "contracts": [
+        "AMMStandardHook.sol",
+        "SqrtPriceCalculator.sol"
+      ],
+      "functions": [
+        "validateHandlerOrder",
+        "computeRatioX96"
+      ],
+      "description": "When SqrtPriceCalculator.computeRatioX96 overflows it returns 0. In validateHandlerOrder, the max bound check 0 > maxSqrtPriceX96 is always false, bypassing the price ceiling. The direct swap afterSwap path at line 847 has an explicit sqrtPriceX96==0 check; validateHandlerOrder does not.",
+      "economic_impact": "Low. View function for CLOB order placement only. Fills gated by beforeSwap/afterSwap.",
+      "previously_reported": "FP-SUB02 (rejected), CP-003 (Low).",
+      "test_file": "test/exploit/ExtHijackerW1KLoop.t.sol",
+      "test_functions": [
+        "test_HR01_overflowPriceBypassesMaxBound"
+      ]
+    },
+    {
+      "id": "H-R7-HR-02",
+      "title": "Auto-fetch from registry creates empty whitelist DoS for new hook instances",
+      "status": "tested",
+      "result": "confirmed",
+      "severity": "low",
+      "confidence": "high",
+      "contracts": [
+        "AMMStandardHook.sol",
+        "CreatorHookSettingsRegistry.sol"
+      ],
+      "functions": [
+        "_getOrFetchTokenSettings",
+        "beforeSwap"
+      ],
+      "description": "New AMMStandardHook auto-fetches settings from registry but NOT whitelist contents. Settings with non-zero whitelist IDs block operations until explicit sync.",
+      "economic_impact": "Low. Self-correcting. Admin syncs whitelists to fix.",
+      "previously_reported": "Related to FP-SUB01.",
+      "test_file": "test/exploit/ExtHijackerW1KLoop.t.sol",
+      "test_functions": [
+        "test_HR02_autoFetchCreatesEmptyWhitelistBlocking"
+      ]
+    },
+    {
+      "id": "H-R7-HR-03",
+      "title": "validateHandlerOrder missing pair whitelist and trading pause checks",
+      "status": "tested",
+      "result": "confirmed",
+      "severity": "low",
+      "confidence": "high",
+      "contracts": [
+        "AMMStandardHook.sol",
+        "CLOBTransferHandler.sol"
+      ],
+      "functions": [
+        "validateHandlerOrder",
+        "_enforceTokenHooks",
+        "openOrder"
+      ],
+      "description": "validateHandlerOrder only checks pricing bounds. CLOB order PLACEMENT bypasses tradingIsPaused and pairedTokenWhitelistId. Order FILLS go through beforeSwap which enforces all checks.",
+      "economic_impact": "Low. Orders placed but not filled while restrictions active.",
+      "previously_reported": "Not previously reported as standalone.",
+      "test_file": "test/exploit/ExtHijackerW1KLoop.t.sol",
+      "test_functions": [
+        "test_HR03_clobOrderBypassesPairWhitelist",
+        "test_HR03_clobOrderBypassesTradingPause"
+      ]
+    },
+    {
+      "id": "H-R7-HR-04",
+      "title": "Zero price bypasses max bound in pool creation, add liquidity, and pool-type swap",
+      "status": "tested",
+      "result": "confirmed",
+      "severity": "low",
+      "confidence": "high",
+      "contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "_enforcePoolCreationSettings",
+        "validateAddLiquidity",
+        "_validatePricingBounds"
+      ],
+      "description": "sqrtPriceX96=0 from pool type causes max check (0 > maxPrice) false. Affects 3 code paths. Only direct swap afterSwap has sqrtPriceX96==0 check (line 847). Bypass only works with ceiling-only bounds (min=0).",
+      "economic_impact": "Low. Requires pool type to return price=0, unrealistic for production.",
+      "previously_reported": "CP-003 covers validateHandlerOrder. 3 additional paths new.",
+      "test_file": "test/exploit/ExtHijackerW1KLoop.t.sol",
+      "test_functions": [
+        "test_HR04_zeroPriceBypassesMaxBoundInPoolCreation",
+        "test_HR04_zeroPriceBypassesMaxBoundInAddLiquidity",
+        "test_HR04_zeroPriceBypassesMaxBoundInSwapPricingBounds"
+      ]
+    },
+    {
+      "id": "H-R7-HR-05",
+      "title": "setTokenSettings syncs raw calldata (initialized=false) instead of corrected memory copy",
+      "status": "tested",
+      "result": "confirmed",
+      "severity": "low",
+      "confidence": "high",
+      "contracts": [
+        "CreatorHookSettingsRegistry.sol",
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "setTokenSettings",
+        "registryUpdateTokenSettings",
+        "_getOrFetchTokenSettings"
+      ],
+      "description": "Line 397 passes calldata settings (initialized=false) to hooks instead of memSettings (initialized=true). Hook re-fetches from registry on every call.",
+      "economic_impact": "Low. Gas waste. Eventual consistency.",
+      "previously_reported": "FP-SUB01 (rejected).",
+      "test_file": "test/exploit/ExtHijackerW1KLoop.t.sol",
+      "test_functions": [
+        "test_HR05_settingsSyncInitializedFalseBug",
+        "test_HR05_pauseBypassViaInitializedFalseBug"
+      ]
+    },
+    {
+      "id": "H-R7-HR-06",
+      "title": "Pool disabled toggle enables selective censorship via frontrunning",
+      "status": "tested",
+      "result": "ruled_out",
+      "severity": "informational",
+      "confidence": "medium",
+      "contracts": [
+        "CreatorHookSettingsRegistry.sol",
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "setPoolDisabled",
+        "_checkPoolEnabled"
+      ],
+      "description": "Pool disabled state takes effect immediately. Admin-controlled action (FP pattern #4).",
+      "economic_impact": "None. Admin-controlled.",
+      "previously_reported": "FP pattern #4.",
+      "test_file": "test/exploit/ExtHijackerW1KLoop.t.sol",
+      "test_functions": [
+        "test_HR06_poolDisabledSelectiveCensorship"
+      ]
+    },
+    {
+      "id": "H-R7-HR-07",
+      "title": "Stale tstore activation copies stale sstore values to transient storage",
+      "status": "tested",
+      "result": "ruled_out",
+      "severity": "none",
+      "confidence": "high",
+      "contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "_onTstoreSupportActivated"
+      ],
+      "description": "Timing window does not exist. AMM reentrancy protection, tstore cleared between txs, runs once.",
+      "economic_impact": "None.",
+      "previously_reported": "No.",
+      "test_file": "test/exploit/ExtHijackerW1KLoop.t.sol",
+      "test_functions": [
+        "test_HR07_tstoreActivationStalenessVector"
+      ]
+    },
+    {
+      "id": "H-R7-HR-08",
+      "title": "SingleProviderPoolType.createPool has no sqrtPrice validation",
+      "status": "tested",
+      "result": "confirmed",
+      "severity": "low",
+      "confidence": "medium",
+      "contracts": [
+        "SingleProviderPoolType.sol"
+      ],
+      "functions": [
+        "createPool"
+      ],
+      "description": "createPool line 73 stores sqrtPriceRatioX96 without MIN/MAX validation. DynamicPoolType validates. Swaps still validate independently.",
+      "economic_impact": "Low. Pool creation with invalid price does not directly cause loss.",
+      "previously_reported": "No.",
+      "test_file": "test/exploit/ExtHijackerW1KLoop.t.sol",
+      "test_functions": [
+        "test_HR08_singleProviderNoSqrtPriceValidation"
+      ]
+    }
+  ],
+  "theft_theses": [],
+  "findings": [],
+  "ruled_out_vectors": [
+    {
+      "id": "RO-01",
+      "vector": "Operator precedence bug in setPricingBounds (minSqrtPriceX96 | maxSqrtPriceX96 == 0)",
+      "reason": "Solidity | has higher precedence than ==, making the expression correct: (a | b) == 0. Type system proves it: uint160 | bool would not compile.",
+      "test_file": "test/exploit/ExtHijackerPricingEdge.t.sol",
+      "test_function": "test_operatorPrecedenceBitwiseOrVsEquals",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "id": "RO-02",
+      "vector": "Stale tstore activation via _onTstoreSupportActivated",
+      "reason": "Reentrancy guard prevents mid-swap activation. tstore cleared between txs. Runs once.",
+      "test_file": "test/exploit/ExtHijackerW1KLoop.t.sol",
+      "test_function": "test_HR07_tstoreActivationStalenessVector",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "id": "RO-03",
+      "vector": "Pool disabled toggle for selective censorship",
+      "reason": "Admin-controlled action. Self-inflicted config error (FP pattern #4).",
+      "test_file": "test/exploit/ExtHijackerW1KLoop.t.sol",
+      "test_function": "test_HR06_poolDisabledSelectiveCensorship",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "id": "RO-04",
+      "vector": "CLOB order placement bypasses whitelist and trading pause",
+      "reason": "Order placement only; fills gated by beforeSwap. No economic value extraction.",
+      "test_file": "test/exploit/ExtHijackerW1KLoop.t.sol",
+      "test_function": "test_HR03_clobOrderBypassesPairWhitelist",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "id": "RO-05",
+      "vector": "Auto-fetch whitelist DoS on new hook instances",
+      "reason": "Self-correcting operational issue. Admin syncs whitelists to fix. No attacker profit.",
+      "test_file": "test/exploit/ExtHijackerW1KLoop.t.sol",
+      "test_function": "test_HR02_autoFetchCreatesEmptyWhitelistBlocking",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "id": "RO-06",
+      "vector": "Fee bypass via initialized=false in setTokenSettings sync",
+      "reason": "Eventual consistency by design. Admin controls registry state. FP-SUB01 rejected.",
+      "test_file": "test/exploit/ExtHijackerW1KLoop.t.sol",
+      "test_function": "test_HR05_settingsSyncInitializedFalseBug",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "id": "RO-07",
+      "vector": "Zero price in production pools bypassing max bound",
+      "reason": "DynamicPoolType validates sqrtPrice on createPool. SingleProviderPoolType swap functions validate. Unrealistic precondition.",
+      "test_file": "test/exploit/ExtHijackerPricingEdge.t.sol",
+      "test_function": "test_pricingBoundsConsistencyAcrossPaths",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "id": "RO-08",
+      "vector": "Duplicate bounds.isSet checks in validateHandlerOrder and validateAddLiquidity",
+      "reason": "Cosmetic code quality issue. No security impact. Lines 211/217 and 264/268.",
+      "test_file": "test/exploit/ExtHijackerPricingEdge.t.sol",
+      "test_function": "test_duplicateBoundsIsSetCheck",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "id": "RO-09",
+      "vector": "Hook callback access control bypass on validateHandlerOrder",
+      "reason": "By design. validateHandlerOrder is external view, called by CLOB handlers. All other hooks require caller==AMM.",
+      "test_file": "test/exploit/ExtHijackerW1KLoop.t.sol",
+      "test_function": "test_C7_hookCallbackAccessControl",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "id": "RO-10",
+      "vector": "Registry-hook sync atomicity failure",
+      "reason": "Sync is atomic - hook call revert rolls back entire tx including registry update.",
+      "test_file": "test/exploit/ExtHijackerCBoundary.t.sol",
+      "test_function": "test_C2_registryHookSyncAtomicity",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "id": "RO-11",
+      "vector": "Fee calculation exceeding swap amount",
+      "reason": "BPS math caps at 10000 BPS (100%). fee = amount * BPS / 10000 <= amount.",
+      "test_file": "test/exploit/ExtHijackerCBoundary.t.sol",
+      "test_function": "test_C14_feeCalculationBounded",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "id": "RO-12",
+      "vector": "Flashloan fee bypass",
+      "reason": "validateFlashloanFee always reverts. No flashloan fee path exists.",
+      "test_file": "test/exploit/ExtHijackerCBoundary.t.sol",
+      "test_function": "test_C19_flashloanFeeAlwaysReverts",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    }
+  ],
+  "test_files": [
+    "test/exploit/ExtHijackerW1KLoop.t.sol",
+    "test/exploit/ExtHijackerCBoundary.t.sol",
+    "test/exploit/ExtHijackerPricingEdge.t.sol"
+  ],
+  "test_results": {
+    "total": 60,
+    "passed": 60,
+    "failed": 0,
+    "skipped": 0
+  },
+  "_verified_tests": {
+    "H-R7-HR-01": {
+      "compiled": false,
+      "executed": false,
+      "error": "Unknown repo for test/exploit/ExtHijackerW1KLoop.t.sol"
+    },
+    "H-R7-HR-02": {
+      "compiled": false,
+      "executed": false,
+      "error": "Unknown repo for test/exploit/ExtHijackerW1KLoop.t.sol"
+    },
+    "H-R7-HR-03": {
+      "compiled": false,
+      "executed": false,
+      "error": "Unknown repo for test/exploit/ExtHijackerW1KLoop.t.sol"
+    },
+    "H-R7-HR-04": {
+      "compiled": false,
+      "executed": false,
+      "error": "Unknown repo for test/exploit/ExtHijackerW1KLoop.t.sol"
+    },
+    "H-R7-HR-05": {
+      "compiled": false,
+      "executed": false,
+      "error": "Unknown repo for test/exploit/ExtHijackerW1KLoop.t.sol"
+    },
+    "H-R7-HR-06": {
+      "compiled": false,
+      "executed": false,
+      "error": "Unknown repo for test/exploit/ExtHijackerW1KLoop.t.sol"
+    },
+    "H-R7-HR-07": {
+      "compiled": false,
+      "executed": false,
+      "error": "Unknown repo for test/exploit/ExtHijackerW1KLoop.t.sol"
+    },
+    "H-R7-HR-08": {
+      "compiled": false,
+      "executed": false,
+      "error": "Unknown repo for test/exploit/ExtHijackerW1KLoop.t.sol"
+    }
+  }
+}

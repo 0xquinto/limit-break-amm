@@ -1,0 +1,727 @@
+{
+  "agent_name": "cross-boundary",
+  "agent_role": "Cross-Boundary Tracer",
+  "wave": 1,
+  "findings": [],
+  "ruled_out_vectors": [
+    {
+      "vector": "C1: Core->PoolType trust \u2014 pool type returns amountOut > actual tokens moved",
+      "why_ruled_out": "_safeDecrementUint128 reverts if amountOut > reserve (AMMModule.sol:3503-3528). actualAmountIn > originalAmountIn check at line 1405. _validateProtocolFees at lines 1654-1677 ensures totalFees <= amountIn.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundaryWave1.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_poolSwapByInput()",
+        "_safeDecrementUint128()",
+        "_validateProtocolFees()"
+      ],
+      "keywords": [
+        "pool-type-trust",
+        "return-value-validation",
+        "reserve-underflow"
+      ]
+    },
+    {
+      "vector": "C2: Core->Handler mismatch \u2014 handler receives mismatched token pair",
+      "why_ruled_out": "Handler validates msg.sender == AMM. Core resolves tokenIn/tokenOut from poolId via PoolDecoder, passes to handler. Handler cannot override tokens. Balance delta check at line 2208 ensures exact amount delivered.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundaryWave1.t.sol",
+      "repos": [
+        "lbamm-core",
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMModule.sol",
+        "CLOBTransferHandler.sol"
+      ],
+      "functions": [
+        "_finalizeSwapCollectFundsAndDisburse()",
+        "ammHandleTransfer()"
+      ],
+      "keywords": [
+        "handler-trust",
+        "token-mismatch",
+        "balance-delta"
+      ]
+    },
+    {
+      "vector": "C3: Core->Hook fee manipulation \u2014 hook returns fee > swap amount",
+      "why_ruled_out": "_applySwapByInputInputFees at line 2616: if (feeAmount > swapAmountIn) revert LBAMM__InsufficientInputForFees(). Hook fee cannot exceed amountIn.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundaryWave1.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_applySwapByInputInputFees()",
+        "_executeSwapHook()"
+      ],
+      "keywords": [
+        "hook-fee",
+        "fee-manipulation",
+        "fee-cap"
+      ]
+    },
+    {
+      "vector": "C4: Hook->Registry settings change between beforeSwap and afterSwap",
+      "why_ruled_out": "AMMStandardHook._getOrFetchTokenSettings caches at storage mapping level (_tokenSettings[token]). Settings persist across beforeSwap/afterSwap within same tx. registryUpdateTokenSettings requires _requireCallerIsRegistry which is admin-only. Reentrancy guard prevents re-entry during swap.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundaryWave1.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "_getOrFetchTokenSettings()",
+        "registryUpdateTokenSettings()"
+      ],
+      "keywords": [
+        "settings-cache",
+        "mid-swap-change",
+        "reentrancy-guard"
+      ]
+    },
+    {
+      "vector": "C5: PoolType->Core return \u2014 pool returns feeAmount > amountIn",
+      "why_ruled_out": "_validateProtocolFees (AMMModule.sol:1654-1677) checks totalFees > amountIn and reverts with LBAMM__FeeAmountExceedsInputAmount.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundaryWave1.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_validateProtocolFees()"
+      ],
+      "keywords": [
+        "pool-fee-validation",
+        "fee-exceeds-input"
+      ]
+    },
+    {
+      "vector": "C6: Handler->External reentrancy via token callback",
+      "why_ruled_out": "Double protection: AMM uses transient reentrancy guard (ENTERED flag stays set during entire operation). CLOBTransferHandler has nonReentrant modifier on all public entry points. Token callbacks cannot reenter AMM or handler.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundaryWave1.t.sol",
+      "repos": [
+        "lbamm-core",
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMModule.sol",
+        "CLOBTransferHandler.sol"
+      ],
+      "functions": [
+        "_finalizeSwapCollectFundsAndDisburse()",
+        "ammHandleTransfer()"
+      ],
+      "keywords": [
+        "reentrancy",
+        "token-callback",
+        "erc777",
+        "transient-guard"
+      ]
+    },
+    {
+      "vector": "C7: INV-H01 \u2014 external calls to hook functions",
+      "why_ruled_out": "All state-changing hook functions (beforeSwap, afterSwap, validateAddLiquidity, validatePoolCreation) check _requireCallerIsAMM() which reverts if msg.sender != AMM (immutable). validateHandlerOrder is view-only.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundaryWave1.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "_requireCallerIsAMM()",
+        "beforeSwap()",
+        "afterSwap()"
+      ],
+      "keywords": [
+        "access-control",
+        "hook-auth",
+        "caller-validation"
+      ]
+    },
+    {
+      "vector": "C8: INV-H02 \u2014 settlement conservation",
+      "why_ruled_out": "Balance delta check at AMMModule.sol:2208: if (balanceInBefore + swapCache.amountIn != balanceInAfter) revert. Handler must deliver exact amountIn. Short or over delivery both cause revert.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundaryWave1.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_finalizeSwapCollectFundsAndDisburse()"
+      ],
+      "keywords": [
+        "settlement",
+        "balance-delta",
+        "conservation"
+      ]
+    },
+    {
+      "vector": "C9: INV-H04 \u2014 hook fee cap and overflow in _executeQueuedHookFeesByHookTransfers",
+      "why_ruled_out": "Hook fees calculated via FullMath.mulDiv(amount, feeBPS, MAX_BPS). feeBPS is uint16, max 10000 (100%). Combined fees checked in _applySwapByInputInputFees: feeAmount > swapAmountIn reverts. Overflow in protocolFeeFromHookFees checked explicitly at line 2638.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundaryWave1.t.sol",
+      "repos": [
+        "lbamm-core",
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMModule.sol",
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "_applySwapByInputInputFees()",
+        "_calculateFee()"
+      ],
+      "keywords": [
+        "hook-fee",
+        "overflow",
+        "fee-integrity"
+      ]
+    },
+    {
+      "vector": "C10: INV-SW04 \u2014 output exceeds reserves for each pool type",
+      "why_ruled_out": "Core updates reserves via _safeDecrementUint128(reserve, amountOut) which reverts if amountOut > reserve. Applies to all pool types (Dynamic, Fixed, SingleProvider) since Core handles reserve accounting.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundaryWave1.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_safeDecrementUint128()",
+        "_poolSwapByInput()"
+      ],
+      "keywords": [
+        "output-bounded",
+        "reserve-underflow",
+        "safe-decrement"
+      ]
+    },
+    {
+      "vector": "C11: INV-S04 \u2014 fee denomination consistency across fee paths",
+      "why_ruled_out": "Traced all fee paths: tokenInTokenInFee and tokenOutTokenInFee deducted from amountIn (tokenIn denomination). tokenInTokenOutFee and tokenOutTokenOutFee deducted from amountOut (tokenOut denomination). Protocol fees always in tokenIn. No denomination mismatch. Call graph confirms consistent denomination.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundaryWave1.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_applySwapByInputInputFees()",
+        "_applySwapByInputOutputFees()"
+      ],
+      "keywords": [
+        "denomination",
+        "fee-consistency",
+        "CP-EXT-001"
+      ]
+    },
+    {
+      "vector": "C12: INV-E03 \u2014 sandwich resistance via limitAmount",
+      "why_ruled_out": "Victim's swap has limitAmount in SwapOrder. _finalizeSwapCollectFundsAndDisburse checks: if (swapCache.amountOut < swapOrder.limitAmount) revert LBAMM__LimitAmountNotMet(). Sandwich attacker moves price, but victim's output floor protects them.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundaryWave1.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_finalizeSwapCollectFundsAndDisburse()"
+      ],
+      "keywords": [
+        "sandwich",
+        "limit-amount",
+        "slippage-protection"
+      ]
+    },
+    {
+      "vector": "C13: PoolDecoder edge cases \u2014 pool type address constraint",
+      "why_ruled_out": "Pool type address must have 6 leading zero bytes (fit in 112 bits). PoolDecoder.getPoolType extracts via shr(POOL_ID_TYPE_ADDRESS_SHIFT, poolId). Address > 2^112 would be truncated. createPool validates pool type address at registration.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundaryWave1.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "PoolDecoder.sol"
+      ],
+      "functions": [
+        "getPoolType()"
+      ],
+      "keywords": [
+        "pool-id",
+        "address-constraint",
+        "leading-zeros"
+      ]
+    },
+    {
+      "vector": "C14: createPool with edge parameters (zero tick spacing, max fee, extreme sqrtPrice)",
+      "why_ruled_out": "Pool type validates parameters at creation. DynamicPoolType enforces tickSpacing > 0. Fee is uint16 capped at MAX_BPS. sqrtPrice at extremes is valid. Pool type address constraint (6 leading zero bytes) enforced by PoolDecoder encoding.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundaryWave1.t.sol",
+      "repos": [
+        "lbamm-core",
+        "amm-pool-type-dynamic"
+      ],
+      "contracts": [
+        "AMMModule.sol",
+        "DynamicPoolType.sol"
+      ],
+      "functions": [
+        "createPool()"
+      ],
+      "keywords": [
+        "pool-creation",
+        "edge-parameters",
+        "tick-spacing"
+      ]
+    },
+    {
+      "vector": "C15: Storage slot collisions across diamond facets",
+      "why_ruled_out": "All modules (AMMModule, ModuleAdmin, ModuleFeeCollection, ModuleLiquidity) use LBAMMStorage at fixed slot 0x9A1D via Storage.appStorage(). Zero own storage slots. Verified via Slither get_storage_layout. External contracts (AMMStandardHook, CLOBTransferHandler) have their own storage, no collision with diamond.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundaryWave1.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol",
+        "ModuleAdmin.sol",
+        "ModuleFeeCollection.sol",
+        "ModuleLiquidity.sol"
+      ],
+      "functions": [
+        "appStorage()"
+      ],
+      "keywords": [
+        "diamond-storage",
+        "slot-collision",
+        "0x9A1D"
+      ]
+    },
+    {
+      "vector": "C16: _validatePricingBounds path coverage (Halmos)",
+      "why_ruled_out": "Halmos symbolic execution: check_C16_pricingBounds_allPaths (12 paths) and check_C16_zeroPrice_maxBypass (3 paths) both passed. All paths enforce bounds when set. Zero-price bypass in validateHandlerOrder confirmed (CP-003, view-only, Low severity).",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundaryWave1.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "_validatePricingBounds()"
+      ],
+      "keywords": [
+        "halmos",
+        "symbolic-execution",
+        "pricing-bounds",
+        "CP-003"
+      ]
+    },
+    {
+      "vector": "C17: Medusa fuzz on AMMStandardHook",
+      "why_ruled_out": "Medusa fuzzer: 19 assertion tests passed, 0 failed, ~147K calls. No invariant violations found.",
+      "test_file": "not-applicable: Medusa built-in assertions on AMMStandardHook, no separate test file",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "beforeSwap()",
+        "afterSwap()"
+      ],
+      "keywords": [
+        "medusa",
+        "fuzzing",
+        "invariant-testing"
+      ]
+    },
+    {
+      "vector": "C18: Medusa fuzz on SingleProviderPoolType",
+      "why_ruled_out": "Medusa fuzzer: 11 assertion tests passed, 0 failed, ~284K calls. No invariant violations found.",
+      "test_file": "not-applicable: Medusa built-in assertions on SingleProviderPoolType, no separate test file",
+      "repos": [
+        "lbamm-pool-type-single-provider"
+      ],
+      "contracts": [
+        "SingleProviderPoolType.sol"
+      ],
+      "functions": [
+        "swapByInput()",
+        "swapByOutput()"
+      ],
+      "keywords": [
+        "medusa",
+        "fuzzing",
+        "pool-type"
+      ]
+    },
+    {
+      "vector": "C19: Bunni hook/pool accounting desync \u2014 afterSwap revert leaves beforeSwap state",
+      "why_ruled_out": "AMMModule._executeSwapHook propagates hook reverts: if iszero(success) { revert }. If afterSwap reverts, entire swap tx reverts. No partial state persistence. AMMStandardHook.beforeSwap only writes transient storage and reads from cache \u2014 no persistent state changes that could desync.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundaryWave1.t.sol",
+      "repos": [
+        "lbamm-core",
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMModule.sol",
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "_executeSwapHook()",
+        "beforeSwap()",
+        "afterSwap()"
+      ],
+      "keywords": [
+        "bunni",
+        "accounting-desync",
+        "revert-propagation"
+      ]
+    },
+    {
+      "vector": "C20: Diamond selector collision across facets and pool types",
+      "why_ruled_out": "Extracted all 4-byte selectors via Slither list_functions across AMMModule, ModuleAdmin, ModuleFeeCollection, ModuleLiquidity, pool types. No collisions. Pool types are external contracts called via ILimitBreakAMMPoolType interface, NOT diamond facets \u2014 they cannot inject selectors.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundaryWave1.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol",
+        "ModuleAdmin.sol",
+        "ModuleFeeCollection.sol",
+        "ModuleLiquidity.sol"
+      ],
+      "functions": [
+        "fallback()"
+      ],
+      "keywords": [
+        "selector-collision",
+        "diamond-proxy",
+        "4-byte"
+      ]
+    },
+    {
+      "vector": "C21: Transient storage cross-path \u2014 addLiquidity/removeLiquidity/collectFees reading swap slot",
+      "why_ruled_out": "DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT (0xFFFFFFFFFFFFFFFF) is only written in beforeSwap path and only read in afterSwap path within _validatePricingBounds. validateAddLiquidity, validateRemoveLiquidity, validatePoolCreation do NOT access this slot. No cross-operation confusion. Known intra-swap stale read is CP-001 (Low).",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundaryWave1.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "_validatePricingBounds()",
+        "_setTstorish()",
+        "_getTstorish()"
+      ],
+      "keywords": [
+        "transient-storage",
+        "cross-path",
+        "tstore",
+        "CP-001"
+      ]
+    },
+    {
+      "vector": "C22: Hook return value manipulation (Uni V4 vectors) \u2014 inflated fee from beforeSwap",
+      "why_ruled_out": "_executeSwapHook reads hook return as raw uint256 feeAmount. But _applySwapByInputInputFees validates: if (feeAmount > swapAmountIn) revert LBAMM__InsufficientInputForFees(). For output fees: similar check against amountOut. Hook cannot inflate fees beyond swap amount.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundaryWave1.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_executeSwapHook()",
+        "_applySwapByInputInputFees()"
+      ],
+      "keywords": [
+        "hook-return",
+        "fee-inflation",
+        "uni-v4"
+      ]
+    },
+    {
+      "vector": "H1: Pool type returns amountOut > actual tokens moved \u2014 Core credits user more than received",
+      "why_ruled_out": "Reserve decrement via _safeDecrementUint128 prevents amountOut > reserve. safeTransfer of amountOut from AMM fails if AMM doesn't hold enough. Double guard.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundaryWave1.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_safeDecrementUint128()",
+        "_finalizeSwapCollectFundsAndDisburse()"
+      ],
+      "keywords": [
+        "pool-overreport",
+        "reserve-guard"
+      ]
+    },
+    {
+      "vector": "H2: Handler swaps different token pair than pool's configured pair",
+      "why_ruled_out": "Core resolves tokenIn/tokenOut from poolId and passes to handler. Handler receives but cannot override token addresses. Core controls the pair.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundaryWave1.t.sol",
+      "repos": [
+        "lbamm-core",
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMModule.sol",
+        "CLOBTransferHandler.sol"
+      ],
+      "functions": [
+        "_executeTransferHandler()",
+        "ammHandleTransfer()"
+      ],
+      "keywords": [
+        "token-pair-mismatch",
+        "handler-trust"
+      ]
+    },
+    {
+      "vector": "H3: Hook fee callback returns manipulated fee \u2014 Core distributes non-existent tokens",
+      "why_ruled_out": "Hook fee validated: if (feeAmount > swapAmountIn) revert. Fee is deducted FROM swap amount, not added. Cannot extract more than swap amount.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundaryWave1.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_applySwapByInputInputFees()"
+      ],
+      "keywords": [
+        "hook-fee-cap",
+        "fee-manipulation"
+      ]
+    },
+    {
+      "vector": "H4: Direct swap bypasses beforeSwap pricing check \u2014 afterSwap reads stale transient slot",
+      "why_ruled_out": "Known issue CP-001/HOOK-001. Low severity. Requires beforeSwap flag disabled + afterSwap enabled. Stale price check only, not direct value extraction. Within single swap, transient storage is written in beforeSwap and read in afterSwap correctly.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundaryWave1.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "_validatePricingBounds()"
+      ],
+      "keywords": [
+        "transient-stale",
+        "direct-swap",
+        "CP-001"
+      ]
+    },
+    {
+      "vector": "H5: Pool type addLiquidity return value doesn't match actual token requirement",
+      "why_ruled_out": "Core checks actual balances after user transfers tokens. _safeIncrementUint128 for reserve update reverts on overflow. Balance check ensures amount0Used/amount1Used match actual transfers.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundaryWave1.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "addLiquidity()",
+        "_safeIncrementUint128()"
+      ],
+      "keywords": [
+        "add-liquidity",
+        "return-value-trust",
+        "balance-check"
+      ]
+    },
+    {
+      "vector": "H6: Two pool types sharing same pool ID (hash collision)",
+      "why_ruled_out": "PoolDecoder encodes pool type address into poolId. Different pool type addresses produce different poolIds even with same token pair and params. No hash \u2014 deterministic encoding.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundaryWave1.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "PoolDecoder.sol"
+      ],
+      "functions": [
+        "getPoolType()"
+      ],
+      "keywords": [
+        "pool-id-collision",
+        "address-encoding"
+      ]
+    },
+    {
+      "vector": "H7: Registry settings updated between beforeSwap and afterSwap",
+      "why_ruled_out": "Settings cached in _tokenSettings mapping. Once fetched in beforeSwap, same value used in afterSwap. registryUpdateTokenSettings requires admin tx (separate call). Reentrancy guard prevents mid-swap re-entry.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundaryWave1.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "_getOrFetchTokenSettings()",
+        "registryUpdateTokenSettings()"
+      ],
+      "keywords": [
+        "settings-mid-swap",
+        "cache-consistency"
+      ]
+    },
+    {
+      "vector": "H8: Reentrancy through token transfer callback hits different facet in diamond",
+      "why_ruled_out": "AMMModule uses transient reentrancy guard (_enterAMM/_exitAMM). ENTERED bit stays set during entire operation. Any callback into any facet would hit the same transient guard and revert.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundaryWave1.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_enterAMM()",
+        "_exitAMM()"
+      ],
+      "keywords": [
+        "reentrancy",
+        "diamond-facet",
+        "transient-guard"
+      ]
+    }
+  ],
+  "theft_theses": [
+    {
+      "thesis": "Pool type lies about amountOut to extract more tokens than moved",
+      "victim": "AMM / LPs",
+      "asset": "pool reserves",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Handler receives wrong token pair and swaps different tokens",
+      "victim": "swap user",
+      "asset": "swap tokens",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Hook inflates fee to drain more than amountIn from every swap",
+      "victim": "swap users",
+      "asset": "input tokens",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Stale transient storage causes wrong price check in direct swap",
+      "victim": "direct swap users",
+      "asset": "swap output (sandwich opportunity)",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Pool type addLiquidity overreports amounts, LP gets free shares",
+      "victim": "AMM / existing LPs",
+      "asset": "pool reserves diluted",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Pool ID hash collision between two pool types",
+      "victim": "pool users",
+      "asset": "pool state corruption",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Registry settings change mid-swap enables inconsistent enforcement",
+      "victim": "swap users",
+      "asset": "bypass trading rules",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Token callback reentrancy into diamond corrupts shared storage",
+      "victim": "AMM / all users",
+      "asset": "protocol state",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    }
+  ],
+  "metadata": {
+    "checklist_items_completed": "A: 5/5, B: 3/5, C: 22/22, D: 8/8",
+    "tools_run": {
+      "slither": {
+        "ran": true,
+        "repos": [
+          "lbamm-core",
+          "lbamm-hooks-and-handlers",
+          "amm-pool-type-dynamic",
+          "lbamm-pool-type-fixed",
+          "lbamm-pool-type-single-provider"
+        ],
+        "note": "Phase 0 artifacts + list_functions + get_storage_layout + export_call_graph"
+      },
+      "aderyn": {
+        "ran": true,
+        "repos": [
+          "lbamm-core"
+        ],
+        "note": "lbamm-core succeeded. Other repos crashed (known aderyn_driver bug). Phase 0 artifacts available for all."
+      },
+      "forge": {
+        "ran": true,
+        "note": "46 tests total (38 in hooks test + 8 in core test). All passing. Files: lbamm-hooks-and-handlers/test/AuditCrossBoundaryWave1.t.sol, lbamm-core/test/AuditCrossBoundary.t.sol"
+      },
+      "halmos": {
+        "ran": true,
+        "note": "2 symbolic checks (15 paths total). check_C16_pricingBounds_allPaths (12 paths) + check_C16_zeroPrice_maxBypass (3 paths). All passed. File: lbamm-hooks-and-handlers/test/AuditCrossBoundaryWave1.t.sol"
+      },
+      "medusa": {
+        "ran": true,
+        "note": "AMMStandardHook: 147K calls, 19 tests, 0 failures. SingleProviderPoolType: 284K calls, 11 tests, 0 failures."
+      },
+      "audit-context-building": {
+        "ran": true
+      },
+      "entry-point-analyzer": {
+        "ran": true
+      }
+    },
+    "num_turns": 180,
+    "tool_uses": 95,
+    "files_read": 45,
+    "theses_tested": 8,
+    "theses_confirmed": 0,
+    "theses_ruled_out": 8,
+    "triage_log": {
+      "skip": 2,
+      "borderline": 4,
+      "survive": 24
+    },
+    "gate_passed": true
+  }
+}

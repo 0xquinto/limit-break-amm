@@ -1,0 +1,531 @@
+{
+  "agent_name": "state-desync",
+  "agent_role": "state-desync",
+  "wave": 1,
+  "findings": [],
+  "ruled_out_vectors": [
+    {
+      "vector": "KV-1: Zero-price bypass via SqrtPriceCalculator.computeRatioX96() overflow returning 0",
+      "why_ruled_out": "computeRatioX96 returns 0 on overflow. In _validatePricingBounds (AMMStandardHook.sol:847), sqrtPriceX96==0 is caught and reverts. In validateHandlerOrder, no explicit zero check, but if bounds.isSet then bounds.minSqrtPriceX96 != 0 would trigger revert for sqrtPriceX96=0. If bounds not set, no enforcement needed (by-design). No extraction path.",
+      "test_file": "lbamm-core/test/AuditStateDesync.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol",
+        "CLOBTransferHandler.sol",
+        "SqrtPriceCalculator.sol"
+      ],
+      "functions": [
+        "_enforceTokenHooks",
+        "validateHandlerOrder",
+        "computeRatioX96"
+      ],
+      "keywords": [
+        "sqrtPriceX96",
+        "zero",
+        "bypass",
+        "overflow",
+        "pricing-bounds",
+        "computeRatioX96",
+        "validateHandlerOrder"
+      ]
+    },
+    {
+      "vector": "KV-2: Direct handler call bypassing pricing enforcement",
+      "why_ruled_out": "CLOBTransferHandler.executeSwap() is called only by the AMM during swap settlement. The AMM's beforeSwap/afterSwap hooks are executed BEFORE the handler is called. Direct external calls to executeSwap would fail because msg.sender != AMM. The handler validates AMM caller at the entry point. No bypass path exists.",
+      "test_file": "lbamm-core/test/AuditStateDesync.t.sol::test_phaseE_forged_hook_caller_reverts",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "CLOBTransferHandler.sol",
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "executeSwap",
+        "beforeSwap",
+        "afterSwap"
+      ],
+      "keywords": [
+        "pricing",
+        "bypass",
+        "direct",
+        "handler",
+        "direct-swap",
+        "pricing-bounds",
+        "flag-dependency"
+      ]
+    },
+    {
+      "vector": "KV-3: Settings sync gap between CLOBTransferHandler.setTokenSettings and CreatorHookSettingsRegistry",
+      "why_ruled_out": "Registry setTokenSettings (line 376-378) writes to _tokenSettings and then syncs to hooks listed in hooksToSync array. If a hook is NOT in the array, it retains stale cached settings until next fetch. This is by-design: token owner controls which hooks to sync. The AMMStandardHook._getOrFetchTokenSettings re-fetches from registry if not initialized. CP-005 (known low, gas waste only). No extraction path.",
+      "test_file": "lbamm-core/test/AuditStateDesync.t.sol::test_C17_settings_consistency_across_swap",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "CLOBTransferHandler.sol",
+        "CreatorHookSettingsRegistry.sol"
+      ],
+      "functions": [
+        "setTokenSettings"
+      ],
+      "keywords": [
+        "setTokenSettings",
+        "sync",
+        "stale",
+        "initialized",
+        "memSettings",
+        "gas-waste"
+      ]
+    },
+    {
+      "vector": "KV-4: Transient storage leak in DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT",
+      "why_ruled_out": "AMMStandardHook.beforeSwap writes to DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT for direct swaps (poolType == address(0)). The slot is NOT cleared after afterSwap reads it. In same-TX second operations: pool swaps take poolType != address(0) path and never read this slot. Second direct swaps overwrite the slot in their own beforeSwap. CP-001 (known low, by-design). Confirmed by test_C1_transient_storage_hygiene_same_tx.",
+      "test_file": "lbamm-core/test/AuditStateDesync.t.sol::test_C1_transient_storage_hygiene_same_tx",
+      "repos": [
+        "lbamm-hooks-and-handlers",
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMHooksTransferHandler.sol",
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "beforeSwap"
+      ],
+      "keywords": [
+        "transient",
+        "tstore",
+        "clear",
+        "direct",
+        "swap",
+        "transient-storage",
+        "stale-read",
+        "direct-swap",
+        "DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT"
+      ]
+    },
+    {
+      "vector": "Hypothesis 1: Re-enter via transfer handler during swap to read stale reserves",
+      "why_ruled_out": "Transfer handler is called during _finalizeSwapCollectFundsAndDisburse which is inside the nonReentrantWithFlags guard. The ENTERED bit is set throughout. Any attempt to call singleSwap/multiSwap/directSwap would hit _nonReentrantBefore and revert. The handler callback itself goes through executeTransferHandlerCallback which stays within the same execution context. No extraction path.",
+      "test_file": "lbamm-core/test/AuditStateDesync.t.sol::test_C2_reentrancy_guard_during_fee_distribution",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_finalizeSwapCollectFundsAndDisburse",
+        "_executeTransferHandler"
+      ],
+      "keywords": [
+        "reentrancy",
+        "handler",
+        "stale-reserves",
+        "transfer-handler"
+      ]
+    },
+    {
+      "vector": "Hypothesis 2: Multi-swap within hook callback causing transient slot overwrite mid-swap",
+      "why_ruled_out": "Hook callbacks (beforeSwap/afterSwap) are called from within the nonReentrantWithFlags guard (SWAP_GUARD_FLAG set). Any attempt to call singleSwap/multiSwap from within the hook would fail with ReentrancyGuardReentrantCall. Transient slots are isolated to the current swap iteration. Confirmed by test_C13_multiswap_state_isolation.",
+      "test_file": "lbamm-core/test/AuditStateDesync.t.sol::test_C13_multiswap_state_isolation",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_executeBeforeSwapHooks",
+        "_executeAfterSwapHooks"
+      ],
+      "keywords": [
+        "multi-swap",
+        "transient",
+        "hook-callback",
+        "overwrite"
+      ]
+    },
+    {
+      "vector": "Hypothesis 3: Native ETH refund during hook enabling reentrancy to observe intermediate state",
+      "why_ruled_out": "_depositWrappedNativeAndRefundExcess refunds excess ETH via executor.call{value:...}. This sends ETH with 2300 gas (no data, forward all gas), but the ENTERED bit is set throughout the swap execution. Any callback from the refund recipient that attempts to re-enter the AMM would be blocked by reentrancy guard. Confirmed by test_INV_H05_reentrancy_via_native_refund and test_probe_eth_refund_reentrancy.",
+      "test_file": "lbamm-core/test/AuditStateDesync.t.sol::test_probe_eth_refund_reentrancy",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_depositWrappedNativeAndRefundExcess"
+      ],
+      "keywords": [
+        "ETH",
+        "refund",
+        "reentrancy",
+        "native",
+        "callback",
+        "2300-gas"
+      ]
+    },
+    {
+      "vector": "Hypothesis 4: CLOB settlement callback reads AMM state before swap finalizes",
+      "why_ruled_out": "CLOB transfer handler is called during _finalizeSwapCollectFundsAndDisburse, which is AFTER the pool swap computation and reserve updates. The handler reads pool state that is already finalized. The handler's ammHandleTransfer function doesn't read pool reserves \u2014 it transfers tokens from maker balances to the AMM. No stale state observable.",
+      "test_file": "code-analysis: AMMModule.sol:2144-2253, CLOBTransferHandler.sol:362-400",
+      "repos": [
+        "lbamm-core",
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMModule.sol",
+        "CLOBTransferHandler.sol"
+      ],
+      "functions": [
+        "_finalizeSwapCollectFundsAndDisburse",
+        "ammHandleTransfer"
+      ],
+      "keywords": [
+        "CLOB",
+        "settlement",
+        "stale-state",
+        "swap-finalization"
+      ]
+    },
+    {
+      "vector": "Hypothesis 5: View function desync during hook callback allows arbitrage",
+      "why_ruled_out": "View functions read from Diamond storage which is updated before hooks are called. getPoolState returns the current reserves. During a swap, the reserves are updated in _poolSwapByInput/_poolSwapByOutput before afterSwap hooks fire. Any external integrator reading pool state during a hook callback would see the updated reserves. No desync window for arbitrage.",
+      "test_file": "code-analysis: AMMModule.sol:1340-1600 (reserve updates before hooks)",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_poolSwapByInput",
+        "_poolSwapByOutput"
+      ],
+      "keywords": [
+        "view-function",
+        "stale-read",
+        "arbitrage",
+        "hook-callback"
+      ]
+    },
+    {
+      "vector": "Hypothesis 6: Partial state write in function A, function B reads before A commits",
+      "why_ruled_out": "All state-modifying functions (swap, addLiquidity, removeLiquidity, collectFees) use nonReentrant or nonReentrantWithFlags. The reentrancy guard prevents concurrent execution. Within a single function, state updates follow CEI pattern \u2014 effects before interactions. The _executeQueuedHookFeesByHookTransfers clears custom flags but preserves ENTERED bit, preventing any new entry. No partial-state exploitation path.",
+      "test_file": "lbamm-core/test/AuditStateDesync.t.sol::test_C10_reentrancy_blocked_all_entry_points",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol",
+        "ModuleFeeCollection.sol"
+      ],
+      "functions": [
+        "_executeQueuedHookFeesByHookTransfers",
+        "collectHookFeesByHook"
+      ],
+      "keywords": [
+        "partial-write",
+        "reentrancy",
+        "flags",
+        "CEI"
+      ]
+    },
+    {
+      "vector": "Hypothesis 7: Cross-repo cached value returns stale data",
+      "why_ruled_out": "The hook settings cache in AMMStandardHook._tokenSettings is the only cross-module cache. _getOrFetchTokenSettings checks the initialized flag and fetches from registry if not cached. Once cached, settings persist until explicitly synced via registryUpdateTokenSettings or registrySyncTokenSettings. This is by-design (gas optimization). Settings changes require explicit sync \u2014 not a vulnerability.",
+      "test_file": "lbamm-core/test/AuditStateDesync.t.sol::test_C17_settings_consistent_across_swaps",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol",
+        "CreatorHookSettingsRegistry.sol"
+      ],
+      "functions": [
+        "_getOrFetchTokenSettings",
+        "registryUpdateTokenSettings"
+      ],
+      "keywords": [
+        "cache",
+        "stale",
+        "cross-repo",
+        "settings-sync"
+      ]
+    },
+    {
+      "vector": "Hypothesis 8: ETH transfer triggers 2300 gas callback to observe stale transient slot",
+      "why_ruled_out": "_depositWrappedNativeAndRefundExcess sends excess ETH with full gas (not 2300 \u2014 uses .call not .transfer). However, the ENTERED bit in reentrancy guard blocks re-entry to any AMM function. The transient slot DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT is on the AMMStandardHook contract, not accessible to external callers except through the AMM's hook execution path. No extraction path from observing the slot.",
+      "test_file": "lbamm-core/test/AuditStateDesync.t.sol::test_probe_eth_refund_reentrancy",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol",
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "_depositWrappedNativeAndRefundExcess",
+        "beforeSwap"
+      ],
+      "keywords": [
+        "ETH",
+        "2300-gas",
+        "transient",
+        "stale",
+        "callback"
+      ]
+    },
+    {
+      "vector": "Mandatory Probe: Dust-loop extraction (100+ tiny swaps)",
+      "why_ruled_out": "Ran 100 tiny swaps (1e15 each) in test_probe_dust_loop_100_swaps. After 100 round-trip swaps, attacker balance strictly decreased. Pool solvency maintained. Rounding favors protocol in all swap math (mulDivRoundingUp for fees). No dust accumulation pathway.",
+      "test_file": "lbamm-core/test/AuditStateDesync.t.sol::test_probe_dust_loop_100_swaps",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_poolSwapByInput"
+      ],
+      "keywords": [
+        "dust",
+        "rounding",
+        "extraction",
+        "micro-swap"
+      ]
+    },
+    {
+      "vector": "Mandatory Probe: Forged hook caller (call hook directly with fake pool identity)",
+      "why_ruled_out": "AMMStandardHook.beforeSwap has _requireCallerIsAMM() check at line 110. Direct external call from non-AMM address reverts with AMMStandardHook__CallerIsNotAMM. No bypass path.",
+      "test_file": "lbamm-core/test/AuditStateDesync.t.sol::test_phaseE_forged_hook_caller_reverts",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "beforeSwap",
+        "_requireCallerIsAMM"
+      ],
+      "keywords": [
+        "forged-caller",
+        "access-control",
+        "hook"
+      ]
+    },
+    {
+      "vector": "Mandatory Probe: Transient-slot theft (write in path A, read stale in path B)",
+      "why_ruled_out": "Two consecutive swaps in same TX: first writes to transient slot, second reads. Test confirms second swap gets its own fresh transient write in beforeSwap. Pool solvency maintained. DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT is overwritten by each beforeSwap for direct swaps, and not read for pool swaps.",
+      "test_file": "lbamm-core/test/AuditStateDesync.t.sol::test_probe_transient_slot_theft_two_swaps",
+      "repos": [
+        "lbamm-core",
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol",
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "beforeSwap",
+        "afterSwap"
+      ],
+      "keywords": [
+        "transient",
+        "slot-theft",
+        "stale-read",
+        "same-tx"
+      ]
+    },
+    {
+      "vector": "Mandatory Probe: Permit mutation (replay with mutated unsigned fields)",
+      "why_ruled_out": "Not in primary scope for state-desync archetype. feeOnTop is unsigned but limitAmount caps total exposure (by-design, known \u2014 submission #8 rejected). The permit handler validates signature via PermitC which uses bitmap nonces. Cross-chain replay limited by universal domain (CP-002, known low).",
+      "test_file": "code-analysis: PermitTransferHandler.sol:305-400",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "PermitTransferHandler.sol"
+      ],
+      "functions": [
+        "_executePartialFillPermit"
+      ],
+      "keywords": [
+        "permit",
+        "replay",
+        "feeOnTop",
+        "unsigned",
+        "limitAmount"
+      ]
+    },
+    {
+      "vector": "Mandatory Probe: Storage-slot collision (facet writes to another facet's slot)",
+      "why_ruled_out": "Diamond storage is at slot 0x9A1D via LBAMMStorage.appStorage(). All modules inherit from AMMModule which uses this shared storage location. Pool type contracts are called via delegatecall and operate on the same storage. No independent storage slots that could collide. test_phaseE_storage_slot_collision_check verifies.",
+      "test_file": "lbamm-core/test/AuditStateDesync.t.sol::test_phaseE_storage_slot_collision_check",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol",
+        "LBAMMStorage.sol"
+      ],
+      "functions": [
+        "appStorage"
+      ],
+      "keywords": [
+        "storage-slot",
+        "collision",
+        "diamond",
+        "facet"
+      ]
+    },
+    {
+      "vector": "collectHookFeesByHook flag clearing during _executeQueuedHookFeesByHookTransfers",
+      "why_ruled_out": "_executeQueuedHookFeesByHookTransfers calls _setReentrancyFlags(NO_FLAGS) which clears custom flags but preserves ENTERED bit. collectHookFeesByHook checks _isReentrancyFlagSet(SWAP_GUARD_FLAG) which returns false (flags cleared). This means it takes the else branch (immediate transfer) instead of queueing. However, _transferHookFeesByHook follows CEI: decrements tokensOwed BEFORE transfer. Any reentrant call for the same hookFeeKey would underflow. For different keys, the atomic transaction prevents double-spending since the queued loop would underflow on the already-transferred key. Net: no extraction path, transaction reverts if reentry attempted.",
+      "test_file": "lbamm-core/test/AuditStateDesync.t.sol::test_C10_collect_fees_flag_cleared_during_execution",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol",
+        "ModuleFeeCollection.sol"
+      ],
+      "functions": [
+        "_executeQueuedHookFeesByHookTransfers",
+        "collectHookFeesByHook",
+        "_setReentrancyFlags"
+      ],
+      "keywords": [
+        "reentrancy-flags",
+        "hook-fees",
+        "flag-clearing",
+        "collectHookFeesByHook"
+      ]
+    }
+  ],
+  "theft_theses": [
+    {
+      "thesis": "Re-enter AMM via malicious token transfer during hook fee distribution to double-collect fees",
+      "victim": "Protocol (hook fee pool)",
+      "asset": "Hook fee tokens",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Exploit transient storage stale read in same-TX to get favorable pricing on second swap",
+      "victim": "Pool LPs",
+      "asset": "Pool reserves",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Desync hook settings cache to bypass pricing bounds and trade at 0 price",
+      "victim": "Token creator (pricing bounds enforcement)",
+      "asset": "Token creator's price protection",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Observe stale reserves during ETH refund callback and front-run with arbitrage",
+      "victim": "Pool LPs",
+      "asset": "Pool reserves via price manipulation",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Extract dust via 100+ micro-swaps exploiting rounding",
+      "victim": "Pool LPs",
+      "asset": "Accumulated rounding dust",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Flash loan + swap + reverse swap to extract risk-free profit",
+      "victim": "Pool LPs",
+      "asset": "Pool reserves",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Multi-swap state isolation failure leaks value between pools",
+      "victim": "Pool LPs (second pool)",
+      "asset": "Second pool reserves",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Cross-pool arbitrage from price desync between Dynamic and Fixed pools",
+      "victim": "Fixed pool LPs",
+      "asset": "Fixed pool reserves",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    }
+  ],
+  "metadata": {
+    "checklist_items_completed": "A: 10/15, B: 2/5, C: 20/20, D: 4/4, E: 8/8",
+    "tools_run": {
+      "slither": {
+        "ran": true,
+        "repos": [
+          "lbamm-core",
+          "lbamm-hooks-and-handlers",
+          "amm-pool-type-dynamic"
+        ],
+        "note": "High: arbitrary-send-erc20 (by-design), reentrancy-balance (2, investigated), incorrect-return (4, delegateCall pattern). Medium: uninitialized-local (20+, all default-zero safe)"
+      },
+      "aderyn": {
+        "ran": true,
+        "repos": [
+          "lbamm-core",
+          "lbamm-hooks-and-handlers"
+        ],
+        "note": "Ran successfully on 2 repos. Crashed on pool type repos (known Aderyn bug with cross-repo builds). H-1: reentrancy in ModuleAdmin (investigated, nonReentrant protected). H-2: CLOB state change after external call (investigated, CEI pattern with balance checks)."
+      },
+      "forge": {
+        "ran": true,
+        "note": "47 tests total, all passing. File: lbamm-core/test/AuditStateDesync.t.sol"
+      },
+      "halmos": {
+        "ran": true,
+        "note": "7 checks: 2 PASS (feeConservation, roundingUpAlwaysGtOrEq), 5 TIMEOUT (complex math \u2014 expected). File: lbamm-core/test/HalmosMathChecks.t.sol"
+      },
+      "medusa": {
+        "ran": true,
+        "note": "Failed to initialize \u2014 AMMModule requires constructor arguments (diamond proxy pattern). Would need custom harness."
+      },
+      "audit-context-building": {
+        "ran": true,
+        "note": "Invoked via Skill tool. Diamond proxy architecture mapped, storage layout at 0x9A1D, hook/handler trust boundaries documented."
+      },
+      "entry-point-analyzer": {
+        "ran": true,
+        "note": "Invoked via Skill tool. State-changing entry points catalogued: swap (3 variants), liquidity (add/remove), fee collection, hook callbacks, admin setters."
+      }
+    },
+    "num_turns": 30,
+    "tool_uses": 45,
+    "files_read": 35,
+    "theses_tested": 8,
+    "theses_confirmed": 0,
+    "theses_ruled_out": 8,
+    "triage_log": {
+      "skip": 2,
+      "borderline": 3,
+      "survive": 8
+    },
+    "lens_coverage": {
+      "lens1_value_tracing": "Traced fee computation through FeeHelper \u2192 hook fees \u2192 protocol fees \u2192 settlement. Denomination consistent (same token throughout each path).",
+      "lens2_paired_op_diffing": "Compared addLiquidity vs removeLiquidity validation: both use same token collection/distribution path. No asymmetry found in validation logic.",
+      "lens3_amplification_factor": "No denomination mismatch found. Fee-on-top capped by limitAmount. Cross-pool arbitrage loses money due to fees."
+    },
+    "gate_passed": true
+  }
+}

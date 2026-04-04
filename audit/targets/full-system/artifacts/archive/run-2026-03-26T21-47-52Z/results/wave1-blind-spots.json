@@ -1,0 +1,93 @@
+{
+  "covered": [
+    "EXP-02",
+    "EXP-03",
+    "EXP-04",
+    "EXP-05",
+    "EXP-06",
+    "EXP-07",
+    "EXP-08",
+    "EXP-09",
+    "EXP-10",
+    "EXP-12",
+    "EXP-13",
+    "EXP-15"
+  ],
+  "blind_spots": [
+    {
+      "id": "EXP-01",
+      "source": "cetus-2025-05",
+      "title": "Precision overflow in sqrt price calculation (Cetus $223M)",
+      "contracts": [
+        "SqrtPriceCalculator.sol",
+        "DynamicPoolType.sol"
+      ],
+      "functions": [
+        "computeRatioX96",
+        "swapByInput",
+        "swapByOutput"
+      ],
+      "category": "precision",
+      "keywords": [
+        "overflow",
+        "sqrtPrice",
+        "computeRatioX96",
+        "precision",
+        "zero",
+        "near-zero",
+        "tick",
+        "Q64.96"
+      ]
+    },
+    {
+      "id": "EXP-11",
+      "source": "erc4626-2026-03",
+      "title": "First depositor share inflation (ERC-4626 $240K)",
+      "contracts": [
+        "SingleProviderPoolType.sol",
+        "DynamicPoolType.sol"
+      ],
+      "functions": [
+        "addLiquidity",
+        "removeLiquidity"
+      ],
+      "category": "initialization",
+      "keywords": [
+        "first",
+        "depositor",
+        "inflation",
+        "share",
+        "donation",
+        "1 wei",
+        "zero",
+        "initialization",
+        "mint"
+      ]
+    },
+    {
+      "id": "EXP-14",
+      "source": "diamond-research-2025",
+      "title": "Diamond proxy selector collision across facets",
+      "contracts": [
+        "AMMModule.sol",
+        "ModuleAdmin.sol",
+        "ModuleFeeCollection.sol",
+        "ModuleLiquidity.sol"
+      ],
+      "functions": [],
+      "category": "proxy",
+      "keywords": [
+        "selector",
+        "collision",
+        "facet",
+        "diamond",
+        "4-byte",
+        "proxy",
+        "delegatecall",
+        "storage"
+      ]
+    }
+  ],
+  "coverage_pct": 80.0,
+  "summary": "12/15 exploit patterns covered (80.0%). Blind spots:\n  - EXP-01: Precision overflow in sqrt price calculation (Cetus $223M)\n  - EXP-11: First depositor share inflation (ERC-4626 $240K)\n  - EXP-14: Diamond proxy selector collision across facets"
+}

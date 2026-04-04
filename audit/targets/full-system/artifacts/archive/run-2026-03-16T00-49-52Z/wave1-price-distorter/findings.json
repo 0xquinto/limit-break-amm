@@ -1,0 +1,140 @@
+{
+  "agent_name": "price-distorter",
+  "agent_role": "Cross-Venue Price Distorter",
+  "wave": 1,
+  "findings": [],
+  "ruled_out_vectors": [
+    {
+      "vector": "KV-1 Zero-price bypass: computeRatioX96 returns 0 on overflow, validateHandlerOrder does not check for sqrtPriceX96==0 while _validatePricingBounds does",
+      "why_ruled_out": "validateHandlerOrder is view-only (no state changes). CLOB fills use stored currentPrice, not computed price. The zero bypass only affects the advisory pricing bounds check during order placement, not the actual fill math. No extraction path exists.",
+      "test_file": "code-analysis: AMMStandardHook.sol:198-226 vs AMMStandardHook.sol:847-850",
+      "repos": ["lbamm-hooks-and-handlers"],
+      "contracts": ["AMMStandardHook.sol", "CLOBTransferHandler.sol", "SqrtPriceCalculator.sol"],
+      "keywords": ["sqrtPriceX96", "zero", "bypass", "overflow", "pricing-bounds", "computeRatioX96", "validateHandlerOrder"],
+      "functions": ["_enforceTokenHooks", "validateHandlerOrder", "computeRatioX96"]
+    },
+    {
+      "vector": "KV-2 Direct handler call: calling CLOBTransferHandler.executeSwap() directly bypasses pricing enforcement",
+      "why_ruled_out": "CLOBTransferHandler has no executeSwap function. ammHandleTransfer requires msg.sender == AMM (line 230). All CLOB entry points (deposit, withdraw, openOrder, closeOrder) are user-facing and don't bypass hooks. ammHandleTransfer is only callable by the AMM during swap settlement.",
+      "test_file": "code-analysis: CLOBTransferHandler.sol:230-231 (msg.sender != AMM check)",
+      "repos": ["lbamm-hooks-and-handlers"],
+      "contracts": ["CLOBTransferHandler.sol", "AMMStandardHook.sol"],
+      "keywords": ["pricing", "bypass", "direct", "handler", "direct-swap", "pricing-bounds", "flag-dependency"],
+      "functions": ["executeSwap", "beforeSwap", "afterSwap"]
+    },
+    {
+      "vector": "KV-3 Settings sync gap: setTokenSettings may leave stale memSettings in CreatorHookSettingsRegistry",
+      "why_ruled_out": "This is confirmed pattern CP-005 (v1-L03). It causes redundant storage writes (gas waste) but no value extraction. The initialized field cannot desync in a way that bypasses security checks because both paths write to the same storage slot.",
+      "test_file": "code-analysis: CreatorHookSettingsRegistry.sol:357-401",
+      "repos": ["lbamm-hooks-and-handlers"],
+      "contracts": ["CLOBTransferHandler.sol", "CreatorHookSettingsRegistry.sol"],
+      "keywords": ["setTokenSettings", "sync", "stale", "initialized", "memSettings", "gas-waste"],
+      "functions": ["setTokenSettings"]
+    },
+    {
+      "vector": "KV-4 Transient storage leak: DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT not cleared on all paths",
+      "why_ruled_out": "This is confirmed pattern CP-001 (HOOK-001). The slot is written in beforeSwap (line 839) for direct swaps and read in afterSwap (lines 843-844). When afterSwap flag is disabled but beforeSwap is enabled for a second swap in the same tx, afterSwap reads stale data. However, this requires specific flag configuration (beforeSwap enabled + afterSwap disabled) which is creator-controlled. Impact is limited to incorrect pricing bounds validation for the second swap's afterSwap, which is a Low severity issue already known.",
+      "test_file": "code-analysis: AMMStandardHook.sol:838-851",
+      "repos": ["lbamm-hooks-and-handlers"],
+      "contracts": ["AMMHooksTransferHandler.sol", "AMMStandardHook.sol"],
+      "keywords": ["transient", "tstore", "clear", "direct", "swap", "transient-storage", "stale-read", "direct-swap", "DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT"],
+      "functions": ["beforeSwap"]
+    },
+    {
+      "vector": "Flash loan + CLOB price distortion: use one venue to move price, extract on another",
+      "why_ruled_out": "CLOB orders are placed at maker-specified prices and filled at those prices. There is no shared oracle between AMM pools and CLOB. Flash loan cannot move CLOB prices because CLOB prices are set by individual maker orders, not by an AMM curve.",
+      "test_file": "code-analysis: CLOBHelper.sol:180-239 (fillOrder uses stored currentPrice)",
+      "repos": ["lbamm-hooks-and-handlers", "lbamm-core"],
+      "contracts": ["CLOBTransferHandler.sol", "AMMModule.sol"],
+      "keywords": ["flash-loan", "price-manipulation", "CLOB", "cross-venue"],
+      "functions": ["fillOrder", "_flashLoan"]
+    },
+    {
+      "vector": "SingleProviderPoolType oracle spoof via controlled hook: malicious hook returns extreme price",
+      "why_ruled_out": "Pool hook is set at pool creation by the LP and cannot be changed. The price is bounded by MIN_SQRT_RATIO/MAX_SQRT_RATIO check (SingleProviderPoolType.sol:328-330). A malicious LP creating a pool with a manipulated hook can only harm users who voluntarily swap through that pool — this is Tier B exploitability (requires custom handler). The LP is the victim if they set bad prices (self-inflicted).",
+      "test_file": "code-analysis: SingleProviderPoolType.sol:323-330 (price bounds check + onlyAMM modifier)",
+      "repos": ["lbamm-pool-type-single-provider"],
+      "contracts": ["SingleProviderPoolType.sol"],
+      "keywords": ["oracle", "hook", "price-manipulation", "single-provider"],
+      "functions": ["swapByInput", "getPoolPriceForSwap"]
+    },
+    {
+      "vector": "Direct swap bypasses pricing bounds checked by hooks",
+      "why_ruled_out": "Direct swaps DO execute beforeSwap and afterSwap hooks (AMMModule.sol:1836-1838). In _validatePricingBounds, when poolType is address(0) (direct swap), beforeSwap stores the amount in transient storage and afterSwap computes the price from both amounts. Pricing bounds ARE enforced for direct swaps, just via a different mechanism (transient storage + computeRatioX96 instead of pool's getCurrentPriceX96).",
+      "test_file": "code-analysis: AMMModule.sol:1836-1847 (hooks called) + AMMStandardHook.sol:838-851 (direct swap pricing)",
+      "repos": ["lbamm-core", "lbamm-hooks-and-handlers"],
+      "contracts": ["AMMModule.sol", "AMMStandardHook.sol"],
+      "keywords": ["direct-swap", "pricing-bounds", "bypass"],
+      "functions": ["_directSwap", "_validatePricingBounds"]
+    },
+    {
+      "vector": "snapPrice in addLiquidity allows arbitrary price movement",
+      "why_ruled_out": "addLiquidity in DynamicPoolType does NOT change the pool price (sqrtPriceX96). It adds liquidity at the current price range. The pool price only moves during swaps (computeSwap). Sandwich around addLiquidity is not possible because adding liquidity doesn't move price.",
+      "test_file": "code-analysis: DynamicHelper.sol:55-100 (modifyPosition does not change pool.sqrtPriceX96)",
+      "repos": ["amm-pool-type-dynamic"],
+      "contracts": ["DynamicPoolType.sol", "DynamicHelper.sol"],
+      "keywords": ["snapPrice", "addLiquidity", "sandwich", "price-movement"],
+      "functions": ["modifyPosition", "addLiquidity"]
+    },
+    {
+      "vector": "Dust-loop extraction: 100+ tiny swaps leak value to attacker each iteration",
+      "why_ruled_out": "Rounding in SqrtPriceMath, SwapMath, and all pool types favors the protocol (uses mulDivRoundingUp for amounts charged TO user, mulDiv for amounts paid TO user). Fuzz testing 27 tests x 25+ runs confirms no round-trip profit at realistic amounts. At extreme amounts near price bounds, rounding can compound to 1 wei per operation which is not economically viable after gas costs.",
+      "test_file": "amm-pool-type-dynamic/test/audit/AuditPriceDistorter.t.sol",
+      "repos": ["amm-pool-type-dynamic", "lbamm-pool-type-fixed", "lbamm-pool-type-single-provider"],
+      "contracts": ["SqrtPriceMath.sol", "SwapMath.sol", "SingleProviderHelper.sol"],
+      "keywords": ["dust", "rounding", "round-trip", "extraction"],
+      "functions": ["computeSwapByInputStep", "calculateFixedInput", "calculateFixedOutput"]
+    },
+    {
+      "vector": "Bypass slippage/deadline params to extract value",
+      "why_ruled_out": "Slippage is enforced at the AMM level: singleSwap checks amountSpecified against limitAmount, directSwap checks maxAmountOut/minAmountIn. These are user-specified parameters that cannot be manipulated by an attacker. Deadline is checked in the entry point before any swap logic runs.",
+      "test_file": "code-analysis: AMMModule.sol:1852-1854 (limitAmount check) + LimitBreakAMM.sol:189-200 (entry point checks)",
+      "repos": ["lbamm-core"],
+      "contracts": ["AMMModule.sol", "LimitBreakAMM.sol"],
+      "keywords": ["slippage", "deadline", "limit-amount"],
+      "functions": ["singleSwap", "_directSwap"]
+    }
+  ],
+  "theft_theses": [
+    {
+      "thesis": "Flash loan + CLOB price manipulation: borrow large, move AMM price, exploit CLOB orders at stale prices",
+      "victim": "CLOB makers with orders at pre-manipulation prices",
+      "asset": "Token difference between AMM-distorted and CLOB-stated prices",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Controlled hook returns fake sqrtPriceX96 in SingleProviderPool, attacker swaps at rigged price",
+      "victim": "Users swapping through attacker-controlled pool",
+      "asset": "Token output difference at manipulated vs fair price",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Dust-loop rounding extraction: iterated 1-wei swaps compound rounding errors",
+      "victim": "LP reserves in any pool type",
+      "asset": "Accumulated rounding dust over thousands of swaps",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    }
+  ],
+  "metadata": {
+    "checklist_items_completed": "A: 9/15, B: 0/3, C: 16/25, D: 4/4, E: 8/10",
+    "tools_run": {
+      "phase0_artifacts": {"read": true},
+      "slither": {"ran": true, "repos": ["lbamm-core", "amm-pool-type-dynamic", "lbamm-pool-type-single-provider"], "note": "3 repos, High+Medium filter"},
+      "aderyn": {"ran": true, "repos": ["lbamm-core"], "note": "Succeeded on lbamm-core, crashed on dynamic and single-provider (known cross-repo bug)"},
+      "forge": {"ran": true, "note": "36 tests total. Files: amm-pool-type-dynamic/test/audit/AuditPriceDistorter.t.sol, lbamm-pool-type-fixed/test/audit/AuditPriceDistorterFixed.t.sol, lbamm-pool-type-single-provider/test/audit/AuditPriceDistorterSP.t.sol"},
+      "halmos": {"ran": false, "reason": "No math findings requiring symbolic verification beyond fuzz testing"},
+      "medusa": {"ran": false, "reason": "Fuzz testing via forge sufficient for math invariants"},
+      "audit-context-building": {"ran": false, "reason": "Deferred in favor of direct code analysis"},
+      "entry-point-analyzer": {"ran": false, "reason": "Deferred in favor of direct code analysis"}
+    },
+    "num_turns": 20,
+    "tool_uses": 35,
+    "files_read": 25,
+    "theses_tested": 10,
+    "theses_confirmed": 0,
+    "theses_ruled_out": 10
+  }
+}

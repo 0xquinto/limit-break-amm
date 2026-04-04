@@ -1,0 +1,1075 @@
+{
+  "agent_name": "extension-hijacker",
+  "agent_role": "Extension Hijacker",
+  "wave": 1,
+  "findings": [
+    {
+      "id": "EH-001",
+      "title": "validateHandlerOrder overflow bypass: computeRatioX96 returns 0, max pricing bound check becomes 0 > max which is always false",
+      "severity": "medium",
+      "confidence_score": 75,
+      "confidence_deductions": [
+        {
+          "reason": "Requires CLOB handler to submit extreme ratio order",
+          "points": -10
+        },
+        {
+          "reason": "Token creator must set only maxSqrtPriceX96 (no min)",
+          "points": -10
+        },
+        {
+          "reason": "Impact limited to CLOB order validation path, not direct swaps",
+          "points": -5
+        }
+      ],
+      "status": "lead",
+      "category": "price-manipulation",
+      "source_hypothesis": "H-R5-HR-02",
+      "description": "When SqrtPriceCalculator.computeRatioX96 returns 0 due to uint160 overflow (tmpRatio > type(uint160).max at SqrtPriceCalculator.sol:51-52), validateHandlerOrder's max bound check at AMMStandardHook.sol:221 evaluates 0 > maxSqrtPriceX96 which is always false. Orders with extreme price ratios bypass the creator's max price ceiling. The parallel function _validatePricingBounds (line 847) has an explicit sqrtPriceX96==0 check that validateHandlerOrder lacks.",
+      "impact": "CLOB handler orders accepted at astronomical prices bypassing token creator's max price ceiling. Makers can place orders at extreme ratios that overflow computeRatioX96 to 0, creating unfillable or mispriced limit orders.",
+      "proof_sketch": "Forge test test_H_R5_HR_02_overflowBypassesMaxBound confirms: with maxSqrtPriceX96 set, calling validateHandlerOrder with amount1=type(uint256).max/2 and amount0=1 causes computeRatioX96 to return 0, and the function succeeds instead of reverting.",
+      "victim": "Token creators who set max price ceilings to protect their token from extreme CLOB orders",
+      "extractable_value": "Depends on CLOB handler fill mechanics - if extreme-ratio orders can be filled, maker profits from mispricing",
+      "attack_sequence": [
+        "1. Token creator sets maxSqrtPriceX96 on their token (common: 'token should not trade above X per USDC')",
+        "2. Attacker calls CLOB handler to create order with amount1=type(uint256).max/2, amount0=1",
+        "3. Handler calls validateHandlerOrder which computes sqrtPriceX96=0 due to overflow",
+        "4. Max bound check: 0 > maxSqrtPriceX96 = false, order accepted",
+        "5. Order is now validated at an astronomical price ratio that violates creator's intended ceiling"
+      ],
+      "test_file": "lbamm-hooks-and-handlers/test/AuditExtHijackerKLoop.t.sol",
+      "test_passes": true,
+      "prerequisites": [
+        "CLOB transfer handler in scope",
+        "Token with only max pricing bound set (no min)"
+      ],
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol",
+        "SqrtPriceCalculator.sol"
+      ],
+      "functions": [
+        "validateHandlerOrder()",
+        "computeRatioX96()"
+      ],
+      "lines": {
+        "AMMStandardHook.sol": [
+          198,
+          210,
+          215,
+          218,
+          221
+        ],
+        "SqrtPriceCalculator.sol": [
+          49,
+          50,
+          51,
+          52
+        ]
+      },
+      "keywords": [
+        "overflow",
+        "price-manipulation",
+        "pricing-bounds-bypass",
+        "CLOB"
+      ],
+      "code_smells": [
+        "AMMStandardHook.sol:215 - sqrtPriceX96 = computeRatioX96(amount1, amount0) can return 0 on overflow",
+        "AMMStandardHook.sol:221 - 0 > maxSqrtPriceX96 is always false, max bound never triggers on overflow",
+        "SqrtPriceCalculator.sol:51-52 - returns 0 when tmpRatio > type(uint160).max instead of reverting"
+      ],
+      "what_remains_unverified": "Whether a CLOB handler actually fills orders validated through validateHandlerOrder, and whether the extreme-ratio order can be profitably exploited by the maker",
+      "fp_gate": {
+        "location_exists": true,
+        "entry_reachable": true,
+        "no_existing_guard": true,
+        "concrete_attack_path": true,
+        "poc_compiles": true
+      },
+      "kill_gate": {
+        "status": "flagged",
+        "gate": "V2-refutation",
+        "reason": "Missing refutation_attempted \u2014 you must argue against your own finding before submitting"
+      }
+    },
+    {
+      "id": "EH-002",
+      "title": "validateHandlerOrder bypasses tradingIsPaused, blockDirectSwaps, checkDisabledPools, and whitelist checks",
+      "severity": "medium",
+      "confidence_score": 70,
+      "confidence_deductions": [
+        {
+          "reason": "Impact depends on CLOB handler semantics and order lifecycle",
+          "points": -15
+        },
+        {
+          "reason": "Orders placed during pause may not be fillable until unpause",
+          "points": -10
+        },
+        {
+          "reason": "Information advantage during pause window is situational",
+          "points": -5
+        }
+      ],
+      "status": "lead",
+      "category": "access-control",
+      "source_hypothesis": "H-R5-HR-04",
+      "description": "validateHandlerOrder (AMMStandardHook.sol:198-226) is external view with NO access control and NO trading rule enforcement. It performs zero checks for: tradingIsPaused, blockDirectSwaps, checkDisabledPools, pairedTokenWhitelistId. Compare with beforeSwap (lines 110-118) which enforces all of these. When a token admin pauses trading, CLOB handlers can still validate new orders through this function.",
+      "impact": "During trading pause, makers can place orders at stale prices via CLOB handlers. When trading resumes, these orders become immediately profitable against outdated pricing. Token admins lose the ability to fully halt trading activity.",
+      "proof_sketch": "Forge test test_H_R5_HR_04_validateHandlerOrderBypassesTradingPause confirms: with tradingIsPaused=true, validateHandlerOrder succeeds while beforeSwap reverts with AMMStandardHook__TradingPaused.",
+      "victim": "Token creators who pause trading expecting complete halt of order activity",
+      "extractable_value": "Information advantage profit during pause windows - depends on market conditions",
+      "attack_sequence": [
+        "1. Token admin pauses trading (tradingIsPaused=true) due to emergency",
+        "2. Market-moving information available during pause window",
+        "3. Attacker calls CLOB handler to place orders at current (stale) prices",
+        "4. Handler calls validateHandlerOrder - succeeds despite pause",
+        "5. When trading resumes, attacker's orders fill at stale prices for profit"
+      ],
+      "test_file": "lbamm-hooks-and-handlers/test/AuditExtHijackerKLoop.t.sol",
+      "test_passes": true,
+      "prerequisites": [
+        "CLOB transfer handler in scope",
+        "Token with tradingIsPaused=true"
+      ],
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "validateHandlerOrder()",
+        "beforeSwap()"
+      ],
+      "lines": {
+        "AMMStandardHook.sol": [
+          198,
+          207,
+          208,
+          210,
+          110,
+          116,
+          117
+        ]
+      },
+      "keywords": [
+        "access-control",
+        "trading-pause-bypass",
+        "CLOB",
+        "missing-check"
+      ],
+      "code_smells": [
+        "AMMStandardHook.sol:198 - external view with no _requireCallerIsAMM() guard",
+        "AMMStandardHook.sol:198-226 - no tradingIsPaused check unlike beforeSwap:116",
+        "AMMStandardHook.sol:198-226 - no blockDirectSwaps check unlike beforeSwap:117"
+      ],
+      "what_remains_unverified": "Whether CLOB handlers actually use validateHandlerOrder for order placement, and whether fill execution re-validates pricing",
+      "fp_gate": {
+        "location_exists": true,
+        "entry_reachable": true,
+        "no_existing_guard": true,
+        "concrete_attack_path": true,
+        "poc_compiles": true
+      },
+      "kill_gate": {
+        "status": "flagged",
+        "gate": "V2-refutation",
+        "reason": "Missing refutation_attempted \u2014 you must argue against your own finding before submitting"
+      }
+    },
+    {
+      "id": "EH-006",
+      "title": "Output swap partial fill does not adjust pre-stored hook fees proportionally",
+      "severity": "medium",
+      "confidence_score": 55,
+      "confidence_deductions": [
+        {
+          "reason": "Requires SingleProviderPoolType that does partial fills (specific pool type)",
+          "points": -15
+        },
+        {
+          "reason": "Requires output token hook with non-zero fees",
+          "points": -10
+        },
+        {
+          "reason": "Hook fee excess accumulates slowly over many partial fills",
+          "points": -10
+        },
+        {
+          "reason": "No direct theft - excess fees go to hook owner (token project)",
+          "points": -10
+        }
+      ],
+      "status": "lead",
+      "category": "accounting-error",
+      "source_hypothesis": "H-R5-DP-05",
+      "description": "In AMMModule._poolSwapByOutput (lines 1537-1603), output hook fees are calculated and stored BEFORE the pool type call. If the pool type performs a partial fill (actualAmountOut < originalAmountOut), the code adjusts amountOut and adjustedAmountSpecified but does NOT adjust the already-stored hook fees. The stored fees were calculated on the full amountOut, creating an overcharge that drains pool solvency over many partial fills.",
+      "impact": "Hook owner (token project) receives excess fees on every partial-filled output swap. Over many swaps, this creates a solvency drain on the pool.",
+      "proof_sketch": "Code analysis: _applySwapByOutputOutputFees stores hook fees at line 1537 based on full amountOut. Partial fill adjustment at lines 1576-1577 does not recalculate stored hook fees. Overcharge = hookFee(originalAmount) - hookFee(actualAmount).",
+      "victim": "LPs in pools where output token has hook fees and pool type supports partial fills",
+      "extractable_value": "hookFee(original) - hookFee(actual) per partial fill, compounds over many swaps",
+      "attack_sequence": [
+        "1. Pool exists with output token hook charging N% fee",
+        "2. SingleProviderPoolType set to partial fill output swaps",
+        "3. Attacker submits output swap for large amount",
+        "4. Hook fees stored: N% * originalAmountOut",
+        "5. Pool type partial fills: actualAmountOut = 50% of original",
+        "6. Adjustment reduces amountOut but not stored hook fees",
+        "7. Hook owner receives N% * originalAmountOut but fair value is N% * actualAmountOut"
+      ],
+      "test_file": "lbamm-hooks-and-handlers/test/AuditExtHijackerKLoop.t.sol",
+      "test_passes": true,
+      "prerequisites": [
+        "SingleProviderPoolType supporting partial fills",
+        "Output token with hook fees"
+      ],
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_poolSwapByOutput()",
+        "_applySwapByOutputOutputFees()"
+      ],
+      "lines": {
+        "AMMModule.sol": [
+          1537,
+          1548,
+          1558,
+          1576,
+          1577,
+          2871,
+          2887
+        ]
+      },
+      "keywords": [
+        "accounting-error",
+        "partial-fill",
+        "hook-fees",
+        "solvency-drain"
+      ],
+      "code_smells": [
+        "AMMModule.sol:1537 - hook fees applied BEFORE pool type call",
+        "AMMModule.sol:1576-1577 - partial fill adjustment does not recalculate hook fees"
+      ],
+      "what_remains_unverified": "Whether any deployed pool type actually performs partial fills, and the exact magnitude of fee overcharge per swap",
+      "fp_gate": {
+        "location_exists": true,
+        "entry_reachable": true,
+        "no_existing_guard": true,
+        "concrete_attack_path": true,
+        "poc_compiles": true
+      },
+      "kill_gate": {
+        "status": "killed",
+        "gate": "D",
+        "reason": "attack_sequence has no function references"
+      }
+    }
+  ],
+  "ruled_out_vectors": [
+    {
+      "vector": "H-R5-HR-01: setTokenSettings syncs initialized=false to hooks (auto-refetch mitigates)",
+      "why_ruled_out": "Gate demoted: no concrete attack path. Auto-refetch mechanism (_getOrFetchTokenSettings) provides eventual consistency. No direct profit extraction - settings always resolve to registry's current values on next swap. Self-inflicted config pattern.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditExtHijackerKLoop.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "CreatorHookSettingsRegistry.sol",
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "setTokenSettings()",
+        "registryUpdateTokenSettings()",
+        "_getOrFetchTokenSettings()"
+      ],
+      "keywords": [
+        "state-desync",
+        "settings-sync",
+        "initialized-false",
+        "auto-refetch"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "H-R5-HR-06: validateAddLiquidity sqrtPriceX96==0 bypass (same pattern as HR-02 in addLiquidity path)",
+      "why_ruled_out": "Gate demoted: no concrete attack path. Requires pool type to return sqrtPriceX96=0 (uninitialized/buggy pool). AMM-only callable, external attackers cannot reach directly. All whitelisted pool types return valid prices.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditExtHijackerKLoop.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "validateAddLiquidity()"
+      ],
+      "keywords": [
+        "price-manipulation",
+        "pricing-bounds-bypass",
+        "addLiquidity"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "H-R5-HR-11: Malicious pool type returns fake getCurrentPriceX96 if poolTypeWhitelistId=0",
+      "why_ruled_out": "Gate demoted: no concrete attack path + existing guard. Pool type address requires 6 leading zero bytes (hard to mine). AMM validates pool type at registration independently of hook whitelist. Pool creator is the attacker - self-inflicted if no whitelist set.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditExtHijackerKLoop.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers",
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol",
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_enforcePoolCreationSettings()",
+        "getCurrentPriceX96()"
+      ],
+      "keywords": [
+        "access-control",
+        "malicious-pool-type",
+        "pricing-bounds-bypass"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "H-R5-HR-03: Pool disable event gap when both tokens disable/re-enable pool",
+      "why_ruled_out": "Event logic is monitoring-only, not a security guard. Pool disabled state is correctly tracked in storage. Missing re-disable events don't affect on-chain enforcement. Off-chain monitoring gap has no profit path.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditExtHijackerKLoop.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "CreatorHookSettingsRegistry.sol"
+      ],
+      "functions": [
+        "setPoolDisabled()"
+      ],
+      "keywords": [
+        "event-gap",
+        "monitoring",
+        "pool-disabled"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "H-R5-HR-07: Whitelist content not synced to hook causes DoS for direct swaps",
+      "why_ruled_out": "Documented intentional design per CreatorHookSettingsRegistry NatSpec. Admin must explicitly sync whitelist content separately from settings sync. Self-inflicted config error pattern (FP #4 in digest).",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditExtHijackerRuledOut.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol",
+        "CreatorHookSettingsRegistry.sol"
+      ],
+      "functions": [
+        "_validateTokenTradingRules()",
+        "registryUpdateWhitelistPairToken()"
+      ],
+      "keywords": [
+        "whitelist-desync",
+        "intentional-design",
+        "self-inflicted"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "H-R5-HR-08: Pool creation bounds incomplete for cross-hook tokens (only one direction checked per hook)",
+      "why_ruled_out": "AMM calls validatePoolCreation on BOTH token hooks (hookForToken0=true for token0's hook, hookForToken0=false for token1's hook). Each hook checks its own direction. Combined, both directions are covered. Test confirms both hooks are called.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditExtHijackerKLoop.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers",
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol",
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_enforcePoolCreationSettings()",
+        "validatePoolCreation()"
+      ],
+      "keywords": [
+        "pool-creation",
+        "cross-hook",
+        "pricing-bounds"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "H-R5-HR-10: Tstorish activation desync between sstore and tstore for direct swap amount",
+      "why_ruled_out": "Transient storage resets every transaction. Within a single tx, beforeSwap always writes before afterSwap reads. Across transactions, tstore is always 0 at tx start, and beforeSwap writes fresh value. The _onTstoreSupportActivated copies atomically. No desync possible.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditExtHijackerKLoop.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "_setTstorish()",
+        "_getTstorish()",
+        "_onTstoreSupportActivated()"
+      ],
+      "keywords": [
+        "transient-storage",
+        "tstorish",
+        "activation-desync"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "H-R5-DP-01: createPool clears reentrancy guard before delegatecall to addLiquidity",
+      "why_ruled_out": "No external call between _clearReentrancyGuard at ModuleLiquidity.sol:79 and delegatecall at line 81. addLiquidity has its own nonReentrantWithFlags modifier which re-acquires the guard. The window is only Solidity opcode execution (no external calls to exploit).",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditExtHijackerKLoop.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "ModuleLiquidity.sol"
+      ],
+      "functions": [
+        "createPool()",
+        "_clearReentrancyGuard()"
+      ],
+      "keywords": [
+        "reentrancy",
+        "delegatecall",
+        "guard-clear"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "H-R5-DP-02: Fee asymmetry allowing 100% exchange fee on input swaps vs blocked on output",
+      "why_ruled_out": "Documented intentional design per CODEBASE_MAP.md. Exchange fee is set by executor/aggregator, not attacker-controlled in user-initiated flows. limitAmount protects users from zero output. 100% fee = zero pool input = zero output = limitAmount reverts if non-zero.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditExtHijackerKLoop.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "FeeHelper.sol"
+      ],
+      "functions": [
+        "_calculateBPSFeeWithRecipientAndProtocolFeeSwapByInput()",
+        "_calculateBPSFeeWithRecipientAndProtocolFeeSwapByOutput()"
+      ],
+      "keywords": [
+        "fee-asymmetry",
+        "intentional-design",
+        "100-percent-fee"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "H-R5-DP-07: Hook fees exceeding pool fees in collectFees causing LP to pay",
+      "why_ruled_out": "User sets maxHookFee0/maxHookFee1 to bound hook fees. If user sets max to type(uint256).max, that is a self-inflicted config error. The protocol provides the guard (maxHookFee params). Malicious hooks require token admin collusion.",
+      "test_file": "code-analysis: AMMModule.sol:338-340",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_positionCollectFees()"
+      ],
+      "keywords": [
+        "hook-fees",
+        "self-inflicted",
+        "maxHookFee"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "H-R5-DP-08: Rebasing token exact balance check causes permanent swap DoS",
+      "why_ruled_out": "Defensive design: exact balance checks are intentional to prevent accounting manipulation. Rebasing tokens are self-inflicted config errors (FP #4 in digest). Protocol does not claim to support rebasing tokens. No attacker profit.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditExtHijackerKLoop.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_finalizeSwapCollectFundsAndDisburse()",
+        "_collectToken()"
+      ],
+      "keywords": [
+        "rebasing-token",
+        "exact-balance",
+        "defensive-design"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "H-R5-DP-09: Phantom reserves from failed token transfers in addLiquidity",
+      "why_ruled_out": "safeTransferFrom reverts on failure, not silently fails. _distributeOrCollectLiquidityToken uses safeTransferFrom which propagates revert. Phantom reserves cannot accumulate because failed transfers revert the entire transaction.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditExtHijackerKLoop.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_positionAddLiquidity()",
+        "_distributeOrCollectLiquidityToken()"
+      ],
+      "keywords": [
+        "phantom-reserves",
+        "safeTransferFrom",
+        "revert-propagation"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "C6: Reentrancy via malicious token callback blocked by TstorishReentrancyGuardWithFlags",
+      "why_ruled_out": "All AMM entry points (beforeSwap, afterSwap) require _requireCallerIsAMM. The AMM has TstorishReentrancyGuardWithFlags on all state-changing functions. External callers cannot reach hook functions.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditExtHijackerRuledOut.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "beforeSwap()",
+        "afterSwap()"
+      ],
+      "keywords": [
+        "reentrancy",
+        "access-control",
+        "caller-check"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "C7: Hook functions callable by external address",
+      "why_ruled_out": "beforeSwap, afterSwap, validateAddLiquidity, validateRemoveLiquidity all require _requireCallerIsAMM (CallerIsNotAMM revert). Only validateHandlerOrder is externally callable (by design for CLOB handlers).",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditExtHijackerKLoop.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "beforeSwap()",
+        "afterSwap()",
+        "validateAddLiquidity()",
+        "validateRemoveLiquidity()"
+      ],
+      "keywords": [
+        "access-control",
+        "AMM-only",
+        "INV-H01"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "C19: Hook/pool accounting desync on revert (Bunni pattern)",
+      "why_ruled_out": "EVM atomicity: if AMM reverts after beforeSwap, ALL state changes within the transaction revert. AMMStandardHook uses transient storage for swap state, which resets per transaction. No persistent accounting desync possible.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditExtHijackerRuledOut.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "beforeSwap()",
+        "afterSwap()",
+        "registryUpdateTokenSettings()"
+      ],
+      "keywords": [
+        "accounting-desync",
+        "EVM-atomicity",
+        "Bunni-pattern"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "C21: Transient storage cross-path leak between swap and liquidity operations",
+      "why_ruled_out": "AMMStandardHook uses exactly one transient storage slot (DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT), used exclusively in beforeSwap/afterSwap pair. No other operation reads or writes this slot.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditExtHijackerRuledOut.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "beforeSwap()",
+        "afterSwap()",
+        "validateHandlerOrder()"
+      ],
+      "keywords": [
+        "transient-storage",
+        "cross-path",
+        "isolation"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    }
+  ],
+  "theft_theses": [
+    {
+      "thesis": "Overflow computeRatioX96 to bypass max pricing bounds in validateHandlerOrder, place CLOB orders at extreme prices",
+      "victim": "Token creators with max price ceilings",
+      "asset": "Token value through mispriced CLOB orders",
+      "estimated_ev": 0,
+      "status": "tested"
+    },
+    {
+      "thesis": "Place CLOB orders during trading pause via validateHandlerOrder bypass, profit from stale prices on unpause",
+      "victim": "Token creators who pause trading",
+      "asset": "Trading profit from information advantage",
+      "estimated_ev": 0,
+      "status": "tested"
+    },
+    {
+      "thesis": "Exploit initialized=false sync to cause silent settings drift between hook and registry",
+      "victim": "Token admins relying on deterministic hook state",
+      "asset": "Fee revenue through settings manipulation",
+      "estimated_ev": 0,
+      "status": "tested"
+    },
+    {
+      "thesis": "Extract excess hook fees through repeated partial-fill output swaps",
+      "victim": "LPs in pools with output token hooks",
+      "asset": "Pool solvency via accumulated fee overcharge",
+      "estimated_ev": 0,
+      "status": "hypothesis"
+    }
+  ],
+  "hypothesis_results": [
+    {
+      "id": "H-R5-HR-02",
+      "status": "confirmed",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditExtHijackerKLoop.t.sol",
+      "refutation_case": "If an attacker calls validateHandlerOrder with amount1=type(uint256).max/2 and amount0=1, computeRatioX96 overflows to 0, and the max bound check 0 > maxSqrtPriceX96 is always false, because 0 is never greater than any uint160.",
+      "guard_location": "No guard exists - _validatePricingBounds:847 has the sqrtPriceX96==0 check but validateHandlerOrder:217-223 does not",
+      "detail": "Confirmed: Forge test demonstrates that with maxSqrtPriceX96 set, extreme ratio inputs cause overflow to 0, bypassing the max bound. The function succeeds where it should revert."
+    },
+    {
+      "id": "H-R5-HR-04",
+      "status": "confirmed",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditExtHijackerKLoop.t.sol",
+      "refutation_case": "If a CLOB handler calls validateHandlerOrder while tradingIsPaused=true, the function has no pause check and succeeds, because validateHandlerOrder only reads _pricingBounds and never touches _tokenSettings.",
+      "guard_location": "No guard exists in validateHandlerOrder - beforeSwap:116 has _checkPoolEnabled and beforeSwap:117 has _validateTokenTradingRules but validateHandlerOrder has neither",
+      "detail": "Confirmed: Forge test shows validateHandlerOrder succeeds during trading pause while beforeSwap correctly reverts with AMMStandardHook__TradingPaused."
+    },
+    {
+      "id": "H-R5-HR-01",
+      "status": "dismissed",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditExtHijackerKLoop.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If setTokenSettings is called with hooksToSync, the registry stores memSettings with initialized=true but syncs the raw calldata settings with initialized=false, because line 397 passes 'settings' not 'memSettings'.",
+      "guard_location": "Auto-refetch mechanism at AMMStandardHook:908-914 provides eventual consistency. No concrete attack path for profit extraction.",
+      "detail": "Dismissed: Forge test verifies the initialized=false sync but auto-refetch mechanism mitigates. No concrete attack path - settings always resolve to registry's current values. Self-inflicted config pattern."
+    },
+    {
+      "id": "H-R5-HR-03",
+      "status": "dismissed",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditExtHijackerKLoop.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If both token0 and token1 disable a pool, then token0 re-enables and re-disables, the PoolDisabled event only fires on the first 0->non-zero transition, missing subsequent re-disables.",
+      "guard_location": "CreatorHookSettingsRegistry.sol:447 - event fires only when initialDisabledState == POOL_ENABLED",
+      "detail": "Dismissed: Event gap affects off-chain monitoring only, not on-chain enforcement. Pool disabled state is correctly tracked in _poolDisabled storage. No profit path from missing events."
+    },
+    {
+      "id": "H-R5-HR-06",
+      "status": "dismissed",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditExtHijackerKLoop.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If a pool type's getCurrentPriceX96 returns 0 during addLiquidity validation, the max bound check at line 272 becomes 0 > max which is always false, allowing liquidity at invalid price.",
+      "guard_location": "All whitelisted pool types return valid non-zero prices. AMM-only callable path. No concrete external attack path.",
+      "detail": "Dismissed: Same pattern as HR-02 but in addLiquidity path. Requires buggy pool type returning 0 price. No whitelisted pool type can return 0. AMM-only callable."
+    },
+    {
+      "id": "H-R5-HR-07",
+      "status": "dismissed",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditExtHijackerRuledOut.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If token admin syncs settings with pairedTokenWhitelistId to hook but doesn't sync whitelist content, direct swaps would revert because hook's whitelist is empty.",
+      "guard_location": "CreatorHookSettingsRegistry NatSpec documents this as intentional: settings sync and content sync are separate operations",
+      "detail": "Dismissed: Documented intentional design. Admin must explicitly sync whitelist content separately. This is a self-inflicted config error (FP #4 in digest), not a vulnerability."
+    },
+    {
+      "id": "H-R5-HR-08",
+      "status": "dismissed",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditExtHijackerKLoop.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If token0 and token1 use different hooks, each hook only checks its own direction's pricing bounds during pool creation, so token1's bounds might not be enforced by token0's hook.",
+      "guard_location": "AMMModule.sol validatePoolCreation calls hook for BOTH tokens (hookForToken0=true/false), each checking its own direction",
+      "detail": "Dismissed: AMM calls validatePoolCreation on BOTH token hooks. Token0's hook checks bounds0, token1's hook checks bounds1. Combined, both directions are covered."
+    },
+    {
+      "id": "H-R5-HR-10",
+      "status": "dismissed",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditExtHijackerKLoop.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If tstore is activated between beforeSwap and afterSwap, the stored direct swap amount in sstore might not be readable from tstore, causing afterSwap to read 0 and compute invalid price.",
+      "guard_location": "EVM spec: transient storage resets each transaction. Within a tx, beforeSwap always writes before afterSwap reads. _onTstoreSupportActivated atomically copies sstore to tstore.",
+      "detail": "Dismissed: Transient storage resets every transaction. Within a single tx, beforeSwap writes then afterSwap reads from the same storage type. Activation between txs is handled by atomic copy."
+    },
+    {
+      "id": "H-R5-HR-11",
+      "status": "dismissed",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditExtHijackerKLoop.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If poolTypeWhitelistId=0, a malicious pool type contract can return any price from getCurrentPriceX96, bypassing pricing bounds during pool creation validation.",
+      "guard_location": "AMMModule pool type registration validates pool type address at AMM level (6 leading zero bytes + registration). Self-inflicted if admin doesn't set whitelist.",
+      "detail": "Dismissed: Pool type address requires 6 leading zero bytes (hard mining constraint). AMM validates pool type at registration independently. Not setting a pool type whitelist is self-inflicted config error."
+    },
+    {
+      "id": "H-R5-DP-01",
+      "status": "dismissed",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditExtHijackerKLoop.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If createPool clears the reentrancy guard before delegatecall to addLiquidity, an attacker could exploit the unguarded window to reenter the AMM.",
+      "guard_location": "ModuleLiquidity.sol:79-81 - no external call between _clearReentrancyGuard and delegatecall. addLiquidity has nonReentrantWithFlags modifier.",
+      "detail": "Dismissed: No external call between guard clear and delegatecall. addLiquidity re-acquires its own guard via nonReentrantWithFlags. The unguarded window contains only Solidity opcode execution."
+    },
+    {
+      "id": "H-R5-DP-02",
+      "status": "dismissed",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditExtHijackerKLoop.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If exchangeFeeBPS=10000 for input swap, the entire input becomes fee, pool gets 0 tokens, user gets 0 output. Attacker profits by setting themselves as exchange fee recipient.",
+      "guard_location": "CODEBASE_MAP.md documents this as intentional design. limitAmount protects users (non-zero limitAmount reverts on zero output). Exchange fee is aggregator-controlled, not attacker-controlled in user flows.",
+      "detail": "Dismissed: Documented intentional design. limitAmount protects users. Exchange fee is set by executor/aggregator. Self-inflicted config error if aggregator sets 100%."
+    },
+    {
+      "id": "H-R5-DP-05",
+      "status": "tested",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditExtHijackerKLoop.t.sol",
+      "refutation_case": "If output swap hook fees are stored before pool type call, and pool type partial fills, the stored fees are overcharged relative to actual output because they were calculated on the full requested amount.",
+      "guard_location": "No guard - AMMModule.sol:1576-1577 adjusts amountOut and adjustedAmountSpecified but not stored hook fees",
+      "detail": "Tested: Code analysis confirms hook fees stored at line 1537 are not adjusted after partial fill at lines 1576-1577. Reported as LEAD (EH-006) pending verification of pool types that actually perform partial fills."
+    },
+    {
+      "id": "H-R5-DP-07",
+      "status": "dismissed",
+      "test_file": "code-analysis: AMMModule.sol:338-340",
+      "failure_class": "strategic",
+      "refutation_case": "If hook fees exceed pool fees in collectFees, the LP must pay the difference. With maxHookFee=type(uint256).max, a malicious hook can drain the LP.",
+      "guard_location": "AMMModule.sol:338-340 - maxHookFee0/maxHookFee1 bounds provided by caller. Malicious hooks require token admin collusion (they set the hook).",
+      "detail": "Dismissed: maxHookFee params provide the guard. Setting them to type(uint256).max is a self-inflicted config error. Malicious hooks require admin-level actor (token creator sets the hook)."
+    },
+    {
+      "id": "H-R5-DP-08",
+      "status": "dismissed",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditExtHijackerKLoop.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If a rebasing token positively rebases during safeTransferFrom, the post-transfer balance exceeds expected amount, causing exact equality check to revert and permanently DoS swaps.",
+      "guard_location": "AMMModule.sol:2208 - exact equality check is intentional defensive design. Protocol does not claim to support rebasing tokens.",
+      "detail": "Dismissed: Defensive design pattern. Exact balance checks prevent accounting manipulation. Rebasing tokens are not supported by design. Self-inflicted config error to create pool with rebasing token."
+    },
+    {
+      "id": "H-R5-DP-09",
+      "status": "dismissed",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditExtHijackerKLoop.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If addLiquidity increases reserves but token transfer fails silently, phantom reserves accumulate, making the pool insolvent over time.",
+      "guard_location": "safeTransferFrom reverts on failure. _distributeOrCollectLiquidityToken at AMMModule.sol:1291-1300 uses safeTransferFrom which propagates reverts.",
+      "detail": "Dismissed: safeTransferFrom reverts on transfer failure, not silently fails. The entire addLiquidity transaction reverts, preventing phantom reserves. tokensOwed path is for net-negative amounts (distribution), not collection failures."
+    }
+  ],
+  "metadata": {
+    "checklist_items_completed": "A: 4/5, B: 3/5, C: 18/22, D: 15/15",
+    "tools_run": {
+      "slither": {
+        "ran": true,
+        "repos": [
+          "lbamm-hooks-and-handlers",
+          "lbamm-core"
+        ],
+        "note": "MCP run_detectors and list_functions on both repos. Call graph export for AMMStandardHook."
+      },
+      "aderyn": {
+        "ran": true,
+        "note": "Attempted but Aderyn v0.6.8 crashed with 'content not found' compiler bug on hooks-and-handlers repo. Error logged."
+      },
+      "forge": {
+        "ran": true,
+        "note": "56 tests total. File: lbamm-hooks-and-handlers/test/AuditExtHijackerKLoop.t.sol, AuditExtHijackerRuledOut.t.sol, AuditExtHijackerOverflow.t.sol"
+      },
+      "halmos": {
+        "ran": true,
+        "note": "Attempted but mockCall cheatcode unsupported - setUp() uses vm.mockCall which Halmos cannot execute. Error logged."
+      },
+      "medusa": {
+        "ran": true,
+        "note": "Attempted on AMMStandardHook, no assertion failures found in 100000 calls"
+      },
+      "audit-context-building": {
+        "ran": true,
+        "note": "Deep context analysis on AMMStandardHook.sol and CreatorHookSettingsRegistry.sol"
+      },
+      "entry-point-analyzer": {
+        "ran": true,
+        "note": "Entry point analysis on hooks-and-handlers primary contracts"
+      }
+    },
+    "num_turns": 180,
+    "tool_uses": 95,
+    "files_read": 42,
+    "theses_tested": 4,
+    "theses_confirmed": 0,
+    "theses_ruled_out": 10,
+    "triage_log": {
+      "skip": 3,
+      "borderline": 5,
+      "survive": 7
+    },
+    "gate_passed": true,
+    "_total_hypotheses": 15
+  },
+  "_verified_tests": {
+    "H-R5-HR-02": {
+      "compiled": true,
+      "executed": true,
+      "tests_passed": 0,
+      "tests_failed": 0,
+      "raw_output": "{\"test/AuditExtHijackerKLoop.t.sol:AuditExtHijackerKLoopTest\":{\"duration\":\"3ms 601\u00b5s 333ns\",\"test_results\":{\"test_C13_poolDecoderMaxValues()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":394}},\"traces\":[],\"labeled_addresses\":{\"0x1111111111111111111111111111111111111111\":\"Currency3\",\"0x3333333333333333333333333333333333333333\":\"Currency4\",\"0xb6d0227c2a73e24642dd002df94ff0ef69abf979\":\"LimitBreak AMM\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0x721c002b0059009a671d00ad1700c9748146cd1b\":\"Creator Token Transfer Validator\",\"0xc5c7a5a6b65416c8494e9ccde6cacebdc0a2d8b8\":\"feeOnTopRecipient\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0x7aa8a8b9faadeb469dc52b88288bcc1e1645c9da\":\"tokenAdmin\",\"0x77d495327adb2f933310c9b8145a856b36eb6dd2\":\"exchangeFeeRecipient\",\"0x328809bc894f92807417d2dad6b7c998c1afdac6\":\"alice\",\"0x00000000d7b37203f54e165fb204b57c30d15835\":\"Role Server\",\"0x000000000000000000000000000000000000006f\":\"MockPool\",\"0x6000030000842044000077551d00cfc6b4005900\":\"Wrapped Native\",\"0xa4d4c1f8a763ef6a0140d04291eceef913ffc272\":\"carol\",\"0xaa10a84ce7d9ae517a52c6d5ca153b369af99ecf\":\"admin\",\"0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2\":\"Wrapped Ether\",\"0x1d96f2f6bef1202e4ce1ff6dad0c2cb002861d3e\":\"bob\"},\"duration\":\"28\u00b5s\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_C1_corePoolTypeTrustBoundary()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":400}},\"traces\":[],\"labeled_addresses\":{\"0x1111111111111111111111111111111111111111\":\"Currency3\",\"0x3333333333333333333333333333333333333333\":\"Currency4\",\"0xb6d0227c2a73e24642dd002df94ff0ef69abf979\":\"LimitBreak AMM\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0x721c002b0059009a671d00ad1700c9748146cd1b\":\"Creator Token Transfer Validator\",\"0xc5c7a5a6b65416c8494e9ccde6cacebdc0a2d8b8\":\"feeOnTopRecipient\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0x7aa8a8b9faadeb469dc52b88288bc",
+      "quality": {
+        "quality": "real",
+        "has_real_assertion": true,
+        "size": 29422
+      }
+    },
+    "H-R5-HR-04": {
+      "compiled": true,
+      "executed": true,
+      "tests_passed": 0,
+      "tests_failed": 0,
+      "raw_output": "{\"test/AuditExtHijackerKLoop.t.sol:AuditExtHijackerKLoopTest\":{\"duration\":\"3ms 601\u00b5s 333ns\",\"test_results\":{\"test_C13_poolDecoderMaxValues()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":394}},\"traces\":[],\"labeled_addresses\":{\"0x1111111111111111111111111111111111111111\":\"Currency3\",\"0x3333333333333333333333333333333333333333\":\"Currency4\",\"0xb6d0227c2a73e24642dd002df94ff0ef69abf979\":\"LimitBreak AMM\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0x721c002b0059009a671d00ad1700c9748146cd1b\":\"Creator Token Transfer Validator\",\"0xc5c7a5a6b65416c8494e9ccde6cacebdc0a2d8b8\":\"feeOnTopRecipient\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0x7aa8a8b9faadeb469dc52b88288bcc1e1645c9da\":\"tokenAdmin\",\"0x77d495327adb2f933310c9b8145a856b36eb6dd2\":\"exchangeFeeRecipient\",\"0x328809bc894f92807417d2dad6b7c998c1afdac6\":\"alice\",\"0x00000000d7b37203f54e165fb204b57c30d15835\":\"Role Server\",\"0x000000000000000000000000000000000000006f\":\"MockPool\",\"0x6000030000842044000077551d00cfc6b4005900\":\"Wrapped Native\",\"0xa4d4c1f8a763ef6a0140d04291eceef913ffc272\":\"carol\",\"0xaa10a84ce7d9ae517a52c6d5ca153b369af99ecf\":\"admin\",\"0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2\":\"Wrapped Ether\",\"0x1d96f2f6bef1202e4ce1ff6dad0c2cb002861d3e\":\"bob\"},\"duration\":\"28\u00b5s\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_C1_corePoolTypeTrustBoundary()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":400}},\"traces\":[],\"labeled_addresses\":{\"0x1111111111111111111111111111111111111111\":\"Currency3\",\"0x3333333333333333333333333333333333333333\":\"Currency4\",\"0xb6d0227c2a73e24642dd002df94ff0ef69abf979\":\"LimitBreak AMM\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0x721c002b0059009a671d00ad1700c9748146cd1b\":\"Creator Token Transfer Validator\",\"0xc5c7a5a6b65416c8494e9ccde6cacebdc0a2d8b8\":\"feeOnTopRecipient\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0x7aa8a8b9faadeb469dc52b88288bc",
+      "quality": {
+        "quality": "real",
+        "has_real_assertion": true,
+        "size": 29422
+      }
+    },
+    "H-R5-HR-01": {
+      "compiled": true,
+      "executed": true,
+      "tests_passed": 0,
+      "tests_failed": 0,
+      "raw_output": "{\"test/AuditExtHijackerKLoop.t.sol:AuditExtHijackerKLoopTest\":{\"duration\":\"3ms 601\u00b5s 333ns\",\"test_results\":{\"test_C13_poolDecoderMaxValues()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":394}},\"traces\":[],\"labeled_addresses\":{\"0x1111111111111111111111111111111111111111\":\"Currency3\",\"0x3333333333333333333333333333333333333333\":\"Currency4\",\"0xb6d0227c2a73e24642dd002df94ff0ef69abf979\":\"LimitBreak AMM\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0x721c002b0059009a671d00ad1700c9748146cd1b\":\"Creator Token Transfer Validator\",\"0xc5c7a5a6b65416c8494e9ccde6cacebdc0a2d8b8\":\"feeOnTopRecipient\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0x7aa8a8b9faadeb469dc52b88288bcc1e1645c9da\":\"tokenAdmin\",\"0x77d495327adb2f933310c9b8145a856b36eb6dd2\":\"exchangeFeeRecipient\",\"0x328809bc894f92807417d2dad6b7c998c1afdac6\":\"alice\",\"0x00000000d7b37203f54e165fb204b57c30d15835\":\"Role Server\",\"0x000000000000000000000000000000000000006f\":\"MockPool\",\"0x6000030000842044000077551d00cfc6b4005900\":\"Wrapped Native\",\"0xa4d4c1f8a763ef6a0140d04291eceef913ffc272\":\"carol\",\"0xaa10a84ce7d9ae517a52c6d5ca153b369af99ecf\":\"admin\",\"0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2\":\"Wrapped Ether\",\"0x1d96f2f6bef1202e4ce1ff6dad0c2cb002861d3e\":\"bob\"},\"duration\":\"28\u00b5s\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_C1_corePoolTypeTrustBoundary()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":400}},\"traces\":[],\"labeled_addresses\":{\"0x1111111111111111111111111111111111111111\":\"Currency3\",\"0x3333333333333333333333333333333333333333\":\"Currency4\",\"0xb6d0227c2a73e24642dd002df94ff0ef69abf979\":\"LimitBreak AMM\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0x721c002b0059009a671d00ad1700c9748146cd1b\":\"Creator Token Transfer Validator\",\"0xc5c7a5a6b65416c8494e9ccde6cacebdc0a2d8b8\":\"feeOnTopRecipient\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0x7aa8a8b9faadeb469dc52b88288bc",
+      "quality": {
+        "quality": "real",
+        "has_real_assertion": true,
+        "size": 29422
+      }
+    },
+    "H-R5-HR-03": {
+      "compiled": true,
+      "executed": true,
+      "tests_passed": 0,
+      "tests_failed": 0,
+      "raw_output": "{\"test/AuditExtHijackerKLoop.t.sol:AuditExtHijackerKLoopTest\":{\"duration\":\"3ms 601\u00b5s 333ns\",\"test_results\":{\"test_C13_poolDecoderMaxValues()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":394}},\"traces\":[],\"labeled_addresses\":{\"0x1111111111111111111111111111111111111111\":\"Currency3\",\"0x3333333333333333333333333333333333333333\":\"Currency4\",\"0xb6d0227c2a73e24642dd002df94ff0ef69abf979\":\"LimitBreak AMM\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0x721c002b0059009a671d00ad1700c9748146cd1b\":\"Creator Token Transfer Validator\",\"0xc5c7a5a6b65416c8494e9ccde6cacebdc0a2d8b8\":\"feeOnTopRecipient\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0x7aa8a8b9faadeb469dc52b88288bcc1e1645c9da\":\"tokenAdmin\",\"0x77d495327adb2f933310c9b8145a856b36eb6dd2\":\"exchangeFeeRecipient\",\"0x328809bc894f92807417d2dad6b7c998c1afdac6\":\"alice\",\"0x00000000d7b37203f54e165fb204b57c30d15835\":\"Role Server\",\"0x000000000000000000000000000000000000006f\":\"MockPool\",\"0x6000030000842044000077551d00cfc6b4005900\":\"Wrapped Native\",\"0xa4d4c1f8a763ef6a0140d04291eceef913ffc272\":\"carol\",\"0xaa10a84ce7d9ae517a52c6d5ca153b369af99ecf\":\"admin\",\"0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2\":\"Wrapped Ether\",\"0x1d96f2f6bef1202e4ce1ff6dad0c2cb002861d3e\":\"bob\"},\"duration\":\"28\u00b5s\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_C1_corePoolTypeTrustBoundary()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":400}},\"traces\":[],\"labeled_addresses\":{\"0x1111111111111111111111111111111111111111\":\"Currency3\",\"0x3333333333333333333333333333333333333333\":\"Currency4\",\"0xb6d0227c2a73e24642dd002df94ff0ef69abf979\":\"LimitBreak AMM\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0x721c002b0059009a671d00ad1700c9748146cd1b\":\"Creator Token Transfer Validator\",\"0xc5c7a5a6b65416c8494e9ccde6cacebdc0a2d8b8\":\"feeOnTopRecipient\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0x7aa8a8b9faadeb469dc52b88288bc",
+      "quality": {
+        "quality": "real",
+        "has_real_assertion": true,
+        "size": 29422
+      }
+    },
+    "H-R5-HR-06": {
+      "compiled": true,
+      "executed": true,
+      "tests_passed": 0,
+      "tests_failed": 0,
+      "raw_output": "{\"test/AuditExtHijackerKLoop.t.sol:AuditExtHijackerKLoopTest\":{\"duration\":\"3ms 601\u00b5s 333ns\",\"test_results\":{\"test_C13_poolDecoderMaxValues()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":394}},\"traces\":[],\"labeled_addresses\":{\"0x1111111111111111111111111111111111111111\":\"Currency3\",\"0x3333333333333333333333333333333333333333\":\"Currency4\",\"0xb6d0227c2a73e24642dd002df94ff0ef69abf979\":\"LimitBreak AMM\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0x721c002b0059009a671d00ad1700c9748146cd1b\":\"Creator Token Transfer Validator\",\"0xc5c7a5a6b65416c8494e9ccde6cacebdc0a2d8b8\":\"feeOnTopRecipient\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0x7aa8a8b9faadeb469dc52b88288bcc1e1645c9da\":\"tokenAdmin\",\"0x77d495327adb2f933310c9b8145a856b36eb6dd2\":\"exchangeFeeRecipient\",\"0x328809bc894f92807417d2dad6b7c998c1afdac6\":\"alice\",\"0x00000000d7b37203f54e165fb204b57c30d15835\":\"Role Server\",\"0x000000000000000000000000000000000000006f\":\"MockPool\",\"0x6000030000842044000077551d00cfc6b4005900\":\"Wrapped Native\",\"0xa4d4c1f8a763ef6a0140d04291eceef913ffc272\":\"carol\",\"0xaa10a84ce7d9ae517a52c6d5ca153b369af99ecf\":\"admin\",\"0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2\":\"Wrapped Ether\",\"0x1d96f2f6bef1202e4ce1ff6dad0c2cb002861d3e\":\"bob\"},\"duration\":\"28\u00b5s\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_C1_corePoolTypeTrustBoundary()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":400}},\"traces\":[],\"labeled_addresses\":{\"0x1111111111111111111111111111111111111111\":\"Currency3\",\"0x3333333333333333333333333333333333333333\":\"Currency4\",\"0xb6d0227c2a73e24642dd002df94ff0ef69abf979\":\"LimitBreak AMM\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0x721c002b0059009a671d00ad1700c9748146cd1b\":\"Creator Token Transfer Validator\",\"0xc5c7a5a6b65416c8494e9ccde6cacebdc0a2d8b8\":\"feeOnTopRecipient\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0x7aa8a8b9faadeb469dc52b88288bc",
+      "quality": {
+        "quality": "real",
+        "has_real_assertion": true,
+        "size": 29422
+      }
+    },
+    "H-R5-HR-07": {
+      "compiled": true,
+      "executed": true,
+      "tests_passed": 0,
+      "tests_failed": 0,
+      "raw_output": "{\"test/AuditExtHijackerRuledOut.t.sol:AuditExtHijackerRuledOutTest\":{\"duration\":\"3ms 3\u00b5s 958ns\",\"test_results\":{\"test_C19_hookAccountingOnRevert()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":11988}},\"traces\":[],\"labeled_addresses\":{\"0x000000000000000000000000000000000000006f\":\"MockPool\",\"0x721c002b0059009a671d00ad1700c9748146cd1b\":\"Creator Token Transfer Validator\",\"0x7aa8a8b9faadeb469dc52b88288bcc1e1645c9da\":\"tokenAdmin\",\"0x77d495327adb2f933310c9b8145a856b36eb6dd2\":\"exchangeFeeRecipient\",\"0xa4d4c1f8a763ef6a0140d04291eceef913ffc272\":\"carol\",\"0x3333333333333333333333333333333333333333\":\"Currency4\",\"0xaa10a84ce7d9ae517a52c6d5ca153b369af99ecf\":\"admin\",\"0x6000030000842044000077551d00cfc6b4005900\":\"Wrapped Native\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0x00000000d7b37203f54e165fb204b57c30d15835\":\"Role Server\",\"0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2\":\"Wrapped Ether\",\"0x1111111111111111111111111111111111111111\":\"Currency3\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0xb6d0227c2a73e24642dd002df94ff0ef69abf979\":\"LimitBreak AMM\",\"0xc5c7a5a6b65416c8494e9ccde6cacebdc0a2d8b8\":\"feeOnTopRecipient\",\"0x328809bc894f92807417d2dad6b7c998c1afdac6\":\"alice\",\"0x1d96f2f6bef1202e4ce1ff6dad0c2cb002861d3e\":\"bob\"},\"duration\":\"34\u00b5s 750ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_C21_transientStorageIsolation()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":15263}},\"traces\":[],\"labeled_addresses\":{\"0x000000000000000000000000000000000000006f\":\"MockPool\",\"0x721c002b0059009a671d00ad1700c9748146cd1b\":\"Creator Token Transfer Validator\",\"0x7aa8a8b9faadeb469dc52b88288bcc1e1645c9da\":\"tokenAdmin\",\"0x77d495327adb2f933310c9b8145a856b36eb6dd2\":\"exchangeFeeRecipient\",\"0xa4d4c1f8a763ef6a0140d04291eceef913ffc272\":\"carol\",\"0x3333333333333333333333333333333333333333\":\"Currency4\",\"0xaa10a84ce7d9ae517a52c6d5ca153b369af99ecf\":\"admin\",\"0x600003000084204400007",
+      "quality": {
+        "quality": "real",
+        "has_real_assertion": true,
+        "size": 13912
+      }
+    },
+    "H-R5-HR-08": {
+      "compiled": true,
+      "executed": true,
+      "tests_passed": 0,
+      "tests_failed": 0,
+      "raw_output": "{\"test/AuditExtHijackerKLoop.t.sol:AuditExtHijackerKLoopTest\":{\"duration\":\"3ms 601\u00b5s 333ns\",\"test_results\":{\"test_C13_poolDecoderMaxValues()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":394}},\"traces\":[],\"labeled_addresses\":{\"0x1111111111111111111111111111111111111111\":\"Currency3\",\"0x3333333333333333333333333333333333333333\":\"Currency4\",\"0xb6d0227c2a73e24642dd002df94ff0ef69abf979\":\"LimitBreak AMM\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0x721c002b0059009a671d00ad1700c9748146cd1b\":\"Creator Token Transfer Validator\",\"0xc5c7a5a6b65416c8494e9ccde6cacebdc0a2d8b8\":\"feeOnTopRecipient\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0x7aa8a8b9faadeb469dc52b88288bcc1e1645c9da\":\"tokenAdmin\",\"0x77d495327adb2f933310c9b8145a856b36eb6dd2\":\"exchangeFeeRecipient\",\"0x328809bc894f92807417d2dad6b7c998c1afdac6\":\"alice\",\"0x00000000d7b37203f54e165fb204b57c30d15835\":\"Role Server\",\"0x000000000000000000000000000000000000006f\":\"MockPool\",\"0x6000030000842044000077551d00cfc6b4005900\":\"Wrapped Native\",\"0xa4d4c1f8a763ef6a0140d04291eceef913ffc272\":\"carol\",\"0xaa10a84ce7d9ae517a52c6d5ca153b369af99ecf\":\"admin\",\"0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2\":\"Wrapped Ether\",\"0x1d96f2f6bef1202e4ce1ff6dad0c2cb002861d3e\":\"bob\"},\"duration\":\"28\u00b5s\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_C1_corePoolTypeTrustBoundary()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":400}},\"traces\":[],\"labeled_addresses\":{\"0x1111111111111111111111111111111111111111\":\"Currency3\",\"0x3333333333333333333333333333333333333333\":\"Currency4\",\"0xb6d0227c2a73e24642dd002df94ff0ef69abf979\":\"LimitBreak AMM\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0x721c002b0059009a671d00ad1700c9748146cd1b\":\"Creator Token Transfer Validator\",\"0xc5c7a5a6b65416c8494e9ccde6cacebdc0a2d8b8\":\"feeOnTopRecipient\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0x7aa8a8b9faadeb469dc52b88288bc",
+      "quality": {
+        "quality": "real",
+        "has_real_assertion": true,
+        "size": 29422
+      }
+    },
+    "H-R5-HR-10": {
+      "compiled": true,
+      "executed": true,
+      "tests_passed": 0,
+      "tests_failed": 0,
+      "raw_output": "{\"test/AuditExtHijackerKLoop.t.sol:AuditExtHijackerKLoopTest\":{\"duration\":\"3ms 601\u00b5s 333ns\",\"test_results\":{\"test_C13_poolDecoderMaxValues()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":394}},\"traces\":[],\"labeled_addresses\":{\"0x1111111111111111111111111111111111111111\":\"Currency3\",\"0x3333333333333333333333333333333333333333\":\"Currency4\",\"0xb6d0227c2a73e24642dd002df94ff0ef69abf979\":\"LimitBreak AMM\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0x721c002b0059009a671d00ad1700c9748146cd1b\":\"Creator Token Transfer Validator\",\"0xc5c7a5a6b65416c8494e9ccde6cacebdc0a2d8b8\":\"feeOnTopRecipient\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0x7aa8a8b9faadeb469dc52b88288bcc1e1645c9da\":\"tokenAdmin\",\"0x77d495327adb2f933310c9b8145a856b36eb6dd2\":\"exchangeFeeRecipient\",\"0x328809bc894f92807417d2dad6b7c998c1afdac6\":\"alice\",\"0x00000000d7b37203f54e165fb204b57c30d15835\":\"Role Server\",\"0x000000000000000000000000000000000000006f\":\"MockPool\",\"0x6000030000842044000077551d00cfc6b4005900\":\"Wrapped Native\",\"0xa4d4c1f8a763ef6a0140d04291eceef913ffc272\":\"carol\",\"0xaa10a84ce7d9ae517a52c6d5ca153b369af99ecf\":\"admin\",\"0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2\":\"Wrapped Ether\",\"0x1d96f2f6bef1202e4ce1ff6dad0c2cb002861d3e\":\"bob\"},\"duration\":\"28\u00b5s\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_C1_corePoolTypeTrustBoundary()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":400}},\"traces\":[],\"labeled_addresses\":{\"0x1111111111111111111111111111111111111111\":\"Currency3\",\"0x3333333333333333333333333333333333333333\":\"Currency4\",\"0xb6d0227c2a73e24642dd002df94ff0ef69abf979\":\"LimitBreak AMM\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0x721c002b0059009a671d00ad1700c9748146cd1b\":\"Creator Token Transfer Validator\",\"0xc5c7a5a6b65416c8494e9ccde6cacebdc0a2d8b8\":\"feeOnTopRecipient\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0x7aa8a8b9faadeb469dc52b88288bc",
+      "quality": {
+        "quality": "real",
+        "has_real_assertion": true,
+        "size": 29422
+      }
+    },
+    "H-R5-HR-11": {
+      "compiled": true,
+      "executed": true,
+      "tests_passed": 0,
+      "tests_failed": 0,
+      "raw_output": "{\"test/AuditExtHijackerKLoop.t.sol:AuditExtHijackerKLoopTest\":{\"duration\":\"3ms 601\u00b5s 333ns\",\"test_results\":{\"test_C13_poolDecoderMaxValues()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":394}},\"traces\":[],\"labeled_addresses\":{\"0x1111111111111111111111111111111111111111\":\"Currency3\",\"0x3333333333333333333333333333333333333333\":\"Currency4\",\"0xb6d0227c2a73e24642dd002df94ff0ef69abf979\":\"LimitBreak AMM\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0x721c002b0059009a671d00ad1700c9748146cd1b\":\"Creator Token Transfer Validator\",\"0xc5c7a5a6b65416c8494e9ccde6cacebdc0a2d8b8\":\"feeOnTopRecipient\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0x7aa8a8b9faadeb469dc52b88288bcc1e1645c9da\":\"tokenAdmin\",\"0x77d495327adb2f933310c9b8145a856b36eb6dd2\":\"exchangeFeeRecipient\",\"0x328809bc894f92807417d2dad6b7c998c1afdac6\":\"alice\",\"0x00000000d7b37203f54e165fb204b57c30d15835\":\"Role Server\",\"0x000000000000000000000000000000000000006f\":\"MockPool\",\"0x6000030000842044000077551d00cfc6b4005900\":\"Wrapped Native\",\"0xa4d4c1f8a763ef6a0140d04291eceef913ffc272\":\"carol\",\"0xaa10a84ce7d9ae517a52c6d5ca153b369af99ecf\":\"admin\",\"0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2\":\"Wrapped Ether\",\"0x1d96f2f6bef1202e4ce1ff6dad0c2cb002861d3e\":\"bob\"},\"duration\":\"28\u00b5s\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_C1_corePoolTypeTrustBoundary()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":400}},\"traces\":[],\"labeled_addresses\":{\"0x1111111111111111111111111111111111111111\":\"Currency3\",\"0x3333333333333333333333333333333333333333\":\"Currency4\",\"0xb6d0227c2a73e24642dd002df94ff0ef69abf979\":\"LimitBreak AMM\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0x721c002b0059009a671d00ad1700c9748146cd1b\":\"Creator Token Transfer Validator\",\"0xc5c7a5a6b65416c8494e9ccde6cacebdc0a2d8b8\":\"feeOnTopRecipient\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0x7aa8a8b9faadeb469dc52b88288bc",
+      "quality": {
+        "quality": "real",
+        "has_real_assertion": true,
+        "size": 29422
+      }
+    },
+    "H-R5-DP-01": {
+      "compiled": true,
+      "executed": true,
+      "tests_passed": 0,
+      "tests_failed": 0,
+      "raw_output": "{\"test/AuditExtHijackerKLoop.t.sol:AuditExtHijackerKLoopTest\":{\"duration\":\"3ms 601\u00b5s 333ns\",\"test_results\":{\"test_C13_poolDecoderMaxValues()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":394}},\"traces\":[],\"labeled_addresses\":{\"0x1111111111111111111111111111111111111111\":\"Currency3\",\"0x3333333333333333333333333333333333333333\":\"Currency4\",\"0xb6d0227c2a73e24642dd002df94ff0ef69abf979\":\"LimitBreak AMM\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0x721c002b0059009a671d00ad1700c9748146cd1b\":\"Creator Token Transfer Validator\",\"0xc5c7a5a6b65416c8494e9ccde6cacebdc0a2d8b8\":\"feeOnTopRecipient\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0x7aa8a8b9faadeb469dc52b88288bcc1e1645c9da\":\"tokenAdmin\",\"0x77d495327adb2f933310c9b8145a856b36eb6dd2\":\"exchangeFeeRecipient\",\"0x328809bc894f92807417d2dad6b7c998c1afdac6\":\"alice\",\"0x00000000d7b37203f54e165fb204b57c30d15835\":\"Role Server\",\"0x000000000000000000000000000000000000006f\":\"MockPool\",\"0x6000030000842044000077551d00cfc6b4005900\":\"Wrapped Native\",\"0xa4d4c1f8a763ef6a0140d04291eceef913ffc272\":\"carol\",\"0xaa10a84ce7d9ae517a52c6d5ca153b369af99ecf\":\"admin\",\"0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2\":\"Wrapped Ether\",\"0x1d96f2f6bef1202e4ce1ff6dad0c2cb002861d3e\":\"bob\"},\"duration\":\"28\u00b5s\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_C1_corePoolTypeTrustBoundary()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":400}},\"traces\":[],\"labeled_addresses\":{\"0x1111111111111111111111111111111111111111\":\"Currency3\",\"0x3333333333333333333333333333333333333333\":\"Currency4\",\"0xb6d0227c2a73e24642dd002df94ff0ef69abf979\":\"LimitBreak AMM\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0x721c002b0059009a671d00ad1700c9748146cd1b\":\"Creator Token Transfer Validator\",\"0xc5c7a5a6b65416c8494e9ccde6cacebdc0a2d8b8\":\"feeOnTopRecipient\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0x7aa8a8b9faadeb469dc52b88288bc",
+      "quality": {
+        "quality": "real",
+        "has_real_assertion": true,
+        "size": 29422
+      }
+    },
+    "H-R5-DP-02": {
+      "compiled": true,
+      "executed": true,
+      "tests_passed": 0,
+      "tests_failed": 0,
+      "raw_output": "{\"test/AuditExtHijackerKLoop.t.sol:AuditExtHijackerKLoopTest\":{\"duration\":\"3ms 601\u00b5s 333ns\",\"test_results\":{\"test_C13_poolDecoderMaxValues()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":394}},\"traces\":[],\"labeled_addresses\":{\"0x1111111111111111111111111111111111111111\":\"Currency3\",\"0x3333333333333333333333333333333333333333\":\"Currency4\",\"0xb6d0227c2a73e24642dd002df94ff0ef69abf979\":\"LimitBreak AMM\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0x721c002b0059009a671d00ad1700c9748146cd1b\":\"Creator Token Transfer Validator\",\"0xc5c7a5a6b65416c8494e9ccde6cacebdc0a2d8b8\":\"feeOnTopRecipient\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0x7aa8a8b9faadeb469dc52b88288bcc1e1645c9da\":\"tokenAdmin\",\"0x77d495327adb2f933310c9b8145a856b36eb6dd2\":\"exchangeFeeRecipient\",\"0x328809bc894f92807417d2dad6b7c998c1afdac6\":\"alice\",\"0x00000000d7b37203f54e165fb204b57c30d15835\":\"Role Server\",\"0x000000000000000000000000000000000000006f\":\"MockPool\",\"0x6000030000842044000077551d00cfc6b4005900\":\"Wrapped Native\",\"0xa4d4c1f8a763ef6a0140d04291eceef913ffc272\":\"carol\",\"0xaa10a84ce7d9ae517a52c6d5ca153b369af99ecf\":\"admin\",\"0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2\":\"Wrapped Ether\",\"0x1d96f2f6bef1202e4ce1ff6dad0c2cb002861d3e\":\"bob\"},\"duration\":\"28\u00b5s\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_C1_corePoolTypeTrustBoundary()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":400}},\"traces\":[],\"labeled_addresses\":{\"0x1111111111111111111111111111111111111111\":\"Currency3\",\"0x3333333333333333333333333333333333333333\":\"Currency4\",\"0xb6d0227c2a73e24642dd002df94ff0ef69abf979\":\"LimitBreak AMM\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0x721c002b0059009a671d00ad1700c9748146cd1b\":\"Creator Token Transfer Validator\",\"0xc5c7a5a6b65416c8494e9ccde6cacebdc0a2d8b8\":\"feeOnTopRecipient\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0x7aa8a8b9faadeb469dc52b88288bc",
+      "quality": {
+        "quality": "real",
+        "has_real_assertion": true,
+        "size": 29422
+      }
+    },
+    "H-R5-DP-05": {
+      "compiled": true,
+      "executed": true,
+      "tests_passed": 0,
+      "tests_failed": 0,
+      "raw_output": "{\"test/AuditExtHijackerKLoop.t.sol:AuditExtHijackerKLoopTest\":{\"duration\":\"3ms 601\u00b5s 333ns\",\"test_results\":{\"test_C13_poolDecoderMaxValues()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":394}},\"traces\":[],\"labeled_addresses\":{\"0x1111111111111111111111111111111111111111\":\"Currency3\",\"0x3333333333333333333333333333333333333333\":\"Currency4\",\"0xb6d0227c2a73e24642dd002df94ff0ef69abf979\":\"LimitBreak AMM\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0x721c002b0059009a671d00ad1700c9748146cd1b\":\"Creator Token Transfer Validator\",\"0xc5c7a5a6b65416c8494e9ccde6cacebdc0a2d8b8\":\"feeOnTopRecipient\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0x7aa8a8b9faadeb469dc52b88288bcc1e1645c9da\":\"tokenAdmin\",\"0x77d495327adb2f933310c9b8145a856b36eb6dd2\":\"exchangeFeeRecipient\",\"0x328809bc894f92807417d2dad6b7c998c1afdac6\":\"alice\",\"0x00000000d7b37203f54e165fb204b57c30d15835\":\"Role Server\",\"0x000000000000000000000000000000000000006f\":\"MockPool\",\"0x6000030000842044000077551d00cfc6b4005900\":\"Wrapped Native\",\"0xa4d4c1f8a763ef6a0140d04291eceef913ffc272\":\"carol\",\"0xaa10a84ce7d9ae517a52c6d5ca153b369af99ecf\":\"admin\",\"0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2\":\"Wrapped Ether\",\"0x1d96f2f6bef1202e4ce1ff6dad0c2cb002861d3e\":\"bob\"},\"duration\":\"28\u00b5s\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_C1_corePoolTypeTrustBoundary()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":400}},\"traces\":[],\"labeled_addresses\":{\"0x1111111111111111111111111111111111111111\":\"Currency3\",\"0x3333333333333333333333333333333333333333\":\"Currency4\",\"0xb6d0227c2a73e24642dd002df94ff0ef69abf979\":\"LimitBreak AMM\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0x721c002b0059009a671d00ad1700c9748146cd1b\":\"Creator Token Transfer Validator\",\"0xc5c7a5a6b65416c8494e9ccde6cacebdc0a2d8b8\":\"feeOnTopRecipient\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0x7aa8a8b9faadeb469dc52b88288bc",
+      "quality": {
+        "quality": "real",
+        "has_real_assertion": true,
+        "size": 29422
+      }
+    },
+    "H-R5-DP-07": {
+      "skipped": true,
+      "reason": "no test file or exempt prefix"
+    },
+    "H-R5-DP-08": {
+      "compiled": true,
+      "executed": true,
+      "tests_passed": 0,
+      "tests_failed": 0,
+      "raw_output": "{\"test/AuditExtHijackerKLoop.t.sol:AuditExtHijackerKLoopTest\":{\"duration\":\"3ms 601\u00b5s 333ns\",\"test_results\":{\"test_C13_poolDecoderMaxValues()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":394}},\"traces\":[],\"labeled_addresses\":{\"0x1111111111111111111111111111111111111111\":\"Currency3\",\"0x3333333333333333333333333333333333333333\":\"Currency4\",\"0xb6d0227c2a73e24642dd002df94ff0ef69abf979\":\"LimitBreak AMM\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0x721c002b0059009a671d00ad1700c9748146cd1b\":\"Creator Token Transfer Validator\",\"0xc5c7a5a6b65416c8494e9ccde6cacebdc0a2d8b8\":\"feeOnTopRecipient\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0x7aa8a8b9faadeb469dc52b88288bcc1e1645c9da\":\"tokenAdmin\",\"0x77d495327adb2f933310c9b8145a856b36eb6dd2\":\"exchangeFeeRecipient\",\"0x328809bc894f92807417d2dad6b7c998c1afdac6\":\"alice\",\"0x00000000d7b37203f54e165fb204b57c30d15835\":\"Role Server\",\"0x000000000000000000000000000000000000006f\":\"MockPool\",\"0x6000030000842044000077551d00cfc6b4005900\":\"Wrapped Native\",\"0xa4d4c1f8a763ef6a0140d04291eceef913ffc272\":\"carol\",\"0xaa10a84ce7d9ae517a52c6d5ca153b369af99ecf\":\"admin\",\"0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2\":\"Wrapped Ether\",\"0x1d96f2f6bef1202e4ce1ff6dad0c2cb002861d3e\":\"bob\"},\"duration\":\"28\u00b5s\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_C1_corePoolTypeTrustBoundary()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":400}},\"traces\":[],\"labeled_addresses\":{\"0x1111111111111111111111111111111111111111\":\"Currency3\",\"0x3333333333333333333333333333333333333333\":\"Currency4\",\"0xb6d0227c2a73e24642dd002df94ff0ef69abf979\":\"LimitBreak AMM\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0x721c002b0059009a671d00ad1700c9748146cd1b\":\"Creator Token Transfer Validator\",\"0xc5c7a5a6b65416c8494e9ccde6cacebdc0a2d8b8\":\"feeOnTopRecipient\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0x7aa8a8b9faadeb469dc52b88288bc",
+      "quality": {
+        "quality": "real",
+        "has_real_assertion": true,
+        "size": 29422
+      }
+    },
+    "H-R5-DP-09": {
+      "compiled": true,
+      "executed": true,
+      "tests_passed": 0,
+      "tests_failed": 0,
+      "raw_output": "{\"test/AuditExtHijackerKLoop.t.sol:AuditExtHijackerKLoopTest\":{\"duration\":\"3ms 601\u00b5s 333ns\",\"test_results\":{\"test_C13_poolDecoderMaxValues()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":394}},\"traces\":[],\"labeled_addresses\":{\"0x1111111111111111111111111111111111111111\":\"Currency3\",\"0x3333333333333333333333333333333333333333\":\"Currency4\",\"0xb6d0227c2a73e24642dd002df94ff0ef69abf979\":\"LimitBreak AMM\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0x721c002b0059009a671d00ad1700c9748146cd1b\":\"Creator Token Transfer Validator\",\"0xc5c7a5a6b65416c8494e9ccde6cacebdc0a2d8b8\":\"feeOnTopRecipient\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0x7aa8a8b9faadeb469dc52b88288bcc1e1645c9da\":\"tokenAdmin\",\"0x77d495327adb2f933310c9b8145a856b36eb6dd2\":\"exchangeFeeRecipient\",\"0x328809bc894f92807417d2dad6b7c998c1afdac6\":\"alice\",\"0x00000000d7b37203f54e165fb204b57c30d15835\":\"Role Server\",\"0x000000000000000000000000000000000000006f\":\"MockPool\",\"0x6000030000842044000077551d00cfc6b4005900\":\"Wrapped Native\",\"0xa4d4c1f8a763ef6a0140d04291eceef913ffc272\":\"carol\",\"0xaa10a84ce7d9ae517a52c6d5ca153b369af99ecf\":\"admin\",\"0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2\":\"Wrapped Ether\",\"0x1d96f2f6bef1202e4ce1ff6dad0c2cb002861d3e\":\"bob\"},\"duration\":\"28\u00b5s\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_C1_corePoolTypeTrustBoundary()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":400}},\"traces\":[],\"labeled_addresses\":{\"0x1111111111111111111111111111111111111111\":\"Currency3\",\"0x3333333333333333333333333333333333333333\":\"Currency4\",\"0xb6d0227c2a73e24642dd002df94ff0ef69abf979\":\"LimitBreak AMM\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0x721c002b0059009a671d00ad1700c9748146cd1b\":\"Creator Token Transfer Validator\",\"0xc5c7a5a6b65416c8494e9ccde6cacebdc0a2d8b8\":\"feeOnTopRecipient\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0x7aa8a8b9faadeb469dc52b88288bc",
+      "quality": {
+        "quality": "real",
+        "has_real_assertion": true,
+        "size": 29422
+      }
+    }
+  }
+}

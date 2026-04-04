@@ -1,0 +1,164 @@
+{
+  "agent_name": "insolvency-engineer",
+  "agent_role": "Insolvency Engineer",
+  "wave": 1,
+  "findings": [],
+  "ruled_out_vectors": [
+    {
+      "vector": "KV-1: Zero-price bypass in computeRatioX96 — overflow returns 0, bypassing pricing bounds in validateHandlerOrder",
+      "why_ruled_out": "In _validatePricingBounds (afterSwap path, AMMStandardHook.sol:847), computeRatioX96 returning 0 triggers explicit revert (line 849). In validateHandlerOrder (line 215), computeRatioX96 returning 0 bypasses bounds IF minSqrtPriceX96==0, but the actual trade uses sqrtPriceX96 parameter directly in CLOBHelper.fillOrder, not the recomputed ratio. The CLOB order execution price is set at order creation time and is not affected by the ratio computation. No economic extraction path.",
+      "test_file": "none - code analysis only, no exploitable path",
+      "repos": ["lbamm-hooks-and-handlers"],
+      "contracts": ["AMMStandardHook.sol", "CLOBTransferHandler.sol", "SqrtPriceCalculator.sol"],
+      "functions": ["_enforceTokenHooks", "validateHandlerOrder", "computeRatioX96"],
+      "keywords": ["sqrtPriceX96", "zero", "bypass", "overflow", "pricing-bounds", "computeRatioX96", "validateHandlerOrder"]
+    },
+    {
+      "vector": "KV-2: Direct handler call — calling CLOBTransferHandler.ammHandleTransfer directly bypasses AMM pricing enforcement",
+      "why_ruled_out": "CLOBTransferHandler.ammHandleTransfer (line 230) checks `msg.sender != AMM` and reverts with CLOBTransferHandler__CallbackMustBeFromAMM. Function is also nonReentrant. No way to call handler without going through AMM.",
+      "test_file": "none - explicit access control guard at L230",
+      "repos": ["lbamm-hooks-and-handlers"],
+      "contracts": ["CLOBTransferHandler.sol", "AMMStandardHook.sol"],
+      "functions": ["executeSwap", "beforeSwap", "afterSwap"],
+      "keywords": ["pricing", "bypass", "direct", "handler", "direct-swap", "pricing-bounds", "flag-dependency"]
+    },
+    {
+      "vector": "KV-3: Settings sync gap — setTokenSettings syncs original settings (without initialized=true) to hooks",
+      "why_ruled_out": "Registry stores memSettings with initialized=true (CreatorHookSettingsRegistry.sol:378). Hook sync receives original settings which may have initialized=false (line 397). However, AMMStandardHook._getOrFetchTokenSettings (line 907-918) self-heals: if initialized=false in cache, it re-fetches from registry (which has initialized=true), corrects the cache, and proceeds with correct settings. No window where wrong settings are used. Gas waste only (CP-005).",
+      "test_file": "none - self-healing mechanism confirmed via code analysis",
+      "repos": ["lbamm-hooks-and-handlers"],
+      "contracts": ["CLOBTransferHandler.sol", "CreatorHookSettingsRegistry.sol"],
+      "functions": ["setTokenSettings"],
+      "keywords": ["setTokenSettings", "sync", "stale", "initialized", "memSettings", "gas-waste"]
+    },
+    {
+      "vector": "KV-4: Transient storage leak — DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT not cleared on all paths",
+      "why_ruled_out": "In _validatePricingBounds (AMMStandardHook.sol:838-840), beforeSwap writes to DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT. afterSwap reads it (line 843-844). The slot is per-token (written once per beforeSwap call). If afterSwap flag is disabled, the slot is never read, so stale data has no effect. In AMMHooksTransferHandler paths, the slot value only affects computeRatioX96 pricing bounds computation for direct swaps. The beforeSwap/afterSwap pair is atomic for a given swap. Known as CP-001 (by-design, second token's beforeSwap overwrites first). No extraction path.",
+      "test_file": "none - confirmed as CP-001 (known by-design pattern)",
+      "repos": ["lbamm-hooks-and-handlers"],
+      "contracts": ["AMMHooksTransferHandler.sol", "AMMStandardHook.sol"],
+      "functions": ["beforeSwap"],
+      "keywords": ["transient", "tstore", "clear", "direct", "swap", "transient-storage", "stale-read", "direct-swap", "DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT"]
+    },
+    {
+      "vector": "Flash loan + add liquidity + collect fees + remove liquidity profit extraction",
+      "why_ruled_out": "feeGrowthGlobalX128 only increases during swaps (DynamicHelper.sol:406). In a single-tx flash loan sequence without genuine swaps to change the fee growth, the LP position accrues zero fees. Adding and removing liquidity in the same tick range at the same fee growth returns the same tokens minus rounding (protocol-favored). No profit path.",
+      "test_file": "none - structural analysis of fee growth accumulation",
+      "repos": ["lbamm-core", "amm-pool-type-dynamic"],
+      "contracts": ["AMMModule.sol", "DynamicHelper.sol"],
+      "functions": ["_positionAddLiquidity", "_positionRemoveLiquidity", "computeSwap"],
+      "keywords": ["flash-loan", "fee-inflation", "feeGrowthGlobal", "insolvency"]
+    },
+    {
+      "vector": "Zero-liquidity pool fee accumulation overflow",
+      "why_ruled_out": "DynamicHelper.computeSwap (line 404) guards fee growth update with `if (swapCache.liquidity > 0)`. When liquidity is zero, feeGrowthGlobalX128 is not updated, preventing fee accumulation. Additionally, swaps in zero-liquidity ranges produce zero output (getAmount*Delta returns 0 with 0 liquidity), so no actual tokens move.",
+      "test_file": "none - structural guard at DynamicHelper.sol:404",
+      "repos": ["amm-pool-type-dynamic"],
+      "contracts": ["DynamicHelper.sol"],
+      "functions": ["computeSwap"],
+      "keywords": ["zero-liquidity", "fee-overflow", "feeGrowthGlobal"]
+    },
+    {
+      "vector": "tokensOwed desync between position and pool accounting",
+      "why_ruled_out": "tokensOwed in DynamicHelper._updatePosition is computed as delta between current feeGrowthInside and position's last feeGrowthInsideLast, multiplied by position liquidity. This is atomic with the position update. In AMMModule, feeBalance is decremented by the same fees0/fees1 values returned by the pool type. Both use _safeDecrementUint128 which reverts on underflow. No desync path exists.",
+      "test_file": "none - atomic update confirmed via code trace",
+      "repos": ["lbamm-core", "amm-pool-type-dynamic"],
+      "contracts": ["AMMModule.sol", "DynamicHelper.sol"],
+      "functions": ["_positionCollectFees", "_updatePosition"],
+      "keywords": ["tokensOwed", "desync", "fee-accounting"]
+    },
+    {
+      "vector": "Rounding asymmetry in add vs remove liquidity paths",
+      "why_ruled_out": "SqrtPriceMath.getAmount0Delta and getAmount1Delta use roundUp=true for adding liquidity (LP pays more) and roundUp=false for removing (LP receives less). This is the standard Uniswap v3 rounding convention — protocol-favoring. Confirmed in DynamicHelper.modifyPosition (lines 140-167) where liquidityChange>0 uses same getAmount*Delta signed variant that rounds against the LP. No rounding extraction possible.",
+      "test_file": "none - rounding direction verified in SqrtPriceMath and DynamicHelper",
+      "repos": ["amm-pool-type-dynamic"],
+      "contracts": ["SqrtPriceMath.sol", "DynamicHelper.sol"],
+      "functions": ["getAmount0Delta", "getAmount1Delta", "modifyPosition"],
+      "keywords": ["rounding", "asymmetry", "add-remove", "protocol-favoring"]
+    },
+    {
+      "vector": "Flash loan denomination mismatch — fee token differs from loan token",
+      "why_ruled_out": "AMMModule._flashLoan (lines 3296-3378) supports cross-token fees via hook. When feeToken != loanToken: (1) requiredTokenBalanceAfter is set to exact pre-loan balance (loan token must be fully returned), (2) requiredFeeTokenBalanceAfter is set to pre-fee-balance + feeAmount (fee token balance must increase by feeAmount). Both are validated independently. The fee is computed in feeToken denomination and the transfer is in feeToken — no denomination mismatch. Token amounts are validated via balanceOf checks.",
+      "test_file": "none - balance check pattern prevents denomination mismatch",
+      "repos": ["lbamm-core"],
+      "contracts": ["AMMModule.sol"],
+      "functions": ["_flashLoan"],
+      "keywords": ["flash-loan", "denomination", "cross-token", "fee-mismatch"]
+    },
+    {
+      "vector": "Reentrancy during _executeQueuedHookFeesByHookTransfers via token callback",
+      "why_ruled_out": "_setReentrancyFlags(NO_FLAGS) at AMMModule.sol:3190 only clears custom flags, NOT the ENTERED bit. TstorishReentrancyGuardWithFlags._setReentrancyFlags (line 69) masks out ENTERED|NOT_ENTERED from flags, then preserves ENTERED from current state (line 70-71). So the ENTERED bit remains set during the safeTransfer calls in the fee distribution loop. Any re-entrant call to nonReentrant/nonReentrantWithFlags functions would revert.",
+      "test_file": "none - TstorishReentrancyGuardWithFlags.sol:69-71 preserves ENTERED bit",
+      "repos": ["lbamm-core"],
+      "contracts": ["AMMModule.sol"],
+      "functions": ["_executeQueuedHookFeesByHookTransfers", "_setReentrancyFlags"],
+      "keywords": ["reentrancy", "hook-fees", "transient-storage", "ENTERED"]
+    },
+    {
+      "vector": "Dust-loop extraction via 100+ tiny swaps harvesting truncation",
+      "why_ruled_out": "SwapMath.computeSwapByInputStep (line 53-54) computes amountRemainingLessFee = mulDiv(amountRemaining, MAX_BPS - poolFeeBPS, MAX_BPS) which rounds down. Then amountOut at line 75-77 uses roundUp=false (getAmount*Delta with false). Both round against the trader. Each tiny swap loses the rounding dust to the protocol. No compound profit from iterated small swaps.",
+      "test_file": "none - structural rounding analysis of SwapMath",
+      "repos": ["amm-pool-type-dynamic"],
+      "contracts": ["SwapMath.sol", "SqrtPriceMath.sol"],
+      "functions": ["computeSwapByInputStep", "getAmount0Delta", "getAmount1Delta"],
+      "keywords": ["dust-loop", "truncation", "rounding", "tiny-swaps"]
+    }
+  ],
+  "theft_theses": [
+    {
+      "thesis": "Flash loan + add liquidity + collect fees + remove liquidity creates attacker profit via fee inflation",
+      "victim": "LPs in the pool",
+      "asset": "Pool reserves",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Zero-liquidity pool fee accumulation overflow allows free fee collection",
+      "victim": "Pool reserves",
+      "asset": "Pool fee balances",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "tokensOwed desync between position and pool accounting enables double-collection",
+      "victim": "Protocol/LPs",
+      "asset": "Fee tokens",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    }
+  ],
+  "metadata": {
+    "num_turns": 30,
+    "tool_uses": 25,
+    "files_read": 20,
+    "tools_run": {
+      "phase0_artifacts": {"read": true},
+      "slither": {"ran": true, "repos": ["lbamm-core", "amm-pool-type-dynamic"], "high": 7, "medium": 25},
+      "aderyn": {"ran": true, "repos": ["lbamm-core"], "findings": 25, "notes": "amm-pool-type-dynamic crashed"},
+      "forge_test": {"ran": false, "reason": "no confirmed findings requiring PoC — all hypotheses ruled out structurally"},
+      "chisel": {"ran": false, "reason": "no math edge cases requiring REPL verification"},
+      "halmos": {"ran": false, "reason": "no math findings to verify"},
+      "medusa": {"ran": false, "reason": "no multi-step findings requiring stateful fuzz"},
+      "echidna": {"ran": false, "reason": "used Slither MCP instead"},
+      "cast_run": {"ran": false, "reason": "no historical tx to trace"},
+      "heimdall": {"ran": false, "reason": "no unverified deps"},
+      "quimera": {"ran": false, "reason": "no confirmed findings"},
+      "variant_analysis": {"ran": false, "reason": "no confirmed findings"}
+    },
+    "theses_tested": 3,
+    "theses_confirmed": 0,
+    "theses_ruled_out": 3,
+    "checklist_items_completed": {
+      "phase_a": {"total": 5, "completed": 3, "notes": "A1 slither (2 repos), A2 function lists, A3 aderyn (1 repo, 1 crashed), A4 custom detectors not available via MCP, A5 N/A for insolvency"},
+      "phase_b": {"total": 3, "completed": 0, "notes": "B1-B3 not invoked due to context limits"},
+      "phase_c": {"total": 20, "completed": 0, "notes": "Structural analysis ruled out all C-STATE hypotheses without needing Forge tests — fee growth requires genuine swaps, rounding favors protocol, reentrancy guard holds"},
+      "phase_d": {"total": 4, "completed": 4, "notes": "KV-1 through KV-4 all investigated and ruled out with code evidence"},
+      "phase_e": {"total": 11, "completed": 11, "notes": "All 11 Target Map hypotheses investigated, all ruled out structurally"}
+    },
+    "lens_coverage": {
+      "L1_trace": "Traced fee values through swap path (computeSwap → poolSwapByInput → _finalizeSwap → safeTransfer). Traced flash loan fee from _executeTokenFlashloanHooks through balanceOf validation. No denomination mismatch found.",
+      "L2_diff": "Diffed addLiquidity vs removeLiquidity: symmetric fee handling, same hook execution order, same _safeIncrement/_safeDecrement guards. Diffed swapByInput vs swapByOutput: fee application order differs (input fees first vs output fees first) but amounts validated independently.",
+      "L3_amp": "Searched for multiplications with attacker-controlled operands. Fee calculations use FullMath.mulDiv with MAX_BPS denominator — bounded. Flash loan fee uses mulDivRoundingUp — rounds against borrower. No amplification vector found."
+    }
+  }
+}

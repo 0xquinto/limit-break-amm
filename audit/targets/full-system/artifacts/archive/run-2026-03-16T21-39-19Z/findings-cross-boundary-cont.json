@@ -1,0 +1,94 @@
+{
+  "agent_name": "cross-boundary-cont",
+  "agent_role": "Cross-Boundary Tracer (Compliance Continuation)",
+  "wave": 1,
+  "findings": [],
+  "ruled_out_vectors": [
+    {
+      "vector": "C13: PoolDecoder max-value edge cases — max pool type, max fee, all-bits-set poolId",
+      "why_ruled_out": "Forge fuzz + unit tests confirm PoolDecoder.getPoolType and getPoolFee round-trip correctly for all inputs. With 6 leading zero bytes enforced by POOL_TYPE_ADDRESS_MASK, the 112-bit address fits cleanly in the poolId upper bits. All-bits-set poolId extracts correctly. Fuzz tested with 25 random (address, uint16) pairs — all pass. Pool type with only 5 leading zero bytes correctly fails the mask check (uint160 & POOL_TYPE_ADDRESS_MASK != 0).",
+      "test_file": "lbamm-core/test/AuditCrossBoundaryCont.t.sol:test_C13_poolDecoder_maxValues, testFuzz_C13_poolDecoder_roundTrip, test_C13_poolType_5ZeroBytesFails",
+      "repos": ["lbamm-core"],
+      "contracts": ["PoolDecoder.sol"],
+      "functions": ["getPoolType", "getPoolFee"],
+      "keywords": ["pool-id", "decoder", "max-values", "edge-case", "fuzz"]
+    },
+    {
+      "vector": "C14: createPool edge parameters — zero fee, max fee (10000 BPS), DYNAMIC_POOL_FEE_BPS, invalid pool type",
+      "why_ruled_out": "Code analysis + Forge unit tests confirm: (1) fee > MAX_BPS && fee != DYNAMIC_POOL_FEE_BPS reverts LBAMM__PoolFeeMustBeLessThan100Percent. (2) fee == 10000 (100%) passes. (3) fee == 55555 requires poolHook != address(0). (4) Pool type without 6 leading zero bytes reverts LBAMM__InvalidPoolType. (5) Identical tokens revert LBAMM__CannotPairIdenticalTokens. (6) Token ordering auto-corrected (token0 > token1 swapped). (7) Pool ID validated: Core checks getPoolType(poolId) == details.poolType && getPoolFee(poolId) == details.fee.",
+      "test_file": "lbamm-core/test/AuditCrossBoundaryCont.t.sol:test_C14_maxFee_validation, test_C14_poolType_leadingZeros_enforcement, test_C14_poolId_validation_logic",
+      "repos": ["lbamm-core"],
+      "contracts": ["AMMModule.sol", "PoolDecoder.sol"],
+      "functions": ["_createPool", "getPoolType", "getPoolFee"],
+      "keywords": ["createPool", "edge-parameters", "fee", "pool-type", "validation"]
+    },
+    {
+      "vector": "C16: _validatePricingBounds all-paths enforcement — Halmos symbolic verification",
+      "why_ruled_out": "Halmos symbolic execution verified 2 of 3 checks: (1) check_pricingBoundsAlwaysEnforced — PASS, 21 paths, 0.05s. Confirms: when bounds.isSet=true and price is valid, all code paths enforce min/max constraints. For direct swaps (poolType==address(0)), both min and max are always enforced. For pool-type swaps, directional tolerance applies (zeroForOne allows temp above-max, !zeroForOne allows temp below-min). (2) check_zeroPriceAlwaysReverts — PASS, 29 paths. Confirms: when computeRatioX96 returns 0, the explicit zero check at line 847-850 catches it. Without this check, 0 > maxBound would be false, allowing bypass. (3) check_computeRatioX96_bounded — TIMEOUT (assembly complexity exceeds solver). The bounded check for normal inputs was already verified by the previous agent's fuzz tests.",
+      "test_file": "lbamm-hooks-and-handlers/test/HalmosPricingBounds.t.sol:check_pricingBoundsAlwaysEnforced, check_zeroPriceAlwaysReverts",
+      "repos": ["lbamm-hooks-and-handlers"],
+      "contracts": ["AMMStandardHook.sol", "SqrtPriceCalculator.sol"],
+      "functions": ["_validatePricingBounds", "computeRatioX96"],
+      "keywords": ["halmos", "symbolic", "pricing-bounds", "all-paths", "INV-H04"]
+    },
+    {
+      "vector": "C17: Medusa fuzzing on AMMStandardHook — assertion testing 50K calls",
+      "why_ruled_out": "Medusa fuzz campaign completed: 160,701 calls, 288 branches covered, 20 corpus items, 0 failures out of 16,069 assertion tests. All 19 assertion tests passed including: beforeSwap, afterSwap, validateHandlerOrder, validateAddLiquidity, validateRemoveLiquidity, validateCollectFees, validatePoolCreation, validateFlashloanFee, registryUpdateTokenSettings, registryUpdatePricingBounds, whitelist operations. No assertion violations or unexpected reverts found.",
+      "test_file": "medusa: lbamm-hooks-and-handlers/medusa_corpus/coverage/coverage_report.html",
+      "repos": ["lbamm-hooks-and-handlers"],
+      "contracts": ["AMMStandardHook.sol"],
+      "functions": ["beforeSwap", "afterSwap", "validateHandlerOrder", "validateAddLiquidity", "validateRemoveLiquidity"],
+      "keywords": ["medusa", "fuzz", "assertion", "AMMStandardHook"]
+    },
+    {
+      "vector": "C18: Medusa fuzzing on SingleProviderPoolType — assertion testing 50K calls",
+      "why_ruled_out": "Medusa fuzz campaign completed: 297,955 calls, 170 branches covered, 17 corpus items, 0 failures out of 29,793 assertion tests. All 11 assertion tests passed including: addLiquidity, removeLiquidity, collectFees, createPool, computePoolId, swapByInput, swapByOutput, getCurrentPriceX96, executeStaticDelegateCall, initiateStaticDelegateCall, poolTypeManifestUri. No assertion violations found.",
+      "test_file": "medusa: lbamm-pool-type-single-provider/medusa_corpus/coverage/coverage_report.html",
+      "repos": ["lbamm-pool-type-single-provider"],
+      "contracts": ["SingleProviderPoolType.sol"],
+      "functions": ["addLiquidity", "removeLiquidity", "swapByInput", "swapByOutput", "createPool"],
+      "keywords": ["medusa", "fuzz", "assertion", "SingleProviderPoolType"]
+    },
+    {
+      "vector": "Slither High/Medium findings review — lbamm-core",
+      "why_ruled_out": "Slither detected 30 High/Medium findings on lbamm-core: (1) arbitrary-send-erc20 in _collectToken/_finalizeSwapCollectFundsAndDisburse — false positive, transfers are from approved users within the AMM flow. (2) incorrect-return for delegateCallPure — false positive, intentional diamond proxy pattern using assembly return. (3) reentrancy-balance in _distributeAndCollectLiquidityTokens and _finalizeSwapCollectFundsAndDisburse — false positive, reentrancy guard flags (SWAP_GUARD_FLAG, LIQUIDITY_GUARD_FLAG) prevent re-entry, and balance checks (line 2208) ensure conservation. (4) uninitialized-local (12 instances) — false positive, all are struct variables initialized to Solidity default (zero), which is the intended initial state. No exploitable findings.",
+      "test_file": "slither: lbamm-core High/Medium detectors",
+      "repos": ["lbamm-core"],
+      "contracts": ["AMMModule.sol", "LimitBreakAMM.sol", "FeeHelper.sol"],
+      "functions": ["_collectToken", "_finalizeSwapCollectFundsAndDisburse", "_distributeAndCollectLiquidityTokens"],
+      "keywords": ["slither", "static-analysis", "reentrancy", "uninitialized", "false-positive"]
+    },
+    {
+      "vector": "Slither High/Medium findings review — lbamm-hooks-and-handlers",
+      "why_ruled_out": "Slither detected 35 High/Medium findings on hooks-and-handlers, all overlapping with lbamm-core findings (the hooks repo imports core). Same false positive categories: arbitrary-send-erc20, incorrect-return (delegateCallPure), uninitialized-local struct variables. No new exploitable findings specific to hooks-and-handlers contracts.",
+      "test_file": "slither: lbamm-hooks-and-handlers High/Medium detectors",
+      "repos": ["lbamm-hooks-and-handlers"],
+      "contracts": ["AMMStandardHook.sol", "CLOBTransferHandler.sol"],
+      "functions": [],
+      "keywords": ["slither", "static-analysis", "hooks", "false-positive"]
+    }
+  ],
+  "theft_theses": [],
+  "metadata": {
+    "continuation": true,
+    "parent_agent": "cross-boundary",
+    "checklist_items_completed": "C13: PoolDecoder edge cases (Forge fuzz+unit), C14: createPool edge params (Forge unit), C16: Halmos pricing bounds (2/3 pass, 1 timeout), C17: Medusa AMMStandardHook (19/19 pass, 160K calls), C18: Medusa SingleProviderPoolType (11/11 pass, 298K calls), Slither High/Medium review on lbamm-core and hooks-and-handlers",
+    "tools_run": {
+      "forge": {"ran": true, "repos": ["lbamm-core"], "note": "11 tests in AuditCrossBoundaryCont.t.sol — all pass. Tests cover: PoolDecoder max values, zero poolId, all-bits-set, fuzz round-trip, 5-zero-byte rejection, 6-zero-byte acceptance, fee validation, pool type mask, token ordering, poolId validation."},
+      "halmos": {"ran": true, "repos": ["lbamm-hooks-and-handlers"], "note": "3 symbolic checks in HalmosPricingBounds.t.sol. check_pricingBoundsAlwaysEnforced: PASS (21 paths). check_zeroPriceAlwaysReverts: PASS (29 paths). check_computeRatioX96_bounded: TIMEOUT (assembly too complex for solver at 30s limit)."},
+      "medusa": {"ran": true, "repos": ["lbamm-hooks-and-handlers", "lbamm-pool-type-single-provider"], "note": "AMMStandardHook: 160K calls, 288 branches, 19 assertion tests, 0 failures. SingleProviderPoolType: 298K calls, 170 branches, 11 assertion tests, 0 failures."},
+      "slither": {"ran": true, "repos": ["lbamm-core", "lbamm-hooks-and-handlers"], "note": "High/Medium detectors. 30 findings on core, 35 on hooks — all false positives (diamond proxy pattern, struct zero-init, guarded reentrancy)."}
+    },
+    "num_turns": 25,
+    "tool_uses": 35,
+    "files_read": 15,
+    "tests_written": 2,
+    "test_files": [
+      "lbamm-core/test/AuditCrossBoundaryCont.t.sol",
+      "lbamm-hooks-and-handlers/test/HalmosPricingBounds.t.sol"
+    ],
+    "theses_tested": 0,
+    "theses_confirmed": 0,
+    "theses_ruled_out": 0
+  }
+}

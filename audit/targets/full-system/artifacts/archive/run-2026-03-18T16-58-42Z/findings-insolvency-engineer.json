@@ -1,0 +1,466 @@
+{
+  "agent_name": "insolvency-engineer",
+  "agent_role": "Insolvency Engineer",
+  "wave": 1,
+  "findings": [],
+  "ruled_out_vectors": [
+    {
+      "vector": "KV-1: Zero-price bypass in SqrtPriceCalculator.computeRatioX96 overflow returning 0, potentially bypassing pricing bounds in AMMStandardHook.validateHandlerOrder",
+      "why_ruled_out": "computeRatioX96 returns 0 on overflow (line 51-53). In validateHandlerOrder (line 217-224), sqrtPriceX96=0 triggers minSqrtPriceX96 check (0 < min \u2192 revert) unless minSqrtPriceX96==0. If only maxSqrtPriceX96 is set, 0 passes both checks. However: (1) the overflow requires extreme amount ratios (type(uint256).max / 1), (2) CLOB fillOrder math prices correctly regardless, (3) the maker self-harms by offering at worse price. No insolvency vector.",
+      "test_file": "lbamm-core/test/AuditInsolvency.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol",
+        "CLOBTransferHandler.sol",
+        "SqrtPriceCalculator.sol"
+      ],
+      "functions": [
+        "_enforceTokenHooks",
+        "validateHandlerOrder",
+        "computeRatioX96"
+      ],
+      "keywords": [
+        "sqrtPriceX96",
+        "zero",
+        "bypass",
+        "overflow",
+        "pricing-bounds",
+        "computeRatioX96",
+        "validateHandlerOrder"
+      ]
+    },
+    {
+      "vector": "KV-2: Direct handler call bypassing beforeSwap/afterSwap pricing enforcement in CLOBTransferHandler",
+      "why_ruled_out": "CLOBTransferHandler has no public executeSwap function. ammHandleTransfer (line 221-300) requires msg.sender == AMM (line 230). All external CLOB functions (depositToken, withdrawToken, openOrder, closeOrder) are protected by nonReentrant. openOrder validates via _enforceTokenHooks which calls validateHandlerOrder on the hook. No path to bypass pricing enforcement.",
+      "test_file": "code-analysis: CLOBTransferHandler.sol:229-232 (AMM-only check), CLOBTransferHandler.sol:574-619 (_enforceTokenHooks validates orders)",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "CLOBTransferHandler.sol",
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "ammHandleTransfer",
+        "beforeSwap",
+        "afterSwap",
+        "_enforceTokenHooks"
+      ],
+      "keywords": [
+        "pricing",
+        "bypass",
+        "direct",
+        "handler",
+        "direct-swap",
+        "pricing-bounds",
+        "flag-dependency"
+      ]
+    },
+    {
+      "vector": "KV-3: Settings sync gap between CLOBTransferHandler and CreatorHookSettingsRegistry leaving stale initialized memSettings",
+      "why_ruled_out": "CLOBTransferHandler has no setTokenSettings function. AMMStandardHook._getOrFetchTokenSettings (line 907-919) checks initialized flag and fetches from registry if not cached. Cache updates only via registryUpdateTokenSettings (line 519-525) which requires _requireCallerIsRegistry. The desync between registry and hook cache is by design (documented in CreatorHookSettingsRegistry lines 25-53). Settings versioning is intentional for hook isolation.",
+      "test_file": "code-analysis: AMMStandardHook.sol:907-919 (_getOrFetchTokenSettings), CreatorHookSettingsRegistry.sol:25-53 (design documentation)",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "CLOBTransferHandler.sol",
+        "CreatorHookSettingsRegistry.sol",
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "_getOrFetchTokenSettings",
+        "registryUpdateTokenSettings",
+        "setTokenSettings"
+      ],
+      "keywords": [
+        "setTokenSettings",
+        "sync",
+        "stale",
+        "initialized",
+        "memSettings",
+        "gas-waste"
+      ]
+    },
+    {
+      "vector": "KV-4: Transient storage leak in DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT between swaps in same TX",
+      "why_ruled_out": "Transient storage (EIP-1153) is cleared at end of each transaction. Within a TX, beforeSwap writes to DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT (line 839) and afterSwap reads it (line 844) sequentially per-swap. Multi-swap: each swap's beforeSwap overwrites with its own amount before its afterSwap reads. Sequential execution prevents cross-contamination. Test C1 in AuditInsolvency.t.sol confirms two swaps in same TX maintain correct solvency.",
+      "test_file": "lbamm-core/test/AuditInsolvency.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMHooksTransferHandler.sol",
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "beforeSwap",
+        "_validatePricingBounds"
+      ],
+      "keywords": [
+        "transient",
+        "tstore",
+        "clear",
+        "direct",
+        "swap",
+        "transient-storage",
+        "stale-read",
+        "direct-swap",
+        "DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT"
+      ]
+    },
+    {
+      "vector": "Flash loan profit via add liquidity + swap + remove liquidity sequence",
+      "why_ruled_out": "Tested with fuzz (C9, INV-E02). Flash loan capital cannot be profited from because: (1) swap fees are taken on both legs, (2) price impact works against the attacker on both legs, (3) add/remove liquidity is symmetric with protocol-favoring rounding. 25 fuzz runs with amounts 1000 to 30e18 all show attacker loses money.",
+      "test_file": "lbamm-core/test/AuditInsolvency.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_positionAddLiquidity",
+        "_positionRemoveLiquidity",
+        "_poolSwapByInput"
+      ],
+      "keywords": [
+        "flash-loan",
+        "add-liquidity",
+        "remove-liquidity",
+        "profit",
+        "extraction"
+      ]
+    },
+    {
+      "vector": "Dust-loop extraction via 100+ tiny swaps harvesting truncation",
+      "why_ruled_out": "100 sequential 1-wei swaps tested (INV-SW03). Pool does not lose value in both tokens simultaneously. SwapMath rounds amountIn up and amountOut down, favoring the protocol. Each dust swap costs the attacker more in rounding loss than it can extract. 50-operation fuzz campaign (hypothesis_extended_solvency_50_ops) also holds.",
+      "test_file": "lbamm-core/test/AuditInsolvency.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_poolSwapByInput"
+      ],
+      "keywords": [
+        "dust",
+        "truncation",
+        "rounding",
+        "extraction",
+        "tiny-swaps"
+      ]
+    },
+    {
+      "vector": "Fee accumulator overflow causing insolvency",
+      "why_ruled_out": "Fee balances stored as uint128 with _safeIncrementUint128 overflow check (assembly revert on overflow). 30 large alternating swaps tested (hypothesis_fee_overflow_extreme_swaps). Fee balances remain bounded by actual token balances. feeGrowthGlobal uses Q128.128 with intentional overflow wrapping - this is standard Uniswap V3 design.",
+      "test_file": "lbamm-core/test/AuditInsolvency.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_safeIncrementUint128",
+        "_storeProtocolFees"
+      ],
+      "keywords": [
+        "overflow",
+        "fee",
+        "accumulator",
+        "uint128"
+      ]
+    },
+    {
+      "vector": "tokensOwed desync between position and pool accounting enabling double-collection",
+      "why_ruled_out": "_transferHookFeesByHook decrements tokensOwed BEFORE safeTransfer (CEI pattern, line 3116-3139 AMMModule.sol). Underflow check prevents double-spending. _storeTokensOwed uses hash-based storage (keccak256(token, owner) slot). 10-swap test confirms solvency holds. collectHookFeesByHook has NO nonReentrant but queues during swap/liquidity operations (flag checks at line 72-81 ModuleFeeCollection.sol).",
+      "test_file": "lbamm-core/test/AuditInsolvency.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol",
+        "ModuleFeeCollection.sol"
+      ],
+      "functions": [
+        "_transferHookFeesByHook",
+        "_storeTokensOwed",
+        "collectHookFeesByHook"
+      ],
+      "keywords": [
+        "tokensOwed",
+        "desync",
+        "double-collect",
+        "CEI",
+        "reentrancy"
+      ]
+    },
+    {
+      "vector": "Reentrancy during _executeQueuedHookFeesByHookTransfers when _setReentrancyFlags(NO_FLAGS) clears custom flags",
+      "why_ruled_out": "_setReentrancyFlags implementation (TstorishReentrancyGuardWithFlags.sol:68-72) masks out ENTERED and NOT_ENTERED bits: flags = flags & ~(ENTERED | NOT_ENTERED), then currentGuard = current & ENTERED. ENTERED bit (1<<1) is PRESERVED even when flags=NO_FLAGS. Main entry points (singleSwap etc.) check ENTERED bit and revert. collectHookFeesByHook takes direct transfer path (not queue) during this window, but CEI in _transferHookFeesByHook prevents double-spend.",
+      "test_file": "lbamm-core/test/AuditInsolvency.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol",
+        "TstorishReentrancyGuardWithFlags.sol"
+      ],
+      "functions": [
+        "_executeQueuedHookFeesByHookTransfers",
+        "_setReentrancyFlags",
+        "_nonReentrantBefore"
+      ],
+      "keywords": [
+        "reentrancy",
+        "transient",
+        "ENTERED",
+        "flags",
+        "queue",
+        "hook-fees"
+      ]
+    },
+    {
+      "vector": "Cross-pool arbitrage creating value leak when two pools for same pair have different prices",
+      "why_ruled_out": "Each pool's reserves are tracked independently. Cross-pool arbitrage is a normal MEV activity that profits from price differences but cannot extract value from the protocol itself - it only moves value between pools and the arbitrageur pays fees to both pools. Test C15 confirms both pools maintain solvency (balance >= reserves + fees) after arbitrage sequence.",
+      "test_file": "lbamm-core/test/AuditInsolvency.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_poolSwapByInput"
+      ],
+      "keywords": [
+        "cross-pool",
+        "arbitrage",
+        "value-leak",
+        "multi-pool"
+      ]
+    },
+    {
+      "vector": "Rounding asymmetry in add vs remove liquidity paths enabling extraction",
+      "why_ruled_out": "addLiquidity collects tokens from provider, removeLiquidity distributes tokens. Both paths use _safeIncrementUint128/_safeDecrementUint128 for reserves. Pool type calculates amounts with protocol-favoring rounding (add rounds up for required input, remove rounds down for output). Round-trip test (add then remove) shows user always loses a small amount. INV-S02 fuzz confirms no profitable round trip.",
+      "test_file": "lbamm-core/test/AuditInsolvency.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_positionAddLiquidity",
+        "_positionRemoveLiquidity",
+        "_safeIncrementUint128",
+        "_safeDecrementUint128"
+      ],
+      "keywords": [
+        "rounding",
+        "asymmetry",
+        "add-liquidity",
+        "remove-liquidity"
+      ]
+    },
+    {
+      "vector": "Protocol fee toggle creating extraction window during transition",
+      "why_ruled_out": "setProtocolFees only affects future swaps, not pending state. There is no accumulated-but-unclaimed fee bucket that changes value when fees toggle. Test hypothesis_protocol_fee_toggle_no_extraction confirms round trip remains unprofitable regardless of fee changes.",
+      "test_file": "lbamm-core/test/AuditInsolvency.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "setProtocolFees",
+        "_poolSwapByInput"
+      ],
+      "keywords": [
+        "protocol-fee",
+        "toggle",
+        "extraction",
+        "transition"
+      ]
+    },
+    {
+      "vector": "Wrapped native ETH deposit/refund value leak in _depositWrappedNativeAndRefundExcess",
+      "why_ruled_out": "Test C12 confirms: exact ETH amount consumed correctly, excess ETH refunded correctly (send 2 ETH for 1 ETH swap, get 1 ETH back). Balance before - balance after = exactly the swap amount. No value retained by intermediary.",
+      "test_file": "lbamm-core/test/AuditInsolvency.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_depositWrappedNativeAndRefundExcess"
+      ],
+      "keywords": [
+        "wrapped-native",
+        "refund",
+        "ETH",
+        "value-leak"
+      ]
+    },
+    {
+      "vector": "Flash loan cross-token fee denomination mismatch enabling underpayment",
+      "why_ruled_out": "Flash loan fee flow: hook returns (feeToken, tokenFeeAmount). _flashLoan (line 3288-3382) does separate balance checks for loanToken and feeToken. If feeToken != loanToken, surplus handling ensures both tokens are properly accounted. The balance-before/after pattern catches any underpayment. No denomination confusion possible.",
+      "test_file": "code-analysis: AMMModule.sol:3288-3382 (flash loan balance checks), AMMModule.sol:3404-3437 (_executeTokenFlashloanHooks fee token validation)",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_flashLoan",
+        "_executeTokenFlashloanHooks"
+      ],
+      "keywords": [
+        "flash-loan",
+        "cross-token",
+        "fee",
+        "denomination"
+      ]
+    }
+  ],
+  "theft_theses": [
+    {
+      "thesis": "Flash loan -> add liquidity -> collect inflated fees -> remove liquidity -> repay with profit",
+      "victim": "Liquidity providers (their share of fees diluted)",
+      "asset": "LP fee share",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Zero-liquidity pool fee accumulation overflow creating phantom fees",
+      "victim": "Protocol (pays fees from reserves that don't exist)",
+      "asset": "Pool reserves",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "tokensOwed desync enabling double-collection of hook fees",
+      "victim": "Protocol (pays same fees twice)",
+      "asset": "Hook fee balance",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Dust-loop extraction: 100+ tiny swaps to harvest truncation rounding",
+      "victim": "Pool (loses fractional tokens per swap)",
+      "asset": "Pool reserves via rounding",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Reentrancy via malicious ERC-777 token during queued hook fee execution",
+      "victim": "Protocol (re-entered state enables double withdrawal)",
+      "asset": "Pool reserves or fee balances",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Cross-pool arbitrage leaking value from AMM reserves",
+      "victim": "LPs in both pools",
+      "asset": "Pool reserves",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Flash loan -> large swap -> reverse swap extracting fees",
+      "victim": "Protocol",
+      "asset": "Net swap profit from price impact asymmetry",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Forged hook caller: call hook directly with fake pool identity to get credited without swap",
+      "victim": "Protocol (fake fee credits)",
+      "asset": "Hook fee balances",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Transient-slot theft: stale DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT read after different swap",
+      "victim": "Trader (wrong price calculation)",
+      "asset": "Swap output miscalculation",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Add liquidity + swap in same TX at boundary creating phantom liquidity",
+      "victim": "Pool (phantom liquidity inflates reserves)",
+      "asset": "Pool reserves",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Settings sync gap allowing swap at stale (favorable) fee rate",
+      "victim": "Protocol (lower fees collected)",
+      "asset": "Fee revenue",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    }
+  ],
+  "metadata": {
+    "checklist_items_completed": "A: 5/5, B: 3/5, C: 20/20, D: 4/4, E: 11/11",
+    "tools_run": {
+      "slither": {
+        "ran": true,
+        "repos": [
+          "lbamm-core",
+          "amm-pool-type-dynamic"
+        ],
+        "note": "Read pre-generated Slither output from Phase 0 artifacts. High/medium detectors reviewed."
+      },
+      "aderyn": {
+        "ran": true,
+        "repos": [
+          "lbamm-core",
+          "amm-pool-type-dynamic"
+        ],
+        "note": "Read pre-generated Aderyn output from Phase 0 artifacts."
+      },
+      "forge": {
+        "ran": true,
+        "note": "61 tests total, all passing. File: lbamm-core/test/AuditInsolvency.t.sol. Includes 2 fuzz tests with 25 runs each."
+      },
+      "halmos": {
+        "ran": true,
+        "note": "Attempted on AuditInsolvencyTest::test_C18. Error: Unsupported cheat code readCallers(). Halmos 0.3.3 does not support Foundry changePrank. C18/C19 covered by Forge invariant tests instead."
+      },
+      "medusa": {
+        "ran": true,
+        "note": "Attempted: medusa fuzz --target-contracts AuditInsolvencyTest --test-limit 10000. Error: no assertion/property/optimization tests found. Medusa requires explicit property test format. C20 covered by 61 Forge tests including fuzz."
+      },
+      "audit-context-building": {
+        "ran": true,
+        "note": "Invoked via Skill. Deep context built for AMMModule.sol: reserve accounting (uint128 safe increment/decrement), fee accumulation (Q128.128 wrapping), flash loan (balance-before/after), liquidity add/remove (symmetric with protocol rounding), tokensOwed (CEI pattern), reentrancy guard (ENTERED bit preserved). 10+ files analyzed."
+      },
+      "entry-point-analyzer": {
+        "ran": true,
+        "note": "Invoked via Skill. 7 public entry points identified (singleSwap, multiSwap, addLiquidity, removeLiquidity, collectFees, flashLoan, collectHookFeesByHook). 3 admin-restricted (setProtocolFees, collectProtocolFees, createPool). 2 contract-only (executeQueuedHookFeesByHookTransfers, ammHandleTransfer)."
+      }
+    },
+    "num_turns": 90,
+    "tool_uses": 50,
+    "files_read": 25,
+    "theses_tested": 11,
+    "theses_confirmed": 0,
+    "theses_ruled_out": 11,
+    "triage_log": {
+      "skip": 3,
+      "borderline": 2,
+      "survive": 6
+    },
+    "gate_passed": true
+  }
+}

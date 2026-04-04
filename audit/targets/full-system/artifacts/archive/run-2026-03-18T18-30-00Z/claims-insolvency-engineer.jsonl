@@ -1,0 +1,12 @@
+{"agent":"insolvency-engineer","type":"ruled_out","vector":"Flash loan profit via add-liquidity/swap/remove cycle","evidence":"test_INV_E02_flash_loan_add_swap_remove_no_profit","severity":"n/a"}
+{"agent":"insolvency-engineer","type":"ruled_out","vector":"Zero-liquidity fee accumulation overflow","evidence":"test_hypothesis_fee_overflow_extreme_swaps + DynamicHelper.sol:404 guard","severity":"n/a"}
+{"agent":"insolvency-engineer","type":"ruled_out","vector":"tokensOwed desync double-collect","evidence":"test_hypothesis_tokensOwed_no_double_collect","severity":"n/a"}
+{"agent":"insolvency-engineer","type":"ruled_out","vector":"Rounding asymmetry cumulative dust extraction","evidence":"test_INV_SW03_1000_dust_swaps_no_pool_loss","severity":"n/a"}
+{"agent":"insolvency-engineer","type":"ruled_out","vector":"balanceOf divergence via direct transfer","evidence":"test_hypothesis_balanceOf_divergence_no_extraction","severity":"n/a"}
+{"agent":"insolvency-engineer","type":"ruled_out","vector":"Reentrancy via _executeQueuedHookFeesByHookTransfers","evidence":"test_INV_H05_reentrancy_guard_blocks_reentry + C10 tests","severity":"n/a"}
+{"agent":"insolvency-engineer","type":"ruled_out","vector":"Storage slot collision across diamond proxy","evidence":"Slither storage layout: AMMModule=0x9A1D, pool types=slot 0 (CALL not DELEGATECALL)","severity":"n/a"}
+{"agent":"insolvency-engineer","type":"ruled_out","vector":"KV-1 zero-price bypass","evidence":"AMMStandardHook:847 reverts on sqrtPriceX96==0","severity":"n/a"}
+{"agent":"insolvency-engineer","type":"ruled_out","vector":"KV-2 direct handler call bypass","evidence":"CLOBTransferHandler:230 requires msg.sender==AMM","severity":"n/a"}
+{"agent":"insolvency-engineer","type":"ruled_out","vector":"KV-3 settings sync gap","evidence":"initialized set before storage write; hooksToSync is admin-controlled","severity":"n/a"}
+{"agent":"insolvency-engineer","type":"ruled_out","vector":"KV-4 transient storage leak","evidence":"beforeSwap always overwrites DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT; C1 test confirms isolation","severity":"n/a"}
+{"agent":"insolvency-engineer","type":"ruled_out","vector":"Protocol fee toggle extraction","evidence":"test_hypothesis_protocol_fee_toggle_no_extraction","severity":"n/a"}

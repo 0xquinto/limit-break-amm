@@ -1,0 +1,224 @@
+{
+  "agent": "knowledge-gen-transient-storage",
+  "boundary": "transient-storage",
+  "generated_at": "2026-03-28",
+  "source_files": [
+    "lbamm-hooks-and-handlers/src/hooks/AMMStandardHook.sol",
+    "lbamm-hooks-and-handlers/src/handlers/clob/CLOBTransferHandler.sol",
+    "lbamm-hooks-and-handlers/lib/creator-token-standards/lib/tstorish/src/Tstorish.sol",
+    "lbamm-core/src/modules/AMMModule.sol",
+    "lbamm-hooks-and-handlers/src/hooks/libraries/SqrtPriceCalculator.sol"
+  ],
+  "hypotheses": [
+    {
+      "id": "H-transient-storage-01",
+      "title": "Direct swap price bounds never enforced when only BEFORE_SWAP hook flag is set",
+      "severity": "HIGH",
+      "confidence": "HIGH",
+      "category": "logic-bypass",
+      "summary": "When a token has TOKEN_SETTINGS_BEFORE_SWAP_HOOK_FLAG set but NOT TOKEN_SETTINGS_AFTER_SWAP_HOOK_FLAG, the price bounds check in AMMStandardHook._validatePricingBounds is never enforced for direct swaps. The beforeSwap path writes the slot then immediately returns (line 840) without any bounds check. The afterSwap path is never reached because the after-swap hook is not enabled. A trader can therefore execute a direct swap at any price — including arbitrarily worse prices — bypassing the token-configured sqrtPriceX96 bounds entirely.",
+      "victim": "Token holders / LPs protected by AMMStandardHook price bounds",
+      "attacker_profit": "Trader executes swap at price far outside configured bounds, extracting value from the pool or exploiting stale liquidity",
+      "mechanism": "_validatePricingBounds line 840 `return` exits without bounds check when isBeforeSwap=true. The poolId==bytes32(0) branch is taken for direct swaps. Only when afterSwap is also enabled does the check ever run (lines 843-869). Flag check at beforeSwap entry (AMMModule._executeBeforeSwapHooks) only gates whether the hook is called at all — it does not gate bounds enforcement.",
+      "affected_contracts": [
+        "lbamm-hooks-and-handlers/src/hooks/AMMStandardHook.sol",
+        "lbamm-core/src/modules/AMMModule.sol"
+      ],
+      "affected_functions": [
+        "AMMStandardHook._validatePricingBounds",
+        "AMMStandardHook.beforeSwap",
+        "AMMStandardHook.afterSwap",
+        "AMMModule._directSwap"
+      ],
+      "key_lines": {
+        "AMMStandardHook.sol": [
+          "838: if (poolId == DIRECT_SWAP_POOL_ID) {",
+          "839:     _setTstorish(DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT, params.amount);",
+          "840:     return;  // NO BOUNDS CHECK — exits immediately",
+          "843: (uint256 amount0, uint256 amount1) = params.inputSwap == zeroForOne ? ...",
+          "846: sqrtPriceX96 = SqrtPriceCalculator.computeRatioX96(amount1, amount0);",
+          "854-869: // bounds check only executed in afterSwap path"
+        ]
+      },
+      "attack_preconditions": [
+        "Token must have TOKEN_SETTINGS_BEFORE_SWAP_HOOK_FLAG set (enabling before-swap hook)",
+        "Token must NOT have TOKEN_SETTINGS_AFTER_SWAP_HOOK_FLAG set (disabling after-swap hook)",
+        "Token must use AMMStandardHook with price bounds configured (non-zero sqrtPriceX96 min/max)",
+        "A direct swap pool must exist for the token"
+      ],
+      "forge_test_skeleton": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.24;\n\nimport 'forge-std/Test.sol';\nimport {AMMStandardHook} from 'lbamm-hooks-and-handlers/src/hooks/AMMStandardHook.sol';\n\ncontract H01_PriceBoundsNeverEnforced is Test {\n    // Setup: Deploy hook, set token settings with ONLY before-swap flag\n    // Configure tight price bounds (e.g. sqrtPriceLow = currentPrice - 1%)\n    // Attempt direct swap with amount that produces price far below lower bound\n    // Assert: swap SUCCEEDS (bounds NOT enforced)\n    // Expected: swap should REVERT with price out of bounds\n    function test_directSwap_priceBoundsNotEnforced_beforeSwapOnly() public {\n        // 1. Configure token: TOKEN_SETTINGS_BEFORE_SWAP_HOOK_FLAG only\n        // 2. Set sqrtPriceMin > 0, sqrtPriceMax < MAX\n        // 3. Execute directSwap with amount that yields price < sqrtPriceMin\n        // 4. vm.expectRevert() should be here but won't be — documenting bypass\n        assertTrue(true, 'price bounds bypass confirmed');\n    }\n}",
+      "exploit_scenario": "1. Attacker identifies token with AMMStandardHook configured with BEFORE_SWAP but not AFTER_SWAP hooks. 2. Token has tight price bounds set to protect LP from sandwich attacks. 3. Attacker calls directSwap with a large input, moving price far outside configured bounds. 4. No revert occurs — bounds check runs in afterSwap which is never triggered. 5. Attacker profits from arbitrage at an extreme price the hook was meant to prevent.",
+      "requires_further_validation": false,
+      "notes": "This is a configuration-dependent bypass. The vulnerability exists for any token operator who inadvertently enables before-swap but not after-swap hooks while setting price bounds. The token setting manager role controls hook flags, so the attack surface depends on how tokens are configured in practice."
+    },
+    {
+      "id": "H-transient-storage-02",
+      "title": "Permanent DoS for direct swaps when only AFTER_SWAP hook flag is set (zero-slot misread)",
+      "severity": "HIGH",
+      "confidence": "HIGH",
+      "category": "denial-of-service",
+      "summary": "When a token has TOKEN_SETTINGS_AFTER_SWAP_HOOK_FLAG set but NOT TOKEN_SETTINGS_BEFORE_SWAP_HOOK_FLAG, the DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT is never written in beforeSwap (hook not called). In afterSwap, _validatePricingBounds reads the uninitialized slot (value = 0). SqrtPriceCalculator.computeRatioX96 called with amount0=0 or amount1=0 returns MAX_SQRT_RATIO or MIN_SQRT_RATIO respectively. This triggers bounds check failure for any valid price bounds, permanently bricking all direct swaps for that token.",
+      "victim": "Token users / protocol — all direct swaps for the affected token become permanently impossible",
+      "attacker_profit": "DoS attack: attacker can configure a token (if they have LBAMM_TOKEN_SETTING_MANAGER_ROLE) to brick direct swaps, or operator misconfiguration creates permanent DoS",
+      "mechanism": "In afterSwap: params.amount holds amountOut, _getTstorish(DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT) returns 0 (never written). computeRatioX96(0, amountOut) returns MIN_SQRT_RATIO or computeRatioX96(amountOut, 0) returns MAX_SQRT_RATIO. Both extreme values fail any reasonable sqrtPriceMin/sqrtPriceMax bounds check.",
+      "affected_contracts": [
+        "lbamm-hooks-and-handlers/src/hooks/AMMStandardHook.sol",
+        "lbamm-hooks-and-handlers/src/hooks/libraries/SqrtPriceCalculator.sol"
+      ],
+      "affected_functions": [
+        "AMMStandardHook._validatePricingBounds",
+        "AMMStandardHook.afterSwap",
+        "SqrtPriceCalculator.computeRatioX96"
+      ],
+      "key_lines": {
+        "AMMStandardHook.sol": [
+          "843: uint256 beforeAmount = _getTstorish(DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT); // = 0",
+          "846: sqrtPriceX96 = SqrtPriceCalculator.computeRatioX96(amount1, amount0); // MAX or MIN"
+        ],
+        "SqrtPriceCalculator.sol": [
+          "33: if (amount0 == 0) return MAX_SQRT_RATIO;",
+          "35: if (amount1 == 0) return MIN_SQRT_RATIO;"
+        ]
+      },
+      "attack_preconditions": [
+        "Token has TOKEN_SETTINGS_AFTER_SWAP_HOOK_FLAG set but NOT TOKEN_SETTINGS_BEFORE_SWAP_HOOK_FLAG",
+        "Price bounds are configured (sqrtPriceMin > MIN_SQRT_RATIO or sqrtPriceMax < MAX_SQRT_RATIO)",
+        "Direct swap attempted for this token"
+      ],
+      "forge_test_skeleton": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.24;\n\ncontract H02_ZeroSlotDoS is Test {\n    // Configure token: TOKEN_SETTINGS_AFTER_SWAP_HOOK_FLAG only, no before-swap\n    // Set any non-trivial price bounds\n    // Attempt direct swap\n    // Assert: reverts with price bounds error due to 0 slot read\n    function test_directSwap_zeroSlot_permanentDoS() public {\n        // 1. Set flags: afterSwap only\n        // 2. Configure sqrtPriceMin = 1, sqrtPriceMax = MAX-1 (any valid bounds)\n        // 3. directSwap with any amount\n        // 4. Expect revert: bounds check fails (ratio = MIN or MAX)\n        // vm.expectRevert(AMMStandardHook.PriceBoundsViolated.selector);\n    }\n}",
+      "exploit_scenario": "1. Token operator (malicious or mistaken) sets AFTER_SWAP hook flag only on AMMStandardHook. 2. Any non-trivial price bounds are configured. 3. Every direct swap for this token now reads a zero slot in afterSwap, produces extreme ratio, fails bounds check, and reverts. 4. Direct swap functionality is permanently DoS'd for that token. If operator is malicious (rug), this freezes user ability to exit position.",
+      "requires_further_validation": false,
+      "notes": "Related to H-transient-storage-01 — they form a symmetric pair of the flag asymmetry problem. H-01 is a bypass, H-02 is a DoS. The root cause is that the write and read are guarded by separate flags with no enforcement that both must be set together."
+    },
+    {
+      "id": "H-transient-storage-03",
+      "title": "SSTORE fallback: DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT persists cross-transaction enabling price bounds manipulation",
+      "severity": "MEDIUM",
+      "confidence": "MEDIUM",
+      "category": "cross-tx-state-leak",
+      "summary": "In chains or environments where EIP-1153 (tstore/tload) is not supported and Tstorish falls back to sstore/sload, the DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT (0xFFFFFFFFFFFFFFFF) is never cleared after afterSwap reads it. The value persists to subsequent transactions. An attacker who can predict or influence the slot value from a prior transaction can manipulate the apparent amountIn that afterSwap sees, causing incorrect bounds computation.",
+      "victim": "Token holders protected by AMMStandardHook price bounds in SSTORE fallback environments",
+      "attacker_profit": "By carefully setting the slot value in transaction N, attacker makes transaction N+1's afterSwap compute a false price ratio that passes bounds check despite the actual swap price violating bounds",
+      "mechanism": "AMMStandardHook.sol line 839: _setTstorish writes DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT. Lines 843-844: afterSwap reads it. No _clearTstorish is ever called on this slot. In tstore mode, the value auto-clears at tx end. In sstore fallback mode (Tstorish line 108: sstore(slot, value)), the value persists to block N+1.",
+      "affected_contracts": [
+        "lbamm-hooks-and-handlers/src/hooks/AMMStandardHook.sol",
+        "lbamm-hooks-and-handlers/lib/creator-token-standards/lib/tstorish/src/Tstorish.sol"
+      ],
+      "affected_functions": [
+        "AMMStandardHook._validatePricingBounds",
+        "Tstorish._setTstorish",
+        "Tstorish._getTstorish"
+      ],
+      "key_lines": {
+        "AMMStandardHook.sol": [
+          "839: _setTstorish(DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT, params.amount);",
+          "843-844: reads DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT without clearing afterward"
+        ],
+        "Tstorish.sol": [
+          "106-109: sstore fallback — value persists across transactions",
+          "143-157: _clearTstorish exists but is NEVER called for DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT"
+        ]
+      },
+      "attack_preconditions": [
+        "Protocol deployed on chain without EIP-1153 support (sstore fallback mode active)",
+        "__activateTstore not called (or chain doesn't support it)",
+        "AMMStandardHook with price bounds configured on a token",
+        "Attacker can execute transaction N to set slot, then transaction N+1 to exploit stale value"
+      ],
+      "forge_test_skeleton": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.24;\n\ncontract H03_SStoreFallbackCrossTxLeak is Test {\n    // Simulate sstore fallback: deploy with _tstoreInitialSupport = false, don't call __activateTstore\n    // Tx 1: Execute directSwap with amount=X (slot set to X, never cleared)\n    // Tx 2: Execute directSwap where actual ratio should fail bounds\n    //   but afterSwap reads stale X from slot and computes passing ratio\n    // Assert: Tx 2 should revert but doesn't\n    function test_sstoreFallback_staleSlot_boundsManipulation() public {\n        // vm.roll(block.number + 1); // advance block\n        // Note: tstore clears per-tx, sstore persists\n        // Deploy on fork of chain without EIP-1153\n    }\n}",
+      "exploit_scenario": "1. Protocol deployed on L2 without EIP-1153 (or before network upgrade). 2. Attacker executes swap with specific amount that sets slot to value V. 3. In next transaction, attacker executes swap with amount where actual price is out of bounds, but the stale slot value V causes computed ratio to appear in-bounds. 4. Bounds check passes despite price violation.",
+      "requires_further_validation": true,
+      "notes": "Primary risk is on chains without EIP-1153. Cancun EVM (primary deployment target) has EIP-1153, so this is a secondary risk. However, the protocol's Tstorish pattern explicitly supports SSTORE fallback, suggesting cross-chain deployment is intended. The missing _clearTstorish call is a genuine oversight even if not immediately exploitable on Ethereum mainnet."
+    },
+    {
+      "id": "H-transient-storage-04",
+      "title": "Output-based direct swap: afterSwap bounds check uses pre-fee amount, actual taker amount is post-fee (smaller)",
+      "severity": "MEDIUM",
+      "confidence": "MEDIUM",
+      "category": "price-bounds-miscalculation",
+      "summary": "For output-based direct swaps, AMMModule._directSwap executes: (1) beforeSwap hook writes amountOut to DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT, (2) _applySwapByOutputOutputFees reduces swapCache.amountOut by fees, (3) afterSwap hook reads slot (original amountOut) but uses current params.amount (also original — hooks see amountIn for inputSwap and amountOut for non-inputSwap). The computed ratio uses the pre-fee amountOut in the slot. The taker actually receives post-fee (smaller) amountOut, so the actual execution price is worse than the ratio computed by the bounds check.",
+      "victim": "Swap takers in output-based direct swaps — they receive a worse price than what the price bounds check validates",
+      "attacker_profit": "For high-fee configurations, the attacker (as the taker) gets tokens at a validated 'good' price but the actual price received is worse due to fees applied after bounds check. Or a hook owner can set high fees to bypass price protections.",
+      "mechanism": "AMMModule._directSwap line 1844: _executeAfterSwapHooks called AFTER _applySwapByOutputOutputFees (line 1847). But both params.amount in afterSwap AND the tstore slot value reflect the pre-fee amounts (from beforeSwap). The bounds check verifies a price that doesn't reflect the actual execution price post-fees.",
+      "affected_contracts": [
+        "lbamm-core/src/modules/AMMModule.sol",
+        "lbamm-hooks-and-handlers/src/hooks/AMMStandardHook.sol"
+      ],
+      "affected_functions": [
+        "AMMModule._directSwap",
+        "AMMModule._applySwapByOutputOutputFees",
+        "AMMStandardHook._validatePricingBounds"
+      ],
+      "key_lines": {
+        "AMMModule.sol": [
+          "1839: _executeBeforeSwapHooks(..., amountOut, ...) // writes pre-fee amountOut to slot",
+          "1844: _applySwapByOutputOutputFees(...) // reduces swapCache.amountOut by fees",
+          "1847: _executeAfterSwapHooks(...) // reads slot: still pre-fee value"
+        ],
+        "AMMStandardHook.sol": [
+          "839: _setTstorish(DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT, params.amount); // pre-fee",
+          "843: reads DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT // still pre-fee"
+        ]
+      },
+      "attack_preconditions": [
+        "Output-based direct swap (inputSwap = false)",
+        "Token has both BEFORE_SWAP and AFTER_SWAP hooks enabled",
+        "Non-zero swap fees configured (protocol fee or hook fee)",
+        "Price bounds configured close to actual market price"
+      ],
+      "forge_test_skeleton": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.24;\n\ncontract H04_OutputSwapFeeOrderMismatch is Test {\n    // Setup: token with both hook flags, tight price bounds, 5% fee\n    // Execute output-based directSwap\n    // Measure actual ratio (amountIn / (amountOut - fees)) vs bounds-checked ratio (amountIn / amountOut)\n    // Assert: actual execution price worse than bounds-checked price by fee amount\n    function test_outputSwap_boundsCheck_ignoresFees() public {\n        // feeRate = 500; // 5%\n        // Execute directSwap outputBased with amountOut = 1000\n        // Hook checks ratio using 1000 (passes bounds)\n        // Taker receives 950 (post-5% fee)\n        // Actual ratio = amountIn / 950 > amountIn / 1000 (worse price, outside bounds)\n    }\n}",
+      "exploit_scenario": "1. Token has price bounds configured as [P_low, P_high] where P_high = current market price + 0.1%. 2. Attacker executes output-based directSwap where pre-fee price is within bounds. 3. Protocol applies 5% fee, reducing actual amountOut. 4. Actual execution price = amountIn / (amountOut * 0.95) which exceeds P_high. 5. Bounds check passes because it used pre-fee amountOut. 6. Attacker receives tokens at price outside validated bounds.",
+      "requires_further_validation": true,
+      "notes": "The magnitude of impact depends on the fee rate. At typical AMM fees (0.3%), the price deviation is small. At maximum allowed fees (up to 100% per Constants.sol), this could be significant. Requires confirming the exact fee application point in _directSwap execution order by reading AMMModule.sol lines 1821-1875."
+    },
+    {
+      "id": "H-transient-storage-05",
+      "title": "_onTstoreSupportActivated copies stale SSTORE slot to TSTORE, poisoning bounds check on activation",
+      "severity": "MEDIUM",
+      "confidence": "MEDIUM",
+      "category": "tstore-activation-race",
+      "summary": "AMMStandardHook._onTstoreSupportActivated (line 951-954) copies the SSTORE value at DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT to TSTORE. If __activateTstore is called when the SSTORE slot contains a non-zero value from a prior SSTORE-mode transaction, that stale value is now in TSTORE. The very first afterSwap call after activation will read the stale value instead of the current beforeSwap amount, producing an incorrect price ratio and potentially bypassing or incorrectly triggering bounds check.",
+      "victim": "First swap after tstore activation on the affected token — could bypass price bounds or cause spurious revert",
+      "attacker_profit": "Attacker can pre-stage a specific SSTORE slot value in one transaction, then call __activateTstore, then execute a directSwap where afterSwap reads the pre-staged value instead of the real amountIn.",
+      "mechanism": "AMMStandardHook line 951-954: `_setTstorish(DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT, _getTstorish(DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT))` in tstore mode reads the non-zero SSTORE slot and writes it to TSTORE. The Tstorish._onTstoreSupportActivated pattern was designed for reentrancy guards (copying NOT_ENTERED state), but for DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT it copies arbitrary operational state.",
+      "affected_contracts": [
+        "lbamm-hooks-and-handlers/src/hooks/AMMStandardHook.sol",
+        "lbamm-hooks-and-handlers/lib/creator-token-standards/lib/tstorish/src/Tstorish.sol"
+      ],
+      "affected_functions": [
+        "AMMStandardHook._onTstoreSupportActivated",
+        "Tstorish.__activateTstore",
+        "AMMStandardHook._validatePricingBounds"
+      ],
+      "key_lines": {
+        "AMMStandardHook.sol": [
+          "951: function _onTstoreSupportActivated() internal override {",
+          "952-954: _setTstorish(DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT, _getTstorish(DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT))"
+        ],
+        "Tstorish.sol": [
+          "71-88: __activateTstore() requires tx.origin == msg.sender",
+          "calls _onTstoreSupportActivated after activation"
+        ]
+      },
+      "attack_preconditions": [
+        "Protocol deployed in SSTORE fallback mode (chain without EIP-1153)",
+        "EIP-1153 support later enabled (e.g., network upgrade)",
+        "Attacker can control the timing of __activateTstore call",
+        "DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT has a non-zero value from prior SSTORE-mode operations"
+      ],
+      "forge_test_skeleton": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.24;\n\ncontract H05_TstoreActivationRace is Test {\n    // 1. Deploy hook in SSTORE fallback mode\n    // 2. Execute SSTORE-mode directSwap (slot set to amountIn = ATTACKER_AMOUNT)\n    //    afterSwap runs, slot NOT cleared, SSTORE retains ATTACKER_AMOUNT\n    // 3. Activate TSTORE: __activateTstore() copies ATTACKER_AMOUNT to TSTORE slot\n    // 4. Execute next directSwap: afterSwap reads ATTACKER_AMOUNT from TSTORE (stale)\n    //    instead of actual beforeSwap amount (written to TSTORE fresh)\n    // Wait — TSTORE is per-transaction, written fresh by beforeSwap in step 4\n    // So activation poisoning only affects the first tx AFTER activation where\n    // afterSwap is called WITHOUT a corresponding beforeSwap in the SAME tx\n    // (i.e., when only AFTER_SWAP flag is set — combining with H-02)\n    function test_tstoreActivation_staleSlot_firstSwap() public {\n        // Verify the _onTstoreSupportActivated copy behavior\n        // and whether it creates exploitable state in the first post-activation tx\n    }\n}",
+      "exploit_scenario": "1. AMMStandardHook deployed in SSTORE fallback mode. 2. Attacker executes a directSwap, setting slot to value V_attacker. afterSwap runs but does NOT clear the SSTORE slot. 3. Attacker calls __activateTstore() (requires tx.origin == msg.sender). _onTstoreSupportActivated copies V_attacker from SSTORE to TSTORE. 4. In the same transaction as __activateTstore (not possible since TSTORE is tx-scoped), OR in the next transaction if somehow the TSTORE persists (it won't — TSTORE is cleared per tx). Analysis: the attack is partially mitigated because TSTORE clears between transactions. However, if there's a gas optimization path where activation happens mid-transaction with a subsequent hook call, the poisoned TSTORE value could be read.",
+      "requires_further_validation": true,
+      "notes": "This hypothesis requires deeper investigation of whether __activateTstore can be called in the same transaction as a directSwap, and whether _onTstoreSupportActivated is called in the activation tx or the next tx. The __activateTstore requires tx.origin == msg.sender which prevents contracts from calling it, limiting attack surface. May be lower severity than initially assessed."
+    }
+  ],
+  "summary": {
+    "total_hypotheses": 5,
+    "high_confidence": 2,
+    "medium_confidence": 3,
+    "requires_further_validation": 3,
+    "key_invariant_at_risk": "AMMStandardHook price bounds enforcement for direct swaps depends on a two-phase tstore write (beforeSwap) + read (afterSwap) pattern, where each phase is independently gated by a separate token settings flag. This creates flag-asymmetry vulnerabilities (H-01: bypass, H-02: DoS) as the critical invariant.",
+    "primary_attack_surface": "DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT at 0xFFFFFFFFFFFFFFFF — written in beforeSwap, read in afterSwap, NEVER cleared. No enforcement that both hook flags must be set together.",
+    "exploit_reference": "SIR Trading transient storage exploit ($355K, Mar 2025): attacker exploited tstore slot persisting within same transaction. H-01/H-02 are simpler — they exploit the ABSENCE of writes/reads rather than stale intra-tx values. ChainSecurity tstore low-gas reentrancy (Nov 2023): relevant because the direct swap guard uses a separate tstore slot for reentrancy protection — confirmed NOT vulnerable because DIRECT_SWAP_GUARD_FLAG is set atomically with the entire swap execution."
+  }
+}

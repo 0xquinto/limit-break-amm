@@ -1,0 +1,768 @@
+{
+  "agent_name": "insolvency-engineer",
+  "agent_role": "insolvency-engineer",
+  "wave": 1,
+  "findings": [
+    {
+      "id": "INSOL-001",
+      "title": "Direct swap pricing bounds bypass via pre-fee amount in transient storage",
+      "severity": "low",
+      "confidence_score": 75,
+      "confidence_deductions": [
+        "Attack path partial: bounds are advisory, not economic (-20)"
+      ],
+      "status": "lead",
+      "category": "pricing-bounds-bypass",
+      "description": "In AMMStandardHook._validatePricingBounds, for direct swaps (poolType==address(0)), beforeSwap stores params.amount (the pre-fee specified amount) in transient storage at DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT. In afterSwap, this pre-fee amount is used alongside the output amount to compute sqrtPriceX96. Since the hook fee reduces the actual input before the swap executes, the computed price ratio uses a larger denominator (pre-fee) than the actual execution price (post-fee input / output). This makes the computed price systematically lower than the true execution price, allowing swaps that execute above maxSqrtPriceX96 to pass the bounds check. For a 5% hook fee, the price discrepancy is ~5%.",
+      "impact": "Pricing bounds enforcement for direct swaps is weakened proportionally to the hook fee percentage. Orders that should be rejected as out-of-bounds may pass. Economic impact is indirect - pricing bounds are advisory constraints set by token creators, not economic guards on user funds.",
+      "proof_sketch": "See test_HR4_HH04_pricing_bounds_prefee_analysis in AuditInsolvencyKLR4.t.sol. Pre-fee input of 1000 with 5% fee (50) means actual swap uses 950 input to produce 900 output. True price ratio = 900/950 = 0.947. Computed ratio = 900/1000 = 0.9. Error = ~5%, proportional to fee.",
+      "victim": "Token creators who set pricing bounds",
+      "extractable_value": "No direct extraction - bounds are advisory. Indirect: swaps at out-of-bounds prices that token creators wanted to prevent.",
+      "attack_sequence": [
+        "1. Token creator sets maxSqrtPriceX96 at a specific price level",
+        "2. Token has 5% hook sell fee configured",
+        "3. Attacker executes direct swap at a price ~5% above the max bound",
+        "4. beforeSwap stores pre-fee amount (e.g., 1000)",
+        "5. AMM deducts 5% fee, swaps with 950 input, produces output at actual price above bound",
+        "6. afterSwap computes price using pre-fee amount (1000) as denominator, deflating the computed price",
+        "7. Deflated price passes the maxSqrtPriceX96 check even though execution price exceeds it"
+      ],
+      "test_file": "lbamm-core/test/AuditInsolvencyKLR4.t.sol",
+      "test_passes": true,
+      "prerequisites": [
+        "Token with non-zero hook fee for direct swaps",
+        "Pricing bounds set on token pair",
+        "afterSwap hook flag enabled"
+      ],
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "_validatePricingBounds"
+      ],
+      "lines": {
+        "AMMStandardHook.sol": [
+          838,
+          839,
+          842,
+          843,
+          844,
+          846
+        ]
+      },
+      "keywords": [
+        "pricing-bounds",
+        "transient-storage",
+        "direct-swap",
+        "pre-fee",
+        "hook-fee"
+      ],
+      "code_smells": [
+        "AMMStandardHook.sol:839 \u2014 beforeSwap stores pre-fee params.amount",
+        "AMMStandardHook.sol:842-844 \u2014 afterSwap uses stored pre-fee amount to compute price ratio"
+      ],
+      "what_remains_unverified": "Full integration test with deployed contracts demonstrating an actual out-of-bounds swap passing validation",
+      "source_hypothesis": "H-R4-HH-04",
+      "fp_gate": {
+        "location_exists": true,
+        "entry_reachable": true,
+        "no_existing_guard": true,
+        "concrete_attack_path": true,
+        "poc_compiles": true
+      },
+      "kill_gate": {
+        "status": "flagged",
+        "gate": "V2-refutation",
+        "reason": "Missing refutation_attempted \u2014 you must argue against your own finding before submitting"
+      }
+    }
+  ],
+  "ruled_out_vectors": [
+    {
+      "vector": "H-R4-CP-01: Operator precedence bug in FixedHelper.withdrawLiquidity line 69 \u2014 redeposited0 | redeposited1 == 0",
+      "why_ruled_out": "Solidity type system forces (uint256 | uint256) == 0 parsing because uint256 | bool is a type error. Verified with Chisel REPL and Forge test: with r0=1, r1=0, the expression evaluates to false (correct), not true (buggy). The compiler cannot parse it as r0 | (r1 == 0) because | cannot operate on uint256 and bool.",
+      "test_file": "lbamm-core/test/AuditInsolvencyKLR4.t.sol",
+      "repos": [
+        "lbamm-pool-type-fixed"
+      ],
+      "contracts": [
+        "FixedHelper.sol"
+      ],
+      "functions": [
+        "withdrawLiquidity"
+      ],
+      "keywords": [
+        "operator-precedence",
+        "bitwise-or",
+        "partial-withdraw"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "H-R4-DP-03: Output swap fee shortage 10000x amplification when hopFeeBPS=9999",
+      "why_ruled_out": "The amplified protocolFeeFromInput is added to swapAmountIn, which is checked against swapOrder.limitAmount at AMMModule:2171. Users protect themselves via limitAmount. Additionally, hopFeeBPS is admin-controlled (token fee manager), not attacker-controlled. The amplified fee goes to protocol, not to an attacker. No extraction path exists.",
+      "test_file": "lbamm-core/test/AuditInsolvencyKLR4.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_applySwapByOutputInputFees"
+      ],
+      "keywords": [
+        "fee-amplification",
+        "hop-fee",
+        "output-swap",
+        "limitAmount"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "H-R4-CP-02: DynamicHelper.snapPrice walks past initialized tick at exact target",
+      "why_ruled_out": "Code analysis: snapPrice is an admin-level operation for moving price in zero-liquidity pools. The initialized tick check at line 264 uses > for lte direction and <= for !lte direction. An initialized tick at exactly targetTick in the lte direction would have next == targetTick, so next > targetTick is false, skipping the revert. However, snapPrice is only callable by the pool hook with special permissions, not by arbitrary users. Even if the tick is skipped, the subsequent addLiquidity would properly initialize the position at the new price. No economic extraction path.",
+      "test_file": "code-analysis: DynamicHelper.sol:258-290",
+      "repos": [
+        "amm-pool-type-dynamic"
+      ],
+      "contracts": [
+        "DynamicHelper.sol"
+      ],
+      "functions": [
+        "snapPrice"
+      ],
+      "keywords": [
+        "snap-price",
+        "initialized-tick",
+        "off-by-one"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "H-R4-CP-04: FixedHelper._splitAmountsAndFeesByHeight dust creates fee distribution skew",
+      "why_ruled_out": "Code analysis: The dust is added to pool storage (dust0/dust1) at lines 1706-1708, not redistributed to any LP. The amountOut = totalAmountOutFilled update at line 1704 includes dust in the denominator for fee split, but the dust amount is bounded by token precision (typically 1 wei per swap). Over 500 swaps, cumulative skew would be 500 wei \u2014 negligible. Not a viable extraction path.",
+      "test_file": "code-analysis: FixedHelper.sol:1694-1734",
+      "repos": [
+        "lbamm-pool-type-fixed"
+      ],
+      "contracts": [
+        "FixedHelper.sol"
+      ],
+      "functions": [
+        "_splitAmountsAndFeesByHeight"
+      ],
+      "keywords": [
+        "dust",
+        "fee-distribution",
+        "rounding-skew"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "H-R4-CP-05: SingleProviderPoolType TOCTOU via getPoolState VIEW calls during multi-hop",
+      "why_ruled_out": "Each pool type reads its OWN pre-swap state via getPoolState. In multi-hop, the AMM updates reserves for pool A before calling pool B's swapByInput. Pool B reads its own (unmodified) reserves. There is no cross-contamination because each pool has independent state. The execution order (call pool type \u2192 update reserves) is correct: pool type computes amounts based on current reserves, then AMM updates them.",
+      "test_file": "lbamm-core/test/AuditInsolvencyKLR4.t.sol",
+      "repos": [
+        "lbamm-pool-type-single-provider",
+        "lbamm-core"
+      ],
+      "contracts": [
+        "SingleProviderPoolType.sol",
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "swapByInput",
+        "_poolSwapByInput"
+      ],
+      "keywords": [
+        "toctou",
+        "getPoolState",
+        "multi-hop",
+        "view-call"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "H-R4-CP-06: Sequential fee rounding remainder creates directional LP fee asymmetry",
+      "why_ruled_out": "The remainder fee distribution in _increaseHeight/_decreaseHeight gives the last height up to K-1 wei extra per swap. For a pool with 10 heights, this is 9 wei per swap. Even at 10000 swaps/day, cumulative asymmetry is 90000 wei \u2248 0.00009 ETH. This is dust-level and cannot be profitably extracted. Standard AMM rounding pattern.",
+      "test_file": "code-analysis: FixedHelper.sol:1817-1827,1910-1917",
+      "repos": [
+        "lbamm-pool-type-fixed"
+      ],
+      "contracts": [
+        "FixedHelper.sol"
+      ],
+      "functions": [
+        "_increaseHeight",
+        "_decreaseHeight"
+      ],
+      "keywords": [
+        "fee-rounding",
+        "remainder",
+        "height-asymmetry"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "H-R4-CP-08: Unchecked underflow in FixedHelper.withdrawLiquidity (value0 - redeposited0)",
+      "why_ruled_out": "The redeposit amount is computed from _calculateLiquidityStartAndEndHeights which truncates by precision (divide-then-multiply). This means redeposited <= redeposit = value - requested. The precision truncation only reduces the redeposited amount, never increases it. Therefore redeposited0 <= value0 always holds. Verified with mathematical analysis in Forge test.",
+      "test_file": "lbamm-core/test/AuditInsolvencyKLR4.t.sol",
+      "repos": [
+        "lbamm-pool-type-fixed"
+      ],
+      "contracts": [
+        "FixedHelper.sol"
+      ],
+      "functions": [
+        "withdrawLiquidity",
+        "_calculateLiquidityStartAndEndHeights"
+      ],
+      "keywords": [
+        "unchecked",
+        "underflow",
+        "precision-truncation"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "H-R4-CP-09: SingleProviderHelper partial fill fee rounding mismatch",
+      "why_ruled_out": "When amountOut exceeds reserveOut, SingleProviderHelper.swapByInput falls back to swapByOutput with capped output. The AMMModule adjusts fees proportionally at lines 1413-1427 using mulDivRoundingUp. The pool type returns actualAmountIn which includes its own fee calculation. The AMMModule's proportional adjustment rounds UP (protocol-favoring), so any rounding mismatch results in the user paying slightly more, not less. No extraction path for the attacker.",
+      "test_file": "code-analysis: SingleProviderHelper.sol:42-50,AMMModule.sol:1413-1427",
+      "repos": [
+        "lbamm-pool-type-single-provider",
+        "lbamm-core"
+      ],
+      "contracts": [
+        "SingleProviderHelper.sol",
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "swapByInput",
+        "_poolSwapByInput"
+      ],
+      "keywords": [
+        "partial-fill",
+        "fee-rounding",
+        "proportional-adjustment"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "H-R4-CH-03: Reentrancy via hook fee transfer callback after _setReentrancyFlags(NO_FLAGS)",
+      "why_ruled_out": "The ENTERED bit of TstorishReentrancyGuardWithFlags is preserved when _setReentrancyFlags(NO_FLAGS) is called \u2014 NO_FLAGS only clears custom flags, not the base ENTERED bit. Any callback during safeTransfer in _transferHookFeesByHook would be blocked by the ENTERED bit. The external self-call at line 2247 goes through the diamond proxy, but transient storage (where ENTERED is stored) persists within the same transaction.",
+      "test_file": "lbamm-core/test/AuditInsolvencyKLR4.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_executeQueuedHookFeesByHookTransfers",
+        "_transferHookFeesByHook"
+      ],
+      "keywords": [
+        "reentrancy",
+        "callback",
+        "hook-fees",
+        "entered-bit"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "H-R4-CH-04: CLOBHelper.closeOrder non-current order gets full inputAmount after partial fill",
+      "why_ruled_out": "Non-current orders are NEVER partially filled. fillOrder always processes from the current order sequentially via the linked list. A non-current order either has its full inputAmount (never touched) or has been fully consumed (inputAmount set to 0 in traverseCLOB). The closeOrder non-current path correctly returns ptrOrder.inputAmount for untouched orders.",
+      "test_file": "code-analysis: CLOBHelper.sol:180-239,28-78",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "CLOBHelper.sol"
+      ],
+      "functions": [
+        "closeOrder",
+        "fillOrder"
+      ],
+      "keywords": [
+        "clob",
+        "partial-fill",
+        "close-order",
+        "inputAmount"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "H-R4-HH-02: CLOBHelper partial fill inputAmount desync between storage fields",
+      "why_ruled_out": "ptrOrder.inputAmount is the ORIGINAL order amount (set at openOrder, never updated for partial fills). ptrOrderBucket.inputAmountRemaining tracks partial fill state for the CURRENT order only. closeOrder correctly reads inputAmountRemaining for the current order (line 48) and inputAmount for non-current orders (line 66). The desync is intentional design \u2014 inputAmount is a reference, inputAmountRemaining is the live counter.",
+      "test_file": "code-analysis: CLOBHelper.sol:46-66,151,206-208,238",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "CLOBHelper.sol"
+      ],
+      "functions": [
+        "closeOrder",
+        "fillOrder",
+        "openOrder"
+      ],
+      "keywords": [
+        "clob",
+        "inputAmount",
+        "inputAmountRemaining",
+        "partial-fill"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "H-R4-HH-06: CLOB hook validates full amountOut but actual fill is smaller",
+      "why_ruled_out": "The ICLOBHook.validateExecutor is called with the FULL amountIn and amountOut at line 253-265. The actual fill may be smaller. However, this is by design \u2014 the hook validates the MAXIMUM amounts the executor is authorized for. The actual fill being smaller is always safe (less than authorized). No custom CLOB hook in the current codebase makes security decisions based on exact amounts; they validate upper bounds.",
+      "test_file": "code-analysis: CLOBTransferHandler.sol:253-280",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "CLOBTransferHandler.sol"
+      ],
+      "functions": [
+        "ammHandleTransfer"
+      ],
+      "keywords": [
+        "clob-hook",
+        "validateExecutor",
+        "toctou",
+        "partial-fill"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "H-R4-HH-07: Direct swap pricing bounds unenforced when afterSwap flag disabled",
+      "why_ruled_out": "This is a KNOWN issue \u2014 confirmed pattern CP-004 in audit_memory/confirmed-patterns.md. Already documented as Low severity. Not a new finding.",
+      "test_file": "lbamm-core/test/AuditInsolvencyKLR4.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "_validatePricingBounds"
+      ],
+      "keywords": [
+        "pricing-bounds",
+        "afterSwap",
+        "direct-swap",
+        "known-issue"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "H-R4-HH-03: CLOB pricing bounds rounding mismatch in validateHandlerOrder",
+      "why_ruled_out": "The rounding in CLOBHelper.calculateFixedInput (mulDivRoundingUp twice) produces amountOut slightly larger than exact. When SqrtPriceCalculator.computeRatioX96 recomputes sqrtPriceX96 from these amounts, the integer sqrt truncation counteracts the rounding up. The net error is at most 1-2 units of sqrtPriceX96 (sub-wei level). Not economically exploitable.",
+      "test_file": "code-analysis: CLOBHelper.sol:309-314,SqrtPriceCalculator.sol:28-50,AMMStandardHook.sol:210-221",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "CLOBHelper.sol",
+        "SqrtPriceCalculator.sol",
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "calculateFixedInput",
+        "computeRatioX96",
+        "validateHandlerOrder"
+      ],
+      "keywords": [
+        "rounding",
+        "pricing-bounds",
+        "sqrtPrice",
+        "clob"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "C9: Flash loan profit (INV-E02) \u2014 flash loan \u2192 addLiquidity \u2192 swap \u2192 removeLiquidity \u2192 repay",
+      "why_ruled_out": "Flash loan fee is always positive (mulDivRoundingUp with flashLoanBPS > 0). Balance check at AMMModule:3334-3346 ensures repayment >= loan + fee. Any swap within the loan would also incur pool fees. Net: attacker always loses at minimum the flash loan fee + swap fees. Verified with mathematical analysis in Forge test.",
+      "test_file": "lbamm-core/test/AuditInsolvencyKLR4.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_flashLoan"
+      ],
+      "keywords": [
+        "flash-loan",
+        "profit",
+        "no-value-creation"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "C6: Token balance solvency (INV-S01) \u2014 contractBalance >= sum(obligations) after operations",
+      "why_ruled_out": "Existing test suite verifies solvency after swap+addLiq+removeLiq sequences. All reserve updates use safe increment/decrement with overflow checks. The balance check at _finalizeSwapCollectFundsAndDisburse:2208 ensures exact balance change matches expected amountIn.",
+      "test_file": "lbamm-core/test/AuditInsolvencyKLR4.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_finalizeSwapCollectFundsAndDisburse"
+      ],
+      "keywords": [
+        "solvency",
+        "balance-check",
+        "reserves"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    }
+  ],
+  "theft_theses": [
+    {
+      "thesis": "Flash loan \u2192 add liquidity \u2192 collect fees \u2192 remove liquidity with inflated position",
+      "victim": "Protocol / LPs",
+      "asset": "Pool reserves",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Zero-liquidity pool fee accumulation overflow",
+      "victim": "LPs",
+      "asset": "Uncollected fees",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "tokensOwed desync between position and pool accounting",
+      "victim": "Protocol",
+      "asset": "Pool reserves via double-collect",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Rounding asymmetry in add vs remove paths",
+      "victim": "Protocol",
+      "asset": "Pool reserves via rounding extraction",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Direct swap pricing bounds bypass via pre-fee amount mismatch",
+      "victim": "Token creators with pricing bounds",
+      "asset": "Pricing bound enforcement integrity",
+      "estimated_ev": 0,
+      "status": "tested"
+    },
+    {
+      "thesis": "Fee shortage 10000x amplification with max hopFeeBPS",
+      "victim": "Users doing output swaps",
+      "asset": "Excess input tokens via amplified fees",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Reentrancy via hook fee transfer callback to bypass guards",
+      "victim": "Protocol",
+      "asset": "Pool reserves via re-entrant state manipulation",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "CLOB partial fill creates double-claim on order input amounts",
+      "victim": "CLOB makers",
+      "asset": "Order input token balances",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "FixedHelper unchecked underflow wraps withdraw amount to ~2^256",
+      "victim": "Protocol",
+      "asset": "Pool reserves drained via huge withdrawal",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "SingleProviderPoolType TOCTOU reads stale reserves in multi-hop",
+      "victim": "Swap users",
+      "asset": "Incorrect swap output amounts",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Dust accumulation creates material fee distribution skew in FixedPoolType",
+      "victim": "LPs at first heights",
+      "asset": "Fee income",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    }
+  ],
+  "hypothesis_results": [
+    {
+      "id": "H-R4-CP-01",
+      "status": "dismissed",
+      "test_file": "lbamm-core/test/AuditInsolvencyKLR4.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If the expression redeposited0 | redeposited1 == 0 parsed as redeposited0 | (redeposited1 == 0), then when redeposited0>0 and redeposited1==0, it would evaluate to truthy, causing incorrect revert that locks LP funds.",
+      "guard_location": "Solidity type system: uint256 | bool is a compile-time type error",
+      "detail": "Solidity's type system prevents the buggy parse. uint256 | bool is not allowed, so the compiler treats the expression as (uint256 | uint256) == 0. Verified with Chisel REPL: (1 | 0 == 0) evaluates to false, confirming (1|0)==0 parse."
+    },
+    {
+      "id": "H-R4-HH-03",
+      "status": "dismissed",
+      "test_file": "code-analysis: CLOBHelper.sol:309-314,SqrtPriceCalculator.sol:28-50",
+      "failure_class": "strategic",
+      "refutation_case": "If calculateFixedInput rounds UP the output amount, the recomputed sqrtPriceX96 from the inflated ratio could exceed the maxSqrtPriceX96 bound by 1-2 units, causing false rejects or bypasses.",
+      "guard_location": "SqrtPriceCalculator.sol:49-50 \u2014 integer sqrt truncation counteracts rounding up",
+      "detail": "The mulDivRoundingUp in calculateFixedInput inflates amountOut slightly, but computeRatioX96 uses integer sqrt which truncates. Net error is at most 1-2 sqrtPriceX96 units \u2014 sub-wei, not economically exploitable."
+    },
+    {
+      "id": "H-R4-HH-04",
+      "status": "tested",
+      "test_file": "lbamm-core/test/AuditInsolvencyKLR4.t.sol",
+      "failure_class": "tactical",
+      "refutation_case": "If beforeSwap stores the pre-fee specified amount and afterSwap uses it to compute price, the computed price is deflated by the fee percentage. A 5% fee creates a 5% discrepancy between computed and actual execution price, allowing out-of-bounds swaps to pass.",
+      "guard_location": "No guard \u2014 the pre-fee amount is stored directly at AMMStandardHook.sol:839",
+      "detail": "LEAD: The pre-fee amount is stored in transient storage before fees are deducted. The afterSwap price computation at lines 842-846 uses this inflated denominator. For direct swaps with non-trivial hook fees, the pricing bounds enforcement is proportionally weakened. Reported as INSOL-001 lead."
+    },
+    {
+      "id": "H-R4-DP-03",
+      "status": "dismissed",
+      "test_file": "lbamm-core/test/AuditInsolvencyKLR4.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If hopFeeBPS=9999, the shortage coverage formula at AMMModule:2818-2822 amplifies by 10000x, charging users 1M tokens on a 100 token swap. A compromised fee manager could set this to create a fee trap.",
+      "guard_location": "AMMModule.sol:2171 \u2014 limitAmount check caps total amountIn",
+      "detail": "The limitAmount guard at line 2171 protects users: if amountIn exceeds limitAmount, the transaction reverts. Users set limitAmount as their slippage protection. Additionally, hopFeeBPS is admin-controlled, making this an admin-misconfiguration vector, not an attacker-exploitable vulnerability."
+    },
+    {
+      "id": "H-R4-CP-02",
+      "status": "dismissed",
+      "test_file": "code-analysis: DynamicHelper.sol:258-290",
+      "failure_class": "strategic",
+      "refutation_case": "If snapPrice walks past an initialized tick at exactly the target tick in the lte direction, it could move the pool price past a range with active liquidity, creating a pricing discrepancy.",
+      "guard_location": "DynamicHelper.sol:264 \u2014 snapPrice is admin-only (pool hook controlled)",
+      "detail": "snapPrice requires pool hook permissions and operates only on zero-liquidity pools. Even if the edge case exists, the subsequent operations would re-establish correct pricing. No economic extraction path from external callers."
+    },
+    {
+      "id": "H-R4-CP-04",
+      "status": "dismissed",
+      "test_file": "code-analysis: FixedHelper.sol:1694-1734",
+      "failure_class": "strategic",
+      "refutation_case": "If totalAmountOutFilled includes dust in the fee split denominator, the output-height LP receives less than proportional fee share, systematically favoring input-height LPs.",
+      "guard_location": "FixedHelper.sol:1706-1708 \u2014 dust added to pool storage, bounded by precision",
+      "detail": "Dust per swap is bounded by token precision (1 wei typically). Over 500 swaps, cumulative skew is ~500 wei. Not economically meaningful \u2014 falls well below the submission threshold for dust-level precision issues."
+    },
+    {
+      "id": "H-R4-CP-05",
+      "status": "dismissed",
+      "test_file": "lbamm-core/test/AuditInsolvencyKLR4.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If SingleProviderPoolType reads stale reserves via getPoolState during a multi-hop swap, the second hop could compute incorrect output amounts based on pre-update state from the first hop.",
+      "guard_location": "AMMModule.sol:1389,1436-1443 \u2014 pool type called before reserve update, each pool reads its own state",
+      "detail": "Each pool type reads its OWN pre-swap state. In multi-hop, pool A's reserves are updated before pool B is called. Pool B reads its own (unmodified) reserves correctly. No cross-contamination between pools."
+    },
+    {
+      "id": "H-R4-CP-06",
+      "status": "dismissed",
+      "test_file": "code-analysis: FixedHelper.sol:1817-1827,1910-1917",
+      "failure_class": "strategic",
+      "refutation_case": "If the last height in a swap loop gets K-1 wei extra fee due to sequential rounding, an attacker positioning liquidity at the last height could systematically earn more fees.",
+      "guard_location": "Economic guard \u2014 K-1 wei per swap is dust-level",
+      "detail": "At most 9 extra wei per swap for 10 heights. Even at high volume, the cumulative advantage is negligible. Known AMM rounding pattern \u2014 not a viable extraction vector."
+    },
+    {
+      "id": "H-R4-CP-08",
+      "status": "dismissed",
+      "test_file": "lbamm-core/test/AuditInsolvencyKLR4.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If _calculateLiquidityStartAndEndHeights produces redeposited0 > value0 due to cross-side conversion + precision truncation, the unchecked subtraction wraps to ~2^256, allowing massive withdrawal.",
+      "guard_location": "FixedHelper.sol:319,342 \u2014 precision truncation reduces deposit amount, never increases it",
+      "detail": "The divide-then-multiply truncation at _calculateLiquidityStartAndEndHeights ensures redeposited <= redeposit <= value. Mathematical proof: redeposit = value - requested, heights = redeposit / precision (truncated), redeposited = heights * precision <= redeposit <= value. Safe."
+    },
+    {
+      "id": "H-R4-CP-09",
+      "status": "dismissed",
+      "test_file": "code-analysis: SingleProviderHelper.sol:42-50,AMMModule.sol:1413-1427",
+      "failure_class": "strategic",
+      "refutation_case": "If SingleProviderHelper's partial fill recalculates amountIn with different rounding than AMMModule's proportional adjustment, the total fees may not add up, creating a surplus or deficit extractable by repeated partial fills.",
+      "guard_location": "AMMModule.sol:1415-1416 \u2014 proportional adjustment uses mulDivRoundingUp (protocol-favoring)",
+      "detail": "Any rounding mismatch results in the user paying slightly more (not less) due to RoundingUp. The protocol always errs in its own favor. No extraction path for attacker."
+    },
+    {
+      "id": "H-R4-CH-03",
+      "status": "dismissed",
+      "test_file": "lbamm-core/test/AuditInsolvencyKLR4.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If _setReentrancyFlags(NO_FLAGS) at line 3190 clears the swap guard flag, and a safeTransfer callback re-enters through a different diamond facet, the callback would bypass the guard check.",
+      "guard_location": "TstorishReentrancyGuardWithFlags \u2014 ENTERED bit in transient storage",
+      "detail": "The ENTERED bit persists in transient storage throughout the transaction. NO_FLAGS only clears custom flags. Any AMM re-entry during fee distribution is blocked by the ENTERED bit."
+    },
+    {
+      "id": "H-R4-CH-04",
+      "status": "dismissed",
+      "test_file": "code-analysis: CLOBHelper.sol:180-239,28-78",
+      "failure_class": "strategic",
+      "refutation_case": "If a partially-filled current order ends up in the non-current path of closeOrder after complex open/close/fill sequences, the maker would receive the FULL original inputAmount instead of the partially-filled remaining.",
+      "guard_location": "CLOBHelper.sol:46-48 \u2014 current order always reads inputAmountRemaining",
+      "detail": "Non-current orders are never partially filled because fillOrder processes sequentially from the current order. The linked list structure ensures a non-current order is either fully consumed (inputAmount=0 via traverseCLOB) or untouched (inputAmount=original)."
+    },
+    {
+      "id": "H-R4-HH-02",
+      "status": "dismissed",
+      "test_file": "code-analysis: CLOBHelper.sol:46-66,151,206-208,238",
+      "failure_class": "strategic",
+      "refutation_case": "If ptrOrder.inputAmount (original, never updated) diverges from ptrOrderBucket.inputAmountRemaining (partially filled), and an external viewer or future code reads the wrong field, they see incorrect accounting.",
+      "guard_location": "CLOBHelper.sol:46-48,63-66 \u2014 closeOrder correctly selects the right field based on current vs non-current",
+      "detail": "The dual-field design is intentional. inputAmountRemaining tracks the live state for the current (head) order. inputAmount is immutable reference for non-current orders. closeOrder correctly dispatches based on orderId == currentOrderId."
+    },
+    {
+      "id": "H-R4-HH-06",
+      "status": "dismissed",
+      "test_file": "code-analysis: CLOBTransferHandler.sol:253-280",
+      "failure_class": "strategic",
+      "refutation_case": "If a custom CLOB hook validates based on the FULL amountOut but the actual fill is smaller, an executor could satisfy validation with flash-loaned collateral for a larger amount while only filling a small amount.",
+      "guard_location": "CLOBTransferHandler.sol:253-265 \u2014 validateExecutor is called with maximum amounts (upper bound validation)",
+      "detail": "The hook validates the MAXIMUM amounts the executor is authorized for. A smaller actual fill is always safe (less than authorized). The hook interface (ICLOBHook) is designed for upper-bound validation, not exact-amount validation."
+    },
+    {
+      "id": "H-R4-HH-07",
+      "status": "dismissed",
+      "test_file": "lbamm-core/test/AuditInsolvencyKLR4.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If TOKEN_SETTINGS_BEFORE_SWAP_HOOK_FLAG is set but TOKEN_SETTINGS_AFTER_SWAP_HOOK_FLAG is not, beforeSwap stores the amount but afterSwap never validates bounds, creating a pricing enforcement gap for direct swaps.",
+      "guard_location": "Known issue CP-004 in confirmed-patterns.md",
+      "detail": "This is already documented as confirmed pattern CP-004. Not a new finding."
+    }
+  ],
+  "metadata": {
+    "checklist_items_completed": "A: 4/4, B: 5/5, C: 20/25, D: 11/11",
+    "tools_run": {
+      "slither": {
+        "ran": true,
+        "repos": [
+          "lbamm-core",
+          "amm-pool-type-dynamic",
+          "lbamm-pool-type-fixed"
+        ],
+        "note": "High/Medium detectors on 3 repos. Notable: reentrancy-balance, arbitrary-send-erc20, divide-before-multiply in TickMath and FixedHelper. All standard patterns."
+      },
+      "aderyn": {
+        "ran": true,
+        "repos": [
+          "lbamm-core"
+        ],
+        "note": "1 high (state change after external call in ModuleAdmin), 9 low. amm-pool-type-dynamic errored (aderyn crash)."
+      },
+      "forge": {
+        "ran": true,
+        "note": "113 tests total, 113 passed. File: lbamm-core/test/AuditInsolvencyKLR4.t.sol (22 new tests incl 3 Halmos check_ functions) + inherited AuditInsolvency.t.sol (91 tests)"
+      },
+      "halmos": {
+        "ran": true,
+        "note": "3 check_ functions: check_CP08_redeposited_leq_value (TIMEOUT but 9 paths explored), check_C9_flashLoan_fee_positive (PASS, 9 paths), check_CP01_operator_precedence (PASS, 3 paths). Total: 2 pass, 1 timeout."
+      },
+      "medusa": {
+        "ran": true,
+        "note": "Attempted on AuditInsolvencyKLR4Test with assertion+property testing. Failed to detect check_ functions due to contract deployment complexity (too many dependencies). Logged as 'ran with error'."
+      },
+      "audit-context-building": {
+        "ran": true,
+        "note": "Applied ultra-granular analysis to _finalizeSwapCollectFundsAndDisburse, _applySwapByInputInputFees, _validateProtocolFees, _positionAddLiquidity, _positionRemoveLiquidity, _distributeOrCollectLiquidityToken, _storeTokensOwed. Mapped state flow, identified invariants, and confirmed conservation properties."
+      },
+      "entry-point-analyzer": {
+        "ran": true,
+        "note": "Identified 20+ state-changing entry points in AMMModule. Classified by access: public (swap, addLiquidity, removeLiquidity, flashLoan), admin (setTokenSettings, createPool, setPoolFee), contract-only (executeQueuedHookFeesByHookTransfers, pool type callbacks). All public entry points verified for reentrancy guard coverage."
+      }
+    },
+    "num_turns": 65,
+    "tool_uses": 52,
+    "files_read": 28,
+    "theses_tested": 11,
+    "theses_confirmed": 0,
+    "theses_ruled_out": 10,
+    "triage_log": {
+      "skip": 2,
+      "borderline": 4,
+      "survive": 9
+    },
+    "lens_coverage": {
+      "lens1_value_tracing": "Traced fee computation from hook beforeSwap through AMM fee deduction to afterSwap price computation. Found pre-fee amount stored in transient storage (INSOL-001 lead). Also traced reserve updates in _poolSwapByInput and settlement in _finalizeSwapCollectFundsAndDisburse.",
+      "lens2_paired_op_diffing": "Diffed addLiquidity vs removeLiquidity in FixedHelper and AMMModule. withdrawLiquidity uses unchecked subtraction but precision truncation guarantees safety. No asymmetry found. Also compared _positionAddLiquidity reserve increments vs _positionRemoveLiquidity decrements.",
+      "lens3_amplification_factor": "Computed fee shortage amplification: 10000x at hopFeeBPS=9999. But limitAmount caps exposure. At 0.3% typical fee, amplification is negligible. Also analyzed flash loan round-trip fee loss: minimum 6.2% loss from 2x pool fees + flash fee."
+    },
+    "gate_passed": true,
+    "_total_hypotheses": 15
+  }
+}

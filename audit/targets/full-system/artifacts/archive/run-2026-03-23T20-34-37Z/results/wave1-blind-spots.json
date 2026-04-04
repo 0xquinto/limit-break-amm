@@ -1,0 +1,44 @@
+{
+  "covered": [
+    "EXP-01",
+    "EXP-02",
+    "EXP-03",
+    "EXP-04",
+    "EXP-05",
+    "EXP-06",
+    "EXP-07",
+    "EXP-08",
+    "EXP-09",
+    "EXP-10",
+    "EXP-11",
+    "EXP-12",
+    "EXP-14",
+    "EXP-15"
+  ],
+  "blind_spots": [
+    {
+      "id": "EXP-13",
+      "source": "swapnet-2026-01",
+      "title": "User-supplied calldata injection (SwapNet $13.4M)",
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "multiSwap",
+        "singleSwap"
+      ],
+      "category": "input-validation",
+      "keywords": [
+        "swapExtraData",
+        "calldata",
+        "arbitrary",
+        "redirect",
+        "bytes",
+        "user-supplied",
+        "malformed"
+      ]
+    }
+  ],
+  "coverage_pct": 93.3,
+  "summary": "14/15 exploit patterns covered (93.3%). Blind spots:\n  - EXP-13: User-supplied calldata injection (SwapNet $13.4M)"
+}

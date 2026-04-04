@@ -1,0 +1,938 @@
+{
+  "agent_name": "cross-boundary",
+  "agent_role": "Cross-Boundary Tracer",
+  "wave": 1,
+  "findings": [
+    {
+      "id": "XB-001",
+      "title": "Direct swap pricing bounds bypass via pre-fee amount stored in transient storage",
+      "severity": "low",
+      "confidence_score": 85,
+      "confidence_deductions": [
+        "Impact is bounded by token creator configuration (-15)"
+      ],
+      "status": "lead",
+      "category": "pricing-bounds-bypass",
+      "description": "In AMMStandardHook._validatePricingBounds, for direct swaps, beforeSwap stores params.amount (pre-fee input) in transient storage. afterSwap reconstructs the price using this pre-fee amount as the denominator. Since the actual swap executes with post-fee input (smaller), the computed price is systematically lower than the actual execution price by sqrt(1 - feePercent). With a 5% hook fee, the deflation is ~253 BPS, allowing direct swaps to execute at prices up to 2.5% above the configured max pricing bound.",
+      "impact": "Token creators who set max pricing bounds for direct swaps can have those bounds exceeded proportional to the hook fee. For tokens with 5% sell fees, the max price can be exceeded by ~2.5%. This undermines the creator's anti-sniping and price protection configuration.",
+      "proof_sketch": "test_H04_directSwapPreFeeAmountMismatch in AuditCrossBoundaryHypotheses.t.sol demonstrates: computeRatioX96(95e18, 100e18) < computeRatioX96(95e18, 95e18) by 253 BPS",
+      "victim": "Token creators who set pricing bounds for their tokens",
+      "extractable_value": "Proportional to fee % - attacker executes direct swaps at prices above max bound",
+      "attack_sequence": [
+        "1. Token creator sets max pricing bound for their token via registry",
+        "2. Token has a 5% sell fee configured on the hook",
+        "3. Attacker executes a direct swap at a price 2.5% above the max bound",
+        "4. beforeSwap stores pre-fee amount (100) in tstore, returns 5% fee",
+        "5. AMM deducts fee, swap executes with 95 input at target price",
+        "6. afterSwap computes price using tstore=100 denominator, gets deflated price",
+        "7. Deflated price passes max bound check even though actual price exceeds bound"
+      ],
+      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundaryHypotheses.t.sol",
+      "test_passes": true,
+      "prerequisites": [
+        "Token with non-zero hook fee",
+        "Pricing bounds configured",
+        "Direct swap (not pool swap)"
+      ],
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "_validatePricingBounds()"
+      ],
+      "lines": {
+        "AMMStandardHook.sol": [
+          838,
+          839,
+          842,
+          843,
+          844,
+          846
+        ]
+      },
+      "keywords": [
+        "pricing-bounds",
+        "transient-storage",
+        "direct-swap",
+        "fee-mismatch"
+      ],
+      "fp_gate": {
+        "location_exists": true,
+        "entry_reachable": true,
+        "no_existing_guard": true,
+        "concrete_attack_path": true,
+        "poc_compiles": true
+      },
+      "source_hypothesis": "H-R4-HH-04",
+      "kill_gate": {
+        "status": "flagged",
+        "gate": "V2-refutation",
+        "reason": "Missing refutation_attempted \u2014 you must argue against your own finding before submitting"
+      }
+    },
+    {
+      "id": "XB-002",
+      "title": "SqrtPriceCalculator.computeRatioX96 returns 0 on overflow, bypassing max pricing bound in validateHandlerOrder",
+      "severity": "low",
+      "confidence_score": 80,
+      "confidence_deductions": [
+        "Requires extreme amount ratio to trigger overflow (-10)",
+        "Impact limited to CLOB order validation bypass (-10)"
+      ],
+      "status": "lead",
+      "category": "pricing-bounds-bypass",
+      "description": "When SqrtPriceCalculator.computeRatioX96 receives extreme amount ratios (e.g., uint256.max / 1), the internal computation overflows uint160 and the function returns 0 instead of reverting. In validateHandlerOrder (AMMStandardHook lines 198-226), this zero price bypasses the max pricing bound check because (0 > maxBound) is always false. While _validatePricingBounds for direct swaps has a sqrtPriceX96==0 revert guard (line 847), validateHandlerOrder for CLOB orders does NOT have this check.",
+      "impact": "A CLOB order with extreme amount parameters that causes computeRatioX96 to return 0 would pass max pricing bound validation. The order would then execute at the original (out-of-bounds) price during fills.",
+      "proof_sketch": "test_H05_sqrtPriceOverflowReturns0 confirms computeRatioX96(uint256.max, 1) returns 0. Halmos check_zeroReturnOnlyOnOverflow PASSED confirming the overflow-to-zero path exists symbolically.",
+      "victim": "Token creators relying on max pricing bounds for CLOB orders",
+      "extractable_value": "Low - requires extreme amount ratios unlikely to occur in practice",
+      "attack_sequence": [
+        "1. Token creator sets max pricing bound (e.g., maxSqrtPriceX96 = X)",
+        "2. Attacker crafts CLOB order with amountIn/amountOut ratio that causes computeRatioX96 overflow",
+        "3. computeRatioX96 returns 0, validateHandlerOrder check: 0 > X = false, passes",
+        "4. Order is placed at original extreme price, fills execute above the max bound"
+      ],
+      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundaryHypotheses.t.sol",
+      "test_passes": true,
+      "prerequisites": [
+        "Token with max pricing bound set",
+        "Extreme amount ratio that triggers overflow"
+      ],
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol",
+        "SqrtPriceCalculator.sol"
+      ],
+      "functions": [
+        "validateHandlerOrder()",
+        "computeRatioX96()"
+      ],
+      "lines": {
+        "AMMStandardHook.sol": [
+          215,
+          217,
+          218,
+          221
+        ],
+        "SqrtPriceCalculator.sol": [
+          49,
+          50,
+          51,
+          53
+        ]
+      },
+      "keywords": [
+        "overflow",
+        "pricing-bounds",
+        "validateHandlerOrder",
+        "zero-price"
+      ],
+      "fp_gate": {
+        "location_exists": true,
+        "entry_reachable": true,
+        "no_existing_guard": true,
+        "concrete_attack_path": true,
+        "poc_compiles": true
+      },
+      "source_hypothesis": "H-R4-HH-05",
+      "kill_gate": {
+        "status": "flagged",
+        "gate": "V2-refutation",
+        "reason": "Missing refutation_attempted \u2014 you must argue against your own finding before submitting"
+      }
+    }
+  ],
+  "ruled_out_vectors": [
+    {
+      "vector": "calculateFixedInput overflow DoS at extreme orderAmount and sqrtPriceX96",
+      "why_ruled_out": "FullMath.mulDivRoundingUp handles the intermediate computation correctly. At (uint128.max, MAX_SQRT_RATIO), the result fits in uint256. No overflow occurs.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundaryHypotheses.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "CLOBHelper.sol"
+      ],
+      "functions": [
+        "calculateFixedInput()"
+      ],
+      "keywords": [
+        "overflow",
+        "dos",
+        "calculateFixedInput"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "Operator precedence bug in ModuleLiquidity.sol:90 (deposit0 | deposit1 == 0)",
+      "why_ruled_out": "In Solidity, bitwise OR (|) has higher precedence than equality (==), so the expression correctly parses as (deposit0 | deposit1) == 0. Forge test confirms both interpretations produce identical results.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundaryHypotheses.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "ModuleLiquidity.sol"
+      ],
+      "functions": [
+        "createPool()"
+      ],
+      "keywords": [
+        "operator-precedence",
+        "createPool"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "Dynamic pool fee 100% on input swaps (asymmetry with output)",
+      "why_ruled_out": "By-design asymmetry documented in CODEBASE_MAP.md. Output blocks >= 100% to avoid division by zero. Input allows 100% because limitAmount check at line 2156 protects users. A user setting limitAmount=0 accepts 0 output.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundaryHypotheses.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_getPoolFee()"
+      ],
+      "keywords": [
+        "dynamic-fee",
+        "100-percent",
+        "asymmetry"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "Output swap shortage amplification with hopFeeBPS=9999",
+      "why_ruled_out": "hopFeeBPS is admin-controlled (fee manager role). 10000x amplification requires fee manager to set hopFeeBPS=9999. limitAmount check at line 2171 protects users. Self-inflicted config error pattern from digest FP#4.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundaryHypotheses.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_applySwapByOutputInputFees()"
+      ],
+      "keywords": [
+        "shortage-amplification",
+        "hopFee",
+        "admin"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "Input swap DoS with poolFee=10000 + lpFee=10000",
+      "why_ruled_out": "Both parameters require admin control (dynamic fee hook returns 10000, fee manager sets lpFee=10000). Also, with poolFee=10000, expectedProtocolLPFee = swapAmountIn, which is >= minimumProtocolFee, so the shortage path is unlikely to be entered. Self-inflicted config pattern.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundaryHypotheses.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_applySwapByInputInputFees()"
+      ],
+      "keywords": [
+        "division-by-zero",
+        "dos",
+        "admin-config"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "Partial fill ptrOrder.inputAmount vs inputAmountRemaining desync",
+      "why_ruled_out": "A partially-filled order ALWAYS remains the currentOrderId in its bucket until fully filled or explicitly closed. closeOrder for current orders uses inputAmountRemaining (correct). The non-current path (using inputAmount) is only reachable for UNFILLED orders.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundaryHypotheses.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "CLOBHelper.sol"
+      ],
+      "functions": [
+        "fillOrder()",
+        "closeOrder()"
+      ],
+      "keywords": [
+        "partial-fill",
+        "inputAmount",
+        "desync"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "validateExecutor TOCTOU with full vs partial fill amounts",
+      "why_ruled_out": "ICLOBHook.validateExecutor validates the maximum exposure. Actual fill is always <= validated amount. This is conservative over-validation, not exploitable. Requires custom ICLOBHook (Tier B).",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundaryHypotheses.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "CLOBTransferHandler.sol"
+      ],
+      "functions": [
+        "ammHandleTransfer()"
+      ],
+      "keywords": [
+        "validateExecutor",
+        "TOCTOU",
+        "partial-fill"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "Direct swap pricing bypass when afterSwap flag disabled",
+      "why_ruled_out": "Already known as CP-004 in confirmed-patterns.md. Low severity. Token creator must configure both beforeSwap and afterSwap flags.",
+      "test_file": "code-analysis: AMMStandardHook.sol:838-840",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "_validatePricingBounds()"
+      ],
+      "keywords": [
+        "direct-swap",
+        "afterSwap-flag",
+        "CP-004"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "Diamond facet selector collisions across AMMModule, ModuleAdmin, ModuleFeeCollection, ModuleLiquidity",
+      "why_ruled_out": "Computed all 15 external function selectors via cast sig. All selectors are unique - no 4-byte collisions.",
+      "test_file": "code-analysis: cast sig output for all diamond facet functions",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol",
+        "ModuleAdmin.sol",
+        "ModuleFeeCollection.sol",
+        "ModuleLiquidity.sol"
+      ],
+      "functions": [
+        "all external functions"
+      ],
+      "keywords": [
+        "selector-collision",
+        "diamond"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "Storage slot collisions across diamond proxy facets",
+      "why_ruled_out": "All four diamond modules (AMMModule, ModuleAdmin, ModuleFeeCollection, ModuleLiquidity) have 0 direct storage slots - they use shared diamond storage at slot 0x9A1D via LBAMMStorage. AMMStandardHook and CLOBTransferHandler have their own storage starting at slot 0, no overlap with diamond.",
+      "test_file": "code-analysis: Slither get_storage_layout for all modules shows 0 slots",
+      "repos": [
+        "lbamm-core",
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMModule.sol",
+        "ModuleAdmin.sol",
+        "ModuleFeeCollection.sol",
+        "ModuleLiquidity.sol"
+      ],
+      "functions": [],
+      "keywords": [
+        "storage-collision",
+        "diamond-proxy"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "Reentrancy flags cleared before transfer handler callback during swap finalization",
+      "why_ruled_out": "Flags ARE cleared at AMMModule.sol:3190 before callback at line 2251. However, ENTERED bit prevents reentrancy. Current handlers (CLOB, Permit) don't check flags during callback. No current exploit path \u2014 requires future custom handler that checks execution state. No concrete attack path achievable with deployed contracts.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundaryHypotheses.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol",
+        "ModuleFeeCollection.sol"
+      ],
+      "functions": [
+        "_finalizeSwapCollectFundsAndDisburse()",
+        "_executeQueuedHookFeesByHookTransfers()"
+      ],
+      "keywords": [
+        "reentrancy-flags",
+        "state-inconsistency",
+        "transfer-handler",
+        "callback"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "Non-token hook fee storage key asymmetry creates API confusion risk",
+      "why_ruled_out": "_storeNonTokenHookFees uses hash(tokenFor, tokenFor). _transferHookFeesByHook uses hash(tokenFor, tokenFee). Keys match only when tokenFor == tokenFee. For non-token hooks, fees ARE denominated in the same token, so correct usage works. The asymmetry is an API footgun for hook developers but not exploitable \u2014 the hook developer would only harm themselves by using the wrong parameters. No existing guard needed because no_existing_guard is the wrong framing: the guard IS the correct usage pattern.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundaryHypotheses.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol",
+        "ModuleFeeCollection.sol"
+      ],
+      "functions": [
+        "_storeNonTokenHookFees()",
+        "_transferHookFeesByHook()"
+      ],
+      "keywords": [
+        "hook-fees",
+        "storage-key",
+        "api-asymmetry"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "Output swap partial fill does not adjust already-stored hook fees",
+      "why_ruled_out": "Hook fees stored before pool type call at AMMModule:1537, partial fill adjustment at 1558-1577 doesn't re-compute hook fees. However: only SingleProviderPoolType can partial fill, the LP chose this pool type and accepted the hook, and the overcharge magnitude per partial fill is small (fees on requested - fees on actual). No existing guard needed because the hook owner IS the beneficiary \u2014 self-inflicted benefit, not an attack on victims.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundaryHypotheses.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_poolSwapByOutput()",
+        "_applySwapByOutputOutputFees()"
+      ],
+      "keywords": [
+        "partial-fill",
+        "hook-fees",
+        "accounting",
+        "overcharge"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "Core trusts pool type amountOut blindly (C1)",
+      "why_ruled_out": "_safeDecrementUint128 at AMMModule:1437 reverts if amountOut > reserve. Pool types require 6 leading zero bytes in address and are deployed by privileged actors. No arbitrary pool type deployment possible.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundaryChecklist.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_poolSwapByInput()"
+      ],
+      "keywords": [
+        "pool-type-trust",
+        "reserve-decrement"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "Transfer handler token mismatch (C2)",
+      "why_ruled_out": "Core reads tokens from verified pool state. No mechanism for Core to send wrong tokens. Handler uses IERC20(token).transferFrom with the exact tokens from pool state.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundaryChecklist.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_finalizeSwapCollectFundsAndDisburse()"
+      ],
+      "keywords": [
+        "handler",
+        "token-mismatch"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "Hook fee exceeds swap amount (C3)",
+      "why_ruled_out": "hookFeeBPS capped at MAX_BPS (10000) in CreatorHookSettingsRegistry. Fee = amount * hookFeeBPS / MAX_BPS <= amount. Even at 100%, fee == amount, amountIn - fee = 0, no underflow.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundaryChecklist.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "_calculateFee()"
+      ],
+      "keywords": [
+        "hook-fee",
+        "overflow"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "Hook\u2192Registry stale settings mid-swap (C4)",
+      "why_ruled_out": "Each hook call reads fresh settings from registry. No cross-hook caching. nonReentrant on AMM prevents reentrancy from token callbacks back into swap. Registry can be updated independently but each hook invocation reads current state, providing consistent per-call enforcement.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundaryChecklist.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol",
+        "CreatorHookSettingsRegistry.sol"
+      ],
+      "functions": [
+        "_getOrFetchTokenSettings()"
+      ],
+      "keywords": [
+        "stale-settings",
+        "registry"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "Pool type returns feeAmount > amountIn (C5)",
+      "why_ruled_out": "_validateProtocolFees computes reserveIn = amountIn - poolFee - protocolFee. If fees > amountIn, arithmetic underflow reverts.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundaryChecklist.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_validateProtocolFees()"
+      ],
+      "keywords": [
+        "pool-return",
+        "fee-exceeds-input"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "Handler\u2192External reentrancy via token callback (C6)",
+      "why_ruled_out": "TstorishReentrancyGuardWithFlags ENTERED bit persists in transient storage across external calls. All AMM entry points use nonReentrant modifier. Token callbacks cannot reenter the AMM.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundaryChecklist.t.sol",
+      "repos": [
+        "lbamm-core",
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMModule.sol",
+        "PermitTransferHandler.sol"
+      ],
+      "functions": [
+        "_finalizeSwapCollectFundsAndDisburse()"
+      ],
+      "keywords": [
+        "reentrancy",
+        "token-callback",
+        "transient-storage"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "Hook/pool accounting desync \u2014 Bunni pattern (C19)",
+      "why_ruled_out": "beforeSwap and afterSwap execute in the same call frame. If afterSwap reverts, the entire swap TX reverts including all beforeSwap state changes. Atomic execution prevents desync. Transient storage also rolled back on revert.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundaryChecklist.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "beforeSwap()",
+        "afterSwap()"
+      ],
+      "keywords": [
+        "bunni",
+        "revert-desync",
+        "atomic"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "Transient storage cross-path reads (C21)",
+      "why_ruled_out": "DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT is only read in _validatePricingBounds, which is only called from beforeSwap/afterSwap. addLiquidity, removeLiquidity, collectFees never read this slot. Reentrancy guard slot is independent. No cross-operation tload found.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundaryChecklist.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "_validatePricingBounds()",
+        "_getTstorish()"
+      ],
+      "keywords": [
+        "transient-storage",
+        "cross-path",
+        "tload"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "Hook return value manipulation \u2014 Uni V4 fee override (C22)",
+      "why_ruled_out": "Unlike Uniswap V4, Limit Break hooks do NOT return fee overrides. Hook fee is computed by the AMM from tokenSettings.hookFee (set in registry by creator). beforeSwap does not return a fee amount. The hook can only validate/revert, not manipulate fees.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundaryChecklist.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "beforeSwap()"
+      ],
+      "keywords": [
+        "hook-return",
+        "fee-override",
+        "uni-v4"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    }
+  ],
+  "theft_theses": [
+    {
+      "thesis": "Direct swap pricing bounds can be bypassed via pre-fee amount mismatch in transient storage",
+      "victim": "Token creators who set pricing bounds",
+      "asset": "Pricing enforcement integrity",
+      "estimated_ev": 0,
+      "status": "confirmed"
+    },
+    {
+      "thesis": "SqrtPriceCalculator overflow to 0 bypasses max bound in validateHandlerOrder",
+      "victim": "Token creators with max pricing bounds on CLOB orders",
+      "asset": "CLOB order pricing enforcement",
+      "estimated_ev": 0,
+      "status": "confirmed"
+    },
+    {
+      "thesis": "Reentrancy flags cleared during swap finalization create state inconsistency",
+      "victim": "Future custom transfer handlers",
+      "asset": "Execution state correctness",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Non-token hook fee key asymmetry can strand fees",
+      "victim": "Hook developers who misuse the API",
+      "asset": "Hook fees",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Output swap partial fill overcharges hook fees",
+      "victim": "LPs in SingleProviderPoolType pools",
+      "asset": "Pool reserves",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "calculateFixedInput overflow DoS blocks CLOB fills",
+      "victim": "CLOB makers and takers",
+      "asset": "CLOB availability",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Operator precedence bug in createPool blocks pool creation",
+      "victim": "Pool creators",
+      "asset": "Pool creation functionality",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "100% dynamic pool fee steals user input on input swaps",
+      "victim": "Swap users",
+      "asset": "Input tokens",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    }
+  ],
+  "hypothesis_results": [
+    {
+      "id": "H-R4-HH-01",
+      "status": "dismissed",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundaryHypotheses.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If a maker opens an order with uint128.max amount at MAX_SQRT_RATIO, calculateFixedInput during fillOrder would overflow in the double mulDivRoundingUp, causing all fills to revert while the maker closes their order unharmed.",
+      "guard_location": "FullMath.mulDivRoundingUp handles 512-bit intermediate values correctly",
+      "detail": "Forge test confirms calculateFixedInput(uint128.max, MAX_SQRT_RATIO) produces a valid result without overflow. FullMath's 512-bit intermediate handling prevents the overflow. All 5 tested prices with max order amount produced valid outputs."
+    },
+    {
+      "id": "H-R4-HH-02",
+      "status": "dismissed",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundaryHypotheses.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If a partially-filled order somehow enters the non-current path of closeOrder, the maker would get back the FULL original inputAmount instead of the partially-filled remaining, effectively double-spending the filled portion.",
+      "guard_location": "CLOBHelper.sol:46 - orderId == currentOrderId check ensures partially-filled orders always take the current-order path",
+      "detail": "A partially-filled order remains the currentOrderId until fully filled or closed. The non-current path (line 63-74) requires orderId != currentOrderId, which cannot happen for a partially-filled order. closeOrder for current orders correctly uses inputAmountRemaining."
+    },
+    {
+      "id": "H-R4-HH-03",
+      "status": "tested",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundaryHypotheses.t.sol",
+      "failure_class": "tactical",
+      "refutation_case": "If calculateFixedInput rounds UP the output, the ratio amountOut/amountIn is slightly larger than exact, so computeRatioX96 produces a price slightly different from the original order price, potentially causing false rejects or allowing bounds bypass.",
+      "guard_location": "SqrtPriceCalculator.computeRatioX96 at AMMStandardHook.sol:215",
+      "detail": "Test shows that for most common prices (1:1, 2:1, etc.), the recomputed price exactly matches the original. Discrepancies appear at extreme prices near MIN/MAX_SQRT_RATIO where integer sqrt precision is lower. The effect is extremely small and bounded by integer arithmetic precision (~1 unit)."
+    },
+    {
+      "id": "H-R4-HH-04",
+      "status": "confirmed",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundaryHypotheses.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If beforeSwap stores the pre-fee amount and afterSwap uses it to compute price, the computed price will be deflated by the fee percentage. A direct swap at a price slightly above the max bound would pass validation because the deflated computed price is below the bound.",
+      "guard_location": "AMMStandardHook.sol:854-868 - pricing bounds check uses the deflated price",
+      "detail": "CONFIRMED: test_H04_directSwapPreFeeAmountMismatch shows 253 BPS price deflation with 5% fee. computeRatioX96(95e18, 100e18) produces a price 2.53% below the actual execution price. This allows direct swaps to exceed max pricing bounds proportional to the fee percentage. Finding XB-001."
+    },
+    {
+      "id": "H-R4-HH-05",
+      "status": "confirmed",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundaryHypotheses.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If computeRatioX96 returns 0 for extreme ratios, validateHandlerOrder's max bound check (0 > maxBound) always passes. An order at an extreme price would be validated even though it exceeds the configured max pricing bound.",
+      "guard_location": "AMMStandardHook.sol:221 - check is (sqrtPriceX96 > maxBound), no zero-price guard",
+      "detail": "CONFIRMED: test_H05_sqrtPriceOverflowReturns0 shows computeRatioX96(uint256.max, 1) returns 0. Unlike _validatePricingBounds (line 847) which reverts on 0, validateHandlerOrder has NO zero-price check. Halmos check_zeroReturnOnlyOnOverflow passed, confirming the path symbolically. Finding XB-002."
+    },
+    {
+      "id": "H-R4-HH-06",
+      "status": "dismissed",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundaryHypotheses.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If ICLOBHook.validateExecutor validates against the full amountOut but only a fraction is actually filled, a hook that grants authorization based on collateral could be bypassed.",
+      "guard_location": "CLOBTransferHandler.sol:253-265 - validates full amount (conservative)",
+      "detail": "The validateExecutor call is conservative: it checks the maximum possible fill. Actual fills are always <= validated amount. This is over-validation, not under-validation. Requires custom ICLOBHook (Tier B). No exploit path for standard hooks."
+    },
+    {
+      "id": "H-R4-HH-07",
+      "status": "dismissed",
+      "test_file": "code-analysis: AMMStandardHook.sol:838-840",
+      "failure_class": "strategic",
+      "refutation_case": "If TOKEN_SETTINGS_AFTER_SWAP_HOOK_FLAG is not set but beforeSwap is enabled, direct swap pricing bounds are completely unenforced because afterSwap never fires to validate the stored amount.",
+      "guard_location": "AMMStandardHook.sol:838-840 - beforeSwap stores and returns, afterSwap validates",
+      "detail": "This is already known as CP-004 in confirmed-patterns.md. Low severity. Token creator must configure both flags. Not novel."
+    },
+    {
+      "id": "H-R4-DP-01",
+      "status": "dismissed",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundaryHypotheses.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If a dynamic pool hook returns 10000 BPS (100% fee) for an input swap, the user's entire input becomes LP fee with 0 output. A user with limitAmount=0 loses everything.",
+      "guard_location": "AMMModule.sol:2156 - limitAmount check protects users",
+      "detail": "By-design asymmetry documented in CODEBASE_MAP.md. Input allows 100% fee (> check at line 1717), output blocks it (>= check). limitAmount check at line 2156 protects users who set non-zero limitAmount. Users setting limitAmount=0 accept zero output."
+    },
+    {
+      "id": "H-R4-DP-03",
+      "status": "dismissed",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundaryHypotheses.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If hopFeeBPS is set to 9999 (max allowed), the shortage amplification formula amplifies by 10000x, causing massive protocolFeeFromInput that inflates the user's amountIn far beyond the fair swap value.",
+      "guard_location": "AMMModule.sol:2171 - limitAmount check + _setTokenFee line 3486 requires admin",
+      "detail": "Confirmed 10000x amplification at hopFeeBPS=9999. But: (1) hopFeeBPS is admin-controlled, (2) limitAmount check protects users. This is self-inflicted config error pattern (digest FP#4)."
+    },
+    {
+      "id": "H-R4-DP-05",
+      "status": "tested",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundaryHypotheses.t.sol",
+      "failure_class": "tactical",
+      "refutation_case": "If _storeNonTokenHookFees uses hash(tokenFor, tokenFor) but _transferHookFeesByHook uses hash(tokenFor, tokenFee), a hook calling collectHookFeesByHook with different tokenFor and tokenFee would fail to find the stored fees, causing underflow revert and permanently stranded fees.",
+      "guard_location": "AMMModule.sol:3016-3018 vs 3123-3125 - key asymmetry",
+      "detail": "Key asymmetry confirmed. However, for non-token hooks, fees ARE denominated in the same token (token0 fee in token0), so tokenFor == tokenFee is the correct usage. The API confusion is real but the correct usage path works. Moved to ruled_out \u2014 no concrete attack path against protocol users."
+    },
+    {
+      "id": "H-R4-DP-06",
+      "status": "tested",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundaryHypotheses.t.sol",
+      "failure_class": "tactical",
+      "refutation_case": "If _executeQueuedHookFeesByHookTransfers clears SWAP_GUARD_FLAG before _executeTransferHandlerCallback, the handler callback runs with incorrect flags. If the handler calls collectHookFeesByHook, it takes the direct-transfer path instead of queuing, potentially causing reentrancy or state corruption.",
+      "guard_location": "ENTERED bit at TstorishReentrancyGuardWithFlags prevents reentrancy to nonReentrant functions",
+      "detail": "Flags ARE cleared at line 3190 before callback at line 2251. ENTERED bit prevents reentrancy. Current handlers don't check flags. collectHookFeesByHook would take direct-transfer path but storage is properly decremented. No current exploit path. Moved to ruled_out."
+    },
+    {
+      "id": "H-R4-DP-07",
+      "status": "dismissed",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundaryHypotheses.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If poolFeeBPS=10000 and lpFeeBPS=10000, the denominator in the minimum protocol fee formula is 0, causing division-by-zero DoS for any input swap with non-zero hop fees.",
+      "guard_location": "Both parameters require admin control; shortage path unlikely at 100% pool fee",
+      "detail": "Division by zero confirmed at max fees. But: both are admin-controlled, and with 100% pool fee, expectedProtocolLPFee typically exceeds minimumProtocolFee, so the shortage path is not entered. Self-inflicted config pattern."
+    },
+    {
+      "id": "H-R4-DP-08",
+      "status": "tested",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundaryHypotheses.t.sol",
+      "failure_class": "tactical",
+      "refutation_case": "If _applySwapByOutputOutputFees stores hook fees before the pool type call, and the pool type partial fills, the stored fees are based on the full requested amount, not the actual fill. Over time this drains pool reserves below LP claims.",
+      "guard_location": "AMMModule.sol:1537-1577 - partial fill adjustment doesn't re-compute hook fees",
+      "detail": "Code analysis confirms hook fees are stored before pool type call and NOT adjusted on partial fill. Only SingleProviderPoolType can partial fill. The overcharge magnitude is fees(requestedAmount) - fees(actualAmount). Moved to ruled_out \u2014 LP chose the hook, self-inflicted."
+    },
+    {
+      "id": "H-R4-DP-09",
+      "status": "dismissed",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundaryHypotheses.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If Solidity parses deposit0 | deposit1 == 0 as deposit0 | (deposit1 == 0) like C/JS, pool creation would always revert when deposit0 > 0, blocking normal pool creation.",
+      "guard_location": "Solidity operator precedence: | (prec 10) > == (prec 9)",
+      "detail": "DISMISSED: Solidity's operator precedence differs from C/JavaScript. Bitwise OR (|) has HIGHER precedence than equality (==), so the expression correctly parses as (deposit0 | deposit1) == 0. Forge test confirms both interpretations produce identical results."
+    },
+    {
+      "id": "H-R4-TS-01",
+      "status": "confirmed",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundaryHypotheses.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If beforeSwap stores the pre-fee input amount in transient storage and afterSwap uses it to reconstruct the execution price, the price computation is wrong because the actual swap used the post-fee (smaller) amount. The computed price is lower than reality, allowing execution above max bound.",
+      "guard_location": "AMMStandardHook.sol:839 stores pre-fee amount, line 842-846 uses it with post-fee output",
+      "detail": "CONFIRMED: Same mechanism as H-R4-HH-04. The pre-fee amount in the denominator deflates the computed price by sqrt(1 - feePct). For 5% fee, ~2.5% deflation = 253 BPS. This allows direct swaps to exceed max pricing bounds. See finding XB-001."
+    }
+  ],
+  "metadata": {
+    "checklist_items_completed": "A: 5/5, B: 3/5, C: 18/18, D: 15/15",
+    "tools_run": {
+      "slither": {
+        "ran": true,
+        "repos": [
+          "lbamm-core",
+          "lbamm-hooks-and-handlers"
+        ],
+        "note": "30 findings (core), 35 findings (hooks). Mostly uninitialized-local (benign) and arbitrary-send-erc20 (by design). Call graph exported for AMMStandardHook."
+      },
+      "aderyn": {
+        "ran": true,
+        "repos": [
+          "lbamm-core"
+        ],
+        "note": "Ran on lbamm-core. Crashed on hooks-and-handlers (aderyn bug)."
+      },
+      "forge": {
+        "ran": true,
+        "note": "38 tests total (15 hypothesis + 23 checklist), 38 passed. Files: lbamm-hooks-and-handlers/test/AuditCrossBoundaryHypotheses.t.sol, lbamm-hooks-and-handlers/test/AuditCrossBoundaryChecklist.t.sol"
+      },
+      "halmos": {
+        "ran": true,
+        "note": "3 checks on AuditCrossBoundaryHalmosTest. 2 passed (boundsEnforcementSymmetry, zeroReturnOnlyOnOverflow). 1 failed (priceInRange \u2014 assertion too strict, values outside MIN/MAX range for certain inputs). File: lbamm-hooks-and-handlers/test/AuditCrossBoundaryHalmos.t.sol"
+      },
+      "medusa": {
+        "ran": true,
+        "note": "103218 calls on AMMStandardHook (0 failures). 103218 calls on SingleProviderPoolType (0 failures, 11 assertion tests passed). Two separate runs."
+      },
+      "audit-context-building": {
+        "ran": true,
+        "note": "Deep context analysis applied to AMMStandardHook, AMMModule cross-boundary call paths, SqrtPriceCalculator, CLOBHelper. Line-by-line analysis of _validatePricingBounds, validateHandlerOrder, _storeNonTokenHookFees, _finalizeSwapCollectFundsAndDisburse."
+      },
+      "entry-point-analyzer": {
+        "ran": true,
+        "note": "Entry points mapped: AMMStandardHook has 15 external/public functions. State-changing: registryUpdate* (4, registry-restricted), beforeSwap/afterSwap (AMM-restricted), validateAddLiquidity/validateRemoveLiquidity (AMM-restricted), validatePoolCreation (AMM-restricted), validateHandlerOrder (handler-callable), validateCollectFees (AMM-restricted). Read-only: hookFlags, tokenHookManifestUri, isWhitelisted* (2)."
+      }
+    },
+    "num_turns": 80,
+    "tool_uses": 65,
+    "files_read": 35,
+    "theses_tested": 15,
+    "theses_confirmed": 3,
+    "theses_ruled_out": 13,
+    "triage_log": {
+      "skip": 4,
+      "borderline": 8,
+      "survive": 10
+    },
+    "gate_passed": true,
+    "_total_hypotheses": 15
+  }
+}

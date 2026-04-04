@@ -1,0 +1,442 @@
+{
+  "agent_name": "price-distorter",
+  "metadata": {
+    "agent": "price-distorter",
+    "wave": 1,
+    "run": 12,
+    "model": "claude-sonnet-4-6",
+    "timestamp": "2026-03-28T00:00:00Z",
+    "duration_minutes": 480,
+    "num_turns": 312,
+    "files_read": 67,
+    "checklist_items_completed": "A: 20/20, B: 4/4, C: 39/39, D: 4/4",
+    "triage_log": {
+      "skip": 2,
+      "borderline": 5,
+      "survive": 6
+    },
+    "tools_run": {
+      "audit_context_building": {
+        "ran": true,
+        "note": "Read agent-boilerplate.md, CODEBASE_MAP.md, amm-invariant-catalog.md, value-lifecycle-lenses.md, entry-point analysis on AMMModule.sol, FixedHelper.sol, SingleProviderPoolType.sol"
+      },
+      "entry_point_analyzer": {
+        "ran": true,
+        "note": "Analyzed state-changing entry points in AMMModule.sol: singleSwap, directSwap, addLiquidity, removeLiquidity, collectFees. All external paths mapped."
+      },
+      "slither": {
+        "ran": true,
+        "note": "Ran via slither-mcp on amm-pool-type-dynamic and lbamm-hooks-and-handlers. 9 detector alerts triaged: all confirmed FP (arbitrary-send-erc20, incorrect-return, divide-before-multiply, incorrect-shift, uninitialized-state x2, unused-return, uninitialized-local). See slither_findings."
+      },
+      "aderyn": {
+        "ran": true,
+        "note": "Ran /opt/homebrew/bin/aderyn v0.6.8 on lbamm-core and lbamm-pool-type-fixed. No high/medium findings beyond known FP patterns."
+      },
+      "forge": {
+        "ran": true,
+        "note": "118 tests total. File: lbamm-pool-type-fixed/test/AuditPriceDistorterWave1R12.t.sol (98 tests, 0 failed) + amm-pool-type-dynamic/test/AuditPriceDistorterMathR12.t.sol (20 tests, 0 failed)"
+      },
+      "halmos": {
+        "ran": true,
+        "note": "Ran on lbamm-core/test/HalmosMathAuditR12.t.sol. check_mulDivRoundingUp_geFloor (uint64): PASS. check_sqrtPriceSq_divQ192_noboundOverflow (uint96): PASS. 3 checks timeout at 30s (expected: 128-bit inputs)."
+      },
+      "medusa": {
+        "ran": true,
+        "note": "C21 FixedPool: 18 properties PASS, 0 failed, 50000 call limit. C22 DynamicPool: 4 properties PASS, 0 failed, 50000 call limit."
+      }
+    },
+    "gate_passed": true
+  },
+  "theft_theses": [
+    {
+      "id": "TT-PD-01",
+      "title": "Flash loan + CLOB self-trade -> AMM state distortion",
+      "status": "ruled_out",
+      "test_file": "code-analysis:lbamm-core/src/modules/AMMModule.sol",
+      "summary": "CLOB and AMM share no price state. singleSwap reads pool type price only. directSwap is P2P with no pool price read."
+    },
+    {
+      "id": "TT-PD-02",
+      "title": "snapPrice sandwich in DynamicPoolType.addLiquidity",
+      "status": "ruled_out",
+      "test_file": "code-analysis:amm-pool-type-dynamic/src/DynamicPoolType.sol",
+      "summary": "globalState[msg.sender] isolates each caller namespace. snapPrice manipulation only affects attacker's own position."
+    },
+    {
+      "id": "TT-PD-03",
+      "title": "Oracle spoof via controlled hook (H3/H9)",
+      "status": "ruled_out",
+      "test_file": "lbamm-pool-type-fixed/test/AuditPriceDistorterWave1R12.t.sol",
+      "summary": "Controlled hooks cannot be injected into existing pools. computeRatioX96 overflow->0 rejected by MIN_SQRT_RATIO guard. test_C26_cetusPattern_boundedByMinSqrtRatio: PASS."
+    },
+    {
+      "id": "TT-PD-04",
+      "title": "directSwap bypasses pricing bounds (H4)",
+      "status": "ruled_out",
+      "test_file": "code-analysis:lbamm-core/src/modules/AMMModule.sol",
+      "summary": "directSwap is P2P. No pool price used. No bounds to bypass."
+    },
+    {
+      "id": "TT-PD-05",
+      "title": "Stale oracle / front-run oracle update (H5/H8)",
+      "status": "ruled_out",
+      "test_file": "code-analysis:lbamm-hooks-and-handlers/src/hooks/libraries/SqrtPriceCalculator.sol",
+      "summary": "No external oracle. All prices computed from on-chain state at tx time. No staleness possible."
+    },
+    {
+      "id": "TT-PD-06",
+      "title": "TWAP manipulation (H7)",
+      "status": "ruled_out",
+      "test_file": "code-analysis:amm-pool-type-dynamic/src/DynamicPoolType.sol",
+      "summary": "No TWAP exists. lastSqrtPriceX96 is spot cached price, not time-weighted. H7 is not applicable."
+    },
+    {
+      "id": "TT-PD-07",
+      "title": "C-MATH dimensional analysis (C30-C39)",
+      "status": "ruled_out",
+      "test_file": "lbamm-pool-type-fixed/test/AuditPriceDistorterWave1R12.t.sol",
+      "summary": "10 dimensional probes: unit mismatch, conservation, fee mixing, precision overflow, BPS scaling, Q96 scaling, return consistency, div-before-mul, truncation, fee base. All pass."
+    },
+    {
+      "id": "TT-PD-08",
+      "title": "_increaseHeight post-loop spurious cross (H-core-02/03)",
+      "status": "ruled_out",
+      "test_file": "lbamm-pool-type-fixed/test/AuditPriceDistorterWave1R12.t.sol",
+      "summary": "Post-loop cross is lazy optimization. test_H02_noFeeOverclaimAfterHeightBoundaryExhaust and test_H02_heightBoundaryExactDrain_feeInvariant both PASS."
+    },
+    {
+      "id": "TT-PD-09",
+      "title": "Cetus $223M overflow pattern (C26)",
+      "status": "ruled_out",
+      "test_file": "lbamm-pool-type-fixed/test/AuditPriceDistorterWave1R12.t.sol",
+      "summary": "computeRatioX96 overflow returns 0 but SingleProviderPoolType rejects 0 via MIN_SQRT_RATIO check. test_C26_cetusPattern_boundedByMinSqrtRatio: PASS."
+    },
+    {
+      "id": "TT-PD-10",
+      "title": "No profitable round-trip / rounding drain",
+      "status": "ruled_out",
+      "test_file": "lbamm-pool-type-fixed/test/AuditPriceDistorterWave1R12.t.sol",
+      "summary": "Fuzz test_C23_noProfitableRoundTrip (10k runs): usdcBack <= usdcIn always. test_C24_roundingFavorsProtocol: pool balance non-decreasing after 100 micro-swaps."
+    }
+  ],
+  "hypothesis_results": [
+    {
+      "id": "H1",
+      "status": "dismissed",
+      "failure_class": "strategic",
+      "reason": "CLOB and AMM share no price state. singleSwap reads pool type only. directSwap is P2P with no pool price read. Attack path does not exist.",
+      "test_file": "code-analysis:lbamm-core/src/modules/AMMModule.sol"
+    },
+    {
+      "id": "H2",
+      "status": "dismissed",
+      "failure_class": "strategic",
+      "reason": "globalState[msg.sender] isolates each caller's DynamicPoolType namespace. snapPrice manipulation only affects attacker's own state, no shared AMM price impact.",
+      "test_file": "code-analysis:amm-pool-type-dynamic/src/DynamicPoolType.sol"
+    },
+    {
+      "id": "H3",
+      "status": "tested",
+      "reason": "Controlled hook cannot be injected post-pool-creation. computeRatioX96 overflow path returns 0, which is rejected by MIN_SQRT_RATIO guard in SingleProviderPoolType.",
+      "test_file": "lbamm-pool-type-fixed/test/AuditPriceDistorterWave1R12.t.sol"
+    },
+    {
+      "id": "H4",
+      "status": "dismissed",
+      "failure_class": "strategic",
+      "reason": "directSwap (AMMModule:1864) is peer-to-peer. Amounts are agreed explicitly by both parties. No pool price is read or written. No pricing bounds to bypass.",
+      "test_file": "code-analysis:lbamm-core/src/modules/AMMModule.sol"
+    },
+    {
+      "id": "H5",
+      "status": "dismissed",
+      "failure_class": "strategic",
+      "reason": "No external oracle exists. All prices computed from on-chain token state at transaction time via SqrtPriceCalculator.computeRatioX96. No staleness possible.",
+      "test_file": "code-analysis:lbamm-hooks-and-handlers/src/hooks/libraries/SqrtPriceCalculator.sol"
+    },
+    {
+      "id": "H6",
+      "status": "tested",
+      "reason": "All pricing is bounded. FixedHelper uses ratio packing. DynamicHelper uses sqrtPriceX96 bounded by MIN_SQRT_RATIO/MAX_SQRT_RATIO. SingleProviderHelper bounds against pool min/max sqrtPriceX96.",
+      "test_file": "lbamm-pool-type-fixed/test/AuditPriceDistorterWave1R12.t.sol"
+    },
+    {
+      "id": "H7",
+      "status": "dismissed",
+      "failure_class": "strategic",
+      "reason": "No TWAP exists in this codebase. Grep confirmed: no 'twap', 'timeWeighted', or 'observation' array. lastSqrtPriceX96 is a SPOT cached price, not time-weighted. H7 not applicable.",
+      "test_file": "code-analysis:amm-pool-type-dynamic/src/DynamicPoolType.sol"
+    },
+    {
+      "id": "H8",
+      "status": "dismissed",
+      "failure_class": "strategic",
+      "reason": "No external oracle to go stale. All prices are on-chain computed. No oracle update transaction to front-run. H8 not applicable.",
+      "test_file": "code-analysis:lbamm-hooks-and-handlers/src/hooks/libraries/SqrtPriceCalculator.sol"
+    },
+    {
+      "id": "H9",
+      "status": "tested",
+      "reason": "Controlled hook returns fake sqrtPriceX96 -> rejected by pool type bounds check (MIN/MAX_SQRT_RATIO). test_C29_hookPriceManipulation_boundedByPoolType and test_C26_cetusPattern_boundedByMinSqrtRatio: both PASS.",
+      "test_file": "lbamm-pool-type-fixed/test/AuditPriceDistorterWave1R12.t.sol"
+    },
+    {
+      "id": "H10",
+      "status": "tested",
+      "reason": "Deadline, minAmountSpecified, and limitAmount all enforced by AMMModule. Cannot bypass. test_C23_noProfitableRoundTrip: slippage guarantees prevent attacker profit from price manipulation in round-trip.",
+      "test_file": "lbamm-pool-type-fixed/test/AuditPriceDistorterWave1R12.t.sol"
+    }
+  ],
+  "findings": [],
+  "ruled_out_vectors": [
+    {
+      "id": "RO-PD-001",
+      "vector": "H1: Flash loan + CLOB self-trade -> AMM state distortion",
+      "items": [
+        "H1"
+      ],
+      "reason": "CLOB and AMM do NOT share price state. CLOBTransferHandler maintains its own orderBook state. AMMModule.singleSwap computes output independently via pool type without reading CLOB prices. directSwap is peer-to-peer with no pool price read. No cross-venue price contamination path exists.",
+      "test_file": "code-analysis:lbamm-core/src/modules/AMMModule.sol:singleSwap,directSwap",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "id": "RO-PD-002",
+      "vector": "H2: snapPrice sandwich in DynamicPoolType.addLiquidity",
+      "items": [
+        "H2"
+      ],
+      "reason": "DynamicPoolType uses globalState[msg.sender] namespace isolation (FP-PT02). snapPrice manipulation only affects attacker's own LP position context. Swap price is determined by slot0 (tick + sqrtPriceX96), not snapPrice. No shared state contamination.",
+      "test_file": "code-analysis:amm-pool-type-dynamic/src/DynamicPoolType.sol:globalState",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "id": "RO-PD-003",
+      "vector": "H3/H9: Oracle spoof via controlled hook on SingleProviderPoolType",
+      "items": [
+        "H3",
+        "H9"
+      ],
+      "reason": "SingleProviderPoolType bounds-checks sqrtPriceX96 against pool-configured MIN_SQRT_RATIO and MAX_SQRT_RATIO. computeRatioX96 overflow returning 0 is rejected (0 < MIN_SQRT_RATIO=4295128739). Attacker cannot inject a hook into an existing pool they did not create. Price bounds verified.",
+      "test_file": "lbamm-pool-type-fixed/test/AuditPriceDistorterWave1R12.t.sol",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "id": "RO-PD-004",
+      "vector": "H4: directSwap bypasses pricing bounds",
+      "items": [
+        "H4"
+      ],
+      "reason": "directSwap (AMMModule:1864) is a peer-to-peer swap. Both parties explicitly agree on amounts. No pool price is read or written. No price to bypass or manipulate.",
+      "test_file": "code-analysis:lbamm-core/src/modules/AMMModule.sol:directSwap",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "id": "RO-PD-005",
+      "vector": "H5/H8: Stale oracle price / front-run oracle update",
+      "items": [
+        "H5",
+        "H8"
+      ],
+      "reason": "No external oracle (Chainlink, Pyth, TWAP) exists in this protocol. SqrtPriceCalculator reads on-chain token balances at call time - always fresh. No staleness possible. No oracle update transaction to front-run.",
+      "test_file": "code-analysis:lbamm-hooks-and-handlers/src/hooks/libraries/SqrtPriceCalculator.sol",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "id": "RO-PD-006",
+      "vector": "H6: Unbounded oracle -> extreme price in single tx",
+      "items": [
+        "H6"
+      ],
+      "reason": "All pricing is bounded. FixedHelper uses RATIO_BASE precision. DynamicHelper bounds by MIN_SQRT_RATIO/MAX_SQRT_RATIO with tick validation. SingleProviderHelper validates against pool min/max sqrtPriceX96.",
+      "test_file": "lbamm-pool-type-fixed/test/AuditPriceDistorterWave1R12.t.sol",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "id": "RO-PD-007",
+      "vector": "H7: TWAP manipulation",
+      "items": [
+        "H7"
+      ],
+      "reason": "No TWAP exists. Grep confirmed: no 'twap', 'timeWeighted', or 'observation' array in any source file. lastSqrtPriceX96 is a SPOT cached price, not time-weighted. H7 is not applicable to this codebase.",
+      "test_file": "code-analysis:amm-pool-type-dynamic/src/DynamicPoolType.sol:lastSqrtPriceX96",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "id": "RO-PD-008",
+      "vector": "H10: Bypass slippage/deadline params",
+      "items": [
+        "H10"
+      ],
+      "reason": "SwapOrder.deadline validated by AMMModule._checkDeadline. SwapOrder.minAmountSpecified checked post-swap (revert if actualOut < min). SwapOrder.limitAmount caps input. All enforced at AMMModule level. Cannot be bypassed by external caller.",
+      "test_file": "lbamm-pool-type-fixed/test/AuditPriceDistorterWave1R12.t.sol",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "id": "RO-PD-009",
+      "vector": "H-core-02/03: Spurious _crossHeight post-loop fee corruption",
+      "items": [
+        "H2-internal",
+        "H3-internal"
+      ],
+      "reason": "_increaseHeight post-loop _crossHeight (lines 1930-1933) is a lazy cross optimization. Total LP fees claimed never exceed accumulated fee balance. Fee invariant holds for both single LP and multi-LP scenarios at height boundaries.",
+      "test_file": "lbamm-pool-type-fixed/test/AuditPriceDistorterWave1R12.t.sol",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "id": "RO-PD-010",
+      "vector": "C26: Cetus $223M overflow pattern",
+      "items": [
+        "C26"
+      ],
+      "reason": "computeRatioX96 returns 0 on overflow. SingleProviderPoolType rejects 0 via MIN_SQRT_RATIO check (4_295_128_739 > 0). Cetus attack requires near-zero price ACCEPTED - here it's rejected. Attack vector eliminated.",
+      "test_file": "lbamm-pool-type-fixed/test/AuditPriceDistorterWave1R12.t.sol",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "id": "RO-PD-011",
+      "vector": "C27: Balancer $128M rounding drain",
+      "items": [
+        "C27"
+      ],
+      "reason": "100 sequential 1-wei swaps confirm pool balance never decreases. All rounding favors protocol (output rounds DOWN for swapper, fees round UP). No dust-loop drain path.",
+      "test_file": "lbamm-pool-type-fixed/test/AuditPriceDistorterWave1R12.t.sol",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "id": "RO-PD-012",
+      "vector": "C28: First depositor inflation (ERC-4626 pattern)",
+      "items": [
+        "C28"
+      ],
+      "reason": "FixedPoolType uses absolute amount tracking per height, not share tokens. No totalSupply/mintShares pattern. ERC-4626 inflation attack vector is not applicable.",
+      "test_file": "lbamm-pool-type-fixed/test/AuditPriceDistorterWave1R12.t.sol",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "id": "RO-PD-013",
+      "vector": "C-MATH dimensional analysis (C30-C39): all 10 probes",
+      "items": [
+        "C30",
+        "C31",
+        "C32",
+        "C33",
+        "C34",
+        "C35",
+        "C36",
+        "C37",
+        "C38",
+        "C39"
+      ],
+      "reason": "10 dimensional probes: (C30) D6/D18 tokens processed independently; (C31) exact token conservation in both directions; (C32) feeGrowth/token amounts separated; (C33) FullMath 512-bit prevents truncation; (C34) BPS denominator correct; (C35) Q96 amounts linear not inflated; (C36) rounding consistent across return paths; (C37) no div-before-mul in fee paths; (C38) extreme prices bounded; (C39) fee on gross input.",
+      "test_file": "lbamm-pool-type-fixed/test/AuditPriceDistorterWave1R12.t.sol",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    }
+  ],
+  "slither_findings": {
+    "high_flagged": [
+      {
+        "id": "SL-001",
+        "detector": "arbitrary-send-erc20",
+        "location": "AMMModule._collectToken",
+        "verdict": "FP",
+        "reason": "Provider-controlled transfer. Only called on LP positions belonging to caller."
+      },
+      {
+        "id": "SL-002",
+        "detector": "incorrect-return",
+        "location": "delegateCallPure pattern",
+        "verdict": "FP",
+        "reason": "Intentional delegatecall pattern for staticcall forwarding (CLOBQuotor)."
+      },
+      {
+        "id": "SL-003",
+        "detector": "incorrect-shift",
+        "location": "BitMath.leastSignificantBit, mostSignificantBit",
+        "verdict": "FP",
+        "reason": "Known safe assembly optimization. Forge tests confirm correct output."
+      },
+      {
+        "id": "SL-004",
+        "detector": "uninitialized-state",
+        "location": "CLOBQuotor.orderBooks",
+        "verdict": "FP",
+        "reason": "Static delegatecall pattern reads CLOBTransferHandler storage via mirrored layout."
+      },
+      {
+        "id": "SL-005",
+        "detector": "uninitialized-state",
+        "location": "CreatorHookSettingsRegistry mappings",
+        "verdict": "FP",
+        "reason": "All are mapping types. EVM zero-initializes mappings. Default behavior is correct."
+      }
+    ],
+    "medium_flagged": [
+      {
+        "id": "SL-006",
+        "detector": "divide-before-multiply",
+        "location": "TickMath.getSqrtPriceAtTick (21 instances), DynamicHelper._poolMaxLiquidityPerTick (2)",
+        "verdict": "FP",
+        "reason": "Uniswap V3 bit-manipulation algorithm. Order is intentional. C14 tick round-trip tests confirm correctness."
+      },
+      {
+        "id": "SL-007",
+        "detector": "unused-return",
+        "location": "PermitTransferHandler.fillPermittedOrderERC20",
+        "verdict": "FP",
+        "reason": "isError is checked immediately on lines 381-395: unpack tuple then `if (isError) revert`."
+      }
+    ]
+  }
+}

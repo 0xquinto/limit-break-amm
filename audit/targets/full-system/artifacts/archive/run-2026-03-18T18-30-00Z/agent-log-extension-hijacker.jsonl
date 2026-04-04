@@ -1,0 +1,12 @@
+{"event":"SESSION_START","ts":"2026-03-18T10:00:00Z","session_id":"wave1-ext-hijacker-001","agent_id":"extension-hijacker","model":"claude-opus-4-6","scope":"lbamm-core, lbamm-hooks-and-handlers, secure-proxy","max_turns":200}
+{"event":"TOOL_CHECKPOINT","ts":"2026-03-18T10:01:00Z","agent_id":"extension-hijacker","checkpoint":0,"tool":"phase0_artifacts","status":"read"}
+{"event":"TOOL_CHECKPOINT","ts":"2026-03-18T10:02:00Z","agent_id":"extension-hijacker","checkpoint":1,"tool":"slither","repos":["lbamm-core","lbamm-hooks-and-handlers","secure-proxy"],"high":7,"medium":26}
+{"event":"TOOL_CHECKPOINT","ts":"2026-03-18T10:03:00Z","agent_id":"extension-hijacker","checkpoint":1,"tool":"aderyn","repos":["lbamm-core","secure-proxy"],"findings":12,"note":"lbamm-hooks-and-handlers crashed with fatal bug"}
+{"event":"TOOL_CHECKPOINT","ts":"2026-03-18T10:15:00Z","agent_id":"extension-hijacker","checkpoint":2,"tool":"forge","tests":57,"passed":57,"failed":0,"files":["AuditExtensionHijackerWave1.t.sol","AuditExtensionHijackerBoundary.t.sol"]}
+{"event":"TOOL_CHECKPOINT","ts":"2026-03-18T10:20:00Z","agent_id":"extension-hijacker","checkpoint":2,"tool":"halmos","checks":3,"passed":3,"contract":"AuditExtensionHijackerWave1Test"}
+{"event":"TOOL_CHECKPOINT","ts":"2026-03-18T10:25:00Z","agent_id":"extension-hijacker","checkpoint":2,"tool":"medusa","contracts":["AMMStandardHook","SingleProviderPoolType"],"calls":436182,"failures":0}
+{"event":"TOOL_CHECKPOINT","ts":"2026-03-18T10:30:00Z","agent_id":"extension-hijacker","checkpoint":3,"tool":"slither_storage_layout","modules":["AMMModule","ModuleAdmin","ModuleFeeCollection","ModuleLiquidity"],"all_zero_slots":true}
+{"event":"TOOL_CHECKPOINT","ts":"2026-03-18T10:35:00Z","agent_id":"extension-hijacker","checkpoint":4,"tool":"audit-context-building","contract":"AMMStandardHook.sol","storage_vars":5,"trust_boundaries":3,"invariants":4}
+{"event":"TOOL_CHECKPOINT","ts":"2026-03-18T10:40:00Z","agent_id":"extension-hijacker","checkpoint":4,"tool":"entry-point-analyzer","contracts":["AMMStandardHook","CLOBTransferHandler","PermitTransferHandler"],"entry_points":21}
+{"event":"SIDECAR_GATE","ts":"2026-03-18T10:45:00Z","agent_id":"extension-hijacker","result":"ACCEPTED","findings":0,"ruled_out":18}
+{"event":"SESSION_COMPLETE","ts":"2026-03-18T10:50:00Z","agent_id":"extension-hijacker","findings":0,"ruled_out":18,"checklist_pct":96,"theses_tested":9,"theses_confirmed":0}

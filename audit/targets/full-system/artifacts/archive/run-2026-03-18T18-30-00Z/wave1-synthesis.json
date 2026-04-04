@@ -1,0 +1,125 @@
+{
+  "wave": 1,
+  "name": "black-hat-offense",
+  "timestamp": "2026-03-18T19:00:49Z",
+  "run_id": "run-2026-03-18T18-30-00Z",
+  "hot_spots": [],
+  "findings": [],
+  "contradictions": [],
+  "ruled_out_count": 169,
+  "invariants_formalized": [],
+  "tool_coverage_warnings": [
+    "TOOL_COVERAGE: precision-sniper (Precision Math Sniper) did NOT run entry_point_analyzer \u2014 reason: no reason given",
+    "TOOL_COVERAGE: precision-sniper (Precision Math Sniper) did NOT run audit_context_building \u2014 reason: no reason given",
+    "TOOL_COVERAGE: precision-sniper (Precision Math Sniper) did not report on conditional tool sharp_edges \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: precision-sniper (Precision Math Sniper) did not report on conditional tool token_integration_analyzer \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: state-desync (State Desync Operator) did NOT run entry_point_analyzer \u2014 reason: no reason given",
+    "TOOL_COVERAGE: state-desync (State Desync Operator) did NOT run audit_context_building \u2014 reason: no reason given",
+    "TOOL_COVERAGE: state-desync (State Desync Operator) did not report on conditional tool sharp_edges \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: state-desync (State Desync Operator) did not report on conditional tool token_integration_analyzer \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: auth-forger (Authorization & Settlement Forger) did NOT run entry_point_analyzer \u2014 reason: no reason given",
+    "TOOL_COVERAGE: auth-forger (Authorization & Settlement Forger) did NOT run audit_context_building \u2014 reason: no reason given",
+    "TOOL_COVERAGE: auth-forger (Authorization & Settlement Forger) did not report on conditional tool sharp_edges \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: auth-forger (Authorization & Settlement Forger) did not report on conditional tool token_integration_analyzer \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: math-deep-diver (math-deep-diver) did NOT run entry_point_analyzer \u2014 reason: no reason given",
+    "TOOL_COVERAGE: math-deep-diver (math-deep-diver) did NOT run audit_context_building \u2014 reason: no reason given",
+    "TOOL_COVERAGE: math-deep-diver (math-deep-diver) did not report on conditional tool sharp_edges \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: math-deep-diver (math-deep-diver) did not report on conditional tool token_integration_analyzer \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: cross-boundary (Cross-Boundary Tracer) did NOT run entry_point_analyzer \u2014 reason: no reason given",
+    "TOOL_COVERAGE: cross-boundary (Cross-Boundary Tracer) did NOT run audit_context_building \u2014 reason: no reason given",
+    "TOOL_COVERAGE: cross-boundary (Cross-Boundary Tracer) did not report on conditional tool sharp_edges \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: cross-boundary (Cross-Boundary Tracer) did not report on conditional tool token_integration_analyzer \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: composability-exploiter (Composability Exploiter) did NOT run entry_point_analyzer \u2014 reason: no reason given",
+    "TOOL_COVERAGE: composability-exploiter (Composability Exploiter) did NOT run audit_context_building \u2014 reason: no reason given",
+    "TOOL_COVERAGE: composability-exploiter (Composability Exploiter) did not report on conditional tool sharp_edges \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: composability-exploiter (Composability Exploiter) did not report on conditional tool token_integration_analyzer \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: price-distorter (Cross-Venue Price Distorter) did NOT run entry_point_analyzer \u2014 reason: no reason given",
+    "TOOL_COVERAGE: price-distorter (Cross-Venue Price Distorter) did NOT run audit_context_building \u2014 reason: no reason given",
+    "TOOL_COVERAGE: price-distorter (Cross-Venue Price Distorter) did not report on conditional tool sharp_edges \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: price-distorter (Cross-Venue Price Distorter) did not report on conditional tool token_integration_analyzer \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: insolvency-engineer (Insolvency Engineer) did NOT run entry_point_analyzer \u2014 reason: no reason given",
+    "TOOL_COVERAGE: insolvency-engineer (Insolvency Engineer) did NOT run audit_context_building \u2014 reason: no reason given",
+    "TOOL_COVERAGE: insolvency-engineer (Insolvency Engineer) did not report on conditional tool sharp_edges \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: insolvency-engineer (Insolvency Engineer) did not report on conditional tool token_integration_analyzer \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: extension-hijacker (extension-hijacker) did NOT run entry_point_analyzer \u2014 reason: no reason given",
+    "TOOL_COVERAGE: extension-hijacker (extension-hijacker) did NOT run audit_context_building \u2014 reason: no reason given",
+    "TOOL_COVERAGE: extension-hijacker (extension-hijacker) did not report on conditional tool sharp_edges \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: extension-hijacker (extension-hijacker) did not report on conditional tool token_integration_analyzer \u2014 add to tools_run with ran=false and reason if not applicable",
+    "LENS_COVERAGE: precision-sniper (Precision Math Sniper) has no lens_coverage in metadata \u2014 likely did NOT apply value lifecycle lenses",
+    "LENS_COVERAGE: state-desync (State Desync Operator) has no lens_coverage in metadata \u2014 likely did NOT apply value lifecycle lenses",
+    "LENS_COVERAGE: auth-forger (Authorization & Settlement Forger) has no lens_coverage in metadata \u2014 likely did NOT apply value lifecycle lenses",
+    "LENS_COVERAGE: math-deep-diver (math-deep-diver) has no lens_coverage in metadata \u2014 likely did NOT apply value lifecycle lenses",
+    "LENS_COVERAGE: cross-boundary (Cross-Boundary Tracer) has no lens_coverage in metadata \u2014 likely did NOT apply value lifecycle lenses",
+    "LENS_COVERAGE: composability-exploiter (Composability Exploiter) has no lens_coverage in metadata \u2014 likely did NOT apply value lifecycle lenses",
+    "LENS_COVERAGE: price-distorter (Cross-Venue Price Distorter) has no lens_coverage in metadata \u2014 likely did NOT apply value lifecycle lenses",
+    "LENS_COVERAGE: insolvency-engineer (Insolvency Engineer) has no lens_coverage in metadata \u2014 likely did NOT apply value lifecycle lenses",
+    "LENS_COVERAGE: extension-hijacker (extension-hijacker) has no lens_coverage in metadata \u2014 likely did NOT apply value lifecycle lenses"
+  ],
+  "exploit_clusters": [],
+  "claims": [
+    {
+      "agent": "extension-hijacker",
+      "thesis": "Malicious pool type returns fake amounts to steal from LPs",
+      "status": "ruled_out",
+      "evidence": "Core caps output at AMMModule:1559 + balance delta check at :2208",
+      "_source_agent": "extension-hijacker"
+    },
+    {
+      "agent": "extension-hijacker",
+      "thesis": "Malicious transfer handler skips actual transfer",
+      "status": "ruled_out",
+      "evidence": "Core balance delta verification at AMMModule:2206-2213 is handler-independent",
+      "_source_agent": "extension-hijacker"
+    },
+    {
+      "agent": "extension-hijacker",
+      "thesis": "Malicious hook manipulates price limits",
+      "status": "ruled_out",
+      "evidence": "Hooks return fees only (bounded by BPS). Pool type determines price. Core handles transfers.",
+      "_source_agent": "extension-hijacker"
+    },
+    {
+      "agent": "extension-hijacker",
+      "thesis": "Pool type address collision via CREATE2 mining",
+      "status": "ruled_out",
+      "evidence": "2^48 work for specific collision + no retroactive effect on existing pools",
+      "_source_agent": "extension-hijacker"
+    },
+    {
+      "agent": "extension-hijacker",
+      "thesis": "UUPS/beacon takeover before initialization",
+      "status": "ruled_out",
+      "evidence": "System uses diamond proxy (EIP-2535), not UUPS/beacon",
+      "_source_agent": "extension-hijacker"
+    },
+    {
+      "agent": "extension-hijacker",
+      "thesis": "Selector collision in diamond facets",
+      "status": "ruled_out",
+      "evidence": "diamondCut is admin-only, no external selector injection",
+      "_source_agent": "extension-hijacker"
+    },
+    {
+      "agent": "extension-hijacker",
+      "thesis": "CREATE2 destroy-redeploy at trusted address",
+      "status": "ruled_out",
+      "evidence": "EIP-6780 makes selfdestruct non-destructive on cancun EVM",
+      "_source_agent": "extension-hijacker"
+    },
+    {
+      "agent": "extension-hijacker",
+      "thesis": "Cross-facet storage slot corruption",
+      "status": "ruled_out",
+      "evidence": "All 4 modules have 0 local slots. Unified diamond storage at 0x9A1D.",
+      "_source_agent": "extension-hijacker"
+    },
+    {
+      "agent": "extension-hijacker",
+      "thesis": "Facet management bypass for code injection",
+      "status": "ruled_out",
+      "evidence": "diamondCut admin-only with no bypass path",
+      "_source_agent": "extension-hijacker"
+    }
+  ],
+  "corroborated_theses": []
+}

@@ -1,0 +1,301 @@
+{
+  "agent_name": "auth-forger",
+  "wave": 1,
+  "run": 8,
+  "timestamp": "2026-03-26",
+  "metadata": {
+    "num_turns": 85,
+    "files_read": 42,
+    "tools_run": {
+      "forge": {
+        "ran": true,
+        "findings": 0,
+        "notes": "13/13 tests pass in AuditAuthForgerR8.t.sol"
+      },
+      "slither": {
+        "ran": true,
+        "findings": 0,
+        "notes": "Ran on lbamm-core and lbamm-hooks-and-handlers. High/Medium: arbitrary-send-erc20 (known), incorrect-return (delegatecall design), reentrancy-balance (nonReentrant), uninitialized-local (safe). All FPs."
+      },
+      "aderyn": {
+        "ran": true,
+        "findings": 0,
+        "notes": "v0.6.8 invoked on lbamm-hooks-and-handlers, crashed with panic 'content not found'. No actionable output. Tool invocation logged."
+      },
+      "halmos": {
+        "ran": true,
+        "findings": 0,
+        "notes": "Symbolic execution on H06 overcharge scaling test"
+      },
+      "medusa": {
+        "ran": true,
+        "findings": 0,
+        "notes": "Fuzz on AuditAuthForgerR8 contract"
+      },
+      "audit-context-building": {
+        "ran": true,
+        "notes": "Function-level analysis of partial fill fee adjustment in AMMModule.sol lines 1399-1428, 1559-1582, 2598-2677, 2851-2895"
+      },
+      "entry-point-analyzer": {
+        "ran": true,
+        "notes": "State-changing entry points catalogued for lbamm-core and lbamm-hooks-and-handlers"
+      }
+    },
+    "checklist_items_completed": "A: 4/4, B: 2/2, C: 14/22, D: 15/15",
+    "triage_log": {
+      "skip": 4,
+      "borderline": 3,
+      "survive": 8
+    },
+    "gate_passed": true,
+    "_total_hypotheses": 15
+  },
+  "findings": [
+    {
+      "id": "AUTH-R8-001",
+      "title": "Hook fees not proportionally adjusted on partial fills, causing user overcharge",
+      "severity": "medium",
+      "confidence": "high",
+      "confidence_score": 82,
+      "confidence_deductions": [
+        {
+          "reason": "Mathematical PoC only (not full integration test with pool type)",
+          "points": -8
+        },
+        {
+          "reason": "Requires pool type to produce partial fill (common but not guaranteed)",
+          "points": -5
+        },
+        {
+          "reason": "Hook fee magnitude depends on token creator configuration",
+          "points": -5
+        }
+      ],
+      "hypothesis": "H-R8-CH-06",
+      "fp_gate": {
+        "location_exists": true,
+        "entry_reachable": true,
+        "no_existing_guard": true,
+        "concrete_attack_path": true,
+        "poc_compiles": true,
+        "details": "Lines 2625/2642/2871/2887 confirmed via Read. Entry via singleSwap->_poolSwapByInput/_poolSwapByOutput. No hook fee adjustment exists in partial fill code (lines 1413-1427, 1559-1582). Attack path: swap with hook fee + partial fill -> overcharge. PoC: forge test --match test_H06 passes."
+      },
+      "description": "In AMMModule._poolSwapByInput and _poolSwapByOutput, when a pool type returns a partial fill (actualAmount != originalAmount), LP fees and exchange fees are proportionally adjusted (lines 1415-1426 for input, line 1576 adjustedAmountSpecified for output), but hook fees stored via _storeHookFees in _applySwapByInputInputFees (lines 2625, 2642) and _applySwapByOutputOutputFees (lines 2871, 2887) are NOT adjusted. These hook fees are committed to persistent storage BEFORE the pool type call, and the partial fill adjustment code does not retroactively correct them. The overcharge equals hookFee * (1 - fillRatio). For a 5% hook fee with 50% fill, the user overpays 2.5% of their trade amount. For a 20% hook fee (Creator Token sell tax) with 10% fill, the overcharge reaches 18% of the base amount.",
+      "impact": "Value leak from swap users to hook owners (token creators). All three pool types (Dynamic, Fixed, SingleProvider) support partial fills. Any token with non-zero beforeSwap hook fees combined with partial fill conditions causes affected users to pay disproportionate hook fees. The hook owner receives windfall fees on the unfilled portion. This is inconsistent with the treatment of LP fees and exchange fees which ARE adjusted.",
+      "root_cause": "_storeHookFees writes to persistent storage before pool type execution. Partial fill adjustment code adjusts LP fees (lines 1415-1416), exchange fees (lines 1420-1425), and adjustedAmountSpecified (line 1423-1424), but never retroactively corrects the already-stored hook fees.",
+      "contracts": [
+        "lbamm-core/src/modules/AMMModule.sol"
+      ],
+      "functions": [
+        "_applySwapByInputInputFees",
+        "_applySwapByOutputOutputFees",
+        "_poolSwapByInput",
+        "_poolSwapByOutput",
+        "_storeHookFees"
+      ],
+      "lines": [
+        2625,
+        2642,
+        2871,
+        2887,
+        1415,
+        1416,
+        1420,
+        1421,
+        1425,
+        1426,
+        1576,
+        1577,
+        2971
+      ],
+      "attack_sequence": [
+        "1. Token has hook with 5-20% beforeSwap output fee (tokenOutTokenOutFee)",
+        "2. Pool has limited liquidity causing partial fills (common in SingleProvider pools)",
+        "3. User requests output-based swap for 1000e18 tokens",
+        "4. _applySwapByOutputOutputFees stores hookFee=50e18 (at 5%) via _storeHookFees and inflates amountOut to 1050e18",
+        "5. Pool partially fills: actualAmountOut = 525e18 (50% of inflated)",
+        "6. adjustedAmountSpecified = 1000e18 - (1050e18 - 525e18) = 475e18",
+        "7. User receives 475e18 output (should be 500e18 with proportional hook fee)",
+        "8. Hook receives full 50e18 fee (proportional would be 25e18)",
+        "9. 25e18 value transferred from user to hook owner"
+      ],
+      "poc": "test/AuditAuthForgerR8.t.sol::test_H06_outputPartialFillHookFeeOvercharge",
+      "recommendation": "Add hook fee adjustment in the partial fill handling code blocks.",
+      "kill_gate": {
+        "status": "flagged",
+        "gate": "V2-refutation",
+        "reason": "Missing refutation_attempted \u2014 you must argue against your own finding before submitting"
+      }
+    },
+    {
+      "id": "AUTH-R8-002",
+      "title": "_storeNonTokenHookFees uses incorrect hash key (tokenFor, tokenFor) instead of (tokenFor, tokenFee)",
+      "severity": "low",
+      "confidence": "high",
+      "confidence_score": 90,
+      "confidence_deductions": [
+        {
+          "reason": "Only affects custom hooks using _storeNonTokenHookFees with tokenFor != tokenFee",
+          "points": -5
+        },
+        {
+          "reason": "Requires custom hook developer to trigger the specific code path",
+          "points": -5
+        }
+      ],
+      "hypothesis": "H-R8-CH-01",
+      "fp_gate": {
+        "location_exists": true,
+        "entry_reachable": true,
+        "no_existing_guard": true,
+        "concrete_attack_path": true,
+        "poc_compiles": true,
+        "details": "Line 3016-3018 confirmed via Read. Entry via collectHookFeesByHook->_storeNonTokenHookFees. No key validation guard. Attack: hook stores fees with tokenFor!=tokenFee -> funds locked. PoC: test_H01 passes."
+      },
+      "description": "In AMMModule._storeNonTokenHookFees (line 3016-3018), the storage key uses hash(hook, hash(tokenFor, tokenFor)) with tokenFor twice. Retrieval uses hash(hook, hash(tokenFor, tokenFee)). When tokenFor != tokenFee, fees are permanently locked.",
+      "impact": "Hook fees permanently locked when tokenFor != tokenFee via _storeNonTokenHookFees path.",
+      "root_cause": "Copy-paste error in hash key construction",
+      "contracts": [
+        "lbamm-core/src/modules/AMMModule.sol"
+      ],
+      "functions": [
+        "_storeNonTokenHookFees"
+      ],
+      "lines": [
+        3016,
+        3017,
+        3018
+      ],
+      "poc": "test/AuditAuthForgerR8.t.sol::test_H01_hookFeeKeyMismatch",
+      "recommendation": "Use hash(hook, hash(tokenFor, tokenFee)) matching retrieval functions.",
+      "kill_gate": {
+        "status": "killed",
+        "gate": "D",
+        "reason": "Missing attack_sequence"
+      }
+    },
+    {
+      "id": "AUTH-R8-003",
+      "title": "Flash loan protocol fee computed on hook fee amount instead of loan amount",
+      "severity": "low",
+      "confidence": "high",
+      "confidence_score": 88,
+      "confidence_deductions": [
+        {
+          "reason": "Token creator controls hook, not external attacker",
+          "points": -7
+        },
+        {
+          "reason": "Protocol admin may consider this intentional",
+          "points": -5
+        }
+      ],
+      "hypothesis": "H-R8-CH-13",
+      "fp_gate": {
+        "location_exists": true,
+        "entry_reachable": true,
+        "no_existing_guard": true,
+        "concrete_attack_path": true,
+        "poc_compiles": true,
+        "details": "Lines 3300/3302 confirmed via Read. Entry via flashLoan->_flashLoan. No guard on fee base asymmetry. Attack: token hook returns large tokenFeeAmount -> protocol fee drops 99%. PoC: test_H13 passes."
+      },
+      "description": "In AMMModule._flashLoan, protocol fee base differs: line 3300 uses loanAmount (no hook), line 3302 uses tokenFeeAmount (with hook). Protocol revenue drops up to 99% when hook captures most of the fee.",
+      "impact": "Protocol revenue reduction up to 99% on flash loans for tokens with hooks.",
+      "root_cause": "Asymmetric fee base between lines 3300 and 3302",
+      "contracts": [
+        "lbamm-core/src/modules/AMMModule.sol"
+      ],
+      "functions": [
+        "_flashLoan"
+      ],
+      "lines": [
+        3300,
+        3302
+      ],
+      "poc": "test/AuditAuthForgerR8.t.sol::test_H13_flashLoanProtocolFeeOnHookFeeNotLoan",
+      "recommendation": "Compute protocol fee on loanAmount regardless of hook presence.",
+      "kill_gate": {
+        "status": "killed",
+        "gate": "D",
+        "reason": "Missing attack_sequence"
+      }
+    }
+  ],
+  "ruled_out_vectors": [
+    {
+      "id": "H-R8-CH-02",
+      "title": "validateHandlerOrder zero price bypass via computeRatioX96 overflow",
+      "reason": "uint128 cap on CLOB orderAmount prevents computeRatioX96 overflow to 0. Tested max uint128 at MIN_SQRT_RATIO: distance from uint160.max is 4.28e47.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditAuthForgerR8.t.sol::test_H02_computeRatioX96OverflowAtMinSqrtRatio"
+    },
+    {
+      "id": "H-R8-CH-03",
+      "title": "Dead code in _getPoolFee 100% fee check (boolean absorption)",
+      "reason": "Boolean absorption: (inputSwap && fee>MAX) || fee>=MAX === fee>=MAX. Both input and output reject 100% fees.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditAuthForgerR8.t.sol::test_H15_deadCodeIn100PercentFeeCheck"
+    },
+    {
+      "id": "H-R8-CH-04",
+      "title": "Reentrancy via malicious token callback during hook fee distribution",
+      "reason": "ENTERED bit preserved by _setReentrancyFlags(NO_FLAGS). Line 70: currentGuard = storage & ENTERED retains bit.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditAuthForgerR8.t.sol::test_H14_reentrancyFlagClearingDismissed"
+    },
+    {
+      "id": "H-R8-CH-05",
+      "title": "feeOnTop extraction on partial fill permit",
+      "reason": "limitAmount (signed by user) caps total input exposure including feeOnTop. Design property, not bypass.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditAuthForgerR8.t.sol::test_H05_feeOnTopDesignProperty"
+    },
+    {
+      "id": "H-R8-CH-07",
+      "title": "WRAPPED_NATIVE ETH drainage via callback after reentrancy flag clearing",
+      "reason": "Same as CH-04/CH-14: ENTERED bit preserved. AMM re-entry blocked during afterSwapRefund.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditAuthForgerR8.t.sol::test_H14_reentrancyFlagClearingDismissed"
+    },
+    {
+      "id": "H-R8-CH-08",
+      "title": "Hook fees amplify minimum protocol fee extraction",
+      "reason": "Self-inflicted config by token creator (FP pattern #4). Token creator sets both hook fees and hop fees.",
+      "test_file": "code-analysis: AMMModule.sol:2652 shortage computation is correct behavior for token creator config"
+    },
+    {
+      "id": "H-R8-CH-09",
+      "title": "Fill-or-kill permits incompatible with fees",
+      "reason": "amountIn in handler = adjustedAmountSpecified (line 2160), NOT fee-reduced amount. Check passes for non-partial-fill swaps.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditAuthForgerR8.t.sol::test_H09_fillOrKillWorksWithFees"
+    },
+    {
+      "id": "H-R8-CH-11",
+      "title": "Stale pricing bounds on CLOB fill after bounds tightening",
+      "reason": "Bounds enforced at openOrder by design. Maker chose price willingly, taker agrees to fill.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditAuthForgerR8.t.sol::test_H11_stalePricingBoundsDismissed"
+    },
+    {
+      "id": "H-R8-CH-14",
+      "title": "Reentrancy after _setReentrancyFlags(NO_FLAGS) in executeQueuedHookFeesByHookTransfers",
+      "reason": "ENTERED bit preserved. TstorishReentrancyGuardWithFlags._setReentrancyFlags line 70: currentGuard = storage & ENTERED.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditAuthForgerR8.t.sol::test_H14_reentrancyFlagClearingDismissed"
+    },
+    {
+      "id": "H-R8-CH-15",
+      "title": "Dead code in _getPoolFee allowing 100% input fee",
+      "reason": "Boolean absorption makes inputSwap check dead code. Both paths reject fee>=MAX_BPS. Informational only.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditAuthForgerR8.t.sol::test_H15_deadCodeIn100PercentFeeCheck"
+    },
+    {
+      "id": "H-R8-CH-16",
+      "title": "CLOB price recomputation divergence (inverse of CH-10)",
+      "reason": "Subsumed by CH-10 finding. Same root cause (rounding divergence), different angle.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditAuthForgerR8.t.sol::test_H10_priceRoundTripDivergence"
+    },
+    {
+      "id": "H-R8-CH-10",
+      "title": "Price recomputation divergence in validateHandlerOrder causes order rejection at boundary prices",
+      "reason": "DoS only, no concrete attack path for value extraction. Divergence exceeds 18,000x at MIN_SQRT_RATIO but impact is limited to boundary-price order rejection, not theft.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditAuthForgerR8.t.sol::test_H10_priceRoundTripDivergence"
+    }
+  ],
+  "vectors_explored": 15,
+  "test_file": "lbamm-hooks-and-handlers/test/AuditAuthForgerR8.t.sol",
+  "_verified_tests": {}
+}

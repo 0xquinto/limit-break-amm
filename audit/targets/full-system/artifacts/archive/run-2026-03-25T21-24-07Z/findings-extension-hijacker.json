@@ -1,0 +1,670 @@
+{
+  "agent_name": "extension-hijacker",
+  "agent_role": "extension-hijacker",
+  "wave": 1,
+  "findings": [
+    {
+      "id": "EH-001",
+      "title": "validateHandlerOrder overflow bypass: sqrtPriceX96=0 passes max pricing bound",
+      "severity": "low",
+      "confidence_score": 85,
+      "confidence_deductions": [
+        "requires token admin to set only max bound (no min)",
+        "handler orders go through CLOB which has additional constraints"
+      ],
+      "status": "confirmed",
+      "category": "price-manipulation",
+      "description": "When SqrtPriceCalculator.computeRatioX96 overflows and returns 0, validateHandlerOrder does not check for sqrtPriceX96==0 (unlike _validatePricingBounds at line 847). A handler order with an extreme price ratio that causes overflow bypasses max pricing bounds when min is not set. The check '0 > maxSqrtPriceX96' is always false.",
+      "impact": "Token creator who sets only a max price ceiling gets no protection when a handler creates an order with an astronomical price ratio. CLOB orders placed at effectively infinite prices.",
+      "proof_sketch": "test_H02_overflowPriceBypassesMaxBound: sets max bound, calls validateHandlerOrder with amounts causing overflow -> no revert",
+      "victim": "Token creators setting max-only pricing bounds",
+      "extractable_value": "Depends on CLOB fill mechanics - order may never fill at extreme prices",
+      "attack_sequence": [
+        "Token admin sets max pricing bound for their token (min=0, max=1e30)",
+        "Attacker calls validateHandlerOrder with amountIn=1, amountOut=type(uint256).max/2",
+        "computeRatioX96 overflows, returns 0",
+        "Check '0 > maxSqrtPriceX96' fails silently - order accepted at infinite price"
+      ],
+      "test_file": "lbamm-hooks-and-handlers/test/audit/ExtHijackerKLoop.t.sol",
+      "test_passes": true,
+      "prerequisites": [
+        "Token with only max pricing bound set (no min)"
+      ],
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol",
+        "SqrtPriceCalculator.sol"
+      ],
+      "functions": [
+        "validateHandlerOrder()",
+        "computeRatioX96()"
+      ],
+      "lines": {
+        "AMMStandardHook.sol": [
+          198,
+          210,
+          211,
+          215,
+          218,
+          221
+        ],
+        "SqrtPriceCalculator.sol": [
+          28,
+          51,
+          52,
+          53
+        ]
+      },
+      "keywords": [
+        "overflow",
+        "price-manipulation",
+        "handler-order",
+        "pricing-bounds"
+      ],
+      "fp_gate": {
+        "location_exists": true,
+        "entry_reachable": true,
+        "no_existing_guard": true,
+        "concrete_attack_path": true,
+        "poc_compiles": true
+      },
+      "source_hypothesis": "H-R4-HR-02",
+      "kill_gate": {
+        "status": "flagged",
+        "gate": "V2-refutation",
+        "reason": "Missing refutation_attempted \u2014 you must argue against your own finding before submitting"
+      }
+    },
+    {
+      "id": "EH-002",
+      "title": "validateHandlerOrder bypasses all trading rules (pause, whitelist, direct swap block)",
+      "severity": "low",
+      "confidence_score": 80,
+      "confidence_deductions": [
+        "by-design: validateHandlerOrder is intentionally minimal for handler use",
+        "impact limited to CLOB order placement, not execution"
+      ],
+      "status": "confirmed",
+      "category": "access-control",
+      "description": "validateHandlerOrder has NO access control and performs NO trading rule checks (tradingIsPaused, blockDirectSwaps, pairedTokenWhitelist). Only pricing bounds are enforced. In contrast, beforeSwap/afterSwap enforce all trading rules. CLOB orders can be placed while trading is paused.",
+      "impact": "Token admin who pauses trading expects ALL activity to halt, but CLOB makers can continue placing orders. Orders placed during pause may fill when trading resumes.",
+      "proof_sketch": "test_H04_handlerOrderBypassesTradingPause: pauses trading, validateHandlerOrder succeeds, beforeSwap reverts",
+      "victim": "Token admins relying on trading pause for emergency stops",
+      "extractable_value": "Indirect - front-running advantage from placing orders during pause",
+      "attack_sequence": [
+        "Token admin pauses trading due to emergency",
+        "Attacker places CLOB orders via validateHandlerOrder (no pause check)",
+        "Orders queue at favorable prices during pause",
+        "When admin unpauses, orders fill before market adjusts"
+      ],
+      "test_file": "lbamm-hooks-and-handlers/test/audit/ExtHijackerKLoop.t.sol",
+      "test_passes": true,
+      "prerequisites": [
+        "Token with tradingIsPaused=true"
+      ],
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "validateHandlerOrder()",
+        "beforeSwap()"
+      ],
+      "lines": {
+        "AMMStandardHook.sol": [
+          198,
+          207,
+          208,
+          110,
+          116,
+          117,
+          670,
+          675,
+          679,
+          685
+        ]
+      },
+      "keywords": [
+        "access-control",
+        "trading-pause",
+        "handler-order"
+      ],
+      "fp_gate": {
+        "location_exists": true,
+        "entry_reachable": true,
+        "no_existing_guard": true,
+        "concrete_attack_path": true,
+        "poc_compiles": true
+      },
+      "source_hypothesis": "H-R4-HR-04",
+      "kill_gate": {
+        "status": "flagged",
+        "gate": "V2-refutation",
+        "reason": "Missing refutation_attempted \u2014 you must argue against your own finding before submitting"
+      }
+    }
+  ],
+  "ruled_out_vectors": [
+    {
+      "vector": "H-R4-HR-05: Direct swap pricing bounds bypass when afterSwap flag disabled (CP-004)",
+      "why_ruled_out": "CP-004 confirmed known pattern. Existing guard exists: afterSwap hook flag must be enabled for bounds enforcement. The pattern is flag-gated enforcement where disabling one flag silently disables a security check set up by another flag. Documented as known issue.",
+      "test_file": "lbamm-hooks-and-handlers/test/audit/ExtHijackerKLoop.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "_validatePricingBounds()"
+      ],
+      "keywords": [
+        "direct-swap",
+        "pricing-bounds",
+        "hook-flags",
+        "CP-004"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "H-R4-DP-09: Operator precedence bug in ModuleLiquidity.createPool line 90 (deposit0 | deposit1 == 0)",
+      "why_ruled_out": "Solidity 0.8 type system prevents uint256|bool mixing. The expression is parsed as (deposit0 | deposit1) == 0, which is the intended behavior. Compiler enforces type safety.",
+      "test_file": "lbamm-hooks-and-handlers/test/audit/ExtHijackerKLoop.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "ModuleLiquidity.sol"
+      ],
+      "functions": [
+        "createPool()"
+      ],
+      "keywords": [
+        "operator-precedence",
+        "type-safety"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "H-R4-HR-01: Settings sync sends raw calldata with initialized=false",
+      "why_ruled_out": "CP-005 confirmed pattern. Hook self-heals by re-fetching from registry when initialized=false. Not a vulnerability - the auto-refetch mechanism makes synced settings ephemeral by design.",
+      "test_file": "lbamm-hooks-and-handlers/test/audit/ExtHijackerKLoop.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "CreatorHookSettingsRegistry.sol",
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "setTokenSettings()",
+        "registryUpdateTokenSettings()",
+        "_getOrFetchTokenSettings()"
+      ],
+      "keywords": [
+        "settings-sync",
+        "cache-desync"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "H-R4-HR-03: Disabled pool bypass via cache desync",
+      "why_ruled_out": "By-design cache desync model. Registry NatSpec documents that hook caches must be explicitly synced. Admin config error (not syncing hook) is documented behavior. Tier C impact.",
+      "test_file": "lbamm-hooks-and-handlers/test/audit/ExtHijackerKLoop.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol",
+        "CreatorHookSettingsRegistry.sol"
+      ],
+      "functions": [
+        "_checkPoolEnabled()",
+        "setTokenSettings()"
+      ],
+      "keywords": [
+        "cache-desync",
+        "pool-disabled"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "H-R4-HR-06: Asymmetric bounds enforcement (pool creation vs swaps)",
+      "why_ruled_out": "By design: pool creation checks BOTH tokens' bounds, swaps check per-hook token only. Each hook governs its own token independently. This is the correct architectural model.",
+      "test_file": "lbamm-hooks-and-handlers/test/audit/ExtHijackerKLoop.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "_enforcePoolCreationSettings()",
+        "_validatePricingBounds()"
+      ],
+      "keywords": [
+        "asymmetric-bounds",
+        "pool-creation"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "H-R4-HR-07: Direct swap price distorted by fees (gross vs net input)",
+      "why_ruled_out": "Bounds checking uses gross input but AMM uses net input. The margin of error is bounded by the fee percentage. Low impact: cannot exceed fee % distortion, not exploitable for value extraction.",
+      "test_file": "lbamm-hooks-and-handlers/test/audit/ExtHijackerKLoop.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "_validatePricingBounds()"
+      ],
+      "keywords": [
+        "fee-distortion",
+        "pricing-bounds"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "H-R4-HR-08: validateHandlerOrder as pricing bounds oracle",
+      "why_ruled_out": "Information leakage is real (binary search to find bounds) but bounds are also visible in events and storage. No economic impact from knowing pricing bounds. Informational at best.",
+      "test_file": "lbamm-hooks-and-handlers/test/audit/ExtHijackerKLoop.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "validateHandlerOrder()"
+      ],
+      "keywords": [
+        "information-leakage",
+        "oracle"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "H-R4-HR-09: Stale empty pricing bounds in handler validation",
+      "why_ruled_out": "By-design cache model. Pricing bounds have no auto-fetch mechanism. Admin must explicitly sync to hook. Documented behavior - not syncing is admin config error.",
+      "test_file": "lbamm-hooks-and-handlers/test/audit/ExtHijackerKLoop.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "validateHandlerOrder()"
+      ],
+      "keywords": [
+        "cache-desync",
+        "pricing-bounds"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "H-R4-DP-01: 100% pool fee on input swaps (asymmetric fee check)",
+      "why_ruled_out": "The condition '(inputSwap && >MAX_BPS) || >=MAX_BPS' always catches poolFeeBPS=10000 via the second clause (>=10000). The inputSwap clause is redundant but not exploitable. No asymmetry at the boundary value.",
+      "test_file": "lbamm-hooks-and-handlers/test/audit/ExtHijackerCoreHyp.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_getPoolFee()"
+      ],
+      "keywords": [
+        "fee-validation",
+        "off-by-one"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "H-R4-DP-03: Output swap fee amplification (10000x at hop=9999)",
+      "why_ruled_out": "Admin-controlled hop fees. limitAmount check at line 2171 protects users. Amplification is by-design minimum protocol fee enforcement. Compromised fee manager is out of scope (admin-only path).",
+      "test_file": "lbamm-hooks-and-handlers/test/audit/ExtHijackerCoreHyp.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_applySwapByOutputInputFees()"
+      ],
+      "keywords": [
+        "fee-amplification",
+        "admin-controlled"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "H-R4-DP-05: Hook fee key asymmetry (tokenFor,tokenFor vs tokenFor,tokenFee)",
+      "why_ruled_out": "Non-token hook fees are denominated in tokenFor. Store key uses (tokenFor,tokenFor) and correct collection uses same. The asymmetry is an API constraint, not a vulnerability. Hook developers must use tokenFor==tokenFee.",
+      "test_file": "lbamm-hooks-and-handlers/test/audit/ExtHijackerCoreHyp.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_storeNonTokenHookFees()",
+        "_transferHookFeesByHook()"
+      ],
+      "keywords": [
+        "storage-key",
+        "hook-fees"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "H-R4-DP-06: Flags cleared before transfer handler callback",
+      "why_ruled_out": "ENTERED bit prevents reentrancy. Flag clear is necessary for self-delegatecall in executeQueuedHookFeesByHookTransfers. Current handlers don't check SWAP_GUARD_FLAG in callbacks. Latent risk for future handlers only.",
+      "test_file": "lbamm-hooks-and-handlers/test/audit/ExtHijackerCoreHyp.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_finalizeSwapCollectFundsAndDisburse()",
+        "_executeQueuedHookFeesByHookTransfers()"
+      ],
+      "keywords": [
+        "reentrancy-flags",
+        "callback"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "H-R4-DP-07: Division by zero in input swap fee path",
+      "why_ruled_out": "_getPoolFee reverts when poolFeeBPS >= MAX_BPS. Max poolFeeBPS = 9999, max lpFeeBPS = 10000. Max product = 99,990,000 < 100,000,000 (DOUBLE_BPS). Denominator cannot be zero with valid BPS values.",
+      "test_file": "lbamm-hooks-and-handlers/test/audit/ExtHijackerCoreHyp.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_applySwapByInputInputFees()",
+        "_getPoolFee()"
+      ],
+      "keywords": [
+        "division-by-zero",
+        "fee-computation"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    }
+  ],
+  "hypothesis_results": [
+    {
+      "id": "H-R4-HR-02",
+      "status": "confirmed",
+      "test_file": "lbamm-hooks-and-handlers/test/audit/ExtHijackerKLoop.t.sol",
+      "refutation_case": "If an attacker calls validateHandlerOrder with amountOut=type(uint256).max/2 and amountIn=1, computeRatioX96 overflows returning 0. Since 0 > maxSqrtPriceX96 is always false, the max bound is bypassed. Unlike _validatePricingBounds which checks sqrtPriceX96==0 at line 847, validateHandlerOrder has no such guard.",
+      "guard_location": "AMMStandardHook.sol:847 (only in _validatePricingBounds, NOT in validateHandlerOrder)",
+      "detail": "Confirmed. Forge test demonstrates max pricing bound bypass via overflow. Missing sqrtPriceX96==0 check in validateHandlerOrder vs present in _validatePricingBounds."
+    },
+    {
+      "id": "H-R4-HR-04",
+      "status": "confirmed",
+      "test_file": "lbamm-hooks-and-handlers/test/audit/ExtHijackerKLoop.t.sol",
+      "refutation_case": "If an attacker calls validateHandlerOrder while tradingIsPaused=true, the function has no pause check. beforeSwap checks via _validateTokenTradingRules at line 117, but validateHandlerOrder skips all trading rules. This means CLOB orders can be placed during trading pauses.",
+      "guard_location": "AMMStandardHook.sol:117 (only in beforeSwap, NOT in validateHandlerOrder at line 198)",
+      "detail": "Confirmed. Forge test demonstrates trading pause bypass. validateHandlerOrder has no access control and no trading rule enforcement."
+    },
+    {
+      "id": "H-R4-DP-03",
+      "status": "dismissed",
+      "test_file": "lbamm-hooks-and-handlers/test/audit/ExtHijackerCoreHyp.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If a compromised fee manager sets hopFeeBPS=9999, the protocolFeeFromInput formula amplifies shortage by 10000x. User paying 1000 could be charged 10M extra.",
+      "guard_location": "AMMModule.sol:2171 (limitAmount check caps user's maximum payment)",
+      "detail": "Dismissed. limitAmount check protects users. Hop fees are admin-controlled - compromised admin is out of scope per FP pattern #4."
+    },
+    {
+      "id": "H-R4-DP-09",
+      "status": "dismissed",
+      "test_file": "lbamm-hooks-and-handlers/test/audit/ExtHijackerKLoop.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If Solidity parsed deposit0 | deposit1 == 0 as deposit0 | (deposit1 == 0), then deposit0=100 would produce 100 | true = 101 (truthy). But Solidity 0.8 type system prevents uint256 | bool, forcing (deposit0 | deposit1) == 0.",
+      "guard_location": "Solidity 0.8 type system (compiler level)",
+      "detail": "Dismissed. Solidity 0.8 type system prevents the hypothesized precedence bug. The expression is type-safe."
+    },
+    {
+      "id": "H-R4-HR-01",
+      "status": "dismissed",
+      "test_file": "lbamm-hooks-and-handlers/test/audit/ExtHijackerKLoop.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If setTokenSettings syncs raw calldata with initialized=false, the hook stores initialized=false. On next _getOrFetchTokenSettings, initialized=false triggers re-fetch from registry, getting latest settings. The sync is ephemeral.",
+      "guard_location": "AMMStandardHook.sol:908 (_getOrFetchTokenSettings re-fetches when initialized=false)",
+      "detail": "Dismissed. CP-005 confirmed pattern. The auto-refetch mechanism makes synced settings self-healing. Not a vulnerability."
+    },
+    {
+      "id": "H-R4-HR-03",
+      "status": "dismissed",
+      "test_file": "lbamm-hooks-and-handlers/test/audit/ExtHijackerKLoop.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If admin updates registry checkDisabledPools=true without syncing hook, the hook's stale cache (checkDisabledPools=false) skips the pool disabled check. Swaps proceed on disabled pools.",
+      "guard_location": "CreatorHookSettingsRegistry.sol NatSpec (documented cache desync model)",
+      "detail": "Dismissed. By-design cache desync. Admin must explicitly sync hook settings. Documented behavior."
+    },
+    {
+      "id": "H-R4-HR-05",
+      "status": "dismissed",
+      "test_file": "lbamm-hooks-and-handlers/test/audit/ExtHijackerKLoop.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If a token has beforeSwap enabled but afterSwap disabled, direct swap pricing bounds are never checked. beforeSwap stores amount and returns at line 838-840 without checking. afterSwap is never called.",
+      "guard_location": "AMMStandardHook.sol: afterSwap hook flag must be enabled for bounds enforcement. CP-004 known pattern.",
+      "detail": "Dismissed as CP-004. Known pattern where flag configuration affects security enforcement. Existing guard (afterSwap flag) prevents exploitation when properly configured."
+    },
+    {
+      "id": "H-R4-HR-06",
+      "status": "dismissed",
+      "test_file": "lbamm-hooks-and-handlers/test/audit/ExtHijackerKLoop.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If pool creation checks both tokens' bounds but swaps check only one, a price could pass swap validation but fail pool creation. This asymmetry could prevent legitimate pool creation.",
+      "guard_location": "AMMStandardHook.sol:780 (pool creation) vs 829 (swap) - by design",
+      "detail": "Dismissed. Asymmetric enforcement is by design. Each hook governs its own token independently."
+    },
+    {
+      "id": "H-R4-HR-07",
+      "status": "tested",
+      "test_file": "lbamm-hooks-and-handlers/test/audit/ExtHijackerKLoop.t.sol",
+      "refutation_case": "If hook charges 10% fee, bounds checking uses gross input but AMM uses net input. Apparent price sqrt(95/100)=0.974 passes max=1.0, but actual economic price sqrt(95/90)=1.027 exceeds max.",
+      "guard_location": "AMMStandardHook.sol:842 (uses stored gross amount, not net amount)",
+      "detail": "Tested. Fee-sized margin of error confirmed in bounds checking. Impact is low - bounded by fee percentage."
+    },
+    {
+      "id": "H-R4-HR-08",
+      "status": "tested",
+      "test_file": "lbamm-hooks-and-handlers/test/audit/ExtHijackerKLoop.t.sol",
+      "refutation_case": "If an attacker binary-searches validateHandlerOrder with different amounts, they can reconstruct exact min/max pricing bounds. The function is external view with no access control.",
+      "guard_location": "None - validateHandlerOrder has no access control at AMMStandardHook.sol:207",
+      "detail": "Tested. Information leakage confirmed but impact is informational - bounds visible in events/storage."
+    },
+    {
+      "id": "H-R4-HR-09",
+      "status": "dismissed",
+      "test_file": "lbamm-hooks-and-handlers/test/audit/ExtHijackerKLoop.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If pricing bounds set in registry but not synced to hook, validateHandlerOrder silently skips all price validation (isSet=false). CLOB orders at any price are accepted.",
+      "guard_location": "CreatorHookSettingsRegistry cache model (no auto-fetch for pricing bounds)",
+      "detail": "Dismissed. By-design cache model. No auto-fetch for pricing bounds."
+    },
+    {
+      "id": "H-R4-DP-01",
+      "status": "dismissed",
+      "test_file": "lbamm-hooks-and-handlers/test/audit/ExtHijackerCoreHyp.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If a dynamic fee hook returns poolFeeBPS=10000, the check (inputSwap && >MAX_BPS) || >=MAX_BPS always catches 10000 via the second clause. 100% pool fee is blocked for both input and output swaps.",
+      "guard_location": "AMMModule.sol:1717 (>=MAX_BPS second clause always triggers for 10000)",
+      "detail": "Dismissed. No asymmetry at boundary value. The >= clause catches 10000 for both swap types."
+    },
+    {
+      "id": "H-R4-DP-05",
+      "status": "tested",
+      "test_file": "lbamm-hooks-and-handlers/test/audit/ExtHijackerCoreHyp.t.sol",
+      "refutation_case": "If _storeNonTokenHookFees stores fees under hash(hook, hash(tokenFor, tokenFor)) but _transferHookFeesByHook withdraws under hash(hook, hash(tokenFor, tokenFee)), a hook developer calling with tokenFor != tokenFee gets underflow revert. Fees are stranded.",
+      "guard_location": "AMMModule.sol:3016-3018 (store key) vs 3123-3125 (transfer key) - match only when tokenFor==tokenFee",
+      "detail": "Tested. Key asymmetry confirmed. However, non-token hook fees are denominated in tokenFor by design. Correct usage requires tokenFor==tokenFee."
+    },
+    {
+      "id": "H-R4-DP-06",
+      "status": "tested",
+      "test_file": "lbamm-hooks-and-handlers/test/audit/ExtHijackerCoreHyp.t.sol",
+      "refutation_case": "If _executeQueuedHookFeesByHookTransfers clears SWAP_GUARD_FLAG at line 3190, the transfer handler callback at line 2251 runs without the flag. A handler checking checkAMMExecutionState(SWAP_GUARD_FLAG) sees false during active swap.",
+      "guard_location": "AMMModule.sol:3190 (_setReentrancyFlags(NO_FLAGS) clears all custom flags)",
+      "detail": "Tested. Flag clear confirmed as necessary for self-delegatecall. ENTERED bit still prevents reentrancy. Current handlers don't check SWAP_GUARD_FLAG."
+    },
+    {
+      "id": "H-R4-DP-07",
+      "status": "dismissed",
+      "test_file": "lbamm-hooks-and-handlers/test/audit/ExtHijackerCoreHyp.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If poolFeeBPS=10000 and lpFeeBPS=10000, denominator becomes 0 causing division by zero. But _getPoolFee reverts when poolFeeBPS>=MAX_BPS, capping it at 9999. Max product = 9999*10000 = 99,990,000 < 100,000,000.",
+      "guard_location": "AMMModule.sol:1717 (_getPoolFee rejects poolFeeBPS >= MAX_BPS)",
+      "detail": "Dismissed. _getPoolFee guard prevents poolFeeBPS=10000. Denominator minimum is 10,000 (not zero)."
+    }
+  ],
+  "theft_theses": [
+    {
+      "thesis": "Exploit validateHandlerOrder overflow to place CLOB orders at infinite prices, bypassing max pricing bounds",
+      "victim": "Token creators with max-only pricing bounds",
+      "asset": "Token value through unfavorable CLOB fills",
+      "estimated_ev": 0,
+      "status": "confirmed"
+    },
+    {
+      "thesis": "Place CLOB orders during trading pause via validateHandlerOrder, front-run pause lifting",
+      "victim": "Token holders during emergency pause",
+      "asset": "Trading advantage from pre-positioned orders",
+      "estimated_ev": 0,
+      "status": "confirmed"
+    },
+    {
+      "thesis": "Bypass direct swap pricing bounds when afterSwap flag disabled",
+      "victim": "Token creators relying on pricing bounds for direct swaps",
+      "asset": "Swaps at prices outside intended bounds",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    }
+  ],
+  "metadata": {
+    "checklist_items_completed": "A: 4/5, B: 1/5, C: 18/18, D: 15/15",
+    "tools_run": {
+      "slither": {
+        "ran": true,
+        "repos": [
+          "lbamm-hooks-and-handlers",
+          "lbamm-core"
+        ],
+        "note": "35 findings on hooks-and-handlers, 30 on core. Mostly uninitialized-local (by-design struct pattern) and incorrect-return (delegateCall pattern). No novel High findings."
+      },
+      "aderyn": {
+        "ran": true,
+        "repos": [
+          "lbamm-core"
+        ],
+        "note": "88 detectors run on lbamm-core. Crashed on hooks-and-handlers (fatal bug in aderyn 0.6.8)."
+      },
+      "forge": {
+        "ran": true,
+        "note": "36 tests total across 3 files. All pass. Files: ExtHijackerKLoop.t.sol, ExtHijackerCoreHyp.t.sol, ExtHijackerBoundary.t.sol"
+      },
+      "halmos": {
+        "ran": true,
+        "note": "1 check passed (H02 overflow bypass confirmed). 1 errored (expectRevert unsupported in Halmos)."
+      },
+      "medusa": {
+        "ran": true,
+        "note": "50000 call limit, 19 assertion tests passed on AMMStandardHook. No failures found."
+      },
+      "audit-context-building": {
+        "ran": true,
+        "note": "Skill invoked. Deep context built through manual line-by-line analysis of AMMStandardHook, CreatorHookSettingsRegistry, SqrtPriceCalculator, AMMModule fee paths."
+      },
+      "entry-point-analyzer": {
+        "ran": true,
+        "note": "Skill invoked. Entry points identified via Slither list_functions (100 external/public functions in lbamm-core). Key entry points: singleSwap, multiSwap, directSwap, addLiquidity, removeLiquidity, collectFees, flashLoan, validateHandlerOrder."
+      }
+    },
+    "num_turns": 120,
+    "tool_uses": 85,
+    "files_read": 40,
+    "theses_tested": 15,
+    "theses_confirmed": 3,
+    "theses_ruled_out": 12,
+    "triage_log": {
+      "skip": 0,
+      "borderline": 5,
+      "survive": 10
+    },
+    "gate_passed": true,
+    "_total_hypotheses": 15
+  }
+}

@@ -1,0 +1,447 @@
+{
+  "agent_name": "auth-forger",
+  "metadata": {
+    "wave": 1,
+    "model": "claude-opus-4-20250514",
+    "timestamp": "2026-03-28T17:00:00Z",
+    "target_repos": [
+      "lbamm-hooks-and-handlers",
+      "lbamm-core"
+    ],
+    "checklist": "C-AUTH",
+    "checklist_items_completed": "A: 5/6, B: 3/4, C: 22/22, D: 4/4",
+    "num_turns": 200,
+    "files_read": 45,
+    "test_file": "lbamm-hooks-and-handlers/test/AuditAuthForgerW1Deep.t.sol",
+    "test_count": 44,
+    "tests_passing": 44,
+    "tests_failing": 0,
+    "tools_run": {
+      "forge": {
+        "ran": true,
+        "note": "44 tests total. File: lbamm-hooks-and-handlers/test/AuditAuthForgerW1Deep.t.sol"
+      },
+      "slither": {
+        "ran": true,
+        "note": "run_detectors High+Medium: 35 findings, 0 exploitable. list_functions: 30 external/public mapped. list_contracts: inventory generated."
+      },
+      "aderyn": {
+        "ran": true,
+        "note": "Crashed \u2014 v0.6.8 fatal bug in compile.rs:78. Tool issue, not code issue."
+      },
+      "halmos": {
+        "ran": true,
+        "note": "2 symbolic tests (C16 calculateFixedInput rounding, C17 computeRatioX96 nonzero). Both TIMEOUT (no counterexample in 85 paths, 61s). Properties held within explored bounds."
+      },
+      "medusa": {
+        "ran": true,
+        "note": "5 assertion tests passed, 10200 calls, 104 branches, 0 failures. Properties: deposit/withdraw conservation, rounding direction ceil>=floor."
+      },
+      "audit_context_building": {
+        "ran": true,
+        "note": "function-analyzer subagents on C7 (afterSwapRefund rounding) and C12 (directSwap vs singleSwap). Both not exploitable."
+      },
+      "entry_point_analyzer": {
+        "ran": true,
+        "note": "27 state-changing entry points mapped across 5 contracts. All critical callbacks guarded."
+      }
+    },
+    "triage_log": {
+      "skip": 3,
+      "borderline": 5,
+      "survive": 17
+    },
+    "gate_passed": true
+  },
+  "findings": [],
+  "theft_theses": [
+    {
+      "id": "TT1",
+      "title": "Fake PermitC substitution for token theft",
+      "status": "ruled_out",
+      "evidence": "Handler-level bypass possible (MaliciousPermitC returns success without transferring), but AMM's balanceInBefore + amountIn == balanceInAfter check blocks actual theft.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditAuthForgerW1Deep.t.sol",
+      "test_function": "test_H1_fakePermitCBlockedByAMMBalanceCheck"
+    },
+    {
+      "id": "TT2",
+      "title": "ERC-1271 cosigner bypass for unauthorized swap execution",
+      "status": "ruled_out",
+      "evidence": "Cosigner address is embedded in the signed additionalDataHash. Permit signer must commit to the cosigner \u2014 a malicious ERC-1271 cosigner only works if the signer chose it.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditAuthForgerW1Deep.t.sol",
+      "test_function": "test_H6_erc1271CosignerBypass_isSelfInflicted"
+    },
+    {
+      "id": "TT3",
+      "title": "CLOB rounding extraction via afterSwapRefund",
+      "status": "ruled_out",
+      "evidence": "calculateFixedInput rounds UP (maker-favorable) but max 2 wei per fill. Accounting exact by construction: SUM(stepOutput_i) + fillOutputRemaining == amountOut. InsufficientOutputToFill revert guard prevents overflow.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditAuthForgerW1Deep.t.sol",
+      "test_function": "test_fuzz_depositWithdrawConservation"
+    }
+  ],
+  "hypothesis_results": [
+    {
+      "id": "H-HH-001",
+      "status": "dismissed",
+      "detail": "Fake PermitC token theft: handler-level bypass possible but AMM balance check (balanceInBefore + amountIn == balanceInAfter) blocks actual theft. See FP-P02.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditAuthForgerW1Deep.t.sol",
+      "failure_class": "strategic"
+    },
+    {
+      "id": "H-HH-002",
+      "status": "dismissed",
+      "detail": "additionalDataHash field omissions: feeOnTop unsigned is intentional (FP-SUB08). permitProcessor not in EIP-712 signed data but PermitC domain separator prevents cross-processor replay. AMM balance check is backstop.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditAuthForgerW1Deep.t.sol",
+      "failure_class": "strategic"
+    },
+    {
+      "id": "H-HH-003",
+      "status": "dismissed",
+      "detail": "Cosigner nonce=0 replay: REUSABLE_COSIGNATURE_NONCE=0 is explicit opt-in by design. Signer chose cosigner with nonce=0, accepting reusability.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditAuthForgerW1Deep.t.sol",
+      "failure_class": "strategic"
+    },
+    {
+      "id": "H-HH-004",
+      "status": "dismissed",
+      "detail": "Partial fill rounding bypass: FullMath.mulDiv rounds DOWN (protects signer). Zero denominators revert. maxAmountIn calculation is conservative.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditAuthForgerW1Deep.t.sol",
+      "failure_class": "strategic"
+    },
+    {
+      "id": "H-HH-005",
+      "status": "dismissed",
+      "detail": "CLOB linked list corruption: nonReentrant modifier on all entry points. Linked list ops within single transactions.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditAuthForgerW1Deep.t.sol",
+      "failure_class": "strategic"
+    },
+    {
+      "id": "H-HH-006",
+      "status": "dismissed",
+      "detail": "ERC-1271 cosigner bypass: cosigner address is in the signed additionalDataHash. Signer must commit to the specific cosigner \u2014 self-inflicted.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditAuthForgerW1Deep.t.sol",
+      "failure_class": "strategic"
+    },
+    {
+      "id": "H-HH-007",
+      "status": "dismissed",
+      "detail": "calculateFixedInput overflow: FullMath.mulDivRoundingUp reverts (not wraps) on overflow. DoS at most, not value extraction.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditAuthForgerW1Deep.t.sol",
+      "failure_class": "strategic"
+    },
+    {
+      "id": "H-HH-008",
+      "status": "dismissed",
+      "detail": "afterSwapRefund rounding extraction: max 2 wei per fill. Exact accounting by construction. Revert guard prevents overflow. 10k fills = 20k wei, below gas costs.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditAuthForgerW1Deep.t.sol",
+      "failure_class": "strategic"
+    },
+    {
+      "id": "H-HH-009",
+      "status": "dismissed",
+      "detail": "directSwap vs singleSwap arbitrage: entirely different liquidity sources (transfer handler orders vs AMM pool reserves). No shared pool. No arbitrage path.",
+      "test_file": "code-analysis:C12-deep-analysis",
+      "failure_class": "strategic"
+    },
+    {
+      "id": "H-HH-010",
+      "status": "dismissed",
+      "detail": "Cross-chain cosigner replay (CP-002): destroyCosigner uses universal domain (no chainId). Requires same cosigner on multiple chains + unused nonce + identical deployment. Self-inflicted.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditAuthForgerW1Deep.t.sol",
+      "failure_class": "strategic"
+    }
+  ],
+  "ruled_out_vectors": [
+    {
+      "vector": "Fake PermitC substitution",
+      "reason": "AMM balance check backstop (balanceInBefore + amountIn == balanceInAfter)",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditAuthForgerW1Deep.t.sol",
+      "ref": "FP-P02, test_H1",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "feeOnTop unsigned in SWAP_TYPEHASH",
+      "reason": "Intentional design \u2014 self-inflicted config choice by swap executor",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditAuthForgerW1Deep.t.sol",
+      "ref": "FP-SUB08, test_C4",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "Reusable cosignature (nonce=0)",
+      "reason": "Explicit opt-in by signer \u2014 REUSABLE_COSIGNATURE_NONCE=0 by design",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditAuthForgerW1Deep.t.sol",
+      "ref": "test_C3",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "ERC-1271 cosigner bypass",
+      "reason": "Cosigner address signed in additionalDataHash \u2014 self-inflicted",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditAuthForgerW1Deep.t.sol",
+      "ref": "test_H6",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "Partial fill rounding bypass",
+      "reason": "FullMath.mulDiv rounds DOWN (conservative), zero-denom reverts",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditAuthForgerW1Deep.t.sol",
+      "ref": "H4",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "CLOB linked list corruption",
+      "reason": "nonReentrant modifier on all CLOB entry points",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditAuthForgerW1Deep.t.sol",
+      "ref": "FP-C05, test_C5/C6",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "calculateFixedInput overflow",
+      "reason": "FullMath reverts on overflow, does not wrap \u2014 DoS at most",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditAuthForgerW1Deep.t.sol",
+      "ref": "test_fuzz_calculateFixedInput_neverWraps",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "afterSwapRefund rounding extraction",
+      "reason": "Max 2 wei per fill, exact accounting by construction, revert guard",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditAuthForgerW1Deep.t.sol",
+      "ref": "C7 deep analysis, fuzz tests",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "directSwap vs singleSwap pricing arbitrage",
+      "reason": "Different liquidity sources (handler orders vs pool reserves), no shared pool",
+      "test_file": "code-analysis:C12-deep-analysis",
+      "ref": "C12 deep analysis",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "Cross-chain cosigner replay (CP-002)",
+      "reason": "Known low \u2014 self-inflicted, requires identical deployment across chains",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditAuthForgerW1Deep.t.sol",
+      "ref": "test_C21",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "Hook callback access control bypass",
+      "reason": "All callbacks check msg.sender == AMM (7 sub-tests)",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditAuthForgerW1Deep.t.sol",
+      "ref": "test_C1_*",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "CLOB settlement insolvency",
+      "reason": "deposit/withdraw conservation + open/close conservation verified via fuzz",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditAuthForgerW1Deep.t.sol",
+      "ref": "test_C2_*, test_C13, fuzz tests",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "CLOB self-trade profitability",
+      "reason": "Always negative-sum due to AMM fees",
+      "test_file": "code-analysis:FP-C11-confirmed",
+      "ref": "FP-C11",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "Permit empty/invalid data handling",
+      "reason": "Proper reverts on empty data, wrong type flag, truncated data",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditAuthForgerW1Deep.t.sol",
+      "ref": "test_C14",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "initializeOrderBookKey griefing",
+      "reason": "Idempotent \u2014 deterministic key derivation, re-init is no-op",
+      "test_file": "code-analysis:entry-point-analysis",
+      "ref": "entry-point analysis",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "Whitelist creation spam",
+      "reason": "Intentional design \u2014 no value extraction, state bloat at worst",
+      "test_file": "code-analysis:entry-point-analysis",
+      "ref": "entry-point analysis",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "CLOB output-based swap",
+      "reason": "Explicitly rejected by handler with OutputBasedNotAllowed revert",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditAuthForgerW1Deep.t.sol",
+      "ref": "test_C22_CLOBExtraDataValidation",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "CLOB extraData wrong recipient",
+      "reason": "Handler enforces recipient==handler address, reverts otherwise",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditAuthForgerW1Deep.t.sol",
+      "ref": "test_C22_CLOBExtraDataValidation",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "Close non-existent order",
+      "reason": "Proper revert \u2014 order invalidated check",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditAuthForgerW1Deep.t.sol",
+      "ref": "test_C9_closeNonExistentOrder",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "Withdraw exceeds balance",
+      "reason": "Proper revert \u2014 InsufficientMakerBalance",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditAuthForgerW1Deep.t.sol",
+      "ref": "test_C10_withdrawExceedsBalance",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "Direct handler call without AMM",
+      "reason": "msg.sender == AMM check blocks on all callback entry points",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditAuthForgerW1Deep.t.sol",
+      "ref": "test_C11_directHandlerCallBlocked",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "CLOB below minimum order",
+      "reason": "Proper revert \u2014 OrderAmountLessThanGroupMinimum",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditAuthForgerW1Deep.t.sol",
+      "ref": "test_CLOB_belowMinimumOrder",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "Other maker close order",
+      "reason": "maker==msg.sender check enforced \u2014 InvalidMaker revert",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditAuthForgerW1Deep.t.sol",
+      "ref": "test_CLOB_otherMakerCannotClose",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "Double close order",
+      "reason": "Order invalidated on first close \u2014 second close reverts",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditAuthForgerW1Deep.t.sol",
+      "ref": "test_CLOB_doubleCloseReverts",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "Token settings propagation",
+      "reason": "Registry\u2192hook sync verified through setTokenSettings flow",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditAuthForgerW1Deep.t.sol",
+      "ref": "test_C15_tokenSettingsPropagation",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    }
+  ],
+  "slither_summary": {
+    "total_findings": 35,
+    "high_impact": 6,
+    "medium_impact": 29,
+    "exploitable": 0,
+    "notes": "All High: arbitrary-send-erc20 (internal func), incorrect-return (delegate call pattern), uninitialized-state (mapping defaults). All Medium: uninitialized-local (struct defaults), unused-return (first tuple value discarded but isError IS checked at L397)."
+  },
+  "architecture_observations": [
+    "Three-layer defense: (1) handler checks, (2) hook validation, (3) AMM balance check backstop",
+    "EIP-712 SWAP_TYPEHASH covers 9 fields. feeOnTop and permitProcessor intentionally excluded.",
+    "Cosigner system: bitmap nonces, nonce=0 = reusable opt-in, destroyCosigner uses universal domain (CP-002)",
+    "CLOB accounting: exact by construction. calculateFixedInput rounds UP (maker-favorable, max 2 wei/fill)",
+    "Access control: all callbacks guarded by msg.sender == AMM. Registry by LibOwnership. CLOB user functions are caller-driven.",
+    "Reentrancy: nonReentrant on all CLOB entry points. Hook callbacks within AMM's nonReentrant scope."
+  ]
+}

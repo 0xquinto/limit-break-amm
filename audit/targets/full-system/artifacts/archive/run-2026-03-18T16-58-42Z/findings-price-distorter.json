@@ -1,0 +1,609 @@
+{
+  "agent_name": "price-distorter",
+  "agent_role": "Cross-Venue Price Distorter",
+  "wave": 1,
+  "findings": [],
+  "ruled_out_vectors": [
+    {
+      "vector": "KV-1: Zero-price bypass in validateHandlerOrder \u2014 computeRatioX96 returns 0 on overflow, validateHandlerOrder does NOT check for sqrtPriceX96==0 (unlike _validatePricingBounds which does)",
+      "why_ruled_out": "Missing zero check only affects CLOB order placement (not AMM swaps). Maker controls their own order price \u2014 bypassing max-only bounds lets maker place bad orders against themselves. Taker must accept to fill. No involuntary value extraction. Low/informational inconsistency.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditPriceDistorterKV1.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol",
+        "CLOBTransferHandler.sol",
+        "SqrtPriceCalculator.sol"
+      ],
+      "functions": [
+        "_enforceTokenHooks",
+        "validateHandlerOrder",
+        "computeRatioX96"
+      ],
+      "keywords": [
+        "sqrtPriceX96",
+        "zero",
+        "bypass",
+        "overflow",
+        "pricing-bounds",
+        "computeRatioX96",
+        "validateHandlerOrder"
+      ]
+    },
+    {
+      "vector": "KV-2: Direct handler call \u2014 calling CLOBTransferHandler directly (not via AMM) to bypass pricing enforcement",
+      "why_ruled_out": "CLOBTransferHandler.ammHandleTransfer checks msg.sender == AMM (line 230). afterSwapRefund also checks msg.sender == AMM (line 316). No executeSwap function exists. Handler ONLY accepts calls from AMM contract.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditPriceDistorterHypotheses.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "CLOBTransferHandler.sol",
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "ammHandleTransfer",
+        "beforeSwap",
+        "afterSwap"
+      ],
+      "keywords": [
+        "pricing",
+        "bypass",
+        "direct",
+        "handler",
+        "direct-swap",
+        "pricing-bounds",
+        "flag-dependency"
+      ]
+    },
+    {
+      "vector": "KV-3: Settings sync gap \u2014 hook settings cache in AMMStandardHook can desync from CreatorHookSettingsRegistry",
+      "why_ruled_out": "Desync is documented and by-design (CreatorHookSettingsRegistry.sol lines 24-53). Enables grandfathering, isolation, gradual rollout. Sync is explicit via hooksToSync parameter. Admin-controlled configuration, not attacker-exploitable.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditPriceDistorterHypotheses.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "CLOBTransferHandler.sol",
+        "CreatorHookSettingsRegistry.sol"
+      ],
+      "functions": [
+        "setTokenSettings",
+        "_getOrFetchTokenSettings",
+        "registryUpdateTokenSettings"
+      ],
+      "keywords": [
+        "setTokenSettings",
+        "sync",
+        "stale",
+        "initialized",
+        "memSettings",
+        "gas-waste"
+      ]
+    },
+    {
+      "vector": "KV-4: Transient storage leak \u2014 DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT may retain stale data between swaps",
+      "why_ruled_out": "EIP-1153 clears transient storage per-transaction. Within a transaction, AMM calls beforeSwap then afterSwap atomically per swap \u2014 no interleaving. HOOK-001 overwrite (second token call overwrites first) is by-design. Direct swap pricing uses latest write.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditPriceDistorterHypotheses.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "beforeSwap",
+        "_validatePricingBounds"
+      ],
+      "keywords": [
+        "transient",
+        "tstore",
+        "clear",
+        "direct",
+        "swap",
+        "transient-storage",
+        "stale-read",
+        "direct-swap",
+        "DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT"
+      ]
+    },
+    {
+      "vector": "H1: Flash loan \u2192 CLOB self-trade at extreme price \u2192 AMM reads distorted state",
+      "why_ruled_out": "AMM reads price from pool type contract (getCurrentPriceX96), not from CLOB order book. CLOB prices are per-order-book and isolated from AMM pool pricing. No cross-venue price contamination path exists.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditPriceDistorterHypotheses.t.sol",
+      "repos": [
+        "lbamm-core",
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMModule.sol",
+        "CLOBTransferHandler.sol"
+      ],
+      "functions": [
+        "getCurrentPriceX96",
+        "ammHandleTransfer"
+      ],
+      "keywords": [
+        "flash-loan",
+        "CLOB",
+        "AMM",
+        "cross-venue",
+        "price-distortion"
+      ]
+    },
+    {
+      "vector": "H2: snapPrice in addLiquidity allows arbitrary price movement \u2192 sandwich",
+      "why_ruled_out": "DynamicHelper.snapPrice requires poolState.liquidity == 0 AND no initialized ticks between current and target. Cannot sandwich active pools. Zero-liquidity pools have nothing to extract.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditPriceDistorterHypotheses.t.sol",
+      "repos": [
+        "amm-pool-type-dynamic"
+      ],
+      "contracts": [
+        "DynamicHelper.sol"
+      ],
+      "functions": [
+        "snapPrice"
+      ],
+      "keywords": [
+        "snapPrice",
+        "sandwich",
+        "liquidity",
+        "price-movement"
+      ]
+    },
+    {
+      "vector": "H3: SingleProviderPoolType trusts external pricing hook \u2192 oracle spoof",
+      "why_ruled_out": "Hook is set by pool creator at pool creation time. Only the pool creator can set their pool's pricing hook. Malicious hook = self-inflicted config error (FP pattern #4). No external attacker can inject a hook into someone else's pool.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditPriceDistorterHypotheses.t.sol",
+      "repos": [
+        "lbamm-pool-type-single-provider"
+      ],
+      "contracts": [
+        "SingleProviderPoolType.sol"
+      ],
+      "functions": [
+        "swapByInput",
+        "swapByOutput",
+        "getPoolPriceForSwap"
+      ],
+      "keywords": [
+        "hook",
+        "oracle",
+        "spoof",
+        "creator-controlled",
+        "single-provider"
+      ]
+    },
+    {
+      "vector": "H4: Direct swap bypasses pricing bounds checked by hooks",
+      "why_ruled_out": "Direct swaps call beforeSwap AND afterSwap hooks. _validatePricingBounds has explicit direct swap path (poolType == address(0)) that stores input amount in transient storage (beforeSwap) then validates computed price from both amounts (afterSwap). Direct swap pricing IS enforced.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditPriceDistorterHypotheses.t.sol",
+      "repos": [
+        "lbamm-core",
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMModule.sol",
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "_directSwap",
+        "_validatePricingBounds",
+        "beforeSwap",
+        "afterSwap"
+      ],
+      "keywords": [
+        "direct-swap",
+        "pricing-bounds",
+        "bypass",
+        "hook"
+      ]
+    },
+    {
+      "vector": "H5-H8: Oracle stale price / unbounded oracle / TWAP manipulation / front-run oracle update",
+      "why_ruled_out": "Limit Break AMM does not use external oracles (Chainlink, TWAP, etc.) for pricing. Pool types compute prices internally. No stale oracle, no TWAP, no oracle update to front-run.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditPriceDistorterHypotheses.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_singleSwap"
+      ],
+      "keywords": [
+        "oracle",
+        "stale",
+        "TWAP",
+        "front-run"
+      ]
+    },
+    {
+      "vector": "H9: Controlled hook returns fake sqrtPriceX96",
+      "why_ruled_out": "Same as H3 \u2014 hook is set by pool/token creator. External attacker cannot inject hooks. Self-inflicted config.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditPriceDistorterHypotheses.t.sol",
+      "repos": [
+        "lbamm-pool-type-single-provider",
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "SingleProviderPoolType.sol",
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "getPoolPriceForSwap",
+        "getCurrentPriceX96"
+      ],
+      "keywords": [
+        "hook",
+        "fake-price",
+        "sqrtPriceX96",
+        "spoof"
+      ]
+    },
+    {
+      "vector": "H10: Bypass slippage/deadline params",
+      "why_ruled_out": "AMM contract has no explicit slippage parameter. Slippage protection is caller-enforced (router pattern). No protocol-level slippage to bypass.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditPriceDistorterHypotheses.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_singleSwap",
+        "_directSwap"
+      ],
+      "keywords": [
+        "slippage",
+        "deadline",
+        "bypass"
+      ]
+    },
+    {
+      "vector": "PROBE-1: Dust-loop extraction via 100+ tiny swaps",
+      "why_ruled_out": "Fee calculation uses mulDivRoundingUp \u2014 1-wei inputs with 30bps fee pay ceil(30/10000) = 1 fee, consuming entire input. Zero output for all 100 iterations. Pool always gains from dust swaps.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditPriceDistorterHypotheses.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "FeeHelper.sol"
+      ],
+      "functions": [
+        "calculateAmountAfterFeesSwapByInput"
+      ],
+      "keywords": [
+        "dust",
+        "loop",
+        "rounding",
+        "extraction"
+      ]
+    },
+    {
+      "vector": "PROBE-2: Forged hook caller with fake pool identity",
+      "why_ruled_out": "All hook entry points (beforeSwap, afterSwap, validateAddLiquidity, validatePoolCreation) check msg.sender == AMM via _requireCallerIsAMM(). registryUpdate* functions check msg.sender == SETTINGS_REGISTRY. No external caller can fake hook interactions.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditPriceDistorterHypotheses.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "_requireCallerIsAMM",
+        "beforeSwap",
+        "afterSwap"
+      ],
+      "keywords": [
+        "forged",
+        "hook",
+        "caller",
+        "msg.sender",
+        "access-control"
+      ]
+    },
+    {
+      "vector": "PROBE-3: Transient-slot theft \u2014 write slot in path A, read stale in path B",
+      "why_ruled_out": "Transient storage is per-contract (EVM spec). Only AMMStandardHook can read/write its own transient slots. AMM calls before/afterSwap atomically per swap \u2014 no interleaving between different swaps' hook calls.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditPriceDistorterHypotheses.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "_setTstorish",
+        "_getTstorish",
+        "_validatePricingBounds"
+      ],
+      "keywords": [
+        "transient",
+        "tstore",
+        "theft",
+        "stale",
+        "cross-contract"
+      ]
+    },
+    {
+      "vector": "PROBE-4: Permit mutation \u2014 replay with mutated unsigned feeOnTop field",
+      "why_ruled_out": "feeOnTop is NOT signed in SWAP_TYPEHASH (documented, by-design). But feeOnTop only affects executor's service fee \u2014 it doesn't redirect victim funds. Victim's swap still executes at agreed permit terms. PermitC approval bounds total transfer amount.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditPriceDistorterHypotheses.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "PermitTransferHandler.sol"
+      ],
+      "functions": [
+        "ammHandleTransfer"
+      ],
+      "keywords": [
+        "permit",
+        "feeOnTop",
+        "unsigned",
+        "mutation",
+        "replay"
+      ]
+    },
+    {
+      "vector": "PROBE-5: Storage-slot collision across diamond proxy facets",
+      "why_ruled_out": "Architecture uses single implementation (AMMModule) with dedicated storage slot (0x9A1D). Pool types, handlers, and hooks are separate external contracts called via regular calls (not delegatecall). No multi-facet diamond with shared storage to collide.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditPriceDistorterHypotheses.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "LimitBreakAMM.sol",
+        "AMMModule.sol"
+      ],
+      "functions": [],
+      "keywords": [
+        "storage",
+        "collision",
+        "diamond",
+        "proxy",
+        "facet",
+        "delegatecall"
+      ]
+    },
+    {
+      "vector": "INV-SW02: No profitable round-trip (A\u2192B\u2192A)",
+      "why_ruled_out": "Forge fuzz tests across all pool types confirm: output <= input after fees and rounding. mulDiv rounds down (output), mulDivRoundingUp rounds up (cost). Rounding always favors protocol. Tested at 25+ fuzz runs per pool type.",
+      "test_file": "lbamm-core/test/AuditPriceDistorter.t.sol",
+      "repos": [
+        "lbamm-core",
+        "amm-pool-type-dynamic",
+        "lbamm-pool-type-fixed",
+        "lbamm-pool-type-single-provider"
+      ],
+      "contracts": [
+        "FeeHelper.sol",
+        "DynamicHelper.sol",
+        "FixedHelper.sol",
+        "SingleProviderHelper.sol"
+      ],
+      "functions": [
+        "computeSwap",
+        "calculateFixedInput",
+        "calculateFixedOutput"
+      ],
+      "keywords": [
+        "round-trip",
+        "profit",
+        "rounding",
+        "fee"
+      ]
+    },
+    {
+      "vector": "INV-SW03: Rounding favors protocol (sequential 1-wei swaps)",
+      "why_ruled_out": "1000+ sequential 1-wei swaps never decrease pool balance. Fee calculation with mulDivRoundingUp ensures minimum 1 wei fee on any non-zero input. 0.3% fee on 1 wei = ceil(0.003) = 1 \u2192 full input consumed as fee.",
+      "test_file": "lbamm-core/test/AuditPriceDistorter.t.sol",
+      "repos": [
+        "lbamm-core",
+        "amm-pool-type-dynamic"
+      ],
+      "contracts": [
+        "SwapMath.sol",
+        "FeeHelper.sol"
+      ],
+      "functions": [
+        "computeSwapByInputStep",
+        "calculateAmountAfterFeesSwapByInput"
+      ],
+      "keywords": [
+        "dust",
+        "1-wei",
+        "rounding",
+        "pool-balance",
+        "monotonic"
+      ]
+    },
+    {
+      "vector": "Lens-1: Fee value denomination mismatch (MUX-style bug)",
+      "why_ruled_out": "Fee is always computed and transferred in the same token denomination. No cross-token fee application. Unlike MUX, there's no point where a fee computed in token A is applied as token B.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditPriceDistorterHypotheses.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol",
+        "FeeHelper.sol"
+      ],
+      "functions": [
+        "_applySwapByInputOutputFees",
+        "_finalizeSwapCollectFundsAndDisburse"
+      ],
+      "keywords": [
+        "denomination",
+        "mismatch",
+        "fee",
+        "token",
+        "value-lifecycle"
+      ]
+    },
+    {
+      "vector": "Lens-3: Amplification factor in fee*amount or price*quantity",
+      "why_ruled_out": "All multiplications use FullMath.mulDiv with correct denominators. Fee rate (BPS) \u00d7 amount uses MAX_BPS denominator. sqrtPriceX96 \u00d7 amount uses Q96 denominator. feeGrowth \u00d7 liquidity uses Q128 denominator. No denomination mismatch in any multiplication site.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditPriceDistorterHypotheses.t.sol",
+      "repos": [
+        "lbamm-core",
+        "amm-pool-type-dynamic"
+      ],
+      "contracts": [
+        "SwapMath.sol",
+        "SqrtPriceMath.sol",
+        "FullMath.sol"
+      ],
+      "functions": [
+        "mulDiv",
+        "mulDivRoundingUp",
+        "computeSwapByInputStep"
+      ],
+      "keywords": [
+        "amplification",
+        "multiplication",
+        "denomination",
+        "precision"
+      ]
+    }
+  ],
+  "theft_theses": [
+    {
+      "thesis": "Flash loan \u2192 CLOB self-trade at extreme price \u2192 AMM reads distorted state \u2192 extract on AMM",
+      "victim": "AMM liquidity providers",
+      "asset": "Pool tokens (any pair)",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "snapPrice allows arbitrary price movement \u2192 sandwich around snapPrice",
+      "victim": "Liquidity providers near active price",
+      "asset": "Pool tokens",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "SingleProviderPoolType trusts external pricing hook \u2192 oracle spoof",
+      "victim": "Swappers on single-provider pools",
+      "asset": "Swap output tokens",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Direct swap bypasses pricing bounds \u2192 swap at distorted price",
+      "victim": "Direct swap counterparties",
+      "asset": "Swap tokens",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Oracle stale/unbounded/TWAP manipulation (H5-H8)",
+      "victim": "N/A \u2014 no oracle in protocol",
+      "asset": "N/A",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Controlled hook returns fake sqrtPriceX96 \u2192 attacker swaps at rigged price",
+      "victim": "Pool creator (self-inflicted)",
+      "asset": "Pool tokens",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Bypass slippage/deadline \u2192 execute swap at worse-than-expected price",
+      "victim": "Swapper",
+      "asset": "Swap output",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Dust-loop extraction via rounding errors",
+      "victim": "Pool LPs",
+      "asset": "Pool reserves",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "validateHandlerOrder zero-price bypass allows CLOB order at extreme price",
+      "victim": "CLOB takers (requires willing counterparty)",
+      "asset": "Order fill tokens",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Permit feeOnTop mutation redirects victim funds",
+      "victim": "Permit signer",
+      "asset": "Swap tokens",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    }
+  ],
+  "metadata": {
+    "num_turns": 120,
+    "tool_uses": 85,
+    "files_read": 42,
+    "tools_run": {
+      "slither": true,
+      "aderyn": true,
+      "forge": true,
+      "halmos": true,
+      "medusa": true,
+      "audit_context_building": true,
+      "entry_point_analyzer": true,
+      "slither_run_detectors": {
+        "ran": true,
+        "count": 3
+      },
+      "slither_list_functions": {
+        "ran": true,
+        "count": 1
+      },
+      "forge_test": {
+        "ran": true,
+        "count": 8
+      },
+      "halmos_check": {
+        "ran": true,
+        "count": 1
+      },
+      "medusa_fuzz": {
+        "ran": true,
+        "count": 2
+      },
+      "aderyn_scan": {
+        "ran": true,
+        "count": 2
+      }
+    },
+    "theses_tested": 10,
+    "theses_confirmed": 0,
+    "theses_ruled_out": 10,
+    "triage_log": {
+      "skip": 4,
+      "borderline": 2,
+      "survive": 0
+    },
+    "checklist_items_completed": 25,
+    "checklist_items_total": 25,
+    "phase_a_repos_scanned": [
+      "lbamm-core",
+      "amm-pool-type-dynamic",
+      "lbamm-pool-type-fixed",
+      "lbamm-pool-type-single-provider",
+      "lbamm-hooks-and-handlers"
+    ],
+    "phase_b_completed": true,
+    "phase_c_items": "C1-C25 all completed across 4 repos",
+    "phase_d_kv_patterns": "KV-1 through KV-4 all investigated with ruled_out entries",
+    "phase_e_hypotheses": "H1-H10 all tested with Forge tests",
+    "mandatory_probes": "PROBE-1 through PROBE-5 all attempted",
+    "value_lifecycle_lenses": "Lens 1 (trace), Lens 2 (diff), Lens 3 (amplify) all applied",
+    "gate_passed": true
+  }
+}

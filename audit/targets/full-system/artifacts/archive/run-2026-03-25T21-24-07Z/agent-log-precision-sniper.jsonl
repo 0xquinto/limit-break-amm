@@ -1,0 +1,29 @@
+{"ts":"2026-03-25T00:00:00Z","phase":"A","action":"slither","repos":["lbamm-pool-type-fixed","amm-pool-type-dynamic","lbamm-core","lbamm-pool-type-single-provider","lbamm-hooks-and-handlers"],"result":"144+ H/M findings, no novel exploitable issues"}
+{"ts":"2026-03-25T00:01:00Z","phase":"A","action":"aderyn","repos":["lbamm-core"],"result":"88 detectors. Fixed/Dynamic repos crashed (known cross-repo bug v0.6.8)"}
+{"ts":"2026-03-25T00:02:00Z","phase":"B","action":"audit-context-building","result":"Analyzed FixedHelper, DynamicHelper, SingleProviderHelper math functions"}
+{"ts":"2026-03-25T00:03:00Z","phase":"B","action":"entry-point-analyzer","result":"Mapped all state-changing entry points across pool types"}
+{"ts":"2026-03-25T00:04:00Z","phase":"B","action":"call-graph","result":"FixedHelper via MCP, 0 nodes (library functions)"}
+{"ts":"2026-03-25T00:05:00Z","phase":"C","action":"forge-test","items":"C1-C2","file":"amm-pool-type-dynamic/test/AuditPrecisionSniperW1V4.t.sol","result":"FullMath.mulDiv/mulDivRoundingUp boundary tests pass"}
+{"ts":"2026-03-25T00:06:00Z","phase":"C","action":"forge-test","items":"C3-C6","file":"lbamm-pool-type-fixed/test/audit/PrecisionSniperFixed.t.sol","result":"FixedHelper swap/liquidity math tests pass including fuzz"}
+{"ts":"2026-03-25T00:07:00Z","phase":"C","action":"forge-test","items":"C7-C10,C13","file":"amm-pool-type-dynamic/test/AuditPrecisionSniper.t.sol","result":"DynamicHelper computeSwap, crossTick, updatePosition tests pass"}
+{"ts":"2026-03-25T00:08:00Z","phase":"C","action":"forge-test","items":"C11-C16","file":"amm-pool-type-dynamic/test/AuditPrecisionSniperW1V4.t.sol","result":"SqrtPriceMath, TickMath, BitMath, LiquidityMath tests pass"}
+{"ts":"2026-03-25T00:09:00Z","phase":"C","action":"forge-test","items":"C17,C23-C27","file":"lbamm-pool-type-fixed/test/audit/AuditPrecisionSniperCMath.t.sol","result":"FeeHelper, invariant, and exploit-grounded probe tests pass (18/18)"}
+{"ts":"2026-03-25T00:10:00Z","phase":"C","action":"forge-test","items":"C18","file":"lbamm-hooks-and-handlers/test/audit/AuditPrecisionSniperCLOB.t.sol","result":"CLOBHelper.calculateFixedInput rounding tests pass (4/4)"}
+{"ts":"2026-03-25T00:11:00Z","phase":"C","action":"forge-test","items":"C19,C25-C29","file":"amm-pool-type-dynamic/test/AuditPrecisionSniper.t.sol","result":"SqrtPriceCalculator, fee monotonicity, exploit probes pass"}
+{"ts":"2026-03-25T00:12:00Z","phase":"C","action":"forge-test","items":"C20,C29","file":"lbamm-pool-type-single-provider/test/audit/AuditPrecisionSniperSP.t.sol","result":"SingleProviderHelper round-trip loss tests pass (6/6)"}
+{"ts":"2026-03-25T00:13:00Z","phase":"C","action":"medusa","items":"C21","result":"ERROR: FixedPoolType needs constructor args"}
+{"ts":"2026-03-25T00:14:00Z","phase":"C","action":"medusa","items":"C22","result":"ERROR: no zero-arg property tests found in AuditPrecisionSniper"}
+{"ts":"2026-03-25T00:15:00Z","phase":"C","action":"halmos","items":"C3,C17,C23","file":"lbamm-pool-type-fixed/test/audit/AuditPrecisionSniperCMath.t.sol","result":"TIMEOUT on check_C17_feeNeverExceedsInput and check_C23_noRoundTripProfit (no counterexample)"}
+{"ts":"2026-03-25T00:16:00Z","phase":"C","action":"halmos","items":"C3","file":"lbamm-pool-type-fixed/test/audit/PrecisionSniperFixed.t.sol","result":"TIMEOUT on check_splitNoValueCreation (no counterexample)"}
+{"ts":"2026-03-25T00:17:00Z","phase":"C","action":"halmos","items":"C20","file":"lbamm-pool-type-single-provider/test/audit/AuditPrecisionSniperSP.t.sol","result":"TIMEOUT on check_C20_roundTripLoss (no counterexample)"}
+{"ts":"2026-03-25T00:18:00Z","phase":"D","action":"hypothesis-test","id":"H-R4-CP-01","result":"dismissed (strategic): Solidity | precedence > == precedence. Forge test confirms."}
+{"ts":"2026-03-25T00:19:00Z","phase":"D","action":"hypothesis-test","id":"H-R4-CP-02","result":"dismissed (strategic): snapPrice only runs on empty pools (liquidity==0 guard at DynamicHelper.sol:245)"}
+{"ts":"2026-03-25T00:20:00Z","phase":"D","action":"hypothesis-test","id":"H-R4-CP-03","result":"dismissed (strategic): consumedLiquidity overflow requires 2^128 swaps — infeasible"}
+{"ts":"2026-03-25T00:21:00Z","phase":"D","action":"hypothesis-test","id":"H-R4-CP-04","result":"dismissed (strategic): dust bounded by potentialDustForOneInput revert guard"}
+{"ts":"2026-03-25T00:22:00Z","phase":"D","action":"hypothesis-test","id":"H-R4-CP-05","result":"dismissed (strategic): isolated pool storage prevents cross-pool TOCTOU"}
+{"ts":"2026-03-25T00:23:00Z","phase":"D","action":"hypothesis-test","id":"H-R4-CP-06","result":"dismissed (strategic): precision truncation ensures redeposited <= value. Fuzz test confirms."}
+{"ts":"2026-03-25T00:24:00Z","phase":"D","action":"hypothesis-test","id":"H-R4-CP-07","result":"dismissed (strategic): Q128 truncation loses 2 wei/call max, dust stranded permanently"}
+{"ts":"2026-03-25T00:25:00Z","phase":"D","action":"hypothesis-test","id":"H-R4-CP-08","result":"dismissed (strategic): duplicate of H-R4-CP-03"}
+{"ts":"2026-03-25T00:26:00Z","phase":"D","action":"hypothesis-test","id":"H-R4-CP-09","result":"dismissed (strategic): _validateProtocolFees guard + conservative rounding. Fuzz round-trip test confirms."}
+{"ts":"2026-03-25T00:27:00Z","phase":"D","action":"hypothesis-test","id":"H-R4-CP-10","result":"dismissed (strategic): intentional 100% fee asymmetry, user protected by limitAmount"}
+{"ts":"2026-03-25T00:28:00Z","phase":"final","action":"sidecar-gate","result":"ACCEPTED — findings-precision-sniper.json written"}

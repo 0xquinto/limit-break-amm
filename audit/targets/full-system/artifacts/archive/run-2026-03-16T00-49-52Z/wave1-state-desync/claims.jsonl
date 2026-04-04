@@ -1,0 +1,29 @@
+{"type":"ruled_out","vector":"KV-1: Zero-price bypass via SqrtPriceCalculator.computeRatioX96() returning 0","reason":"computeRatioX96 returns 0 on overflow, but AMMStandardHook._validatePricingBounds (line 847) explicitly checks sqrtPriceX96 == 0 and reverts with AMMStandardHook__InvalidPrice."}
+{"type":"ruled_out","vector":"KV-2: Direct handler call bypassing pricing enforcement","reason":"CLOBTransferHandler.ammHandleTransfer requires msg.sender == AMM. Direct external call reverts."}
+{"type":"ruled_out","vector":"KV-3: Settings sync gap in CLOBTransferHandler / CreatorHookSettingsRegistry","reason":"CLOBTransferHandler reads settings from AMM via ILimitBreakAMM.getTokenSettings() on each openOrder call. Cache invalidation handled by syncTokenSettings callback."}
+{"type":"ruled_out","vector":"KV-4: Transient storage leak in DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT","reason":"beforeSwap always writes before afterSwap reads within same swap. Second direct swap in same TX overwrites slot in its own beforeSwap. Confirmed via C1 Forge test."}
+{"type":"ruled_out","vector":"Re-enter via transfer handler during swap to read stale reserves","reason":"CLOBTransferHandler has nonReentrant. AMM ENTERED bit blocks callbacks. Reserves updated atomically in _poolSwapByInput before afterSwap hooks."}
+{"type":"ruled_out","vector":"Multi-swap within hook callback overwrites transient slot mid-swap","reason":"Hook callbacks execute during AMM nonReentrant guard. Second swap attempt hits ENTERED bit and reverts. Confirmed via C2 Forge test."}
+{"type":"ruled_out","vector":"Native ETH refund during hook enables reentrancy","reason":"_depositWrappedNativeAndRefundExcess sends ETH inside nonReentrant guard. Low-level call with empty calldata gives 2300 gas. ENTERED guard blocks reentry. Confirmed via C2 extended Forge test."}
+{"type":"ruled_out","vector":"CLOB settlement callback reads AMM state before swap finalizes","reason":"ammHandleTransfer called after pool reserves updated by _poolSwapByInput. Handler uses AMM-passed parameters, not direct AMM state reads."}
+{"type":"ruled_out","vector":"Reentrancy during _executeQueuedHookFeesByHookTransfers clears guard flags","reason":"_setReentrancyFlags(NO_FLAGS) preserves ENTERED bit via mask. Token transfer callbacks face ENTERED guard. Confirmed via C10 Forge test."}
+{"type":"ruled_out","vector":"Dust-loop extraction via tiny swaps","reason":"Rounding favors protocol (mulDivRoundingUp). Each tiny swap loses dust to pool. Confirmed via Forge test: 25 round-trip swaps, no profit."}
+{"type":"ruled_out","vector":"Forged hook caller with fake pool identity","reason":"_requireCallerIsAMM checks msg.sender == AMM on all hook entry points."}
+{"type":"ruled_out","vector":"Permit mutation replay with unsigned feeOnTop","reason":"limitAmount caps total exposure. Known design property per Guardian Defender submission #8."}
+{"type":"ruled_out","vector":"Storage-slot collision across diamond proxy facets","reason":"All AMM state at Diamond slot 0x9A1D via AppStorage. Pool types use delegatecall with same layout. 6-leading-zero-byte constraint prevents address collision."}
+{"type":"test_result","test":"C1_INV_H03_transient_storage_independence","result":"pass","invariant":"Two swaps in same TX produce independent outputs"}
+{"type":"test_result","test":"C2_INV_H05_reentrancy_guard_blocks_reentry","result":"pass","invariant":"MaliciousReentrantToken reentry during swap reverts"}
+{"type":"test_result","test":"C2_INV_H05_reentrancy_via_native_refund","result":"pass","invariant":"Reentry during ETH refund reverts"}
+{"type":"test_result","test":"C3_INV_L01_liquidity_consistency","result":"pass","invariant":"Reserves change correctly after swap"}
+{"type":"test_result","test":"C4_INV_L02_liquidityNet_sum_zero","result":"pass","invariant":"Balance >= reserves after multiple adds and swaps"}
+{"type":"test_result","test":"C5_INV_L03_price_direction_consistency","result":"pass","invariant":"Price moves in correct direction per swap direction"}
+{"type":"test_result","test":"C6_INV_S01_solvency_after_swap","result":"pass","invariant":"balance >= reserve + feeBalance for both tokens"}
+{"type":"test_result","test":"C7_INV_S02_no_value_creation_round_trip","result":"pass","invariant":"Round-trip swap does not create value"}
+{"type":"test_result","test":"C8_INV_S03_withdrawal_guarantee","result":"pass","invariant":"Reserves positive and balance covers them after 20 random swaps"}
+{"type":"test_result","test":"C9_INV_E02_no_flash_loan_profit","result":"pass","invariant":"Flash loan + swap cycle does not profit attacker"}
+{"type":"test_result","test":"C10_reentrancy_all_entry_points","result":"pass","invariant":"Reentrancy from malicious token during fee distribution blocked"}
+{"type":"test_result","test":"C12_no_value_leak_native_refund","result":"pass","invariant":"No raw ETH stuck in AMM after wrapped native pool operations"}
+{"type":"test_result","test":"C13_multiSwap_two_pools","result":"pass","invariant":"Multi-pool swap produces correct output and balance change"}
+{"type":"test_result","test":"C14_addLiquidity_then_swap_same_tx","result":"pass","invariant":"addLiquidity + immediate swap in same TX works correctly"}
+{"type":"test_result","test":"C15_cross_pool_no_value_leak","result":"pass","invariant":"Cross-pool arbitrage does not profit due to fees"}
+{"type":"test_result","test":"C16_flash_loan_swap_round_trip","result":"pass","invariant":"Flash loan + large swap + reverse swap loses money"}

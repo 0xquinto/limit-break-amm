@@ -1,0 +1,445 @@
+{
+  "agent_name": "extension-hijacker",
+  "agent_role": "extension-hijacker",
+  "wave": 1,
+  "findings": [],
+  "ruled_out_vectors": [
+    {
+      "vector": "Malicious pool type returns inflated amountOut to steal from LPs",
+      "why_ruled_out": "Core validates: L1405 actualAmountIn <= originalAmountIn, _safeDecrementUint128 output <= reserves, L2208 balance check. Three independent guards prevent extraction.",
+      "test_file": "lbamm-core/test/AuditExtensionHijackerWave1.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_poolSwapByInput()",
+        "_poolSwapByOutput()",
+        "_finalizeSwapCollectFundsAndDisburse()"
+      ],
+      "keywords": [
+        "pool-type",
+        "amountOut",
+        "inflation",
+        "reserves"
+      ]
+    },
+    {
+      "vector": "Malicious transfer handler skips actual token transfer",
+      "why_ruled_out": "Core verifies actual balance change at L2208: balanceInBefore + amountIn != balanceInAfter triggers revert. Handler cannot lie about token transfers.",
+      "test_file": "lbamm-core/test/AuditExtensionHijackerWave1.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_finalizeSwapCollectFundsAndDisburse()"
+      ],
+      "keywords": [
+        "transfer-handler",
+        "balance-check",
+        "settlement"
+      ]
+    },
+    {
+      "vector": "Malicious hook returns inflated fee to extract from swappers",
+      "why_ruled_out": "Hook fees are BPS-based (fee = amount * feeBPS / 10000), bounded by MAX_BPS. Hooks are set by token owners via setTokenSettings. Third parties cannot install malicious hooks. Self-inflicted high fees = by-design.",
+      "test_file": "lbamm-core/test/AuditExtensionHijackerWave1.t.sol",
+      "repos": [
+        "lbamm-core",
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMModule.sol",
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "_executeBeforeSwapHooks()",
+        "_executeAfterSwapHooks()",
+        "beforeSwap()",
+        "afterSwap()"
+      ],
+      "keywords": [
+        "hook-fee",
+        "bps",
+        "manipulation"
+      ]
+    },
+    {
+      "vector": "Pool type address collision via 6-leading-zero-bytes address",
+      "why_ruled_out": "Pool IDs include pool type address. createPool checks poolInitialized[poolId] for duplicates. Different pool type addresses => different poolIds. No collision risk.",
+      "test_file": "lbamm-core/test/AuditExtensionHijackerWave1.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol",
+        "PoolDecoder.sol"
+      ],
+      "functions": [
+        "_createPool()",
+        "getPoolType()"
+      ],
+      "keywords": [
+        "pool-type",
+        "address-collision",
+        "leading-zeros"
+      ]
+    },
+    {
+      "vector": "UUPS/beacon implementation takeover before initializer",
+      "why_ruled_out": "SecureProxy uses custom pattern (not UUPS/beacon). secureUpgrade requires SECURE_PROXY_ADMIN_ROLE + TIER_ADMIN pause. Constructor atomically initializes.",
+      "test_file": "code-analysis: SecureProxy.sol:184-192",
+      "repos": [
+        "secure-proxy"
+      ],
+      "contracts": [
+        "SecureProxy.sol"
+      ],
+      "functions": [
+        "secureUpgrade()"
+      ],
+      "keywords": [
+        "proxy",
+        "upgrade",
+        "initialization"
+      ]
+    },
+    {
+      "vector": "Diamond selector collision \u2014 malicious pool type selector collides with admin function",
+      "why_ruled_out": "LimitBreakAMM uses explicit delegation (delegateCallPure per function), NOT selector-based routing. Pool types are called via external call, not through diamond proxy.",
+      "test_file": "lbamm-core/test/AuditExtensionHijackerWave1.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "LimitBreakAMM.sol"
+      ],
+      "functions": [
+        "singleSwap()",
+        "multiSwap()",
+        "directSwap()"
+      ],
+      "keywords": [
+        "diamond",
+        "selector",
+        "collision",
+        "facet"
+      ]
+    },
+    {
+      "vector": "CREATE2 redeploy different code at trusted pool type address",
+      "why_ruled_out": "Pool types are stateless computation contracts \u2014 they don't hold funds. Pool state is in AMM diamond storage. Redeploying at a pool type address could affect new pools but not extract from existing ones.",
+      "test_file": "code-analysis: AMMModule.sol:1389,1548 (external call to pool type, state in diamond storage)",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_poolSwapByInput()",
+        "_poolSwapByOutput()"
+      ],
+      "keywords": [
+        "create2",
+        "redeploy",
+        "pool-type"
+      ]
+    },
+    {
+      "vector": "Malicious facet writes to shared diamond storage slot",
+      "why_ruled_out": "Pool types are called via CALL (not delegatecall) \u2014 they CANNOT write to AMM storage. Only ModuleLiquidity/ModuleAdmin/ModuleFeeCollection use delegatecall and are admin-deployed.",
+      "test_file": "code-analysis: AMMModule.sol:1389 (ILimitBreakAMMPoolType(...).swapByInput = external call)",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_poolSwapByInput()",
+        "_poolSwapByOutput()"
+      ],
+      "keywords": [
+        "delegatecall",
+        "storage-slot",
+        "diamond"
+      ]
+    },
+    {
+      "vector": "Bypass facet management to add malicious facet without governance",
+      "why_ruled_out": "SecureProxy has no dynamic facet addition (no diamond cut). Implementation set atomically via secureUpgrade (requires SECURE_PROXY_ADMIN_ROLE + full pause).",
+      "test_file": "code-analysis: SecureProxy.sol:184-192",
+      "repos": [
+        "secure-proxy"
+      ],
+      "contracts": [
+        "SecureProxy.sol"
+      ],
+      "functions": [
+        "secureUpgrade()"
+      ],
+      "keywords": [
+        "facet",
+        "governance",
+        "upgrade"
+      ]
+    },
+    {
+      "vector": "Reentrancy during hook fee distribution (flags cleared at L3190)",
+      "why_ruled_out": "_setReentrancyFlags(NO_FLAGS) preserves ENTERED bit (TstorishReentrancyGuardWithFlags.sol:69-71). Custom flags cleared but ENTERED guard remains. Reentrant calls to swap/liquidity functions revert.",
+      "test_file": "code-analysis: TstorishReentrancyGuardWithFlags.sol:68-72,78-86",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol",
+        "TstorishReentrancyGuardWithFlags.sol"
+      ],
+      "functions": [
+        "_executeQueuedHookFeesByHookTransfers()",
+        "_setReentrancyFlags()"
+      ],
+      "keywords": [
+        "reentrancy",
+        "hook-fees",
+        "transient-storage"
+      ]
+    },
+    {
+      "vector": "Transient storage cross-path \u2014 DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT read by addLiquidity",
+      "why_ruled_out": "Only read site is afterSwap direct path in _validatePricingBounds. validateAddLiquidity uses getCurrentPriceX96 (pool type external call, not transient). Reentrancy guard prevents concurrent operations.",
+      "test_file": "lbamm-core/test/AuditExtensionHijackerWave1.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "_validatePricingBounds()",
+        "validateAddLiquidity()"
+      ],
+      "keywords": [
+        "transient-storage",
+        "cross-path",
+        "direct-swap"
+      ]
+    },
+    {
+      "vector": "Hook/pool accounting desync (Bunni $8.3M pattern) \u2014 beforeSwap state persists after afterSwap revert",
+      "why_ruled_out": "AMMStandardHook has NO internal balance accounting. beforeSwap/afterSwap only validate trading rules and compute fees (pure BPS). No state changes that could desync. EVM atomicity: if afterSwap reverts, entire swap reverts.",
+      "test_file": "lbamm-core/test/AuditExtensionHijackerWave1.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "beforeSwap()",
+        "afterSwap()"
+      ],
+      "keywords": [
+        "bunni",
+        "accounting-desync",
+        "hook"
+      ]
+    },
+    {
+      "vector": "Transfer handler callback post-balance-check manipulation",
+      "why_ruled_out": "_executeTransferHandlerCallback runs AFTER balance check (L2208) and output disbursement (L2235-2244). CLOBTransferHandler.afterSwapRefund only transfers CLOB's own tokens to executor, checks msg.sender==AMM. Reentrancy guard active. Cannot manipulate AMM state.",
+      "test_file": "lbamm-core/test/AuditExtensionHijackerWave1.t.sol",
+      "repos": [
+        "lbamm-core",
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMModule.sol",
+        "CLOBTransferHandler.sol"
+      ],
+      "functions": [
+        "_finalizeSwapCollectFundsAndDisburse()",
+        "_executeTransferHandlerCallback()",
+        "afterSwapRefund()"
+      ],
+      "keywords": [
+        "callback",
+        "transfer-handler",
+        "post-settlement"
+      ]
+    },
+    {
+      "vector": "Operator precedence in registryUpdatePricingBounds silently disables min-only bounds",
+      "why_ruled_out": "AMMStandardHook.sol:567 `minSqrtPriceX96 | maxSqrtPriceX96 == 0` has precedence issue (== binds tighter than |). When max=0 (min-only bound), expression evaluates as `min | 1 = truthy` entering unset branch. But: only callable by registry (token owner), informational self-configuration issue, not exploitable by third parties.",
+      "test_file": "lbamm-core/test/AuditExtensionHijackerWave1.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "registryUpdatePricingBounds()"
+      ],
+      "keywords": [
+        "operator-precedence",
+        "pricing-bounds",
+        "configuration"
+      ]
+    },
+    {
+      "vector": "Fee collection cross-contamination between hook-managed and token-managed pools",
+      "why_ruled_out": "Hook-managed fees use key hash(hookAddress, hash(tokenFor, tokenFee)). Token-managed fees use key hash(TOKEN_MANAGED_HOOK_FEE, hash(tokenFor, tokenFee)). collectHookFeesByHook requires msg.sender==hook. collectHookFeesByToken requires token owner role. Different keys prevent cross-pool access.",
+      "test_file": "lbamm-core/test/AuditExtensionHijackerWave1.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "ModuleFeeCollection.sol",
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "collectHookFeesByHook()",
+        "collectHookFeesByToken()",
+        "_storeHookFees()",
+        "_transferHookFeesByHook()"
+      ],
+      "keywords": [
+        "fee-collection",
+        "access-control",
+        "hook-managed",
+        "token-managed"
+      ]
+    }
+  ],
+  "theft_theses": [
+    {
+      "thesis": "Malicious pool type returns inflated amounts to drain pool reserves",
+      "victim": "LPs in pool using malicious pool type",
+      "asset": "LP deposited tokens",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Malicious transfer handler claims transfer occurred without moving tokens",
+      "victim": "Swap counterparty",
+      "asset": "Swap output tokens",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Malicious hook inflates fees to extract from every swap",
+      "victim": "Swappers using pools with hooked tokens",
+      "asset": "Input/output swap tokens",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Reentrancy during hook fee distribution bypasses guards",
+      "victim": "Protocol/LPs",
+      "asset": "Fee tokens during distribution",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Diamond selector collision allows attacker to execute admin functions via pool type",
+      "victim": "Protocol",
+      "asset": "All protocol funds",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Proxy implementation takeover enables total drain",
+      "victim": "All protocol users",
+      "asset": "All protocol funds",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Cross-path transient storage read enables pricing manipulation",
+      "victim": "Swappers",
+      "asset": "Swap output",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Hook accounting desync after revert enables double-counting",
+      "victim": "LPs/Swappers",
+      "asset": "Pool reserves",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "CREATE2 redeploy pool type with malicious code",
+      "victim": "Pool users",
+      "asset": "Pool reserves",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    }
+  ],
+  "metadata": {
+    "checklist_items_completed": "A: 4/4, B: 5/5, C: 18/18, D: 9/9",
+    "tools_run": {
+      "slither": {
+        "ran": true,
+        "repos": [
+          "lbamm-core",
+          "lbamm-hooks-and-handlers",
+          "secure-proxy"
+        ],
+        "note": "High: 8+5+0=13, Medium: 22+30+1=53. Mostly FPs from diamond proxy patterns and intentional uninitialized-to-zero."
+      },
+      "aderyn": {
+        "ran": true,
+        "repos": [
+          "lbamm-core",
+          "secure-proxy"
+        ],
+        "note": "lbamm-core: H:1 L:9. lbamm-hooks-and-handlers: crashed (known v0.6.8 bug). secure-proxy: minimal."
+      },
+      "forge": {
+        "ran": true,
+        "note": "21 tests in AuditExtensionHijackerWave1.t.sol, 31 tests total (including inherited base). All passed. File: lbamm-core/test/AuditExtensionHijackerWave1.t.sol"
+      },
+      "halmos": {
+        "ran": true,
+        "note": "2 symbolic checks in HalmosExtHijacker.t.sol: check_C16_directSwapAlwaysEnforcesBounds (9 paths, PASS), check_C16_poolSwapEnforcesBoundsInDirection (15 paths, PASS). File: lbamm-hooks-and-handlers/test/HalmosExtHijacker.t.sol"
+      },
+      "medusa": {
+        "ran": true,
+        "note": "AMMStandardHook: 153K calls, 0 failures. SingleProviderPoolType: 297K calls, 0 failures."
+      },
+      "audit-context-building": {
+        "ran": true,
+        "note": "Deep context building on AMMModule settlement flow (_finalizeSwapCollectFundsAndDisburse L2144-2253), hook fee paths (_applySwapByInputInputFees L2598-2677, _applySwapByInputOutputFees L2699-2743, _applySwapByOutputInputFees L2766-2830), fee collection (ModuleFeeCollection), transfer handler callback pattern (CLOBTransferHandler.afterSwapRefund), reentrancy guard mechanics (TstorishReentrancyGuardWithFlags). Block-by-block micro-analysis applied to critical trust boundaries."
+      },
+      "entry-point-analyzer": {
+        "ran": true,
+        "note": "Slither list_functions on AMMModule (2 external), LimitBreakAMM (63 total, ~20 state-changing), AMMStandardHook (38 total). Classified: Public (singleSwap, multiSwap, directSwap, createPool, addLiquidity, removeLiquidity, flashLoan), Role-restricted (setProtocolFees, setTokenSettings, etc.), Contract-only (executeQueuedHookFeesByHookTransfers - self-call only, beforeSwap/afterSwap - AMM only, registry* functions - registry only)."
+      }
+    },
+    "num_turns": 55,
+    "tool_uses": 25,
+    "files_read": 22,
+    "theses_tested": 12,
+    "theses_confirmed": 0,
+    "theses_ruled_out": 12,
+    "triage_log": {
+      "skip": 0,
+      "borderline": 3,
+      "survive": 12
+    },
+    "lens_coverage": {
+      "lens1_value_tracing": "Traced fee computation through all four fee paths: _applySwapByInputInputFees (input token hook fees on input), _applySwapByInputOutputFees (output token hook fees on output), _applySwapByOutputInputFees (hook fees added to input for output-based), _applySwapByOutputOutputFees (hook fees added to output for output-based). Verified token_used_in_transfer == token_used_in_computation for all paths. Pool types return fees in input token denomination, transferred in same denomination. Fee collection keys (hook-managed vs token-managed) correctly partition storage.",
+      "lens2_paired_op_diffing": "Compared addLiquidity vs removeLiquidity hook validation. Both call same access control pattern (_requireCallerIsAMM). validateRemoveLiquidity is pure (no state changes). validateCollectFees always reverts (no fee collection hooks). No asymmetries found. Compared collectHookFeesByHook vs collectHookFeesByToken: different key derivation (hook address vs TOKEN_MANAGED_HOOK_FEE sentinel), different access control (msg.sender==hook vs token owner role), no cross-contamination.",
+      "lens3_amplification": "No denomination mismatch found. All fee/amount values traced from computation to consumption use consistent token denomination. Transfer handler callback (afterSwapRefund) only transfers handler's own tokens, cannot amplify. Hook fee queue uses transient storage with deterministic slot calculation, no amplification possible."
+    },
+    "gate_passed": true
+  }
+}

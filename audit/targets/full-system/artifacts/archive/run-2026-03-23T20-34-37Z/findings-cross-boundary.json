@@ -1,0 +1,588 @@
+{
+  "agent_name": "cross-boundary",
+  "agent_role": "cross-boundary",
+  "wave": 1,
+  "findings": [],
+  "ruled_out_vectors": [
+    {
+      "vector": "Operator precedence: deposit0 | deposit1 == 0 in ModuleLiquidity.createPool",
+      "why_ruled_out": "Solidity 0.8.24 | has HIGHER precedence than ==, so expression parses as (deposit0 | deposit1) == 0 which is correct. Forge test confirms.",
+      "test_file": "lbamm-core/test/audit/CrossBoundaryAudit.t.sol::test_operatorPrecedence_bitwiseOrHigherThanEquals",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "ModuleLiquidity.sol"
+      ],
+      "functions": [
+        "createPoolAndAddLiquidity()"
+      ],
+      "keywords": [
+        "operator-precedence",
+        "bitwise-or"
+      ]
+    },
+    {
+      "vector": "Operator precedence: minSqrtPriceX96 | maxSqrtPriceX96 == 0 in AMMStandardHook",
+      "why_ruled_out": "Same Solidity 0.8.24 precedence rule. | > == so expression is correct. Forge test confirms.",
+      "test_file": "lbamm-core/test/audit/CrossBoundaryAudit.t.sol::test_operatorPrecedence_pricingBounds",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "registryUpdatePricingBounds()"
+      ],
+      "keywords": [
+        "operator-precedence",
+        "bitwise-or"
+      ]
+    },
+    {
+      "vector": "Non-token hook fee key mismatch between _storeNonTokenHookFees and _transferHookFeesByHook",
+      "why_ruled_out": "By-design: non-token hooks store fees keyed by (tokenFor, tokenFor). Collection must use same key. API is misleading but not externally exploitable.",
+      "test_file": "lbamm-core/test/audit/CrossBoundaryAudit.t.sol::test_feeKeyConstants_noCollision",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_storeNonTokenHookFees()",
+        "_transferHookFeesByHook()"
+      ],
+      "keywords": [
+        "hook-fee",
+        "key-mismatch",
+        "api-footgun"
+      ]
+    },
+    {
+      "vector": "Reentrancy during _executeQueuedHookFeesByHookTransfers via ERC-777 callback",
+      "why_ruled_out": "Requires ERC-777 token + custom hook. ENTERED bit prevents re-entering swap/liquidity. Double-claiming causes underflow. Self-inflicted by hook. Tier B prerequisite.",
+      "test_file": "lbamm-core/test/audit/CrossBoundaryAudit.t.sol::test_reentrancyFlagBits_noOverlap",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol",
+        "ModuleFeeCollection.sol"
+      ],
+      "functions": [
+        "_executeQueuedHookFeesByHookTransfers()",
+        "collectHookFeesByHook()"
+      ],
+      "keywords": [
+        "reentrancy",
+        "erc777",
+        "hook-fee"
+      ]
+    },
+    {
+      "vector": "afterSwap-only direct swap DoS when beforeSwap disabled",
+      "why_ruled_out": "Self-inflicted config: token admin controls their own flags. Only affects direct swaps. Admin can fix by enabling beforeSwap or removing bounds. FP pattern #4.",
+      "test_file": "code-analysis: AMMStandardHook.sol:838-847 (self-inflicted config, no test needed)",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "_validatePricingBounds()"
+      ],
+      "keywords": [
+        "direct-swap",
+        "pricing-bounds",
+        "config-error"
+      ]
+    },
+    {
+      "vector": "beforeSwap-only direct swap bounds bypass (HOOK-001 variant)",
+      "why_ruled_out": "Known CP-001 pattern. Token admin configures beforeSwap=ON, afterSwap=OFF. Self-inflicted. Already documented.",
+      "test_file": "code-analysis: AMMStandardHook.sol:838-840 (known issue CP-001, no test needed)",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "_validatePricingBounds()"
+      ],
+      "keywords": [
+        "pricing-bounds",
+        "transient-storage",
+        "CP-001"
+      ]
+    },
+    {
+      "vector": "Core->PoolType: pool type returns amountOut > actual tokens (C5)",
+      "why_ruled_out": "Core validates: actualAmountIn != 0, actualAmountIn <= originalAmountIn (revert at L1402), actualAmountOut <= originalAmountOut (revert at L1562). Reserve updates use _safeDecrementUint128.",
+      "test_file": "lbamm-core/test/audit/CrossBoundaryAudit.t.sol::test_poolTypeReturnValidation_amountInBounds",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_poolSwapByInput()",
+        "_poolSwapByOutput()"
+      ],
+      "keywords": [
+        "pool-type-trust",
+        "return-value-validation"
+      ]
+    },
+    {
+      "vector": "Core->Handler: settlement conservation (C8)",
+      "why_ruled_out": "Core uses strict balance-before/after check: balanceInBefore + amountIn != balanceInAfter -> revert. Handler must deliver exact amount.",
+      "test_file": "lbamm-core/test/audit/CrossBoundaryAudit.t.sol::test_settlementConservation_balanceCheck",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_finalizeSwapCollectFundsAndDisburse()"
+      ],
+      "keywords": [
+        "settlement",
+        "balance-check",
+        "handler"
+      ]
+    },
+    {
+      "vector": "Settings change between beforeSwap and afterSwap (C4)",
+      "why_ruled_out": "setTokenSettings uses nonReentrant modifier (L272). Cannot change settings during an active swap. Reentrancy flag bits verified non-overlapping.",
+      "test_file": "lbamm-core/test/audit/CrossBoundaryAudit.t.sol::test_reentrancyFlagBits_noOverlap",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "ModuleAdmin.sol"
+      ],
+      "functions": [
+        "setTokenSettings()"
+      ],
+      "keywords": [
+        "settings-change",
+        "mid-swap",
+        "reentrancy"
+      ]
+    },
+    {
+      "vector": "Pool ID collision between different pool types (C13)",
+      "why_ruled_out": "Pool type address encoded in bits 144-255 of poolId. Different pool types produce different poolIds. poolInitialized[] prevents duplicates.",
+      "test_file": "lbamm-core/test/audit/CrossBoundaryAudit.t.sol::test_poolIdCollision_differentPoolTypes",
+      "repos": [
+        "lbamm-core",
+        "amm-pool-type-dynamic"
+      ],
+      "contracts": [
+        "DynamicPoolType.sol",
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_generatePoolId()",
+        "_createPool()"
+      ],
+      "keywords": [
+        "pool-id",
+        "collision",
+        "hash"
+      ]
+    },
+    {
+      "vector": "Diamond storage slot collisions across facets (C15)",
+      "why_ruled_out": "All facets (AMMModule, ModuleAdmin, ModuleFeeCollection, ModuleLiquidity) report 0 own storage slots. All use diamond storage at DIAMOND_STORAGE_LBAMM_VAULT (0x9A1D). Queued fee collect at separate slot.",
+      "test_file": "lbamm-core/test/audit/CrossBoundaryAudit.t.sol::test_diamondStorageNoOverlap",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "Storage.sol",
+        "AMMModule.sol",
+        "ModuleAdmin.sol"
+      ],
+      "functions": [
+        "appStorage()"
+      ],
+      "keywords": [
+        "diamond-storage",
+        "slot-collision"
+      ]
+    },
+    {
+      "vector": "Diamond selector collision across facets (C20)",
+      "why_ruled_out": "Computed 4-byte selectors for all external/public functions across AMMModule, ModuleAdmin, ModuleFeeCollection, ModuleLiquidity. All unique. No collision with pool type selectors either.",
+      "test_file": "lbamm-core/test/audit/CrossBoundaryAudit.t.sol::test_selectorCollision_adminVsFeeCollection",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol",
+        "ModuleAdmin.sol",
+        "ModuleFeeCollection.sol"
+      ],
+      "functions": [
+        "all external/public"
+      ],
+      "keywords": [
+        "selector-collision",
+        "diamond-proxy"
+      ]
+    },
+    {
+      "vector": "Transient storage cross-path confusion (C21)",
+      "why_ruled_out": "DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT only used in _validatePricingBounds for direct swaps. Not read by addLiquidity, removeLiquidity, or collectFees paths. No cross-operation-type confusion.",
+      "test_file": "code-analysis: AMMStandardHook.sol:66,839,843-844 (tstore slot usage is single-path, no cross-path test needed)",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "_validatePricingBounds()"
+      ],
+      "keywords": [
+        "transient-storage",
+        "cross-path"
+      ]
+    },
+    {
+      "vector": "Hook/pool accounting desync after revert - Bunni pattern (C19)",
+      "why_ruled_out": "Entire swap is atomic. If afterSwap reverts, beforeSwap state changes are also rolled back. No partial state persistence possible in Solidity's execution model.",
+      "test_file": "code-analysis: AMMModule.sol:1372-1445 (EVM atomicity guarantee, no test needed)",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_poolSwapByInput()"
+      ],
+      "keywords": [
+        "accounting-desync",
+        "revert",
+        "atomic"
+      ]
+    },
+    {
+      "vector": "Hook return value manipulation - Uni V4 vectors (C22)",
+      "why_ruled_out": "Hooks can only return fee amounts (uint256). Fee bounded by swap amount at _applySwapByInputInputFees L2616. No swap parameter override capability unlike Uni V4.",
+      "test_file": "lbamm-core/test/audit/CrossBoundaryAudit.t.sol::test_hookFeeBoundedBySwapAmount",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_executeSwapHook()",
+        "_applySwapByInputInputFees()"
+      ],
+      "keywords": [
+        "hook-return",
+        "fee-manipulation"
+      ]
+    },
+    {
+      "vector": "Pool fee hook sees underflowed amount due to unchecked subtract (H-R2-DP-01)",
+      "why_ruled_out": "Admin-gated: requires malicious token hook (set by token admin) AND stateful pool hook. Swap reverts anyway at fee check. No value extraction.",
+      "test_file": "code-analysis: AMMModule.sol:1752-1758 (admin-gated, no external attacker path)",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_executePoolFeeHook()"
+      ],
+      "keywords": [
+        "underflow",
+        "hook-fee",
+        "admin-gated"
+      ]
+    },
+    {
+      "vector": "Flags cleared after executeQueuedHookFeesByHookTransfers (H-R2-DP-07)",
+      "why_ruled_out": "ENTERED bit remains set preventing re-entry into nonReentrant functions. Flag window is transient - _nonReentrantAfter restores NOT_ENTERED. No external function reads operation flags during this window.",
+      "test_file": "lbamm-core/test/audit/CrossBoundaryAudit.t.sol::test_reentrancyFlagBits_noOverlap",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_executeQueuedHookFeesByHookTransfers()"
+      ],
+      "keywords": [
+        "reentrancy-flags",
+        "transient-window"
+      ]
+    },
+    {
+      "vector": "Fee shortage amplification with extreme fees (H-R2-DP-06/H-R2-DP-10)",
+      "why_ruled_out": "Input path: denominator=DOUBLE_BPS-poolFeeBPS*lpFeeBPS. At max valid values (poolFee=10000, lpFee=10000), denominator=0 but this combination makes expectedProtocolLPFee >= minimumProtocolFee so shortage branch never entered. Output path: denominator=MAX_BPS-hopFeeBPS, min=1 (hopFee max 9999). Amplification bounded ~10000x but limitAmount catches overpayment.",
+      "test_file": "lbamm-core/test/audit/CrossBoundaryAudit.t.sol::test_feeShortageAmplification_denominatorSafe",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_applySwapByInputInputFees()",
+        "_applySwapByOutputInputFees()"
+      ],
+      "keywords": [
+        "fee-amplification",
+        "shortage",
+        "admin-gated"
+      ]
+    },
+    {
+      "vector": "Protocol fee rounding accumulation drains reserves (H-R2-DP-05)",
+      "why_ruled_out": "mulDivRoundingUp used for protocolFeeFromInput may overshoot by 1 wei per swap. But total protocol fees are bounded by actual input collected (balance-checked at settlement). The rounding error per swap is at most 1 wei.",
+      "test_file": "lbamm-core/test/audit/CrossBoundaryAudit.t.sol::test_settlementConservation_balanceCheck",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol",
+        "ModuleAdmin.sol"
+      ],
+      "functions": [
+        "_applySwapByInputInputFees()",
+        "collectProtocolFees()"
+      ],
+      "keywords": [
+        "rounding",
+        "protocol-fee",
+        "reserve-drain"
+      ]
+    },
+    {
+      "vector": "SSTORE fallback stale pricing bounds (H-R2-TS-01)",
+      "why_ruled_out": "Only affects chains where tstore is not supported (SSTORE fallback path). On cancun EVM (target chain), tstore is used and auto-clears at tx end. Even on SSTORE fallback, this is a variant of known CP-001 with same self-inflicted config prerequisite.",
+      "test_file": "code-analysis: AMMStandardHook.sol:839,953 (non-cancun chain issue, out of scope for target)",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "_validatePricingBounds()",
+        "__activateTstore()"
+      ],
+      "keywords": [
+        "transient-storage",
+        "sstore-fallback",
+        "stale-data",
+        "CP-001"
+      ]
+    }
+  ],
+  "theft_theses": [
+    {
+      "thesis": "Pool type returns inflated amountOut to credit user more than received",
+      "victim": "LP (reserves drained)",
+      "asset": "Pool reserves",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Transfer handler steals from settlement by under-delivering tokens",
+      "victim": "AMM (balance mismatch)",
+      "asset": "Input tokens",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Hook fee callback returns manipulated fee to extract non-existent tokens",
+      "victim": "AMM reserves",
+      "asset": "Fee tokens",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Fee shortage amplification steals from swappers via inflated amountIn",
+      "victim": "Swapper (output-based swap)",
+      "asset": "Input tokens",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Protocol fee rounding accumulation enables reserve drain via collectProtocolFees",
+      "victim": "LPs (unable to withdraw)",
+      "asset": "Pool reserves",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Reentrancy via ERC-777 during queued hook fee transfer enables double-claiming",
+      "victim": "AMM (hook fee pool)",
+      "asset": "Hook fee tokens",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    }
+  ],
+  "hypothesis_results": [
+    {
+      "id": "H-R2-DP-03",
+      "status": "dismissed",
+      "test_file": "lbamm-core/test/audit/CrossBoundaryAudit.t.sol::test_reentrancyFlagBits_noOverlap",
+      "detail": "Requires ERC-777 + custom hook (Tier B). ENTERED bit blocks meaningful re-entry."
+    },
+    {
+      "id": "H-R2-DP-09",
+      "status": "dismissed",
+      "test_file": "lbamm-core/test/audit/CrossBoundaryAudit.t.sol::test_operatorPrecedence_bitwiseOrHigherThanEquals",
+      "detail": "Solidity 0.8.24 | > == precedence is correct. Forge test proves (a | b) == 0 is the parse."
+    },
+    {
+      "id": "H-R2-TS-02",
+      "status": "dismissed",
+      "test_file": "code-analysis: AMMStandardHook.sol:838-847 (self-inflicted config)",
+      "detail": "Self-inflicted config. Token admin controls their own flags. FP pattern #4."
+    },
+    {
+      "id": "H-R2-TS-03",
+      "status": "dismissed",
+      "test_file": "lbamm-core/test/audit/CrossBoundaryAudit.t.sol::test_operatorPrecedence_bitwiseOrHigherThanEquals",
+      "detail": "Same precedence rule. | > == in Solidity 0.8.24."
+    },
+    {
+      "id": "H-R2-TS-08",
+      "status": "dismissed",
+      "test_file": "lbamm-core/test/audit/CrossBoundaryAudit.t.sol::test_operatorPrecedence_pricingBounds",
+      "detail": "Same precedence rule. | > == in Solidity 0.8.24."
+    },
+    {
+      "id": "H-R2-HH-01",
+      "status": "dismissed",
+      "test_file": "code-analysis: CLOBTransferHandler.sol:590, AMMStandardHook.sol:215 (1 wei dust, not exploitable)",
+      "detail": "Rounding divergence exists but is at most 1 wei. Cannot bypass bounds by more than dust."
+    },
+    {
+      "id": "H-R2-HH-05",
+      "status": "dismissed",
+      "test_file": "code-analysis: AMMStandardHook.sol:212-215 (convention consistent)",
+      "detail": "Price convention is consistent: amount0/amount1 ordering follows tokenIn<tokenOut regardless of hook direction."
+    },
+    {
+      "id": "H-R2-HH-08",
+      "status": "dismissed",
+      "test_file": "code-analysis: AMMStandardHook.sol:838-840 (known CP-001)",
+      "detail": "Known CP-001 variant. Self-inflicted by token admin."
+    },
+    {
+      "id": "H-R2-DP-01",
+      "status": "dismissed",
+      "test_file": "code-analysis: AMMModule.sol:1752-1758 (admin-gated)",
+      "detail": "Underflow exists but admin-gated. Swap reverts at fee check. Pool hook side effects don't affect AMM state."
+    },
+    {
+      "id": "H-R2-DP-02",
+      "status": "dismissed",
+      "test_file": "lbamm-core/test/audit/CrossBoundaryAudit.t.sol::test_feeKeyConstants_noCollision",
+      "detail": "API footgun not exploitable by external attackers. Hook must know tokenFor==tokenFee convention."
+    },
+    {
+      "id": "H-R2-DP-05",
+      "status": "dismissed",
+      "test_file": "lbamm-core/test/audit/CrossBoundaryAudit.t.sol::test_settlementConservation_balanceCheck",
+      "detail": "Rounding error at most 1 wei per swap. Balance-checked settlement prevents exceeding actual tokens collected."
+    },
+    {
+      "id": "H-R2-DP-06",
+      "status": "dismissed",
+      "test_file": "lbamm-core/test/audit/CrossBoundaryAudit.t.sol::test_feeShortageAmplification_denominatorSafe",
+      "detail": "Division-by-zero unreachable: when poolFee*lpFee=DOUBLE_BPS, expectedProtocolLPFee >= minimumProtocolFee so shortage branch skipped."
+    },
+    {
+      "id": "H-R2-DP-07",
+      "status": "dismissed",
+      "test_file": "lbamm-core/test/audit/CrossBoundaryAudit.t.sol::test_reentrancyFlagBits_noOverlap",
+      "detail": "ENTERED bit persists, blocking re-entry. Flag window transient, no exploitable code path."
+    },
+    {
+      "id": "H-R2-DP-10",
+      "status": "dismissed",
+      "test_file": "lbamm-core/test/audit/CrossBoundaryAudit.t.sol::test_feeShortageAmplification_outputPathBounded",
+      "detail": "Max amplification ~10000x but admin-gated (hopFee=9999). limitAmount check catches overpayment."
+    },
+    {
+      "id": "H-R2-TS-01",
+      "status": "dismissed",
+      "test_file": "code-analysis: AMMStandardHook.sol:839,953 (non-cancun, out of scope)",
+      "detail": "Only affects SSTORE fallback (non-cancun chains). Target is cancun EVM. Known CP-001 variant."
+    }
+  ],
+  "metadata": {
+    "checklist_items_completed": "A: 5/5, B: 3/5, C: 18/18, D: 15/15",
+    "tools_run": {
+      "slither": {
+        "ran": true,
+        "repos": [
+          "lbamm-core",
+          "lbamm-hooks-and-handlers",
+          "amm-pool-type-dynamic",
+          "lbamm-pool-type-fixed",
+          "lbamm-pool-type-single-provider"
+        ],
+        "note": "High/Medium detectors on all 5 repos. Known patterns: arbitrary-send-erc20, reentrancy-balance, divide-before-multiply (TickMath). No new cross-boundary issues."
+      },
+      "aderyn": {
+        "ran": true,
+        "repos": [
+          "lbamm-hooks-and-handlers"
+        ],
+        "note": "Crashed on lbamm-hooks-and-handlers with 'Fatal compiler bug! content not found'. Aderyn v0.6.8 known issue."
+      },
+      "forge": {
+        "ran": true,
+        "note": "18 tests total. File: lbamm-core/test/audit/CrossBoundaryAudit.t.sol"
+      },
+      "halmos": {
+        "ran": true,
+        "note": "0 check functions found. AMMStandardHook is not a test contract and has no check_* symbolic test functions."
+      },
+      "medusa": {
+        "ran": true,
+        "note": "10000 calls per target, 0 failures. AMMStandardHook: 19 property tests passed. SingleProviderPoolType: 11 property tests passed."
+      },
+      "audit-context-building": {
+        "ran": true,
+        "note": "Deep context built via line-by-line analysis of AMMModule.sol (swap paths, fee logic, settlement, hooks), ModuleAdmin.sol (access control), ModuleFeeCollection.sol (fee collection guards), all pool types, both handlers, AMMStandardHook. 45+ files across 6 repos. Trust boundaries mapped: Core<->PoolType, Core<->Handler, Core<->Hook."
+      },
+      "entry-point-analyzer": {
+        "ran": true,
+        "note": "State-changing entry points mapped via Slither list_functions on all 4 facets (AMMModule, ModuleAdmin, ModuleFeeCollection, ModuleLiquidity) plus all pool types and handlers. Public: swap, addLiquidity, removeLiquidity, flashLoan, createPool. Role-restricted: setProtocolFees (FEE_MANAGER), setTokenSettings/setTokenFees (token admin). Contract-only: ammHandleTransfer, callbacks."
+      }
+    },
+    "num_turns": 180,
+    "tool_uses": 55,
+    "files_read": 45,
+    "theses_tested": 15,
+    "theses_confirmed": 0,
+    "theses_ruled_out": 15,
+    "triage_log": {
+      "skip": 7,
+      "borderline": 8,
+      "survive": 0
+    },
+    "gate_passed": true
+  }
+}

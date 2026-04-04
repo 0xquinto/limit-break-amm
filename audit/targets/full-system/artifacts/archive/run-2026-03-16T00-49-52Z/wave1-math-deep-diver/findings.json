@@ -1,0 +1,157 @@
+{
+  "agent_name": "math-deep-diver",
+  "agent_role": "Math Deep-Diver",
+  "wave": 1,
+  "findings": [],
+  "ruled_out_vectors": [
+    {
+      "vector": "KV-1: Zero-price bypass via computeRatioX96 overflow returning 0",
+      "why_ruled_out": "In AMMStandardHook.validateHandlerOrder (line 215-223), computeRatioX96 can return 0 on overflow. However: (1) the direct swap path in beforeSwap/afterSwap (line 847-849) explicitly checks sqrtPriceX96 == 0 and reverts with AMMStandardHook__InvalidPrice. (2) In validateHandlerOrder, if bounds.isSet is true AND minSqrtPriceX96 != 0, the check 0 < minSqrtPriceX96 catches it. (3) If bounds are not configured (isSet=false), the entire pricing check is skipped — but this is a self-inflicted config error (digest FP #4). No attacker-controlled path can bypass pricing when bounds are properly set.",
+      "test_file": "code-analysis: AMMStandardHook.sol:215-223,847-849 + SqrtPriceCalculator.sol:51-52",
+      "repos": ["lbamm-hooks-and-handlers"],
+      "contracts": ["AMMStandardHook.sol", "CLOBTransferHandler.sol", "SqrtPriceCalculator.sol"],
+      "functions": ["_enforceTokenHooks", "validateHandlerOrder", "computeRatioX96"],
+      "keywords": ["sqrtPriceX96", "zero", "bypass", "overflow", "pricing-bounds", "computeRatioX96", "validateHandlerOrder"]
+    },
+    {
+      "vector": "KV-2: Direct handler call bypassing pricing enforcement",
+      "why_ruled_out": "No executeSwap function exists on CLOBTransferHandler. The handler does not expose any external swap entry point. All swap routing goes through the AMM core which invokes hooks (beforeSwap/afterSwap). There is no direct bypass path.",
+      "test_file": "code-analysis: CLOBTransferHandler.sol — grep for 'function executeSwap' and 'function swap' returns no matches",
+      "repos": ["lbamm-hooks-and-handlers"],
+      "contracts": ["CLOBTransferHandler.sol", "AMMStandardHook.sol"],
+      "functions": ["executeSwap", "beforeSwap", "afterSwap"],
+      "keywords": ["pricing", "bypass", "direct", "handler", "direct-swap", "pricing-bounds", "flag-dependency"]
+    },
+    {
+      "vector": "KV-3: Settings sync gap between CLOBTransferHandler.setTokenSettings and CreatorHookSettingsRegistry",
+      "why_ruled_out": "CLOBTransferHandler does not have a setTokenSettings function. Token settings are fetched from the AMM's token settings registry via ILimitBreakAMM(AMM).getTokenSettings(). Settings are always read fresh from the authoritative source. No stale memSettings desync is possible since there's no local copy to go stale.",
+      "test_file": "code-analysis: CLOBTransferHandler.sol:582-583 — settings fetched from AMM on every call",
+      "repos": ["lbamm-hooks-and-handlers"],
+      "contracts": ["CLOBTransferHandler.sol", "CreatorHookSettingsRegistry.sol"],
+      "functions": ["setTokenSettings"],
+      "keywords": ["setTokenSettings", "sync", "stale", "initialized", "memSettings", "gas-waste"]
+    },
+    {
+      "vector": "KV-4: Transient storage leak in DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT",
+      "why_ruled_out": "AMMStandardHook.beforeSwap writes to DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT (line 839) and afterSwap reads it (line 843-844). This is by-design: the AMM calls beforeSwap per-token (both tokens), and the second call intentionally overwrites the first. The slot is read in the same transaction during afterSwap. Transient storage auto-clears at transaction end. This is known false positive #1 in the audit digest.",
+      "test_file": "code-analysis: AMMStandardHook.sol:839,843-844 — write in beforeSwap, read in afterSwap, same tx",
+      "repos": ["lbamm-hooks-and-handlers"],
+      "contracts": ["AMMHooksTransferHandler.sol", "AMMStandardHook.sol"],
+      "functions": ["beforeSwap"],
+      "keywords": ["transient", "tstore", "clear", "direct", "swap", "transient-storage", "stale-read", "direct-swap", "DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT"]
+    },
+    {
+      "vector": "Dust-loop extraction via repeated 1-wei swaps",
+      "why_ruled_out": "Tested 100 sequential 1-wei swaps at 1:1 price with zero fee. Pool never loses value — totalOut <= totalIn + 100 (bounded by rounding). At 0.3% fee, 1 wei input rounds to 0 remaining after fee, so entire amount becomes fee. No extraction path.",
+      "test_file": "amm-pool-type-dynamic/test/audit/AuditMathDeepDiverWave.t.sol",
+      "repos": ["amm-pool-type-dynamic"],
+      "contracts": ["SwapMath.sol", "SqrtPriceMath.sol"],
+      "functions": ["computeSwapByInputStep", "getNextSqrtPriceFromInput"],
+      "keywords": ["dust", "rounding", "1-wei", "extraction", "round-trip"]
+    },
+    {
+      "vector": "Profitable round-trip swap (INV-SW02 violation)",
+      "why_ruled_out": "Fuzz tested with 10000 runs: swap token0->token1 then token1->token0. finalAmount always <= initialAmount due to consistent rounding down of output. Rounding direction favors protocol at every step.",
+      "test_file": "amm-pool-type-dynamic/test/audit/AuditMathDeepDiverWave.t.sol",
+      "repos": ["amm-pool-type-dynamic"],
+      "contracts": ["SqrtPriceMath.sol"],
+      "functions": ["getNextSqrtPriceFromInput", "getAmount0Delta", "getAmount1Delta"],
+      "keywords": ["round-trip", "profitable", "INV-SW02", "arbitrage"]
+    },
+    {
+      "vector": "CLOBHelper.calculateFixedInput rounding direction favoring maker",
+      "why_ruled_out": "Uses mulDivRoundingUp twice — this rounds UP the output, which means the maker receives at most ceil(expected) tokens. However, the fillOutputRemaining check in the CLOB flow bounds total output to what the AMM provides. At 1:1 price, 1 wei input gives exactly 1 wei output (no extraction). At other prices, the rounding up of at most 1 wei per step is dust-level and non-exploitable.",
+      "test_file": "amm-pool-type-dynamic/test/audit/AuditMathDeepDiverWave.t.sol",
+      "repos": ["lbamm-hooks-and-handlers"],
+      "contracts": ["CLOBHelper.sol"],
+      "functions": ["calculateFixedInput"],
+      "keywords": ["rounding", "mulDivRoundingUp", "maker", "output", "CLOB"]
+    },
+    {
+      "vector": "FullMath.mulDiv phantom overflow producing incorrect result",
+      "why_ruled_out": "Tested mulDiv(max, max, max) = max, mulDiv(0, X, Y) = 0, mulDiv with large intermediate products. All return correct values. mulDivRoundingUp >= mulDiv verified by fuzz test (25 runs) and Halmos symbolic check (passed).",
+      "test_file": "amm-pool-type-dynamic/test/audit/AuditMathDeepDiverWave.t.sol",
+      "repos": ["amm-pool-type-dynamic", "lbamm-pool-type-fixed"],
+      "contracts": ["FullMath.sol"],
+      "functions": ["mulDiv", "mulDivRoundingUp"],
+      "keywords": ["phantom-overflow", "mulDiv", "rounding"]
+    },
+    {
+      "vector": "TickMath round-trip price-tick conversion losing precision exploitably",
+      "why_ruled_out": "Tested round-trip at 9 tick values from -887000 to 887000. getSqrtPriceAtTick then getTickAtSqrtPrice always returns original tick or tick-1 (floor rounding). This is standard Uniswap V3 behavior. MAX_TICK excluded from round-trip since MAX_SQRT_RATIO is at boundary.",
+      "test_file": "amm-pool-type-dynamic/test/audit/AuditMathDeepDiverWave.t.sol",
+      "repos": ["amm-pool-type-dynamic"],
+      "contracts": ["TickMath.sol"],
+      "functions": ["getSqrtPriceAtTick", "getTickAtSqrtPrice"],
+      "keywords": ["tick", "round-trip", "precision", "boundary"]
+    },
+    {
+      "vector": "LiquidityMath.addDelta overflow/underflow at boundary values",
+      "why_ruled_out": "Tested: addDelta(0, -1) reverts, addDelta(max_uint128, 1) reverts, addDelta(max_uint128, -max_int128) succeeds, addDelta(max_int128, min_int128) = 0. All boundary conditions properly guarded by assembly overflow checks.",
+      "test_file": "amm-pool-type-dynamic/test/audit/AuditMathDeepDiverWave.t.sol",
+      "repos": ["amm-pool-type-dynamic"],
+      "contracts": ["LiquidityMath.sol"],
+      "functions": ["addDelta"],
+      "keywords": ["overflow", "underflow", "int128", "uint128", "liquidity"]
+    },
+    {
+      "vector": "FeeHelper input/output fee exceeding input amount",
+      "why_ruled_out": "Input fee uses mulDiv (rounds down) — fee <= input always. Output fee uses mulDivRoundingUp with denominator (MAX_BPS - fee) — tested at 0, 1, 9999, 10000 BPS. Fee at 10000 BPS allowed for input (takes all), rejected for output (>= check). Fuzz verified fee never exceeds input across 25 random (amount, BPS) pairs.",
+      "test_file": "amm-pool-type-dynamic/test/audit/AuditMathDeepDiverWave.t.sol",
+      "repos": ["lbamm-core"],
+      "contracts": ["FeeHelper.sol"],
+      "functions": ["calculateInputFee", "calculateOutputFee"],
+      "keywords": ["fee", "exceeds", "input", "100%", "BPS"]
+    },
+    {
+      "vector": "SqrtPriceMath.getNextSqrtPriceFromInput producing price below MIN_SQRT_RATIO",
+      "why_ruled_out": "getNextSqrtPriceFromInput is a pure math function — it does NOT enforce price bounds. The caller (DynamicHelper.computeSwap) clamps via tick boundaries in the swap loop. Tested: with very large token0 input at MIN_SQRT_RATIO+1, result goes below MIN_SQRT_RATIO but this is never used directly as a pool price.",
+      "test_file": "amm-pool-type-dynamic/test/audit/AuditMathDeepDiverWave.t.sol",
+      "repos": ["amm-pool-type-dynamic"],
+      "contracts": ["SqrtPriceMath.sol"],
+      "functions": ["getNextSqrtPriceFromInput"],
+      "keywords": ["MIN_SQRT_RATIO", "boundary", "price-floor"]
+    }
+  ],
+  "theft_theses": [
+    {
+      "thesis": "Exploit rounding direction in CLOBHelper.calculateFixedInput (mulDivRoundingUp) to extract dust per trade, compounded over many trades",
+      "victim": "Takers / protocol",
+      "asset": "Trade surplus from rounding",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Construct overflow in computeRatioX96 to bypass pricing bounds and execute swaps at zero price",
+      "victim": "Liquidity providers",
+      "asset": "Pool tokens via mispriced swap",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Profitable round-trip swap exploiting rounding inconsistency between getAmount0Delta and getAmount1Delta",
+      "victim": "Pool / LPs",
+      "asset": "Arbitrage profit from rounding",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    }
+  ],
+  "metadata": {
+    "checklist_items_completed": "A: 8/15, B: 0/4, C: 21/25, D: 4/4, E: 3/5",
+    "tools_run": {
+      "slither": {"ran": true, "repos": ["lbamm-pool-type-fixed", "amm-pool-type-dynamic", "lbamm-core"], "note": "Ran via MCP on 3 repos. Found divide-before-multiply in FixedHelper (intentional floor) and TickMath (standard Uniswap V3)."},
+      "aderyn": {"ran": true, "repos": ["lbamm-core"], "note": "Succeeded on lbamm-core. Crashed on lbamm-pool-type-fixed and amm-pool-type-dynamic with 'content not found' error at aderyn_driver/src/compile.rs:78."},
+      "forge": {"ran": true, "note": "79 tests total (43 in amm-pool-type-dynamic/test/audit/AuditMathDeepDiverWave.t.sol + 36 in lbamm-pool-type-fixed/test/MathDeepDiverFixed.t.sol). All pass."},
+      "halmos": {"ran": true, "note": "4 check_ functions. 1 passed (check_mulDivNoPhantomOverflow), 3 timed out (solver timeout at 10s). No counterexamples found."},
+      "medusa": {"ran": true, "note": "DynamicPoolType: 10000 calls, 14 assertion tests passed, 0 failures. FixedPoolType: failed to init (needs constructor args)."},
+      "audit-context-building": {"ran": false, "reason": "Deprioritized in favor of direct code analysis — all math libraries read line-by-line"},
+      "entry-point-analyzer": {"ran": false, "reason": "Deprioritized — math libraries are internal, entry points irrelevant for pure math analysis"}
+    },
+    "num_turns": 50,
+    "tool_uses": 65,
+    "files_read": 15,
+    "theses_tested": 3,
+    "theses_confirmed": 0,
+    "theses_ruled_out": 3
+  }
+}

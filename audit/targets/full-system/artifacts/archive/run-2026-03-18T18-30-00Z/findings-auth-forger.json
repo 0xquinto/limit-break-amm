@@ -1,0 +1,444 @@
+{
+  "agent_name": "auth-forger",
+  "agent_role": "Authorization & Settlement Forger",
+  "wave": 1,
+  "findings": [],
+  "ruled_out_vectors": [
+    {
+      "vector": "KV-1: Zero-price bypass \u2014 computeRatioX96 returns 0 on overflow, validateHandlerOrder does not check for zero",
+      "why_ruled_out": "validateHandlerOrder checks bounds.isSet && sqrtPriceX96 < bounds.minSqrtPriceX96. If bounds are configured with minSqrtPriceX96 > 0, zero price is caught. If bounds are NOT configured (isSet=false), there are no bounds to bypass. Halmos symbolic check (check_noPricingBypass) passed with 26 paths. No extraction path exists.",
+      "test_file": "lbamm-hooks-and-handlers/test/audit/AuditAuthForger.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol",
+        "CLOBTransferHandler.sol",
+        "SqrtPriceCalculator.sol"
+      ],
+      "functions": [
+        "_enforceTokenHooks",
+        "validateHandlerOrder",
+        "computeRatioX96"
+      ],
+      "keywords": [
+        "sqrtPriceX96",
+        "zero",
+        "bypass",
+        "overflow",
+        "pricing-bounds",
+        "computeRatioX96",
+        "validateHandlerOrder"
+      ]
+    },
+    {
+      "vector": "KV-2: Direct handler call \u2014 calling CLOBTransferHandler directly bypasses pricing enforcement",
+      "why_ruled_out": "CLOBTransferHandler has no executeSwap function. The only settlement entry point is ammHandleTransfer which checks msg.sender == AMM at line 230. Direct calls revert with CLOBTransferHandler__CallbackMustBeFromAMM. Test test_KV2_directHandlerCall_blocked and test_C2_clobHandler_ammHandleTransfer_reverts_nonAMM both confirm the guard holds.",
+      "test_file": "lbamm-hooks-and-handlers/test/audit/AuditAuthForger.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "CLOBTransferHandler.sol",
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "executeSwap",
+        "beforeSwap",
+        "afterSwap"
+      ],
+      "keywords": [
+        "pricing",
+        "bypass",
+        "direct",
+        "handler",
+        "direct-swap",
+        "pricing-bounds",
+        "flag-dependency"
+      ]
+    },
+    {
+      "vector": "KV-3: Settings sync gap \u2014 setTokenSettings may desync initialized field between registry and hook",
+      "why_ruled_out": "Registry stores initialized=true in memSettings but passes raw settings to hook. Hook stores with initialized=false. However, _getOrFetchTokenSettings (line 907-918) auto-corrects: if initialized==false, it fetches from registry (which has initialized=true). Self-healing pattern. No value extraction path \u2014 only extra gas cost. Known as CP-005.",
+      "test_file": "lbamm-hooks-and-handlers/test/audit/AuditAuthForger.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "CLOBTransferHandler.sol",
+        "CreatorHookSettingsRegistry.sol"
+      ],
+      "functions": [
+        "setTokenSettings"
+      ],
+      "keywords": [
+        "setTokenSettings",
+        "sync",
+        "stale",
+        "initialized",
+        "memSettings",
+        "gas-waste"
+      ]
+    },
+    {
+      "vector": "KV-4: Transient storage leak \u2014 DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT not cleared on all paths",
+      "why_ruled_out": "AMMStandardHook._validatePricingBounds writes to DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT in beforeSwap for direct swaps (poolType==address(0)), reads in afterSwap. Slot overwritten by next beforeSwap call. Transient storage resets per tx. Cross-tx leak impossible. Same-tx: AMM always calls before then after in sequence. Known CP-001/CP-004. No new exploitation path beyond documented low severity.",
+      "test_file": "lbamm-hooks-and-handlers/test/audit/AuditAuthForger.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMHooksTransferHandler.sol",
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "beforeSwap"
+      ],
+      "keywords": [
+        "transient",
+        "tstore",
+        "clear",
+        "direct",
+        "swap",
+        "transient-storage",
+        "stale-read",
+        "direct-swap",
+        "DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT"
+      ]
+    },
+    {
+      "vector": "H1: Forge permit with arbitrary feeOnTop \u2192 drain extra tokens",
+      "why_ruled_out": "feeOnTop is unsigned but bounded by limitAmount (signed). Input swap: feeOnTop > amountIn reverts (FeeHelper:53). Output swap: feeOnTop added to amountIn, AMMModule:2171 checks amountIn > limitAmount \u2192 reverts. Signer exposure always bounded.",
+      "test_file": "lbamm-hooks-and-handlers/test/audit/AuditAuthForger.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "PermitTransferHandler.sol",
+        "FeeHelper.sol"
+      ],
+      "functions": [
+        "_executeFillOrKillPermit",
+        "calculateAmountAfterFeesSwapByInput"
+      ],
+      "keywords": [
+        "feeOnTop",
+        "unsigned",
+        "limitAmount",
+        "drain",
+        "permit"
+      ]
+    },
+    {
+      "vector": "H2: Spoof executor context \u2192 settle orders with wrong recipient",
+      "why_ruled_out": "Both handlers require msg.sender == AMM. Executor derived from msg.sender in AMMModule swap flow. Cannot be spoofed from external caller.",
+      "test_file": "lbamm-hooks-and-handlers/test/audit/AuditAuthForger.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "PermitTransferHandler.sol",
+        "CLOBTransferHandler.sol"
+      ],
+      "functions": [
+        "ammHandleTransfer"
+      ],
+      "keywords": [
+        "executor",
+        "spoof",
+        "msg.sender",
+        "recipient"
+      ]
+    },
+    {
+      "vector": "H3: Replay CLOB order with different nonce context",
+      "why_ruled_out": "CLOB orders use auto-incremented nonces (nextOrderNonce++). Each order gets unique nonce. closeOrder checks maker ownership. No replay mechanism.",
+      "test_file": "lbamm-hooks-and-handlers/test/audit/AuditAuthForger.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "CLOBTransferHandler.sol"
+      ],
+      "functions": [
+        "openOrder",
+        "closeOrder"
+      ],
+      "keywords": [
+        "nonce",
+        "replay",
+        "CLOB",
+        "auto-increment"
+      ]
+    },
+    {
+      "vector": "H4: Redirect fee to attacker address via hook configuration",
+      "why_ruled_out": "Hook fee configuration requires token owner/admin. Fee recipients in swaps don't affect signer exposure because limitAmount bounds total cost.",
+      "test_file": "lbamm-hooks-and-handlers/test/audit/AuditAuthForger.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol",
+        "CreatorHookSettingsRegistry.sol"
+      ],
+      "functions": [
+        "setTokenSettings",
+        "_calculateFee"
+      ],
+      "keywords": [
+        "fee",
+        "redirect",
+        "admin",
+        "owner"
+      ]
+    },
+    {
+      "vector": "H5: Cross-chain signature replay",
+      "why_ruled_out": "EIP-712 domain separator includes chainId. PermitC constructs domain separator with chainId. Different chains produce different digests. Same signature invalid on another chain.",
+      "test_file": "lbamm-hooks-and-handlers/test/audit/AuditAuthForger.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "PermitTransferHandler.sol"
+      ],
+      "functions": [
+        "_executeFillOrKillPermit",
+        "_executePartialFillPermit"
+      ],
+      "keywords": [
+        "chainId",
+        "replay",
+        "cross-chain",
+        "EIP-712",
+        "domain-separator"
+      ]
+    },
+    {
+      "vector": "H6: ERC-1271 contract returns true for any hash \u2192 bypass signature checks",
+      "why_ruled_out": "ERC-1271 contract can only sign for ITSELF. PermitC verifies signature against the from address. Attacker's ERC-1271 contract can only authorize spending its own tokens.",
+      "test_file": "lbamm-hooks-and-handlers/test/audit/AuditAuthForger.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "PermitTransferHandler.sol"
+      ],
+      "functions": [
+        "_executeFillOrKillPermit"
+      ],
+      "keywords": [
+        "ERC-1271",
+        "isValidSignature",
+        "bypass",
+        "smart-contract-wallet"
+      ]
+    },
+    {
+      "vector": "H7: Flash loan callback impersonation",
+      "why_ruled_out": "AMM calls back to msg.sender.onFlashLoan(). No separate callback registration. Cannot impersonate another address as the callback target. Balance check enforced after callback.",
+      "test_file": "lbamm-hooks-and-handlers/test/audit/AuditAuthForger.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_flashLoan"
+      ],
+      "keywords": [
+        "flash-loan",
+        "callback",
+        "impersonation"
+      ]
+    },
+    {
+      "vector": "H8: tx.origin phishing",
+      "why_ruled_out": "Neither handler uses tx.origin. All access control uses msg.sender. No tx.origin phishing vector.",
+      "test_file": "lbamm-hooks-and-handlers/test/audit/AuditAuthForger.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "PermitTransferHandler.sol",
+        "CLOBTransferHandler.sol"
+      ],
+      "functions": [
+        "ammHandleTransfer"
+      ],
+      "keywords": [
+        "tx.origin",
+        "phishing"
+      ]
+    },
+    {
+      "vector": "H9: Forge cross-module caller context",
+      "why_ruled_out": "All module-crossing calls go through diamond proxy with delegatecall (preserves msg.sender). External calls to handlers check msg.sender == AMM. No way to forge msg.sender in EVM.",
+      "test_file": "lbamm-hooks-and-handlers/test/audit/AuditAuthForger.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers",
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol",
+        "CLOBTransferHandler.sol"
+      ],
+      "functions": [
+        "_requireCallerIsAMM",
+        "ammHandleTransfer"
+      ],
+      "keywords": [
+        "cross-module",
+        "delegatecall",
+        "msg.sender",
+        "diamond"
+      ]
+    },
+    {
+      "vector": "H10: Reuse permit signature with different from address",
+      "why_ruled_out": "The from address is part of the EIP-712 signed data. Changing from invalidates the signature digest. Cannot drain another user's tokens with a different user's signature.",
+      "test_file": "lbamm-hooks-and-handlers/test/audit/AuditAuthForger.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "PermitTransferHandler.sol"
+      ],
+      "functions": [
+        "_executeFillOrKillPermit",
+        "_executePartialFillPermit"
+      ],
+      "keywords": [
+        "from",
+        "reuse",
+        "signature",
+        "cross-user"
+      ]
+    }
+  ],
+  "theft_theses": [
+    {
+      "thesis": "Drain extra tokens via unsigned feeOnTop field in permit",
+      "victim": "Permit signer",
+      "asset": "ERC-20 tokens approved via permit",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Spoof executor context to settle with wrong recipient",
+      "victim": "Swap initiator",
+      "asset": "Swap output tokens",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Replay CLOB orders to double-fill",
+      "victim": "CLOB maker",
+      "asset": "Deposited tokens",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Redirect fees to attacker via hook config",
+      "victim": "Protocol / LP",
+      "asset": "Trading fees",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Cross-chain permit replay",
+      "victim": "Permit signer",
+      "asset": "ERC-20 tokens on other chains",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "ERC-1271 universal signer bypasses all permit checks",
+      "victim": "Any token holder",
+      "asset": "All approved tokens",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Flash loan callback impersonation for free capital",
+      "victim": "AMM liquidity",
+      "asset": "Pool tokens",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "tx.origin phishing to relay user identity",
+      "victim": "Transaction signer",
+      "asset": "Identity / authorization",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Forge cross-module caller to bypass access control",
+      "victim": "Protocol",
+      "asset": "Unauthorized state changes",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Reuse permit signature for different from address",
+      "victim": "Other permit signers",
+      "asset": "ERC-20 tokens",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    }
+  ],
+  "metadata": {
+    "checklist_items_completed": "A: 3/5, B: 4/5, C: 19/19, D: 4/4, E: 10/10",
+    "tools_run": {
+      "slither": {
+        "ran": true,
+        "repos": [
+          "lbamm-hooks-and-handlers"
+        ],
+        "note": "35 findings (High: arbitrary-send-erc20, incorrect-return, uninitialized-state. Medium: uninitialized-local, unused-return). All in lbamm-core patterns or by-design."
+      },
+      "aderyn": {
+        "ran": true,
+        "repos": [
+          "lbamm-hooks-and-handlers"
+        ],
+        "note": "Fatal compiler bug in aderyn v0.6.8 on this codebase. Known issue."
+      },
+      "forge": {
+        "ran": true,
+        "note": "55 tests total, all passing. File: lbamm-hooks-and-handlers/test/audit/AuditAuthForger.t.sol"
+      },
+      "halmos": {
+        "ran": true,
+        "note": "2 checks: check_noPricingBypass PASS (26 paths), check_noZeroReturn TIMEOUT (27 paths, no counterexample). File: lbamm-hooks-and-handlers/test/audit/AuditAuthForger.t.sol"
+      },
+      "medusa": {
+        "ran": true,
+        "note": "Failed to initialize \u2014 CLOBTransferHandler and PermitTransferHandler require constructor args (address AMM). Logged as tool error."
+      },
+      "audit-context-building": {
+        "ran": true,
+        "note": "Deep context analysis of AMMStandardHook, CLOBTransferHandler, PermitTransferHandler, SqrtPriceCalculator. Mapped access control patterns, state flows, trust boundaries."
+      },
+      "entry-point-analyzer": {
+        "ran": true,
+        "note": "Mapped all state-changing entry points: 5 public (CLOB deposit/withdraw/open/close/generateGroupKey), 5 AMM-only (beforeSwap/afterSwap/ammHandleTransfer x2/afterSwapRefund), 5 registry-only (registryUpdate*), 2 owner-only (setTokenSettings/setExpansionSettings)."
+      }
+    },
+    "num_turns": 120,
+    "tool_uses": 85,
+    "files_read": 25,
+    "theses_tested": 10,
+    "theses_confirmed": 0,
+    "theses_ruled_out": 10,
+    "triage_log": {
+      "skip": 3,
+      "borderline": 4,
+      "survive": 3
+    },
+    "gate_passed": true
+  }
+}

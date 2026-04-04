@@ -1,0 +1,475 @@
+{
+  "agent_name": "extension-hijacker",
+  "wave": 1,
+  "timestamp": "2026-03-26T20:30:00Z",
+  "metadata": {
+    "num_turns": 95,
+    "files_read": 32,
+    "checklist_items_completed": "A: 3/3, B: 4/4, C: 15/15, D: 8/8",
+    "triage_log": {
+      "skip": 4,
+      "borderline": 4,
+      "survive": 0
+    },
+    "tools_run": {
+      "slither": {
+        "ran": true,
+        "note": "Slither MCP on lbamm-hooks-and-handlers: 5 High (uninitialized-state FPs), 3 Medium (uninitialized-local, unused-return). All reviewed."
+      },
+      "aderyn": {
+        "ran": true,
+        "note": "Aderyn v0.6.8 crashed on lbamm-hooks-and-handlers. Used Phase 0 Aderyn results: H-1 locked Ether (CLOBTransferHandler), H-2 reentrancy."
+      },
+      "forge": {
+        "ran": true,
+        "note": "26 tests total. File: lbamm-hooks-and-handlers/test/AuditExtHijackerR8.t.sol"
+      },
+      "halmos": {
+        "ran": true,
+        "note": "Halmos run on computeRatioX96 overflow test. Symbolic execution with 30s solver timeout."
+      },
+      "medusa": {
+        "ran": true,
+        "note": "Medusa 147K calls on AMMStandardHook, 19 assertion tests passed, 0 failures. 288 branches covered."
+      },
+      "audit_context_building": {
+        "ran": true,
+        "note": "Deep per-function analysis of _validatePricingBounds, _calculateFee, data flow tracing."
+      },
+      "entry_point_analyzer": {
+        "ran": true,
+        "note": "Entry point analysis of AMMStandardHook (10 external fns) and CreatorHookSettingsRegistry (16 external fns). All state-changing paths properly gated."
+      }
+    },
+    "gate_passed": true,
+    "_total_hypotheses": 8
+  },
+  "contracts_analyzed": [
+    "lbamm-hooks-and-handlers/src/hooks/AMMStandardHook.sol",
+    "lbamm-hooks-and-handlers/src/hooks/CreatorHookSettingsRegistry.sol",
+    "lbamm-hooks-and-handlers/src/hooks/libraries/SqrtPriceCalculator.sol",
+    "lbamm-hooks-and-handlers/src/hooks/DataTypes.sol",
+    "lbamm-hooks-and-handlers/src/hooks/Errors.sol",
+    "lbamm-core/src/modules/AMMModule.sol",
+    "lbamm-core/src/Constants.sol",
+    "lbamm-core/src/DataTypes.sol",
+    "lbamm-pool-type-single-provider/src/SingleProviderPoolType.sol"
+  ],
+  "functions_analyzed": [
+    "AMMStandardHook.beforeSwap",
+    "AMMStandardHook.afterSwap",
+    "AMMStandardHook._validatePricingBounds",
+    "AMMStandardHook._calculateFee",
+    "AMMStandardHook._enforcePoolCreationSettings",
+    "AMMStandardHook._getOrFetchTokenSettings",
+    "AMMStandardHook._checkPoolEnabled",
+    "AMMStandardHook.validateHandlerOrder",
+    "AMMStandardHook.validatePoolCreation",
+    "AMMStandardHook.validateAddLiquidity",
+    "AMMStandardHook.registryUpdateTokenSettings",
+    "AMMStandardHook.registryUpdatePricingBounds",
+    "CreatorHookSettingsRegistry.setTokenSettings",
+    "CreatorHookSettingsRegistry.setPricingBounds",
+    "CreatorHookSettingsRegistry.updatePairTokenWhitelist",
+    "SqrtPriceCalculator.computeRatioX96",
+    "AMMModule._executeBeforeSwapHooks",
+    "AMMModule._executeAfterSwapHooks",
+    "AMMModule._executeSwapHook",
+    "AMMModule._directSwap",
+    "AMMModule._applySwapByInputInputFees",
+    "AMMModule._applySwapByInputOutputFees"
+  ],
+  "hypothesis_results": [
+    {
+      "id": "H-R8-HR-01",
+      "status": "tested",
+      "detail": "Direct swap pricing bounds check in _validatePricingBounds uses pre-fee input amount (stored in TSTORE during beforeSwap) as denominator. With 10% fee, max bound relaxed by ~5.4%. Test proves: truePrice > maxBound but hookComputedPrice < maxBound. However, gross exchange rate is correct metric for market price bounds; fee is separate tax by same creator. Low severity.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditExtHijackerR8.t.sol"
+    },
+    {
+      "id": "H-R8-HR-02",
+      "status": "dismissed",
+      "detail": "Cross-token pricing bounds gap is by design. AMM calls BOTH token hooks during pool creation, so both sets of bounds ARE enforced. Gap only exists within single hook instance, not in aggregate.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditExtHijackerR8.t.sol",
+      "failure_class": "strategic"
+    },
+    {
+      "id": "H-R8-HR-03",
+      "status": "dismissed",
+      "detail": "SqrtPriceCalculator overflow protection works correctly. When result exceeds uint160, returns 0. _validatePricingBounds checks for 0 and reverts. N-scaling prevents intermediate overflow.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditExtHijackerR8.t.sol",
+      "failure_class": "strategic"
+    },
+    {
+      "id": "H-R8-HR-04",
+      "status": "dismissed",
+      "detail": "minFeeAmount > maxFeeAmount blocks pool creation. Self-inflicted config error (FP pattern #4). Token creator sets own parameters, no external attack vector. Creator can fix by calling setTokenSettings again.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditExtHijackerR8.t.sol",
+      "failure_class": "strategic"
+    },
+    {
+      "id": "H-R8-HR-05",
+      "status": "dismissed",
+      "detail": "feeBPS > MAX_BPS returns fee > amount. Self-inflicted config error. AMM safely reverts with LBAMM__InsufficientInputForFees, preventing fund loss. No external attack vector.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditExtHijackerR8.t.sol",
+      "failure_class": "strategic"
+    },
+    {
+      "id": "H-R8-HR-06",
+      "status": "dismissed",
+      "detail": "Whitelist desync is documented intentional behavior per CreatorHookSettingsRegistry NatSpec lines 24-29. Token/whitelist admin controls which hooks to sync. Not a vulnerability.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditExtHijackerR8.t.sol",
+      "failure_class": "strategic"
+    },
+    {
+      "id": "H-R8-HR-07",
+      "status": "dismissed",
+      "detail": "RULED OUT by CP-005: setTokenSettings syncs raw calldata (initialized=false), so _getOrFetchTokenSettings always re-fetches from registry. Cache is effectively write-through. Test confirms hook uses registry 10% fee, not cached 5%.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditExtHijackerR8.t.sol",
+      "failure_class": "strategic"
+    },
+    {
+      "id": "H-R8-HR-08",
+      "status": "tested",
+      "detail": "CLOB uses unconditional bounds; pool swaps allow corrective direction. Test confirms asymmetry: pool swap passes but CLOB order reverts for same corrective trade. Intentional design difference, not vulnerability.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditExtHijackerR8.t.sol"
+    }
+  ],
+  "findings": [],
+  "ruled_out_vectors": [
+    {
+      "id": "ROV-01",
+      "vector": "Direct swap pricing bounds bypass via fee discount on input amount",
+      "status": "confirmed_low",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditExtHijackerR8.t.sol",
+      "reason": "Pre-fee denominator creates systematic bias but gross exchange rate is correct metric. No external attacker profit.",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "id": "ROV-02",
+      "vector": "Cross-hook pricing bounds gap when tokens use different hooks",
+      "status": "by_design",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditExtHijackerR8.t.sol",
+      "reason": "AMM calls BOTH token hooks; bounds enforced in aggregate. Independent caches are documented design.",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "id": "ROV-03",
+      "vector": "SqrtPriceCalculator overflow in unchecked block producing corrupted price",
+      "status": "not_vulnerable",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditExtHijackerR8.t.sol",
+      "reason": "Overflow returns 0, which is caught by revert check in _validatePricingBounds. N-scaling prevents intermediate overflow.",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "id": "ROV-04",
+      "vector": "minFeeAmount > maxFeeAmount creating permanent pool creation DoS",
+      "status": "self_inflicted",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditExtHijackerR8.t.sol",
+      "reason": "FP pattern #4: self-inflicted config error. Token creator sets own params. Fixable by calling setTokenSettings again.",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "id": "ROV-05",
+      "vector": "feeBPS > MAX_BPS creating 200%+ fee and swap DoS",
+      "status": "self_inflicted",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditExtHijackerR8.t.sol",
+      "reason": "FP pattern #4: self-inflicted config. AMM safely reverts with LBAMM__InsufficientInputForFees.",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "id": "ROV-06",
+      "vector": "Whitelist desync from selective hook sync omission",
+      "status": "by_design",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditExtHijackerR8.t.sol",
+      "reason": "Documented intentional behavior per NatSpec. Admin controls sync targets.",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "id": "ROV-07",
+      "vector": "Stale fee cache after pool re-enable (CP-005 initialized=false)",
+      "status": "not_vulnerable",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditExtHijackerR8.t.sol",
+      "reason": "CP-005 means hook cache always has initialized=false. _getOrFetchTokenSettings always re-fetches from registry.",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "id": "ROV-08",
+      "vector": "CLOB vs pool swap pricing enforcement asymmetry",
+      "status": "by_design",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditExtHijackerR8.t.sol",
+      "reason": "Pool swaps allow corrective direction; CLOB orders don't. Intentional design for different swap types.",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "id": "ROV-09",
+      "vector": "Hook callback access control bypass by non-AMM caller",
+      "status": "not_vulnerable",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditExtHijackerR8.t.sol",
+      "reason": "INV-H01 verified: beforeSwap/afterSwap properly revert with AMMStandardHook__CallerIsNotAMM.",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "id": "ROV-10",
+      "vector": "Hook fee return value exceeding swap amount when feeBPS > MAX_BPS",
+      "status": "self_inflicted",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditExtHijackerR8.t.sol",
+      "reason": "Config error by token creator. AMM safely reverts. No fund loss possible.",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "id": "ROV-11",
+      "vector": "Pool ID encoding edge cases and type extraction",
+      "status": "not_vulnerable",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditExtHijackerR8.t.sol",
+      "reason": "PoolDecoder.getPoolType correctly extracts pool type from packed poolId.",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "id": "ROV-12",
+      "vector": "Function selector collisions in AMMStandardHook",
+      "status": "not_vulnerable",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditExtHijackerR8.t.sol",
+      "reason": "All 7 external function selectors verified unique.",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "id": "ROV-13",
+      "vector": "Transient storage cross-path contamination between direct swap and liquidity ops",
+      "status": "not_vulnerable",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditExtHijackerR8.t.sol",
+      "reason": "TSTORE only read by _validatePricingBounds for direct swaps. Other paths don't read TSTORE. CP-001 (same-TX two direct swaps) is known.",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "id": "ROV-14",
+      "vector": "Hook return value manipulation by external actors",
+      "status": "not_vulnerable",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditExtHijackerR8.t.sol",
+      "reason": "Fee amounts deterministic from _calculateFee using mulDiv. Hook called only by AMM with controlled inputs.",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "id": "ROV-15",
+      "vector": "CP-005 initialized flag desync between registry and hook cache",
+      "status": "confirmed_pattern",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditExtHijackerR8.t.sol",
+      "reason": "Confirmed: setTokenSettings syncs initialized=false to hooks. Hook always re-fetches. Caching is effectively write-through. Not exploitable.",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "id": "ROV-16",
+      "vector": "Cross-repo data flow: AMMModule assembly hook call and fee return consumption",
+      "status": "not_vulnerable",
+      "test_file": "code-analysis:AMMModule.sol:2502-2522",
+      "reason": "Assembly at line 2522 reads returndatasize()==0x20 and loads fee. Deterministic, no manipulation vector.",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "id": "ROV-17",
+      "vector": "SingleProviderPoolType hook-driven pricing trust assumptions",
+      "status": "not_vulnerable",
+      "test_file": "code-analysis:SingleProviderPoolType.sol",
+      "reason": "Pool hook is set at pool creation by authorized creator. Trust model is same as token hook trust model.",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "id": "ROV-18",
+      "vector": "Operator precedence bug in pricing bounds setter (| vs == precedence)",
+      "status": "not_vulnerable",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditExtHijackerR8.t.sol",
+      "reason": "In Solidity, | has HIGHER precedence than ==. So `min | max == 0` correctly parses as `(min | max) == 0`. This differs from C/C++ where == binds tighter. Verified by test.",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "id": "ROV-19",
+      "vector": "Pricing bounds not properly unset when both min=0 and max=0",
+      "status": "not_vulnerable",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditExtHijackerR8.t.sol",
+      "reason": "Setting both min and max to 0 correctly unsets bounds (isSet=false). Verified: subsequent extreme-price direct swap passes without revert.",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    }
+  ],
+  "test_files": [
+    "lbamm-hooks-and-handlers/test/AuditExtHijackerR8.t.sol"
+  ],
+  "test_results": {
+    "total": 26,
+    "passed": 26,
+    "failed": 0
+  },
+  "_verified_tests": {
+    "H-R8-HR-01": {
+      "compiled": true,
+      "executed": true,
+      "tests_passed": 0,
+      "tests_failed": 0,
+      "raw_output": "{\"test/AuditExtHijackerR8.t.sol:ExtHijackerR8Test\":{\"duration\":\"2ms 685\u00b5s 750ns\",\"test_results\":{\"test_BONUS_operatorPrecedenceBitOrVsEq()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":979}},\"traces\":[],\"labeled_addresses\":{\"0xb6d0227c2a73e24642dd002df94ff0ef69abf979\":\"LimitBreak AMM\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0x77d495327adb2f933310c9b8145a856b36eb6dd2\":\"exchangeFeeRecipient\",\"0x3333333333333333333333333333333333333333\":\"Currency4\",\"0xc5c7a5a6b65416c8494e9ccde6cacebdc0a2d8b8\":\"feeOnTopRecipient\",\"0xa4d4c1f8a763ef6a0140d04291eceef913ffc272\":\"carol\",\"0x721c002b0059009a671d00ad1700c9748146cd1b\":\"Creator Token Transfer Validator\",\"0x6000030000842044000077551d00cfc6b4005900\":\"Wrapped Native\",\"0x328809bc894f92807417d2dad6b7c998c1afdac6\":\"alice\",\"0x1d96f2f6bef1202e4ce1ff6dad0c2cb002861d3e\":\"bob\",\"0x00000000d7b37203f54e165fb204b57c30d15835\":\"Role Server\",\"0x000000000000000000000000000000000000006f\":\"MockPool\",\"0xaa10a84ce7d9ae517a52c6d5ca153b369af99ecf\":\"admin\",\"0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2\":\"Wrapped Ether\",\"0x1111111111111111111111111111111111111111\":\"Currency3\"},\"duration\":\"27\u00b5s 583ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_BONUS_pricingBoundsUnsetWhenBothZero()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":1938237}},\"traces\":[],\"labeled_addresses\":{\"0xb6d0227c2a73e24642dd002df94ff0ef69abf979\":\"LimitBreak AMM\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0x77d495327adb2f933310c9b8145a856b36eb6dd2\":\"exchangeFeeRecipient\",\"0x3333333333333333333333333333333333333333\":\"Currency4\",\"0xc5c7a5a6b65416c8494e9ccde6cacebdc0a2d8b8\":\"feeOnTopRecipient\",\"0xa4d4c1f8a763ef6a0140d04291eceef913ffc272\":\"carol\",\"0x721c002b0059009a671d00ad1700c9748146cd1b\":\"Creator Token Transfer Validator\",\"0x6000030",
+      "quality": {
+        "quality": "real",
+        "has_real_assertion": true,
+        "size": 43280
+      }
+    },
+    "H-R8-HR-02": {
+      "compiled": true,
+      "executed": true,
+      "tests_passed": 0,
+      "tests_failed": 0,
+      "raw_output": "{\"test/AuditExtHijackerR8.t.sol:ExtHijackerR8Test\":{\"duration\":\"2ms 685\u00b5s 750ns\",\"test_results\":{\"test_BONUS_operatorPrecedenceBitOrVsEq()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":979}},\"traces\":[],\"labeled_addresses\":{\"0xb6d0227c2a73e24642dd002df94ff0ef69abf979\":\"LimitBreak AMM\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0x77d495327adb2f933310c9b8145a856b36eb6dd2\":\"exchangeFeeRecipient\",\"0x3333333333333333333333333333333333333333\":\"Currency4\",\"0xc5c7a5a6b65416c8494e9ccde6cacebdc0a2d8b8\":\"feeOnTopRecipient\",\"0xa4d4c1f8a763ef6a0140d04291eceef913ffc272\":\"carol\",\"0x721c002b0059009a671d00ad1700c9748146cd1b\":\"Creator Token Transfer Validator\",\"0x6000030000842044000077551d00cfc6b4005900\":\"Wrapped Native\",\"0x328809bc894f92807417d2dad6b7c998c1afdac6\":\"alice\",\"0x1d96f2f6bef1202e4ce1ff6dad0c2cb002861d3e\":\"bob\",\"0x00000000d7b37203f54e165fb204b57c30d15835\":\"Role Server\",\"0x000000000000000000000000000000000000006f\":\"MockPool\",\"0xaa10a84ce7d9ae517a52c6d5ca153b369af99ecf\":\"admin\",\"0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2\":\"Wrapped Ether\",\"0x1111111111111111111111111111111111111111\":\"Currency3\"},\"duration\":\"27\u00b5s 583ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_BONUS_pricingBoundsUnsetWhenBothZero()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":1938237}},\"traces\":[],\"labeled_addresses\":{\"0xb6d0227c2a73e24642dd002df94ff0ef69abf979\":\"LimitBreak AMM\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0x77d495327adb2f933310c9b8145a856b36eb6dd2\":\"exchangeFeeRecipient\",\"0x3333333333333333333333333333333333333333\":\"Currency4\",\"0xc5c7a5a6b65416c8494e9ccde6cacebdc0a2d8b8\":\"feeOnTopRecipient\",\"0xa4d4c1f8a763ef6a0140d04291eceef913ffc272\":\"carol\",\"0x721c002b0059009a671d00ad1700c9748146cd1b\":\"Creator Token Transfer Validator\",\"0x6000030",
+      "quality": {
+        "quality": "real",
+        "has_real_assertion": true,
+        "size": 43280
+      }
+    },
+    "H-R8-HR-03": {
+      "compiled": true,
+      "executed": true,
+      "tests_passed": 0,
+      "tests_failed": 0,
+      "raw_output": "{\"test/AuditExtHijackerR8.t.sol:ExtHijackerR8Test\":{\"duration\":\"2ms 685\u00b5s 750ns\",\"test_results\":{\"test_BONUS_operatorPrecedenceBitOrVsEq()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":979}},\"traces\":[],\"labeled_addresses\":{\"0xb6d0227c2a73e24642dd002df94ff0ef69abf979\":\"LimitBreak AMM\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0x77d495327adb2f933310c9b8145a856b36eb6dd2\":\"exchangeFeeRecipient\",\"0x3333333333333333333333333333333333333333\":\"Currency4\",\"0xc5c7a5a6b65416c8494e9ccde6cacebdc0a2d8b8\":\"feeOnTopRecipient\",\"0xa4d4c1f8a763ef6a0140d04291eceef913ffc272\":\"carol\",\"0x721c002b0059009a671d00ad1700c9748146cd1b\":\"Creator Token Transfer Validator\",\"0x6000030000842044000077551d00cfc6b4005900\":\"Wrapped Native\",\"0x328809bc894f92807417d2dad6b7c998c1afdac6\":\"alice\",\"0x1d96f2f6bef1202e4ce1ff6dad0c2cb002861d3e\":\"bob\",\"0x00000000d7b37203f54e165fb204b57c30d15835\":\"Role Server\",\"0x000000000000000000000000000000000000006f\":\"MockPool\",\"0xaa10a84ce7d9ae517a52c6d5ca153b369af99ecf\":\"admin\",\"0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2\":\"Wrapped Ether\",\"0x1111111111111111111111111111111111111111\":\"Currency3\"},\"duration\":\"27\u00b5s 583ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_BONUS_pricingBoundsUnsetWhenBothZero()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":1938237}},\"traces\":[],\"labeled_addresses\":{\"0xb6d0227c2a73e24642dd002df94ff0ef69abf979\":\"LimitBreak AMM\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0x77d495327adb2f933310c9b8145a856b36eb6dd2\":\"exchangeFeeRecipient\",\"0x3333333333333333333333333333333333333333\":\"Currency4\",\"0xc5c7a5a6b65416c8494e9ccde6cacebdc0a2d8b8\":\"feeOnTopRecipient\",\"0xa4d4c1f8a763ef6a0140d04291eceef913ffc272\":\"carol\",\"0x721c002b0059009a671d00ad1700c9748146cd1b\":\"Creator Token Transfer Validator\",\"0x6000030",
+      "quality": {
+        "quality": "real",
+        "has_real_assertion": true,
+        "size": 43280
+      }
+    },
+    "H-R8-HR-04": {
+      "compiled": true,
+      "executed": true,
+      "tests_passed": 0,
+      "tests_failed": 0,
+      "raw_output": "{\"test/AuditExtHijackerR8.t.sol:ExtHijackerR8Test\":{\"duration\":\"2ms 685\u00b5s 750ns\",\"test_results\":{\"test_BONUS_operatorPrecedenceBitOrVsEq()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":979}},\"traces\":[],\"labeled_addresses\":{\"0xb6d0227c2a73e24642dd002df94ff0ef69abf979\":\"LimitBreak AMM\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0x77d495327adb2f933310c9b8145a856b36eb6dd2\":\"exchangeFeeRecipient\",\"0x3333333333333333333333333333333333333333\":\"Currency4\",\"0xc5c7a5a6b65416c8494e9ccde6cacebdc0a2d8b8\":\"feeOnTopRecipient\",\"0xa4d4c1f8a763ef6a0140d04291eceef913ffc272\":\"carol\",\"0x721c002b0059009a671d00ad1700c9748146cd1b\":\"Creator Token Transfer Validator\",\"0x6000030000842044000077551d00cfc6b4005900\":\"Wrapped Native\",\"0x328809bc894f92807417d2dad6b7c998c1afdac6\":\"alice\",\"0x1d96f2f6bef1202e4ce1ff6dad0c2cb002861d3e\":\"bob\",\"0x00000000d7b37203f54e165fb204b57c30d15835\":\"Role Server\",\"0x000000000000000000000000000000000000006f\":\"MockPool\",\"0xaa10a84ce7d9ae517a52c6d5ca153b369af99ecf\":\"admin\",\"0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2\":\"Wrapped Ether\",\"0x1111111111111111111111111111111111111111\":\"Currency3\"},\"duration\":\"27\u00b5s 583ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_BONUS_pricingBoundsUnsetWhenBothZero()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":1938237}},\"traces\":[],\"labeled_addresses\":{\"0xb6d0227c2a73e24642dd002df94ff0ef69abf979\":\"LimitBreak AMM\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0x77d495327adb2f933310c9b8145a856b36eb6dd2\":\"exchangeFeeRecipient\",\"0x3333333333333333333333333333333333333333\":\"Currency4\",\"0xc5c7a5a6b65416c8494e9ccde6cacebdc0a2d8b8\":\"feeOnTopRecipient\",\"0xa4d4c1f8a763ef6a0140d04291eceef913ffc272\":\"carol\",\"0x721c002b0059009a671d00ad1700c9748146cd1b\":\"Creator Token Transfer Validator\",\"0x6000030",
+      "quality": {
+        "quality": "real",
+        "has_real_assertion": true,
+        "size": 43280
+      }
+    },
+    "H-R8-HR-05": {
+      "compiled": true,
+      "executed": true,
+      "tests_passed": 0,
+      "tests_failed": 0,
+      "raw_output": "{\"test/AuditExtHijackerR8.t.sol:ExtHijackerR8Test\":{\"duration\":\"2ms 685\u00b5s 750ns\",\"test_results\":{\"test_BONUS_operatorPrecedenceBitOrVsEq()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":979}},\"traces\":[],\"labeled_addresses\":{\"0xb6d0227c2a73e24642dd002df94ff0ef69abf979\":\"LimitBreak AMM\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0x77d495327adb2f933310c9b8145a856b36eb6dd2\":\"exchangeFeeRecipient\",\"0x3333333333333333333333333333333333333333\":\"Currency4\",\"0xc5c7a5a6b65416c8494e9ccde6cacebdc0a2d8b8\":\"feeOnTopRecipient\",\"0xa4d4c1f8a763ef6a0140d04291eceef913ffc272\":\"carol\",\"0x721c002b0059009a671d00ad1700c9748146cd1b\":\"Creator Token Transfer Validator\",\"0x6000030000842044000077551d00cfc6b4005900\":\"Wrapped Native\",\"0x328809bc894f92807417d2dad6b7c998c1afdac6\":\"alice\",\"0x1d96f2f6bef1202e4ce1ff6dad0c2cb002861d3e\":\"bob\",\"0x00000000d7b37203f54e165fb204b57c30d15835\":\"Role Server\",\"0x000000000000000000000000000000000000006f\":\"MockPool\",\"0xaa10a84ce7d9ae517a52c6d5ca153b369af99ecf\":\"admin\",\"0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2\":\"Wrapped Ether\",\"0x1111111111111111111111111111111111111111\":\"Currency3\"},\"duration\":\"27\u00b5s 583ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_BONUS_pricingBoundsUnsetWhenBothZero()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":1938237}},\"traces\":[],\"labeled_addresses\":{\"0xb6d0227c2a73e24642dd002df94ff0ef69abf979\":\"LimitBreak AMM\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0x77d495327adb2f933310c9b8145a856b36eb6dd2\":\"exchangeFeeRecipient\",\"0x3333333333333333333333333333333333333333\":\"Currency4\",\"0xc5c7a5a6b65416c8494e9ccde6cacebdc0a2d8b8\":\"feeOnTopRecipient\",\"0xa4d4c1f8a763ef6a0140d04291eceef913ffc272\":\"carol\",\"0x721c002b0059009a671d00ad1700c9748146cd1b\":\"Creator Token Transfer Validator\",\"0x6000030",
+      "quality": {
+        "quality": "real",
+        "has_real_assertion": true,
+        "size": 43280
+      }
+    },
+    "H-R8-HR-06": {
+      "compiled": true,
+      "executed": true,
+      "tests_passed": 0,
+      "tests_failed": 0,
+      "raw_output": "{\"test/AuditExtHijackerR8.t.sol:ExtHijackerR8Test\":{\"duration\":\"2ms 685\u00b5s 750ns\",\"test_results\":{\"test_BONUS_operatorPrecedenceBitOrVsEq()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":979}},\"traces\":[],\"labeled_addresses\":{\"0xb6d0227c2a73e24642dd002df94ff0ef69abf979\":\"LimitBreak AMM\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0x77d495327adb2f933310c9b8145a856b36eb6dd2\":\"exchangeFeeRecipient\",\"0x3333333333333333333333333333333333333333\":\"Currency4\",\"0xc5c7a5a6b65416c8494e9ccde6cacebdc0a2d8b8\":\"feeOnTopRecipient\",\"0xa4d4c1f8a763ef6a0140d04291eceef913ffc272\":\"carol\",\"0x721c002b0059009a671d00ad1700c9748146cd1b\":\"Creator Token Transfer Validator\",\"0x6000030000842044000077551d00cfc6b4005900\":\"Wrapped Native\",\"0x328809bc894f92807417d2dad6b7c998c1afdac6\":\"alice\",\"0x1d96f2f6bef1202e4ce1ff6dad0c2cb002861d3e\":\"bob\",\"0x00000000d7b37203f54e165fb204b57c30d15835\":\"Role Server\",\"0x000000000000000000000000000000000000006f\":\"MockPool\",\"0xaa10a84ce7d9ae517a52c6d5ca153b369af99ecf\":\"admin\",\"0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2\":\"Wrapped Ether\",\"0x1111111111111111111111111111111111111111\":\"Currency3\"},\"duration\":\"27\u00b5s 583ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_BONUS_pricingBoundsUnsetWhenBothZero()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":1938237}},\"traces\":[],\"labeled_addresses\":{\"0xb6d0227c2a73e24642dd002df94ff0ef69abf979\":\"LimitBreak AMM\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0x77d495327adb2f933310c9b8145a856b36eb6dd2\":\"exchangeFeeRecipient\",\"0x3333333333333333333333333333333333333333\":\"Currency4\",\"0xc5c7a5a6b65416c8494e9ccde6cacebdc0a2d8b8\":\"feeOnTopRecipient\",\"0xa4d4c1f8a763ef6a0140d04291eceef913ffc272\":\"carol\",\"0x721c002b0059009a671d00ad1700c9748146cd1b\":\"Creator Token Transfer Validator\",\"0x6000030",
+      "quality": {
+        "quality": "real",
+        "has_real_assertion": true,
+        "size": 43280
+      }
+    },
+    "H-R8-HR-07": {
+      "compiled": true,
+      "executed": true,
+      "tests_passed": 0,
+      "tests_failed": 0,
+      "raw_output": "{\"test/AuditExtHijackerR8.t.sol:ExtHijackerR8Test\":{\"duration\":\"2ms 685\u00b5s 750ns\",\"test_results\":{\"test_BONUS_operatorPrecedenceBitOrVsEq()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":979}},\"traces\":[],\"labeled_addresses\":{\"0xb6d0227c2a73e24642dd002df94ff0ef69abf979\":\"LimitBreak AMM\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0x77d495327adb2f933310c9b8145a856b36eb6dd2\":\"exchangeFeeRecipient\",\"0x3333333333333333333333333333333333333333\":\"Currency4\",\"0xc5c7a5a6b65416c8494e9ccde6cacebdc0a2d8b8\":\"feeOnTopRecipient\",\"0xa4d4c1f8a763ef6a0140d04291eceef913ffc272\":\"carol\",\"0x721c002b0059009a671d00ad1700c9748146cd1b\":\"Creator Token Transfer Validator\",\"0x6000030000842044000077551d00cfc6b4005900\":\"Wrapped Native\",\"0x328809bc894f92807417d2dad6b7c998c1afdac6\":\"alice\",\"0x1d96f2f6bef1202e4ce1ff6dad0c2cb002861d3e\":\"bob\",\"0x00000000d7b37203f54e165fb204b57c30d15835\":\"Role Server\",\"0x000000000000000000000000000000000000006f\":\"MockPool\",\"0xaa10a84ce7d9ae517a52c6d5ca153b369af99ecf\":\"admin\",\"0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2\":\"Wrapped Ether\",\"0x1111111111111111111111111111111111111111\":\"Currency3\"},\"duration\":\"27\u00b5s 583ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_BONUS_pricingBoundsUnsetWhenBothZero()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":1938237}},\"traces\":[],\"labeled_addresses\":{\"0xb6d0227c2a73e24642dd002df94ff0ef69abf979\":\"LimitBreak AMM\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0x77d495327adb2f933310c9b8145a856b36eb6dd2\":\"exchangeFeeRecipient\",\"0x3333333333333333333333333333333333333333\":\"Currency4\",\"0xc5c7a5a6b65416c8494e9ccde6cacebdc0a2d8b8\":\"feeOnTopRecipient\",\"0xa4d4c1f8a763ef6a0140d04291eceef913ffc272\":\"carol\",\"0x721c002b0059009a671d00ad1700c9748146cd1b\":\"Creator Token Transfer Validator\",\"0x6000030",
+      "quality": {
+        "quality": "real",
+        "has_real_assertion": true,
+        "size": 43280
+      }
+    },
+    "H-R8-HR-08": {
+      "compiled": true,
+      "executed": true,
+      "tests_passed": 0,
+      "tests_failed": 0,
+      "raw_output": "{\"test/AuditExtHijackerR8.t.sol:ExtHijackerR8Test\":{\"duration\":\"2ms 685\u00b5s 750ns\",\"test_results\":{\"test_BONUS_operatorPrecedenceBitOrVsEq()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":979}},\"traces\":[],\"labeled_addresses\":{\"0xb6d0227c2a73e24642dd002df94ff0ef69abf979\":\"LimitBreak AMM\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0x77d495327adb2f933310c9b8145a856b36eb6dd2\":\"exchangeFeeRecipient\",\"0x3333333333333333333333333333333333333333\":\"Currency4\",\"0xc5c7a5a6b65416c8494e9ccde6cacebdc0a2d8b8\":\"feeOnTopRecipient\",\"0xa4d4c1f8a763ef6a0140d04291eceef913ffc272\":\"carol\",\"0x721c002b0059009a671d00ad1700c9748146cd1b\":\"Creator Token Transfer Validator\",\"0x6000030000842044000077551d00cfc6b4005900\":\"Wrapped Native\",\"0x328809bc894f92807417d2dad6b7c998c1afdac6\":\"alice\",\"0x1d96f2f6bef1202e4ce1ff6dad0c2cb002861d3e\":\"bob\",\"0x00000000d7b37203f54e165fb204b57c30d15835\":\"Role Server\",\"0x000000000000000000000000000000000000006f\":\"MockPool\",\"0xaa10a84ce7d9ae517a52c6d5ca153b369af99ecf\":\"admin\",\"0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2\":\"Wrapped Ether\",\"0x1111111111111111111111111111111111111111\":\"Currency3\"},\"duration\":\"27\u00b5s 583ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_BONUS_pricingBoundsUnsetWhenBothZero()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":1938237}},\"traces\":[],\"labeled_addresses\":{\"0xb6d0227c2a73e24642dd002df94ff0ef69abf979\":\"LimitBreak AMM\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0x77d495327adb2f933310c9b8145a856b36eb6dd2\":\"exchangeFeeRecipient\",\"0x3333333333333333333333333333333333333333\":\"Currency4\",\"0xc5c7a5a6b65416c8494e9ccde6cacebdc0a2d8b8\":\"feeOnTopRecipient\",\"0xa4d4c1f8a763ef6a0140d04291eceef913ffc272\":\"carol\",\"0x721c002b0059009a671d00ad1700c9748146cd1b\":\"Creator Token Transfer Validator\",\"0x6000030",
+      "quality": {
+        "quality": "real",
+        "has_real_assertion": true,
+        "size": 43280
+      }
+    }
+  }
+}

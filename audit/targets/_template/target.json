@@ -1,0 +1,64 @@
+{
+  "name": "my-protocol",
+  "description": "Security audit of My Protocol",
+
+  "repos": {
+    "core": {
+      "path": "core/",
+      "src": "src/",
+      "tokens": 50000,
+      "prefix": "CORE"
+    }
+  },
+
+  "agents": {
+    "compliance": [
+      {
+        "name": "math-deep-diver",
+        "role": "black-hat",
+        "template": "math-deep-diver",
+        "scope": ["core"],
+        "profile": "max_reasoning",
+        "checklist": "checklist-math.md",
+        "checklist_expected_items": 25
+      },
+      {
+        "name": "state-desync",
+        "role": "black-hat",
+        "template": "state-desync",
+        "scope": ["core"],
+        "profile": "max_reasoning",
+        "checklist": "checklist-state.md",
+        "checklist_expected_items": 25
+      },
+      {
+        "name": "auth-forger",
+        "role": "black-hat",
+        "template": "auth-forger",
+        "scope": ["core"],
+        "profile": "max_reasoning",
+        "checklist": "checklist-auth.md",
+        "checklist_expected_items": 22
+      }
+    ],
+    "exploit": [
+      {
+        "name": "exploit-agent",
+        "role": "black-hat",
+        "template": "exploit-user-prompt",
+        "scope": ["core"],
+        "profile": "fast_reasoning",
+        "max_turns": 500
+      }
+    ]
+  },
+
+  "boundaries": [],
+
+  "budget": {
+    "max_run_cost_usd": 100,
+    "max_turns_per_agent": 300
+  },
+
+  "custom_detectors": []
+}

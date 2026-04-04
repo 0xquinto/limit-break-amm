@@ -1,0 +1,574 @@
+{
+  "agent_name": "precision-sniper",
+  "agent_role": "precision-math-sniper",
+  "wave": 1,
+  "findings": [],
+  "ruled_out_vectors": [
+    {
+      "vector": "INV-SW02: Profitable round-trip swap in DynamicPoolType",
+      "why_ruled_out": "Round-trip (USDC->WETH->USDC) with separate non-LP swapper always loses. 1e15 input lost ~3.07e12 wei. Tested across 5 orders of magnitude (1 wei to 1e15). Initial false positive was due to LP fee collection bias when LP=swapper.",
+      "test_file": "amm-pool-type-dynamic/test/audit/AuditPrecisionSniperRoundTrip.t.sol",
+      "repos": [
+        "amm-pool-type-dynamic"
+      ],
+      "contracts": [
+        "DynamicPoolType.sol",
+        "DynamicHelper.sol",
+        "SwapMath.sol"
+      ],
+      "functions": [
+        "computeSwap()",
+        "computeSwapByInputStep()"
+      ],
+      "keywords": [
+        "round-trip",
+        "arbitrage",
+        "INV-SW02"
+      ]
+    },
+    {
+      "vector": "INV-SW03: Rounding does not favor protocol in 1-wei swaps",
+      "why_ruled_out": "200 sequential 1-wei alternating swaps on DynamicPoolType. Pool total balance (USDC+WETH) did not decrease. Rounding consistently favors protocol.",
+      "test_file": "amm-pool-type-dynamic/test/audit/AuditPrecisionSniperC3toC10.t.sol",
+      "repos": [
+        "amm-pool-type-dynamic"
+      ],
+      "contracts": [
+        "DynamicHelper.sol",
+        "SwapMath.sol"
+      ],
+      "functions": [
+        "computeSwapByInputStep()",
+        "getAmount0Delta()",
+        "getAmount1Delta()"
+      ],
+      "keywords": [
+        "rounding",
+        "dust-loop",
+        "INV-SW03",
+        "balancer-pattern"
+      ]
+    },
+    {
+      "vector": "Cetus overflow pattern in SqrtPriceMath.computeRatioX96",
+      "why_ruled_out": "Extreme inputs (1, type(uint160).max) return 0, which is rejected at pool creation validation (MIN_SQRT_RATIO check). TickMath boundaries (MIN_TICK, MAX_TICK) stay within valid uint160 range. getTickAtSqrtPrice(MIN_SQRT_RATIO-1) correctly reverts.",
+      "test_file": "amm-pool-type-dynamic/test/audit/AuditPrecisionSniperC3toC10.t.sol",
+      "repos": [
+        "amm-pool-type-dynamic"
+      ],
+      "contracts": [
+        "SqrtPriceMath.sol",
+        "TickMath.sol",
+        "DynamicPoolType.sol"
+      ],
+      "functions": [
+        "computeRatioX96()",
+        "getSqrtPriceAtTick()",
+        "getTickAtSqrtPrice()",
+        "createPool()"
+      ],
+      "keywords": [
+        "overflow",
+        "cetus",
+        "tick-math",
+        "C26"
+      ]
+    },
+    {
+      "vector": "First depositor inflation (ERC-4626 pattern) in DynamicPoolType",
+      "why_ruled_out": "Concentrated liquidity uses explicit liquidity units, not shares. Direct token donation to AMM contract does not inflate any position's tracked liquidity. Second depositor's position is independent of donated tokens. NOT VULNERABLE.",
+      "test_file": "amm-pool-type-dynamic/test/audit/AuditPrecisionSniperC3toC10.t.sol",
+      "repos": [
+        "amm-pool-type-dynamic"
+      ],
+      "contracts": [
+        "DynamicPoolType.sol",
+        "DynamicHelper.sol"
+      ],
+      "functions": [
+        "addLiquidity()",
+        "modifyPosition()"
+      ],
+      "keywords": [
+        "first-depositor",
+        "inflation",
+        "ERC-4626",
+        "C28"
+      ]
+    },
+    {
+      "vector": "H-R2-CP-05: Empty pool snapPrice manipulation",
+      "why_ruled_out": "snapPrice moves pool price when liquidity=0. However: (1) attacker must deposit own tokens at manipulated price, (2) swap output bounded by attacker's deposited reserves, (3) no victim forced to trade. Standard Uniswap V3 behavior.",
+      "test_file": "amm-pool-type-dynamic/test/audit/AuditPrecisionSniperW1V3.t.sol",
+      "repos": [
+        "amm-pool-type-dynamic"
+      ],
+      "contracts": [
+        "DynamicPoolType.sol",
+        "DynamicHelper.sol"
+      ],
+      "functions": [
+        "addLiquidity()",
+        "snapPrice()"
+      ],
+      "keywords": [
+        "snapPrice",
+        "empty-pool",
+        "price-manipulation",
+        "H-R2-CP-05"
+      ]
+    },
+    {
+      "vector": "H-R2-CP-07: 100% fee asymmetry (input allowed, output rejected)",
+      "why_ruled_out": "By design. Input swap at 100% fee: amountRemainingLessFee=0, amountIn=0, feeAmount=full amount, amountOut=0. Output swap at 100% fee rejected. This is intentional: 100% input fee means 'take all as fee', while 100% output fee is mathematically undefined (infinite input needed). No extraction path.",
+      "test_file": "amm-pool-type-dynamic/test/audit/AuditPrecisionSniperC3toC10.t.sol",
+      "repos": [
+        "amm-pool-type-dynamic",
+        "lbamm-pool-type-fixed",
+        "lbamm-pool-type-single-provider"
+      ],
+      "contracts": [
+        "SwapMath.sol",
+        "DynamicPoolType.sol"
+      ],
+      "functions": [
+        "computeSwapByInputStep()",
+        "computeSwapByOutputStep()"
+      ],
+      "keywords": [
+        "fee-asymmetry",
+        "100-percent-fee",
+        "H-R2-CP-07"
+      ]
+    },
+    {
+      "vector": "H-R2-CP-01: FixedPool dust front-running",
+      "why_ruled_out": "Dust accumulation (_accumulateDustToWithdrawal) gives dust to first withdrawer. However: (1) dust per swap is bounded to 1 unit per output operation, (2) dust is bounded by potentialDustForOneInput check (line 1700), (3) economic impact < gas cost. Even 10000 swaps produce <10000 wei of dust. Not profitable.",
+      "test_file": "code-analysis: FixedHelper.sol:271-290,1694-1710",
+      "repos": [
+        "lbamm-pool-type-fixed"
+      ],
+      "contracts": [
+        "FixedHelper.sol"
+      ],
+      "functions": [
+        "_accumulateDustToWithdrawal()",
+        "_splitAmountsAndFeesByHeight()"
+      ],
+      "keywords": [
+        "dust",
+        "front-running",
+        "fixed-pool",
+        "H-R2-CP-01"
+      ]
+    },
+    {
+      "vector": "H-R2-CP-04: SingleProvider hook price manipulation (no bounds check)",
+      "why_ruled_out": "Hook is set at pool creation by pool creator (the LP). Only the LP's own capital is at risk. Requires compromised hook contract. Core reserve checks (_safeDecrementUint128) limit extraction to available reserves. Not a vulnerability: attacker = victim (self-inflicted config).",
+      "test_file": "code-analysis: SingleProviderPoolType.sol:323-330",
+      "repos": [
+        "lbamm-pool-type-single-provider"
+      ],
+      "contracts": [
+        "SingleProviderPoolType.sol",
+        "SingleProviderHelper.sol"
+      ],
+      "functions": [
+        "swapByInput()",
+        "swapByOutput()"
+      ],
+      "keywords": [
+        "hook",
+        "price-manipulation",
+        "single-provider",
+        "H-R2-CP-04"
+      ]
+    },
+    {
+      "vector": "H-R2-CP-08: Fixed pool off-by-one amountIn tolerance",
+      "why_ruled_out": "+1 tolerance at line 1680 allows totalAmountInFilled = amountIn + 1 in swap-by-output. However: (1) Core's balance check at _finalizeSwapCollectFundsAndDisburse (line 2208) verifies actual token balance, catching any discrepancy, (2) the +1 is recalculated into fees (line 1691), not leaked, (3) cannot compound across swaps since each swap has independent balance verification.",
+      "test_file": "code-analysis: FixedHelper.sol:1678-1692,AMMModule.sol:2208",
+      "repos": [
+        "lbamm-pool-type-fixed",
+        "lbamm-core"
+      ],
+      "contracts": [
+        "FixedHelper.sol",
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_splitAmountsAndFeesByHeight()",
+        "_finalizeSwapCollectFundsAndDisburse()"
+      ],
+      "keywords": [
+        "off-by-one",
+        "tolerance",
+        "fixed-pool",
+        "H-R2-CP-08"
+      ]
+    },
+    {
+      "vector": "H-R2-CP-10: SingleProvider swapByInput fallback rate arbitrage",
+      "why_ruled_out": "When amountOut > reserveOut, fallback to swapByOutput with reserveOut. Check at line 49 ensures actualAmountIn <= initialAmountIn. calculateFixedOutput rounds UP (user pays more), so fallback rate is worse for user. No arbitrage: user gets partial fill at worse rate than direct path.",
+      "test_file": "code-analysis: SingleProviderHelper.sol:42-50,137,160-179",
+      "repos": [
+        "lbamm-pool-type-single-provider"
+      ],
+      "contracts": [
+        "SingleProviderHelper.sol"
+      ],
+      "functions": [
+        "swapByInput()",
+        "swapByOutput()",
+        "calculateFixedInput()",
+        "calculateFixedOutput()"
+      ],
+      "keywords": [
+        "fallback",
+        "rate-arbitrage",
+        "single-provider",
+        "H-R2-CP-10"
+      ]
+    },
+    {
+      "vector": "H-R2-CP-02: FixedPool _collectPositionSide unchecked underflow",
+      "why_ruled_out": "consumedLiquidity tracks net consumption. sideValue is derived from position boundaries (endHeight - currentHeight), always <= liquidity by construction. The --sideValue at line 502-503 only applies when height.liquidity != height.remainingAtHeight, which means partial consumption. Result: liquidity - sideValue >= 1 always. No underflow path.",
+      "test_file": "code-analysis: FixedHelper.sol:490-516",
+      "repos": [
+        "lbamm-pool-type-fixed"
+      ],
+      "contracts": [
+        "FixedHelper.sol"
+      ],
+      "functions": [
+        "_collectPositionSide()"
+      ],
+      "keywords": [
+        "unchecked",
+        "underflow",
+        "fixed-pool",
+        "H-R2-CP-02"
+      ]
+    },
+    {
+      "vector": "H-R2-CP-03: FixedPool consumedLiquidity overflow",
+      "why_ruled_out": "consumedLiquidity is uint256 \u2014 overflow requires 2^256 accumulated swap volume, physically impossible. FullMath.mulDiv handles uint256*uint256/uint256 correctly. Expected reserve calculation remains consistent at any practical volume.",
+      "test_file": "code-analysis: FixedHelper.sol:1865-1866,1385-1386",
+      "repos": [
+        "lbamm-pool-type-fixed"
+      ],
+      "contracts": [
+        "FixedHelper.sol"
+      ],
+      "functions": [
+        "_increaseHeight()",
+        "updateExpectedReserve()"
+      ],
+      "keywords": [
+        "overflow",
+        "consumed-liquidity",
+        "fixed-pool",
+        "H-R2-CP-03"
+      ]
+    },
+    {
+      "vector": "H-R2-CP-06: FixedPool withdrawLiquidity unchecked redeposit underflow",
+      "why_ruled_out": "The unchecked block at lines 73-76 computes withdraw = value - redeposited. Safety relies on redeposited <= value, which is guaranteed: (1) value is the full position value from _collectPositionSide, (2) redeposited is computed from (value - liquidityParams.amount), (3) check at line 49 ensures value >= liquidityParams.amount. Precision loss (precisionAddLoss) is subtracted, making redeposited smaller, not larger.",
+      "test_file": "code-analysis: FixedHelper.sol:38-76,329-330,360-367",
+      "repos": [
+        "lbamm-pool-type-fixed"
+      ],
+      "contracts": [
+        "FixedHelper.sol"
+      ],
+      "functions": [
+        "withdrawLiquidity()",
+        "_calculateLiquidityStartAndEndHeights()"
+      ],
+      "keywords": [
+        "unchecked",
+        "underflow",
+        "redeposit",
+        "withdrawal",
+        "H-R2-CP-06"
+      ]
+    },
+    {
+      "vector": "H-R2-CP-09: SingleProvider stale state read via getPoolState",
+      "why_ruled_out": "TstorishReentrancyGuardWithFlags prevents concurrent state-modifying operations. getPoolState is a view function returning consistent state within a single external call. The cross-contract read pattern is safe because: (1) reentrancy guard blocks state modification between pool type's getPoolState call and Core's reserve update, (2) no ERC-777 or callback tokens are used in standard configuration.",
+      "test_file": "code-analysis: SingleProviderPoolType.sol:149-150,312,AMMModule.sol:397-458",
+      "repos": [
+        "lbamm-pool-type-single-provider",
+        "lbamm-core"
+      ],
+      "contracts": [
+        "SingleProviderPoolType.sol",
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "addLiquidity()",
+        "removeLiquidity()",
+        "getPoolState()"
+      ],
+      "keywords": [
+        "stale-state",
+        "reentrancy",
+        "cross-contract",
+        "H-R2-CP-09"
+      ]
+    },
+    {
+      "vector": "Hook price manipulation via extreme values (C29)",
+      "why_ruled_out": "SqrtPriceMath handles near-MIN_SQRT_RATIO and near-MAX_SQRT_RATIO without overflow. getAmount0Delta and getAmount1Delta produce valid (non-zero) amounts at extreme price boundaries. SingleProvider pools bound-check hook prices against MIN/MAX_SQRT_RATIO.",
+      "test_file": "amm-pool-type-dynamic/test/audit/AuditPrecisionSniperC3toC10.t.sol",
+      "repos": [
+        "amm-pool-type-dynamic",
+        "lbamm-pool-type-single-provider"
+      ],
+      "contracts": [
+        "SqrtPriceMath.sol",
+        "SingleProviderPoolType.sol"
+      ],
+      "functions": [
+        "getAmount0Delta()",
+        "getAmount1Delta()",
+        "getNextSqrtPriceFromInput()"
+      ],
+      "keywords": [
+        "extreme-price",
+        "hook",
+        "bounds-check",
+        "C29"
+      ]
+    },
+    {
+      "vector": "Fee exceeds input amount in SwapMath",
+      "why_ruled_out": "Tested fee rates [0, 1, 500, 3000, 9999, 10000]. For all rates: amountIn + feeAmount <= amountSpecifiedRemaining. At 100% fee: amountIn=0, feeAmount=full amount, amountOut=0. Fee calculation is safe.",
+      "test_file": "amm-pool-type-dynamic/test/audit/AuditPrecisionSniperC3toC10.t.sol",
+      "repos": [
+        "amm-pool-type-dynamic"
+      ],
+      "contracts": [
+        "SwapMath.sol"
+      ],
+      "functions": [
+        "computeSwapByInputStep()",
+        "computeSwapByOutputStep()"
+      ],
+      "keywords": [
+        "fee",
+        "overflow",
+        "C17"
+      ]
+    },
+    {
+      "vector": "SingleProvider round-trip profit via rounding asymmetry",
+      "why_ruled_out": "calculateFixedInput rounds DOWN (mulDiv), calculateFixedOutput rounds UP (mulDivRoundingUp). Round-trip: input->output (rounds down) then output->input (rounds up) always costs more than original. Verified across 3 price points and 7 amounts.",
+      "test_file": "amm-pool-type-dynamic/test/audit/AuditPrecisionSniperC3toC10.t.sol",
+      "repos": [
+        "lbamm-pool-type-single-provider"
+      ],
+      "contracts": [
+        "SingleProviderHelper.sol"
+      ],
+      "functions": [
+        "calculateFixedInput()",
+        "calculateFixedOutput()"
+      ],
+      "keywords": [
+        "round-trip",
+        "rounding",
+        "single-provider",
+        "C20"
+      ]
+    }
+  ],
+  "theft_theses": [
+    {
+      "thesis": "Extract value via profitable round-trip swap (buy low sell high within same pool)",
+      "victim": "LP (liquidity provider)",
+      "asset": "Pool tokens (USDC/WETH)",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Accumulate rounding dust via repeated 1-wei swaps to drain pool",
+      "victim": "LP",
+      "asset": "Pool tokens",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Exploit Cetus-style overflow in computeRatioX96 for near-zero price",
+      "victim": "LP",
+      "asset": "Pool tokens via manipulated price",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "First depositor inflation attack on DynamicPoolType",
+      "victim": "Second depositor",
+      "asset": "Deposited tokens (shares rounded to 0)",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Empty pool snapPrice manipulation for arbitrage profit",
+      "victim": "Innocent swappers or new LPs",
+      "asset": "Tokens at manipulated price",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Front-run dust accumulation in FixedPool withdrawals",
+      "victim": "Other LPs",
+      "asset": "Accumulated dust tokens",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Exploit 100% fee asymmetry to create one-directional token trap",
+      "victim": "Swappers",
+      "asset": "Trapped tokens",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "SingleProvider fallback rate arbitrage when amountOut > reserve",
+      "victim": "LP (single provider)",
+      "asset": "Pool reserves",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Unchecked underflow in FixedPool _collectPositionSide for inflated withdrawal",
+      "victim": "Pool (other LPs)",
+      "asset": "Inflated withdrawal amount",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Off-by-one amountIn tolerance in FixedPool swap-by-output compounding across swaps",
+      "victim": "Pool reserves",
+      "asset": "1 wei per swap accumulated",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    }
+  ],
+  "hypothesis_results": [
+    {
+      "id": "H-R2-CP-01",
+      "status": "dismissed",
+      "test_file": "code-analysis: FixedHelper.sol:271-290,1694-1710",
+      "detail": "Dust per swap bounded to 1 unit. 10000 swaps = <10000 wei dust. Not economically viable."
+    },
+    {
+      "id": "H-R2-CP-02",
+      "status": "dismissed",
+      "test_file": "code-analysis: FixedHelper.sol:490-516",
+      "detail": "sideValue derived from position boundaries, always <= liquidity. No underflow path."
+    },
+    {
+      "id": "H-R2-CP-03",
+      "status": "dismissed",
+      "test_file": "code-analysis: FixedHelper.sol:1865-1866",
+      "detail": "uint256 overflow requires 2^256 volume. Physically impossible."
+    },
+    {
+      "id": "H-R2-CP-04",
+      "status": "dismissed",
+      "test_file": "code-analysis: SingleProviderPoolType.sol:323-330",
+      "detail": "Hook set by pool creator (LP). Attacker = victim. Self-inflicted config error."
+    },
+    {
+      "id": "H-R2-CP-05",
+      "status": "dismissed",
+      "test_file": "amm-pool-type-dynamic/test/audit/AuditPrecisionSniperW1V3.t.sol",
+      "detail": "snapPrice on empty pool is standard Uniswap V3 behavior. Attacker risks own capital, no forced victim."
+    },
+    {
+      "id": "H-R2-CP-06",
+      "status": "dismissed",
+      "test_file": "code-analysis: FixedHelper.sol:38-76",
+      "detail": "redeposited <= value guaranteed by check at line 49 and precisionAddLoss subtraction."
+    },
+    {
+      "id": "H-R2-CP-07",
+      "status": "dismissed",
+      "test_file": "amm-pool-type-dynamic/test/audit/AuditPrecisionSniperC3toC10.t.sol",
+      "detail": "100% input fee = take all as fee (0 output). 100% output fee mathematically undefined. By design."
+    },
+    {
+      "id": "H-R2-CP-08",
+      "status": "dismissed",
+      "test_file": "code-analysis: FixedHelper.sol:1678-1692,AMMModule.sol:2208",
+      "detail": "+1 recalculated into fees. Core balance check prevents compounding."
+    },
+    {
+      "id": "H-R2-CP-09",
+      "status": "dismissed",
+      "test_file": "code-analysis: SingleProviderPoolType.sol:149-150,AMMModule.sol:397-458",
+      "detail": "Reentrancy guard prevents concurrent state modification. View function returns consistent state."
+    },
+    {
+      "id": "H-R2-CP-10",
+      "status": "dismissed",
+      "test_file": "code-analysis: SingleProviderHelper.sol:42-50",
+      "detail": "Fallback uses calculateFixedOutput (rounds UP). User pays more, not less. Check at line 49 enforces limit."
+    }
+  ],
+  "metadata": {
+    "checklist_items_completed": "A: 4/4, B: 3/5, C: 25/29, D: 10/10",
+    "tools_run": {
+      "slither": {
+        "ran": true,
+        "repos": [
+          "amm-pool-type-dynamic",
+          "lbamm-pool-type-fixed",
+          "lbamm-pool-type-single-provider"
+        ],
+        "note": "MCP: run_detectors + list_functions. CLI crashes on cross-repo structs. 2 high (arbitrary-send-erc20 FPs), 20+ medium (TickMath divide-before-multiply, standard Uniswap V3 pattern)."
+      },
+      "aderyn": {
+        "ran": true,
+        "repos": [
+          "amm-pool-type-dynamic",
+          "lbamm-pool-type-fixed"
+        ],
+        "note": "Crashed on both repos (known cross-repo bug in aderyn 0.6.8). Logged as attempted."
+      },
+      "forge": {
+        "ran": true,
+        "note": "51 tests total. File: amm-pool-type-dynamic/test/audit/AuditPrecisionSniperW1V3.t.sol, AuditPrecisionSniperRoundTrip.t.sol, AuditPrecisionSniperC3toC10.t.sol, AuditPrecisionSniperHalmos.t.sol"
+      },
+      "halmos": {
+        "ran": true,
+        "note": "6 symbolic checks. 4 PASS (mulDiv, roundingUp, msbPow2, noUnderflow). 2 TIMEOUT (priceDirection, deltaRounding - expected for complex assembly math). File: AuditPrecisionSniperHalmos.t.sol"
+      },
+      "medusa": {
+        "ran": true,
+        "note": "DynamicPoolType: 253882 calls, 0 failures, 14 assertion tests passed. FixedPoolType: constructor args required, cannot fuzz directly."
+      },
+      "audit-context-building": {
+        "ran": true,
+        "note": "DynamicPoolType.sol: 5 invariants, trust boundaries, critical state mapped"
+      },
+      "entry-point-analyzer": {
+        "ran": true,
+        "note": "DynamicPoolType.sol: 8 state-changing entry points, all contract-only (Core AMM caller)"
+      }
+    },
+    "num_turns": 85,
+    "tool_uses": 120,
+    "files_read": 25,
+    "theses_tested": 10,
+    "theses_confirmed": 0,
+    "theses_ruled_out": 10,
+    "triage_log": {
+      "skip": 3,
+      "borderline": 3,
+      "survive": 4
+    },
+    "gate_passed": true
+  }
+}

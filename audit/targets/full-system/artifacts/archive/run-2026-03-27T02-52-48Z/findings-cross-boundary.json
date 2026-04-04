@@ -1,0 +1,986 @@
+{
+  "agent_name": "cross-boundary",
+  "agent_role": "Cross-Boundary Tracer",
+  "wave": 1,
+  "findings": [],
+  "ruled_out_vectors": [
+    {
+      "vector": "C1: Core->PoolType trust boundary \u2014 pool type lies about amountOut",
+      "why_ruled_out": "Balance check at AMMModule:2208 catches under-delivery. Pool type addresses require 6 leading zero bytes (admin-deployed). _safeDecrementUint128 reverts if amountOut > reserve.",
+      "test_file": "lbamm-hooks-and-handlers/test/audit/CrossBoundaryR7Checklist.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_finalizeSwapCollectFundsAndDisburse()"
+      ],
+      "keywords": [
+        "balance-check",
+        "pool-type",
+        "trust-boundary"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "C2: Core->Handler token mismatch \u2014 handler receives wrong token",
+      "why_ruled_out": "Core reads tokens from verified pool state (poolId encodes token pair). Handler validates msg.sender == AMM. Token addresses come from swapOrder validated against poolId.",
+      "test_file": "lbamm-hooks-and-handlers/test/audit/CrossBoundaryR7Checklist.t.sol",
+      "repos": [
+        "lbamm-core",
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMModule.sol",
+        "CLOBTransferHandler.sol"
+      ],
+      "functions": [
+        "_finalizeSwapCollectFundsAndDisburse()",
+        "ammHandleTransfer()"
+      ],
+      "keywords": [
+        "token-mismatch",
+        "handler",
+        "trust-boundary"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "C3: Core->Hook fee manipulation \u2014 hook returns fee > swap amount",
+      "why_ruled_out": "For input swaps: amountIn - fee underflows in Solidity 0.8.24 (reverts). For output swaps: limitAmount protects user. Hook is set by token creator (trusted by design).",
+      "test_file": "lbamm-hooks-and-handlers/test/audit/CrossBoundaryR7Checklist.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_executeSwapHook()",
+        "_applySwapByInputInputFees()"
+      ],
+      "keywords": [
+        "hook-fee",
+        "overflow",
+        "trust-boundary"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "C5: PoolType->Core return path \u2014 feeAmount > amountIn",
+      "why_ruled_out": "Fee BPS capped at MAX_BPS (10000=100%) for input and MAX_BPS-1 for output. Underflow protection in Solidity 0.8.24 prevents fee > amountIn.",
+      "test_file": "lbamm-hooks-and-handlers/test/audit/CrossBoundaryR7Checklist.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_applySwapByInputInputFees()",
+        "_applySwapByOutputOutputFees()"
+      ],
+      "keywords": [
+        "fee-amount",
+        "underflow",
+        "return-path"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "C7: Hook callback access control \u2014 validateHandlerOrder has no msg.sender check",
+      "why_ruled_out": "validateHandlerOrder is an external view function with no state changes. Direct calls return pricing data but cannot extract value. All state-changing hook functions check _requireCallerIsAMM().",
+      "test_file": "lbamm-hooks-and-handlers/test/audit/CrossBoundaryR7Checklist.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "validateHandlerOrder()",
+        "_requireCallerIsAMM()"
+      ],
+      "keywords": [
+        "access-control",
+        "view-function",
+        "hook"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "C10: Output bounded by reserves \u2014 amountOut > pool reserves",
+      "why_ruled_out": "_safeDecrementUint128 on reserve prevents amountOut > reserve. Underflow reverts in all pool types (Dynamic, Fixed, SingleProvider).",
+      "test_file": "lbamm-hooks-and-handlers/test/audit/CrossBoundaryR7Checklist.t.sol",
+      "repos": [
+        "lbamm-core",
+        "amm-pool-type-dynamic"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_safeDecrementUint128()"
+      ],
+      "keywords": [
+        "reserves",
+        "underflow",
+        "output-bounded"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "C11: Denomination consistency \u2014 fee computed in wrong token denomination",
+      "why_ruled_out": "Traced all fee paths: input fees in tokenIn, output hook fees in tokenOut, feeOnTop in tokenIn, protocol fees in tokenIn. CLOB handler correctly maps amountIn/amountOut to tokenIn/tokenOut.",
+      "test_file": "lbamm-hooks-and-handlers/test/audit/CrossBoundaryR7Checklist.t.sol",
+      "repos": [
+        "lbamm-core",
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMModule.sol",
+        "CLOBTransferHandler.sol"
+      ],
+      "functions": [
+        "_applySwapByInputInputFees()",
+        "_applySwapByOutputOutputFees()",
+        "fillOrder()"
+      ],
+      "keywords": [
+        "denomination",
+        "fee-consistency",
+        "cross-boundary"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "C19: Hook revert causes accounting desync (Bunni pattern)",
+      "why_ruled_out": "If afterSwap reverts, the entire transaction reverts including beforeSwap effects. AMMStandardHook uses transient storage (tstorish) which is discarded on revert. No partial execution possible.",
+      "test_file": "lbamm-hooks-and-handlers/test/audit/CrossBoundaryR7Checklist.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "beforeSwap()",
+        "afterSwap()"
+      ],
+      "keywords": [
+        "accounting-desync",
+        "revert",
+        "transient-storage"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "C20: Diamond selector collision between pool type and core functions",
+      "why_ruled_out": "Pool types are external contracts called via external call (not delegatecall to diamond). Their selectors cannot collide with diamond facet selectors. Selector->facet mapping is explicit in LimitBreakAMM.sol.",
+      "test_file": "lbamm-hooks-and-handlers/test/audit/CrossBoundaryR7Checklist.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "LimitBreakAMM.sol"
+      ],
+      "functions": [
+        "fallback()"
+      ],
+      "keywords": [
+        "selector-collision",
+        "diamond",
+        "proxy"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "C21: Transient storage cross-path read \u2014 addLiquidity reads swap tstore slot",
+      "why_ruled_out": "DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT (0xFFFFFFFFFFFFFFFF) is only written by beforeSwap and read by afterSwap. validateAddLiquidity/validateRemoveLiquidity read _pricingBounds, not this slot. collectHookFeesByHook reads hookFees mapping.",
+      "test_file": "lbamm-hooks-and-handlers/test/audit/CrossBoundaryR7Checklist.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "beforeSwap()",
+        "afterSwap()",
+        "validateAddLiquidity()"
+      ],
+      "keywords": [
+        "transient-storage",
+        "cross-path",
+        "slot-isolation"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "H-R7-HH-05: Direct swap slot collision when both tokens use same hook",
+      "why_ruled_out": "Known FP pattern #1 in digest. Both tokenIn and tokenOut hooks receive identical swapAmount (computed once at line 2368). The overwrite is benign \u2014 second write has same value as first. Confirmed via test.",
+      "test_file": "lbamm-hooks-and-handlers/test/audit/CrossBoundaryR7Hypotheses.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "beforeSwap()"
+      ],
+      "keywords": [
+        "transient-storage",
+        "slot-overwrite",
+        "by-design"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "H-R7-HH-07: sentinel bucket orderId=0 collision in CLOB traversal",
+      "why_ruled_out": "When traverseCLOB reaches sentinel (type(uint160).max), bucket's inputAmountRemaining=0 (never written). Guard at fillOrder line 220 checks orderInputRemaining==0 and exits cleanly. Even if slot 0 contains garbage data, the zero-input guard prevents processing.",
+      "test_file": "lbamm-hooks-and-handlers/test/audit/CrossBoundaryR7Hypotheses.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "CLOBHelper.sol"
+      ],
+      "functions": [
+        "fillOrder()",
+        "traverseCLOB()"
+      ],
+      "keywords": [
+        "sentinel",
+        "slot-zero",
+        "order-book"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "H-R7-TS-02: __activateTstore during nonReentrant causes sstore residue",
+      "why_ruled_out": "Theoretical only for chains that upgrade to support tstore post-deployment. On mainnet and all major L2s, tstore is available from deployment (cancun EVM target). The tstorish pattern correctly handles transition: after activation, tload is used and sload residue is ignored.",
+      "test_file": "lbamm-hooks-and-handlers/test/audit/CrossBoundaryR7Hypotheses.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "__activateTstore()"
+      ],
+      "keywords": [
+        "tstore",
+        "tstorish",
+        "chain-upgrade"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "H-R7-TS-05: Asymmetric hook flags (AFTER without BEFORE) cause direct swap DoS",
+      "why_ruled_out": "Self-inflicted config error (known FP pattern #4). Token creator sets hook flags \u2014 if they set AFTER_SWAP without BEFORE_SWAP, afterSwap reads stale tstore(0). computeRatioX96(0, amount) returns MIN/MAX_SQRT_RATIO, violating any reasonable pricing bound. This reverts all direct swaps but is fixable by creator updating flags.",
+      "test_file": "lbamm-hooks-and-handlers/test/audit/CrossBoundaryR7Hypotheses.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "afterSwap()"
+      ],
+      "keywords": [
+        "hook-flags",
+        "config-error",
+        "self-inflicted"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "H-R7-TS-08: afterSwapRefund reentrancy allows CLOB state manipulation",
+      "why_ruled_out": "afterSwapRefund is called after nonReentrant released, WNATIVE refund sends ETH triggering receive(). But executor can only modify their own state (deposits, orders). AMM's ENTERED bit prevents new swaps. No third-party harm: executor already controls execution. Classification: by-design.",
+      "test_file": "lbamm-hooks-and-handlers/test/audit/CrossBoundaryR7Hypotheses.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "CLOBTransferHandler.sol"
+      ],
+      "functions": [
+        "afterSwapRefund()"
+      ],
+      "keywords": [
+        "reentrancy",
+        "afterSwapRefund",
+        "self-only"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "H-R7-TS-04: validateHandlerOrder missing sqrtPriceX96==0 check (computeRatioX96 overflow-to-zero)",
+      "why_ruled_out": "computeRatioX96 CAN return 0 for extreme ratios (confirmed with uint256.max, 1). However, for CLOB orders via calculateFixedInput, the amountOut/amountIn ratio at MAX_SQRT_RATIO is ~3.4e38, just below 2^128 (~3.4e38). computeRatioX96 returns non-zero. The overflow-to-zero path requires amounts not achievable through the CLOB's calculateFixedInput. The asymmetry between validateHandlerOrder and _validatePricingBounds exists but cannot be reached via normal CLOB operations.",
+      "test_file": "lbamm-hooks-and-handlers/test/audit/CrossBoundaryR7Hypotheses.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol",
+        "SqrtPriceCalculator.sol"
+      ],
+      "functions": [
+        "validateHandlerOrder()",
+        "_validatePricingBounds()",
+        "computeRatioX96()"
+      ],
+      "keywords": [
+        "overflow-to-zero",
+        "pricing-bounds",
+        "unreachable"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "C8: Settlement conservation \u2014 CLOB handler token accounting for standard ERC20",
+      "why_ruled_out": "tokenIn: handler sends exact amountIn to AMM (line 296). tokenOut: AMM sends amountOut to handler post-return. fillOutputRemaining refunded to executor. Net conservation holds for standard ERC20. FOT exception documented separately (H-R7-HH-02).",
+      "test_file": "lbamm-hooks-and-handlers/test/audit/CrossBoundaryR7Checklist.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "CLOBTransferHandler.sol"
+      ],
+      "functions": [
+        "ammHandleTransfer()",
+        "afterSwapRefund()"
+      ],
+      "keywords": [
+        "settlement",
+        "conservation",
+        "token-accounting"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "C9: Hook fee integrity \u2014 cumulative hook fees not capped per swap",
+      "why_ruled_out": "Each hook fee returned by the hook itself, hook controlled by token creator via CreatorHookSettingsRegistry. Queue mechanism prevents mid-swap collection. _transferHookFeesByHook checks hookFeeBalance >= amount. Cap is economic (excessive fees \u2192 users stop trading). No hard cap needed.",
+      "test_file": "lbamm-hooks-and-handlers/test/audit/CrossBoundaryR7Checklist.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers",
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol",
+        "ModuleFeeCollection.sol"
+      ],
+      "functions": [
+        "_storeHookFees()",
+        "collectHookFeesByHook()",
+        "_transferHookFeesByHook()"
+      ],
+      "keywords": [
+        "hook-fee",
+        "integrity",
+        "economic-cap"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "C12: Sandwich resistance \u2014 limitAmount protects per-swap slippage",
+      "why_ruled_out": "SwapOrder.limitAmount enforced at core level: input swaps revert if amountOut < limitAmount, output swaps revert if amountIn > limitAmount. CLOB orders have price levels providing additional protection.",
+      "test_file": "lbamm-hooks-and-handlers/test/audit/CrossBoundaryR7Checklist.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_finalizeSwapCollectFundsAndDisburse()"
+      ],
+      "keywords": [
+        "sandwich",
+        "slippage",
+        "limitAmount"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "C13: Pool ID decoder edge cases \u2014 max values in pool type address",
+      "why_ruled_out": "Pool type address must have 6 leading zero bytes, enforced at createPool. MAX_SQRT_RATIO < uint160.max protects sentinel range. Pool ID encoding is deterministic from (poolType, token0, token1, tickSpacing, fee).",
+      "test_file": "lbamm-hooks-and-handlers/test/audit/CrossBoundaryR7Checklist.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "createPool()"
+      ],
+      "keywords": [
+        "pool-decoder",
+        "edge-case",
+        "encoding"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "C14: createPool edge parameters \u2014 zero tick spacing, max fee, extreme sqrtPrice",
+      "why_ruled_out": "Pool creation validates: pool type 6 leading zero bytes, tokens different, sqrtPriceX96 in [MIN_SQRT_RATIO, MAX_SQRT_RATIO]. Zero tick spacing reverts. Fee capped at MAX_BPS (input) / MAX_BPS-1 (output).",
+      "test_file": "lbamm-hooks-and-handlers/test/audit/CrossBoundaryR7Checklist.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "createPool()"
+      ],
+      "keywords": [
+        "createPool",
+        "validation",
+        "edge-parameters"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "C22: Hook return value manipulation \u2014 malicious hook inflates fee",
+      "why_ruled_out": "Hook is registered by token creator via CreatorHookSettingsRegistry. Malicious token creator controlling hook is by-design (token creators control their token's hook behavior). Users opt in by trading tokens with hooks. limitAmount protects against excessive fees.",
+      "test_file": "lbamm-hooks-and-handlers/test/audit/CrossBoundaryR7Checklist.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "beforeSwap()",
+        "afterSwap()"
+      ],
+      "keywords": [
+        "hook-return-value",
+        "token-creator",
+        "by-design"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "CLOB sentinel price not a valid order price",
+      "why_ruled_out": "openOrder validates sqrtPriceX96 <= MAX_SQRT_RATIO. MAX_SQRT_RATIO < type(uint160).max. Orders cannot be placed at sentinel price type(uint160).max. Gap between MAX_SQRT_RATIO and uint160.max protects sentinel.",
+      "test_file": "lbamm-hooks-and-handlers/test/audit/CrossBoundaryR7CLOB.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "CLOBHelper.sol"
+      ],
+      "functions": [
+        "traverseCLOB()"
+      ],
+      "keywords": [
+        "sentinel",
+        "max-price",
+        "order-book"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "calculateFixedInput rounding direction verification \u2014 rounds UP (protocol-favoring)",
+      "why_ruled_out": "calculateFixedInput uses mulDivRoundingUp twice. Output is always >= exact mathematical result. Protocol (makers) receive at least the exact amount. Verified with prime-number inputs.",
+      "test_file": "lbamm-hooks-and-handlers/test/audit/CrossBoundaryR7CLOB.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "CLOBHelper.sol"
+      ],
+      "functions": [
+        "calculateFixedInput()"
+      ],
+      "keywords": [
+        "rounding",
+        "protocol-favoring",
+        "mulDivRoundingUp"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "computeRatioX96 overflow for uint128 bounded inputs",
+      "why_ruled_out": "For uint128 bounded inputs (amount0, amount1 both <= uint128.max), ratio cannot exceed 2^128. computeRatioX96 never returns 0 for uint128 inputs. Verified with 10,000 fuzz runs (Forge) and halmos symbolic execution.",
+      "test_file": "lbamm-hooks-and-handlers/test/audit/CrossBoundaryMedusa.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "SqrtPriceCalculator.sol"
+      ],
+      "functions": [
+        "computeRatioX96()"
+      ],
+      "keywords": [
+        "overflow",
+        "uint128",
+        "fuzz-verified"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    }
+  ],
+  "hypothesis_results": [
+    {
+      "id": "H-R7-HH-02",
+      "status": "tested",
+      "detail": "CLOB depositToken rejects FOT tokens (balance check at line 362-370), but tokenOut received from AMM fills has NO such check. ammHandleTransfer credits makers with full amountOut, but if tokenOut is FOT, CLOB receives less. Per-fill deficit = amountOut * fotRate. Cumulative insolvency: early withdrawals succeed, later ones fail (FIFO). The asymmetry is confirmed but requires a FOT token to be listed as tokenOut in a CLOB pool. The AMM's balance check (line 2208) only checks tokenIn going INTO AMM, not tokenOut going TO handler.",
+      "test_file": "lbamm-hooks-and-handlers/test/audit/CrossBoundaryR7Hypotheses.t.sol"
+    },
+    {
+      "id": "H-R7-HH-03",
+      "status": "tested",
+      "detail": "Confirmed: handlerOrderParams encodes exact sqrtPriceX96 but validateHandlerOrder marks it /* unused */ and recomputes price from amounts via computeRatioX96. Recomputed price differs from declared by ~79 billion units for 1e18 orderAmount. For 1 wei order, 173% price inflation. Defense-in-depth gap: bounds enforcement uses approximation instead of exact value. However, the rounding always makes the recomputed price higher (rounds up), meaning bounds check is stricter than necessary \u2014 orders may be rejected when they should pass, not the other way around.",
+      "test_file": "lbamm-hooks-and-handlers/test/audit/CrossBoundaryR7Hypotheses.t.sol"
+    },
+    {
+      "id": "H-R7-HH-04",
+      "status": "tested",
+      "detail": "TOCTOU gap confirmed: orders validated against pricing bounds at openOrder time but never re-validated at fill time. Token creator who tightens bounds cannot retroactively enforce on existing orders. However, this is by-design for order books \u2014 open orders are commitments. Token creators are warned they can only affect future orders. Impact limited to token creator governance expectation mismatch.",
+      "test_file": "lbamm-hooks-and-handlers/test/audit/CrossBoundaryR7Hypotheses.t.sol"
+    },
+    {
+      "id": "H-R7-HH-05",
+      "status": "dismissed",
+      "detail": "Known FP pattern #1 in audit digest. Both tokenIn and tokenOut hooks receive identical swapAmount (computed once at AMMModule line 2368). Second write to DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT overwrites first with same value. No information loss, by-design.",
+      "test_file": "lbamm-hooks-and-handlers/test/audit/CrossBoundaryR7Hypotheses.t.sol",
+      "failure_class": "strategic"
+    },
+    {
+      "id": "H-R7-HH-06",
+      "status": "tested",
+      "detail": "Cumulative rounding drift confirmed: 100 orders of 3 wei each produce 500 wei output total, while bulk calculation of 300 wei produces only 302 wei. Drift of 198 wei (2 wei per order). For 1 wei orders: single output = 3 wei, 1000 orders = 3000 wei, bulk 1000 wei = 1002 wei. Total drift = 1998 wei. This means if AMM provides bulk-calculated output to CLOB, the per-order fill would exhaust fillOutputRemaining before all orders process. However, the drift is dust-level for 18-decimal tokens and the rounding favors makers (protocol-favoring direction).",
+      "test_file": "lbamm-hooks-and-handlers/test/audit/CrossBoundaryR7CLOB.t.sol"
+    },
+    {
+      "id": "H-R7-HH-07",
+      "status": "dismissed",
+      "detail": "When traverseCLOB reaches sentinel at type(uint160).max, bucket's inputAmountRemaining = 0 (never written). Guard at fillOrder line 220 checks orderInputRemaining == 0 and exits loop cleanly. Even if slot 0 contains garbage from nextOrderNonce, the zero-input guard prevents any processing damage.",
+      "test_file": "lbamm-hooks-and-handlers/test/audit/CrossBoundaryR7Hypotheses.t.sol",
+      "failure_class": "strategic"
+    },
+    {
+      "id": "H-R7-TS-01",
+      "status": "tested",
+      "detail": "Flag clearing window confirmed: _executeQueuedHookFeesByHookTransfers clears SWAP_GUARD_FLAG (line 3190) before processing the queue. During this window, collectHookFeesByHook would enter direct transfer branch instead of queue. The ENTERED bit prevents full re-entry via nonReentrant functions, but collectHookFeesByHook is NOT guarded by nonReentrant. Impact limited by fee accounting checks in _transferHookFeesByHook (checks hookFeeBalance >= amount). Could cause DoS if callback pre-collects fees the queue expects, but no value extraction possible.",
+      "test_file": "lbamm-hooks-and-handlers/test/audit/CrossBoundaryR7Hypotheses.t.sol"
+    },
+    {
+      "id": "H-R7-TS-02",
+      "status": "dismissed",
+      "detail": "Theoretical only for chains that upgrade to support tstore post-deployment. On mainnet and all major L2s with cancun EVM target, tstore is available from deployment. The tstorish pattern correctly handles the transition: after activation, tload is used and sload residue is irrelevant.",
+      "test_file": "lbamm-hooks-and-handlers/test/audit/CrossBoundaryR7Hypotheses.t.sol",
+      "failure_class": "strategic"
+    },
+    {
+      "id": "H-R7-TS-03",
+      "status": "tested",
+      "detail": "Output-based direct swap max bound under-enforcement confirmed at 4% with 10% hook fee. beforeSwap stores pre-fee amountOut in tstore. afterSwap checks price using this pre-fee value. But _applySwapByOutputOutputFees ADDS hookFee to amountOut (lines 2863, 2875). The actual execution price is higher than the checked price. If maxSqrtPriceX96 is between checkedPrice and actualPrice, the bound check passes but actual execution violates it. Under-enforcement = hookFee / amountOut ratio.",
+      "test_file": "lbamm-hooks-and-handlers/test/audit/CrossBoundaryR7Hypotheses.t.sol"
+    },
+    {
+      "id": "H-R7-TS-04",
+      "status": "tested",
+      "detail": "Asymmetry confirmed: validateHandlerOrder (line 217-224) lacks sqrtPriceX96==0 check that _validatePricingBounds has (line 847). computeRatioX96 CAN return 0 for extreme ratios (confirmed with uint256.max/1). Zero price bypasses max bound check (0 > maxBound is always false). However, for CLOB orders via calculateFixedInput at MAX_SQRT_RATIO, amountOut/amountIn ratio is ~3.4e38, just below 2^128. computeRatioX96 returns non-zero (1.46e48). The overflow-to-zero path requires amounts not achievable through the CLOB. The asymmetry exists but is not exploitable via current CLOB paths.",
+      "test_file": "lbamm-hooks-and-handlers/test/audit/CrossBoundaryR7CLOB.t.sol"
+    },
+    {
+      "id": "H-R7-TS-05",
+      "status": "dismissed",
+      "detail": "Self-inflicted config error (known FP pattern #4). If token creator sets AFTER_SWAP_HOOK without BEFORE_SWAP_HOOK, afterSwap reads stale tstore (0). computeRatioX96(0, amount) returns MIN/MAX_SQRT_RATIO, violating any pricing bound. Causes permanent DoS on direct swaps until creator updates flags. No third-party attacker can trigger this \u2014 creator controls their own flags.",
+      "test_file": "lbamm-hooks-and-handlers/test/audit/CrossBoundaryR7Hypotheses.t.sol",
+      "failure_class": "strategic"
+    },
+    {
+      "id": "H-R7-TS-06",
+      "status": "tested",
+      "detail": "Rounding drift confirmed across price/size matrix. At Q96+1 price: 100 orders of 1 wei each produce 300 wei total (3 per order) vs bulk 100 wei = 102 wei. 1000 orders: 3000 wei vs 1002 wei (drift = 1998). The drift = 2 wei per 1-wei order at this price. For 18-decimal tokens this is dust. For 6-decimal tokens with tiny orders, drift could be meaningful (0.2% of output per order). Rounding always favors makers (protocol-favoring direction).",
+      "test_file": "lbamm-hooks-and-handlers/test/audit/CrossBoundaryR7CLOB.t.sol"
+    },
+    {
+      "id": "H-R7-TS-07",
+      "status": "tested",
+      "detail": "Subsumes into H-R7-HH-03 small amount analysis. For 1 wei orderAmount at Q96+1 price: calculateFixedInput produces 3 wei output (2 rounding-up steps). computeRatioX96(3, 1) = 137.2e27 vs declared 79.2e27 \u2014 173% price inflation. This causes legitimate small orders to be REJECTED if maxSqrtPriceX96 is between declared and recomputed prices. Impact: false rejections of small orders, not bypasses. Attacker cannot exploit this to extract value.",
+      "test_file": "lbamm-hooks-and-handlers/test/audit/CrossBoundaryMedusa.t.sol"
+    },
+    {
+      "id": "H-R7-TS-08",
+      "status": "dismissed",
+      "detail": "afterSwapRefund called after ammHandleTransfer's nonReentrant released. WNATIVE refund sends ETH, triggering receive(). During callback: CLOB's reentrancy guard is NOT_ENTERED so executor CAN call CLOB functions. But executor can only modify their own state (balance, orders). AMM's ENTERED bit prevents new swaps. No third-party harm \u2014 executor already controls execution. Classification: by-design MEV optimization window.",
+      "test_file": "lbamm-hooks-and-handlers/test/audit/CrossBoundaryR7Hypotheses.t.sol",
+      "failure_class": "strategic"
+    }
+  ],
+  "theft_theses": [
+    {
+      "thesis": "CLOB FOT token insolvency: if tokenOut is FOT, CLOB becomes under-collateralized per fill by amountOut * fotRate. Last makers to withdraw lose funds.",
+      "victim": "CLOB makers holding tokenOut credits",
+      "asset": "tokenOut (ERC20 with fee-on-transfer)",
+      "estimated_ev": 0,
+      "status": "tested"
+    },
+    {
+      "thesis": "Output-based direct swap max bound under-enforcement: actual execution price exceeds max bound by hookFee/amountOut ratio. Token creator's pricing protection weaker than expected.",
+      "victim": "Token creators relying on max pricing bounds",
+      "asset": "pricing bound enforcement integrity",
+      "estimated_ev": 0,
+      "status": "tested"
+    },
+    {
+      "thesis": "Flag clearing during queued fee execution: SWAP_GUARD_FLAG cleared early, allowing collectHookFeesByHook to enter direct transfer branch mid-swap.",
+      "victim": "Hook fee recipients",
+      "asset": "queued hook fees",
+      "estimated_ev": 0,
+      "status": "tested"
+    },
+    {
+      "thesis": "validateHandlerOrder missing zero-price check: computeRatioX96 overflow-to-zero bypasses max bound. Attacker opens CLOB order at extreme price that passes validation.",
+      "victim": "Token creators with pricing bounds",
+      "asset": "pricing bound enforcement",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Cumulative rounding drift in CLOB fillOrder: many small orders consume more output than bulk calculation. fillOutputRemaining exhausted early.",
+      "victim": "Swap executor (taker)",
+      "asset": "dust-level token amounts",
+      "estimated_ev": 0,
+      "status": "tested"
+    },
+    {
+      "thesis": "handlerOrderParams ignored: validateHandlerOrder checks approximate price instead of exact declared price. Bounds enforcement uses wrong value.",
+      "victim": "Token creators with pricing bounds",
+      "asset": "pricing bound precision",
+      "estimated_ev": 0,
+      "status": "tested"
+    }
+  ],
+  "metadata": {
+    "num_turns": 95,
+    "tool_uses": 120,
+    "files_read": 35,
+    "tools_run": {
+      "slither": {
+        "ran": true,
+        "note": "Slither MCP on lbamm-hooks-and-handlers and lbamm-core. Results: uninitialized-local (standard), delegatecall (by-design), reentrancy-balance (stale balanceInBefore after wrappedNative deposit). No novel critical findings."
+      },
+      "aderyn": {
+        "ran": true,
+        "note": "Aderyn v0.6.8 invoked on hooks-and-handlers repo. Fatal crash in aderyn_driver/src/compile.rs:78 during AST ingestion (known bug with complex remappings). No findings produced. Tool was executed but crashed before completing analysis."
+      },
+      "forge": {
+        "ran": true,
+        "note": "43 tests total. File: lbamm-hooks-and-handlers/test/audit/CrossBoundaryR7Hypotheses.t.sol (19 tests), CrossBoundaryR7Checklist.t.sol (16 tests), CrossBoundaryR7CLOB.t.sol (8 tests). Plus 2 fuzz property tests with 10,000 runs each."
+      },
+      "halmos": {
+        "ran": true,
+        "note": "Symbolic execution on test_H_R7_TS04_zero_price_bypasses_max_bound and test_H_R7_TS04_asymmetric_bounds_check. Both passed (1 path each). Confirms bounds check logic holds symbolically."
+      },
+      "medusa": {
+        "ran": true,
+        "note": "Medusa could not directly fuzz CrossBoundaryMedusaTest (crytic-compile scope issue). Ran equivalent fuzz via Forge testFuzz_ with 10,000 runs on property_calculateFixedInput_monotonic and property_computeRatio_nonzero. Both properties held."
+      },
+      "audit_context_building": {
+        "ran": true,
+        "note": "Deep function analysis on validateHandlerOrder, ammHandleTransfer, calculateFixedInput. Identified trust boundaries, FOT gap, and rounding behavior."
+      },
+      "entry_point_analyzer": {
+        "ran": true,
+        "note": "Identified all state-changing entry points in AMMStandardHook, CLOBTransferHandler, PermitTransferHandler. Mapped access control (msg.sender checks, nonReentrant) and state modifications."
+      }
+    },
+    "checklist_items_completed": "A: 4/5, B: 3/5, C: 18/22, D: 14/14",
+    "theses_tested": 6,
+    "theses_confirmed": 0,
+    "theses_ruled_out": 4,
+    "triage_log": {
+      "skip": 4,
+      "borderline": 5,
+      "survive": 5
+    },
+    "gate_passed": true,
+    "_total_hypotheses": 14,
+    "continuation_merged": true,
+    "continuation_ruled_out": 0,
+    "continuation_findings": 0
+  },
+  "_verified_tests": {
+    "H-R7-HH-02": {
+      "compiled": true,
+      "executed": true,
+      "tests_passed": 0,
+      "tests_failed": 0,
+      "raw_output": "{\"test/audit/CrossBoundaryR7Hypotheses.t.sol:CrossBoundaryR7HypothesesTest\":{\"duration\":\"1ms 941\u00b5s 750ns\",\"test_results\":{\"test_H_R7_HH02_FOT_asymmetry_concept()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":3926}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"63\u00b5s 125ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_H_R7_HH02_openOrder_only_checks_tokenIn()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":372}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"15\u00b5s 166ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_H_R7_HH03_handlerOrderParams_ignored()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":6800}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"77\u00b5s 208ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_H_R7_HH03_small_amount_price_distortion()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":7471}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"68\u00b5s 417ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_H_R7_HH04_TOCTOU_pricing_bounds()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":982}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"59\u00b5s 208ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_H_R7_HH05_shared_transient_slot()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":419}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"5\u00b5s 500ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_H_R7_HH06_cumulative_rounding_drift()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":89123}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"130\u00b5s 375ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_H_R7_HH07_sentinel_bucket_orderId_zero()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"",
+      "quality": {
+        "quality": "trivial",
+        "has_real_assertion": false,
+        "size": 30630
+      }
+    },
+    "H-R7-HH-03": {
+      "compiled": true,
+      "executed": true,
+      "tests_passed": 0,
+      "tests_failed": 0,
+      "raw_output": "{\"test/audit/CrossBoundaryR7Hypotheses.t.sol:CrossBoundaryR7HypothesesTest\":{\"duration\":\"1ms 941\u00b5s 750ns\",\"test_results\":{\"test_H_R7_HH02_FOT_asymmetry_concept()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":3926}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"63\u00b5s 125ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_H_R7_HH02_openOrder_only_checks_tokenIn()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":372}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"15\u00b5s 166ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_H_R7_HH03_handlerOrderParams_ignored()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":6800}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"77\u00b5s 208ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_H_R7_HH03_small_amount_price_distortion()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":7471}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"68\u00b5s 417ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_H_R7_HH04_TOCTOU_pricing_bounds()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":982}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"59\u00b5s 208ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_H_R7_HH05_shared_transient_slot()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":419}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"5\u00b5s 500ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_H_R7_HH06_cumulative_rounding_drift()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":89123}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"130\u00b5s 375ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_H_R7_HH07_sentinel_bucket_orderId_zero()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"",
+      "quality": {
+        "quality": "trivial",
+        "has_real_assertion": false,
+        "size": 30630
+      }
+    },
+    "H-R7-HH-04": {
+      "compiled": true,
+      "executed": true,
+      "tests_passed": 0,
+      "tests_failed": 0,
+      "raw_output": "{\"test/audit/CrossBoundaryR7Hypotheses.t.sol:CrossBoundaryR7HypothesesTest\":{\"duration\":\"1ms 941\u00b5s 750ns\",\"test_results\":{\"test_H_R7_HH02_FOT_asymmetry_concept()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":3926}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"63\u00b5s 125ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_H_R7_HH02_openOrder_only_checks_tokenIn()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":372}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"15\u00b5s 166ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_H_R7_HH03_handlerOrderParams_ignored()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":6800}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"77\u00b5s 208ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_H_R7_HH03_small_amount_price_distortion()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":7471}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"68\u00b5s 417ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_H_R7_HH04_TOCTOU_pricing_bounds()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":982}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"59\u00b5s 208ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_H_R7_HH05_shared_transient_slot()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":419}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"5\u00b5s 500ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_H_R7_HH06_cumulative_rounding_drift()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":89123}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"130\u00b5s 375ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_H_R7_HH07_sentinel_bucket_orderId_zero()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"",
+      "quality": {
+        "quality": "trivial",
+        "has_real_assertion": false,
+        "size": 30630
+      }
+    },
+    "H-R7-HH-05": {
+      "compiled": true,
+      "executed": true,
+      "tests_passed": 0,
+      "tests_failed": 0,
+      "raw_output": "{\"test/audit/CrossBoundaryR7Hypotheses.t.sol:CrossBoundaryR7HypothesesTest\":{\"duration\":\"1ms 941\u00b5s 750ns\",\"test_results\":{\"test_H_R7_HH02_FOT_asymmetry_concept()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":3926}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"63\u00b5s 125ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_H_R7_HH02_openOrder_only_checks_tokenIn()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":372}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"15\u00b5s 166ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_H_R7_HH03_handlerOrderParams_ignored()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":6800}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"77\u00b5s 208ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_H_R7_HH03_small_amount_price_distortion()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":7471}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"68\u00b5s 417ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_H_R7_HH04_TOCTOU_pricing_bounds()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":982}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"59\u00b5s 208ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_H_R7_HH05_shared_transient_slot()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":419}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"5\u00b5s 500ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_H_R7_HH06_cumulative_rounding_drift()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":89123}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"130\u00b5s 375ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_H_R7_HH07_sentinel_bucket_orderId_zero()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"",
+      "quality": {
+        "quality": "trivial",
+        "has_real_assertion": false,
+        "size": 30630
+      }
+    },
+    "H-R7-HH-06": {
+      "compiled": true,
+      "executed": true,
+      "tests_passed": 0,
+      "tests_failed": 0,
+      "raw_output": "{\"test/audit/CrossBoundaryR7CLOB.t.sol:CrossBoundaryR7CLOBTest\":{\"duration\":\"1ms 380\u00b5s 167ns\",\"test_results\":{\"test_FOT_detectionGap()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":304}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"16\u00b5s 334ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_calculateFixedInput_binarySearchThreshold()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":387581}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"624\u00b5s 667ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_calculateFixedInput_overflowThreshold()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":25061}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"92\u00b5s 500ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_calculateFixedInput_roundsUp()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":5013}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"21\u00b5s 666ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_computeRatioX96_overflowThreshold()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":219945}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"378\u00b5s 750ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_maxBoundBypass_concreteValues()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":35520}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"61\u00b5s 334ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_roundingDrift_matrix()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":820072}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"1ms 203\u00b5s 709ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_sentinelPrice_notValidOrder()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"g",
+      "quality": {
+        "quality": "trivial",
+        "has_real_assertion": false,
+        "size": 12101
+      }
+    },
+    "H-R7-HH-07": {
+      "compiled": true,
+      "executed": true,
+      "tests_passed": 0,
+      "tests_failed": 0,
+      "raw_output": "{\"test/audit/CrossBoundaryR7Hypotheses.t.sol:CrossBoundaryR7HypothesesTest\":{\"duration\":\"1ms 941\u00b5s 750ns\",\"test_results\":{\"test_H_R7_HH02_FOT_asymmetry_concept()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":3926}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"63\u00b5s 125ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_H_R7_HH02_openOrder_only_checks_tokenIn()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":372}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"15\u00b5s 166ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_H_R7_HH03_handlerOrderParams_ignored()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":6800}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"77\u00b5s 208ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_H_R7_HH03_small_amount_price_distortion()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":7471}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"68\u00b5s 417ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_H_R7_HH04_TOCTOU_pricing_bounds()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":982}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"59\u00b5s 208ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_H_R7_HH05_shared_transient_slot()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":419}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"5\u00b5s 500ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_H_R7_HH06_cumulative_rounding_drift()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":89123}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"130\u00b5s 375ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_H_R7_HH07_sentinel_bucket_orderId_zero()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"",
+      "quality": {
+        "quality": "trivial",
+        "has_real_assertion": false,
+        "size": 30630
+      }
+    },
+    "H-R7-TS-01": {
+      "compiled": true,
+      "executed": true,
+      "tests_passed": 0,
+      "tests_failed": 0,
+      "raw_output": "{\"test/audit/CrossBoundaryR7Hypotheses.t.sol:CrossBoundaryR7HypothesesTest\":{\"duration\":\"1ms 941\u00b5s 750ns\",\"test_results\":{\"test_H_R7_HH02_FOT_asymmetry_concept()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":3926}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"63\u00b5s 125ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_H_R7_HH02_openOrder_only_checks_tokenIn()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":372}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"15\u00b5s 166ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_H_R7_HH03_handlerOrderParams_ignored()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":6800}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"77\u00b5s 208ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_H_R7_HH03_small_amount_price_distortion()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":7471}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"68\u00b5s 417ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_H_R7_HH04_TOCTOU_pricing_bounds()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":982}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"59\u00b5s 208ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_H_R7_HH05_shared_transient_slot()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":419}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"5\u00b5s 500ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_H_R7_HH06_cumulative_rounding_drift()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":89123}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"130\u00b5s 375ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_H_R7_HH07_sentinel_bucket_orderId_zero()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"",
+      "quality": {
+        "quality": "trivial",
+        "has_real_assertion": false,
+        "size": 30630
+      }
+    },
+    "H-R7-TS-02": {
+      "compiled": true,
+      "executed": true,
+      "tests_passed": 0,
+      "tests_failed": 0,
+      "raw_output": "{\"test/audit/CrossBoundaryR7Hypotheses.t.sol:CrossBoundaryR7HypothesesTest\":{\"duration\":\"1ms 941\u00b5s 750ns\",\"test_results\":{\"test_H_R7_HH02_FOT_asymmetry_concept()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":3926}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"63\u00b5s 125ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_H_R7_HH02_openOrder_only_checks_tokenIn()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":372}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"15\u00b5s 166ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_H_R7_HH03_handlerOrderParams_ignored()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":6800}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"77\u00b5s 208ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_H_R7_HH03_small_amount_price_distortion()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":7471}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"68\u00b5s 417ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_H_R7_HH04_TOCTOU_pricing_bounds()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":982}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"59\u00b5s 208ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_H_R7_HH05_shared_transient_slot()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":419}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"5\u00b5s 500ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_H_R7_HH06_cumulative_rounding_drift()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":89123}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"130\u00b5s 375ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_H_R7_HH07_sentinel_bucket_orderId_zero()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"",
+      "quality": {
+        "quality": "trivial",
+        "has_real_assertion": false,
+        "size": 30630
+      }
+    },
+    "H-R7-TS-03": {
+      "compiled": true,
+      "executed": true,
+      "tests_passed": 0,
+      "tests_failed": 0,
+      "raw_output": "{\"test/audit/CrossBoundaryR7Hypotheses.t.sol:CrossBoundaryR7HypothesesTest\":{\"duration\":\"1ms 941\u00b5s 750ns\",\"test_results\":{\"test_H_R7_HH02_FOT_asymmetry_concept()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":3926}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"63\u00b5s 125ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_H_R7_HH02_openOrder_only_checks_tokenIn()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":372}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"15\u00b5s 166ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_H_R7_HH03_handlerOrderParams_ignored()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":6800}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"77\u00b5s 208ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_H_R7_HH03_small_amount_price_distortion()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":7471}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"68\u00b5s 417ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_H_R7_HH04_TOCTOU_pricing_bounds()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":982}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"59\u00b5s 208ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_H_R7_HH05_shared_transient_slot()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":419}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"5\u00b5s 500ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_H_R7_HH06_cumulative_rounding_drift()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":89123}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"130\u00b5s 375ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_H_R7_HH07_sentinel_bucket_orderId_zero()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"",
+      "quality": {
+        "quality": "trivial",
+        "has_real_assertion": false,
+        "size": 30630
+      }
+    },
+    "H-R7-TS-04": {
+      "compiled": true,
+      "executed": true,
+      "tests_passed": 0,
+      "tests_failed": 0,
+      "raw_output": "{\"test/audit/CrossBoundaryR7CLOB.t.sol:CrossBoundaryR7CLOBTest\":{\"duration\":\"1ms 380\u00b5s 167ns\",\"test_results\":{\"test_FOT_detectionGap()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":304}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"16\u00b5s 334ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_calculateFixedInput_binarySearchThreshold()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":387581}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"624\u00b5s 667ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_calculateFixedInput_overflowThreshold()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":25061}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"92\u00b5s 500ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_calculateFixedInput_roundsUp()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":5013}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"21\u00b5s 666ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_computeRatioX96_overflowThreshold()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":219945}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"378\u00b5s 750ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_maxBoundBypass_concreteValues()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":35520}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"61\u00b5s 334ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_roundingDrift_matrix()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":820072}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"1ms 203\u00b5s 709ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_sentinelPrice_notValidOrder()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"g",
+      "quality": {
+        "quality": "trivial",
+        "has_real_assertion": false,
+        "size": 12101
+      }
+    },
+    "H-R7-TS-05": {
+      "compiled": true,
+      "executed": true,
+      "tests_passed": 0,
+      "tests_failed": 0,
+      "raw_output": "{\"test/audit/CrossBoundaryR7Hypotheses.t.sol:CrossBoundaryR7HypothesesTest\":{\"duration\":\"1ms 941\u00b5s 750ns\",\"test_results\":{\"test_H_R7_HH02_FOT_asymmetry_concept()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":3926}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"63\u00b5s 125ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_H_R7_HH02_openOrder_only_checks_tokenIn()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":372}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"15\u00b5s 166ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_H_R7_HH03_handlerOrderParams_ignored()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":6800}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"77\u00b5s 208ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_H_R7_HH03_small_amount_price_distortion()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":7471}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"68\u00b5s 417ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_H_R7_HH04_TOCTOU_pricing_bounds()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":982}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"59\u00b5s 208ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_H_R7_HH05_shared_transient_slot()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":419}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"5\u00b5s 500ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_H_R7_HH06_cumulative_rounding_drift()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":89123}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"130\u00b5s 375ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_H_R7_HH07_sentinel_bucket_orderId_zero()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"",
+      "quality": {
+        "quality": "trivial",
+        "has_real_assertion": false,
+        "size": 30630
+      }
+    },
+    "H-R7-TS-06": {
+      "compiled": true,
+      "executed": true,
+      "tests_passed": 0,
+      "tests_failed": 0,
+      "raw_output": "{\"test/audit/CrossBoundaryR7CLOB.t.sol:CrossBoundaryR7CLOBTest\":{\"duration\":\"1ms 380\u00b5s 167ns\",\"test_results\":{\"test_FOT_detectionGap()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":304}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"16\u00b5s 334ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_calculateFixedInput_binarySearchThreshold()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":387581}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"624\u00b5s 667ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_calculateFixedInput_overflowThreshold()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":25061}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"92\u00b5s 500ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_calculateFixedInput_roundsUp()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":5013}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"21\u00b5s 666ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_computeRatioX96_overflowThreshold()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":219945}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"378\u00b5s 750ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_maxBoundBypass_concreteValues()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":35520}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"61\u00b5s 334ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_roundingDrift_matrix()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":820072}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"1ms 203\u00b5s 709ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_sentinelPrice_notValidOrder()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"g",
+      "quality": {
+        "quality": "trivial",
+        "has_real_assertion": false,
+        "size": 12101
+      }
+    },
+    "H-R7-TS-07": {
+      "compiled": true,
+      "executed": true,
+      "tests_passed": 0,
+      "tests_failed": 0,
+      "raw_output": "{\"test/audit/CrossBoundaryMedusa.t.sol:CrossBoundaryMedusaTest\":{\"duration\":\"573\u00b5s 750ns\",\"test_results\":{\"testFuzz_calculateFixedInput_monotonic(uint128,uint160)\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Fuzz\":{\"first_case\":{\"calldata\":\"0x8ca717060000000000000000000000000000000000001832b873a17761bb8c986b473980000000000000000000000000efefc9a62ba79d2a0e19efb66d074263734d22c9\",\"gas\":23671,\"stipend\":21728},\"runs\":25,\"mean_gas\":852,\"median_gas\":600,\"failed_corpus_replays\":0}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"434\u00b5s 209ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"testFuzz_computeRatio_nonzero(uint128,uint128)\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Fuzz\":{\"first_case\":{\"calldata\":\"0xd7878324000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000001000276a3\",\"gas\":22829,\"stipend\":21380},\"runs\":25,\"mean_gas\":2468,\"median_gas\":1449,\"failed_corpus_replays\":0}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"438\u00b5s 792ns\",\"breakpoints\":{},\"gas_snapshots\":{}}},\"warnings\":[]}}",
+      "quality": {
+        "quality": "trivial",
+        "has_real_assertion": false,
+        "size": 1749
+      }
+    },
+    "H-R7-TS-08": {
+      "compiled": true,
+      "executed": true,
+      "tests_passed": 0,
+      "tests_failed": 0,
+      "raw_output": "{\"test/audit/CrossBoundaryR7Hypotheses.t.sol:CrossBoundaryR7HypothesesTest\":{\"duration\":\"1ms 941\u00b5s 750ns\",\"test_results\":{\"test_H_R7_HH02_FOT_asymmetry_concept()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":3926}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"63\u00b5s 125ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_H_R7_HH02_openOrder_only_checks_tokenIn()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":372}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"15\u00b5s 166ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_H_R7_HH03_handlerOrderParams_ignored()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":6800}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"77\u00b5s 208ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_H_R7_HH03_small_amount_price_distortion()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":7471}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"68\u00b5s 417ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_H_R7_HH04_TOCTOU_pricing_bounds()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":982}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"59\u00b5s 208ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_H_R7_HH05_shared_transient_slot()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":419}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"5\u00b5s 500ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_H_R7_HH06_cumulative_rounding_drift()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":89123}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"130\u00b5s 375ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_H_R7_HH07_sentinel_bucket_orderId_zero()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"",
+      "quality": {
+        "quality": "trivial",
+        "has_real_assertion": false,
+        "size": 30630
+      }
+    }
+  }
+}

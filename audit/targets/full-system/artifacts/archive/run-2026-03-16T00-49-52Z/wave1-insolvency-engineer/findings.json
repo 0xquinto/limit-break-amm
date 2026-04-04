@@ -1,0 +1,176 @@
+{
+  "agent_name": "insolvency-engineer",
+  "wave": 1,
+  "target": "full-system",
+  "findings": [],
+  "ruled_out_vectors": [
+    {
+      "id": "INV-H01",
+      "title": "Flash loan fee bypass via callback manipulation",
+      "reason": "Flash loan implementation in AMMModule._flashLoan (L3288-3382) enforces strict balance-after >= balance-before + fee check. Fee is calculated before callback, stored to protocol fees after verification. No path to manipulate fee calculation or skip the balance check. Reentrancy guard active during callback.",
+      "contracts": ["AMMModule"],
+      "functions": ["_flashLoan", "_collectToken"],
+      "keywords": ["flash loan", "fee bypass", "balance check"]
+    },
+    {
+      "id": "INV-H02",
+      "title": "Reserve desync through partial liquidity removal",
+      "reason": "Reserve updates in _positionRemoveLiquidity (L521-612) are atomic — reserve0 and reserve1 decremented in same transaction before any external calls. Token transfers happen after reserve updates via _storeTokensOwed. No path to desync reserves from actual balances.",
+      "contracts": ["AMMModule"],
+      "functions": ["_positionRemoveLiquidity", "_storeTokensOwed"],
+      "keywords": ["reserve desync", "liquidity removal", "partial"]
+    },
+    {
+      "id": "INV-H03",
+      "title": "Fee balance inflation via repeated small swaps",
+      "reason": "Fee calculations in FeeHelper use mulDiv with consistent rounding (down for input fees, up for output fees favoring protocol). Tested with 5000-run fuzz: sum of fees from small swaps never exceeds fee from equivalent single swap. Protocol fee monotonicity holds (INV-E01 test passes).",
+      "contracts": ["AMMModule", "FeeHelper"],
+      "functions": ["_poolSwapByInput", "calculateAmountAfterFeesSwapByInput"],
+      "keywords": ["fee inflation", "dust swaps", "rounding"]
+    },
+    {
+      "id": "INV-H04",
+      "title": "Cross-pool reserve manipulation via shared token",
+      "reason": "Each pool maintains independent reserve tracking (PoolState struct per poolId). _collectToken uses before/after balance diff pattern scoped to the specific token transfer. No shared mutable state between pools that could be exploited.",
+      "contracts": ["AMMModule"],
+      "functions": ["_collectToken", "_poolSwapByInput"],
+      "keywords": ["cross-pool", "shared token", "reserve manipulation"]
+    },
+    {
+      "id": "INV-H05",
+      "title": "Reentrancy during hook fee distribution",
+      "reason": "_executeQueuedHookFeesByHookTransfers (L3183-3204) clears reentrancy flags at L3190 before external transfers. However, pool state (reserves, fee balances) is fully updated before this point. tokensOwed decremented before transfer at L3129. Reentrant call would see already-updated state with no double-spend opportunity. Function guarded by msg.sender == address(this) check.",
+      "contracts": ["AMMModule", "ModuleFeeCollection"],
+      "functions": ["_executeQueuedHookFeesByHookTransfers", "_transferHookFeesByHook"],
+      "keywords": ["reentrancy", "hook fees", "flag clearing"]
+    },
+    {
+      "id": "INV-H06",
+      "title": "Wrapped native deposit/refund race condition",
+      "reason": "_finalizeSwapCollectFundsAndDisburse reads balanceInBefore (L2180), then calls _depositWrappedNativeAndRefundExcess (L2187) which refunds excess ETH. The refund is an external call but reentrancy guard is active. Balance check at L2208 verifies exact amount. No race condition exploitable under reentrancy protection.",
+      "contracts": ["AMMModule"],
+      "functions": ["_finalizeSwapCollectFundsAndDisburse", "_depositWrappedNativeAndRefundExcess"],
+      "keywords": ["wrapped native", "ETH refund", "race condition"]
+    },
+    {
+      "id": "INV-H07",
+      "title": "Protocol fee validation bypass",
+      "reason": "_validateProtocolFees (L1654-1677) enforces minimum protocol fee percentages. Pool types must return fees >= protocol minimum. Checked after every swap. No path to bypass — validation reverts on insufficient fees.",
+      "contracts": ["AMMModule"],
+      "functions": ["_validateProtocolFees"],
+      "keywords": ["protocol fee", "validation bypass"]
+    },
+    {
+      "id": "INV-H08",
+      "title": "Liquidity addition with zero tokens",
+      "reason": "_positionAddLiquidity (L397-488) calculates token amounts from liquidity delta using pool type math. Zero liquidity delta would produce zero token amounts, but reserve increments would also be zero — no state change. Tested: adding zero liquidity has no effect on reserves or balances.",
+      "contracts": ["AMMModule"],
+      "functions": ["_positionAddLiquidity"],
+      "keywords": ["zero liquidity", "free tokens"]
+    },
+    {
+      "id": "INV-H09",
+      "title": "Fee growth overflow in concentrated liquidity",
+      "reason": "DynamicHelper uses Q128.128 for fee growth tracking with unchecked arithmetic (intentional — wrapping is expected per Uniswap V3 design). Position fee calculation uses (globalFeeGrowth - positionFeeGrowth) which works correctly even with overflow due to modular arithmetic. Halmos symbolic check confirmed conservation.",
+      "contracts": ["DynamicHelper"],
+      "functions": ["_updatePosition"],
+      "keywords": ["fee growth", "overflow", "concentrated liquidity"]
+    },
+    {
+      "id": "INV-H10",
+      "title": "Swap output exceeds reserves",
+      "reason": "Pool type computeSwap functions calculate output bounded by available liquidity/reserves. AMMModule verifies output against reserves before transfer. Tested with fuzz: swap output never exceeds pool reserves. Round-trip (swap A→B then B→A) always returns less than or equal to input (INV-S02 test passes with 5000 runs).",
+      "contracts": ["AMMModule", "SimplePoolType", "DynamicPoolType"],
+      "functions": ["_poolSwapByInput", "computeSwap"],
+      "keywords": ["swap output", "reserve exceeded"]
+    },
+    {
+      "id": "INV-H11",
+      "title": "Token collection balance manipulation",
+      "reason": "_collectToken (L2913-2920) uses before/after balance pattern. An attacker could theoretically inflate the balance between the before read and after read, but reentrancy guard prevents reentrant deposits. Direct transfers to the contract are not credited to any pool. Pattern is sound.",
+      "contracts": ["AMMModule"],
+      "functions": ["_collectToken"],
+      "keywords": ["balance manipulation", "token collection"]
+    },
+    {
+      "id": "KV-1",
+      "title": "Zero-price bypass via SqrtPriceCalculator overflow",
+      "reason": "SqrtPriceCalculator.computeRatioX96() returns 0 when tmpRatio > type(uint160).max (L51-53). validateHandlerOrder in AMMStandardHook only checks bounds if bounds.isSet is true. If bounds ARE set with minSqrtPriceX96 > 0, the != check at L218 catches the 0 return. If bounds NOT set, validation passes regardless of price. Low severity — requires misconfiguration (no bounds set) AND specific token ratio to trigger overflow.",
+      "contracts": ["AMMStandardHook", "SqrtPriceCalculator"],
+      "functions": ["validateHandlerOrder", "computeRatioX96"],
+      "keywords": ["zero price", "overflow", "sqrt price", "bounds check"]
+    },
+    {
+      "id": "KV-2",
+      "title": "feeOnTop not included in permit signature (SWAP_TYPEHASH)",
+      "reason": "Confirmed: feeOnTop fields are NOT signed in the permit SWAP_TYPEHASH. This means a relayer could modify feeOnTop values. However, feeOnTop is paid by the swapper (added to input or subtracted from output), so increasing it only hurts the swapper. A malicious relayer could grief users but cannot extract protocol funds. Not an insolvency vector.",
+      "contracts": ["AMMModule"],
+      "functions": ["_poolSwapByInput"],
+      "keywords": ["feeOnTop", "permit", "EIP-712", "signature"]
+    },
+    {
+      "id": "KV-3",
+      "title": "Transient storage not cleared after direct swap",
+      "reason": "DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT (0xFFFFFFFFFFFFFFFF) stores the input amount for direct swaps in transient storage. Transient storage is automatically cleared at end of transaction (EIP-1153). Within the same transaction, the slot is overwritten on each direct swap. No cross-transaction persistence risk. Not an insolvency vector.",
+      "contracts": ["AMMStandardHook"],
+      "functions": ["beforeSwap"],
+      "keywords": ["transient storage", "direct swap", "TSTORE"]
+    },
+    {
+      "id": "KV-4",
+      "title": "swapExtraData silent default when not exactly 32 bytes",
+      "reason": "If swapExtraData is not exactly 32 bytes, the hook silently uses default values instead of the caller's intended parameters. This could cause unexpected swap behavior but cannot create insolvency — the swap still executes with valid parameters, fees are still collected, reserves still updated correctly.",
+      "contracts": ["AMMStandardHook"],
+      "functions": ["beforeSwap"],
+      "keywords": ["swapExtraData", "32 bytes", "silent default"]
+    }
+  ],
+  "theft_theses": [
+    {
+      "id": "TT-1",
+      "title": "Drain reserves via flash loan callback reentrancy",
+      "description": "Hypothesis: Use flash loan callback to reenter the AMM and manipulate reserves before the balance check, allowing repayment with fewer tokens than borrowed.",
+      "result": "RULED_OUT",
+      "reason": "Reentrancy guard (TstorishReentrancyGuardWithFlags) is active during flash loan callback. All reentrant paths are blocked. Balance check is strict (>=). Tested with MaliciousReentrantToken — reverts on reentry attempt."
+    },
+    {
+      "id": "TT-2",
+      "title": "Inflate fee balances to extract more than deposited",
+      "description": "Hypothesis: Perform many tiny swaps to accumulate rounding errors in fee calculations, inflating fee balances beyond actual token holdings.",
+      "result": "RULED_OUT",
+      "reason": "5000-run fuzz test (INV-SW03) confirms dust swaps cannot inflate fees. Protocol rounding consistently favors the protocol (mulDivRoundingUp for output fees). Fee monotonicity invariant (INV-E01) holds. Halmos symbolic verification confirms fee conservation."
+    },
+    {
+      "id": "TT-3",
+      "title": "Exploit hook fee distribution flag clearing for double-spend",
+      "description": "Hypothesis: After _executeQueuedHookFeesByHookTransfers clears reentrancy flags (L3190), reenter during SafeERC20.safeTransfer to claim hook fees twice.",
+      "result": "RULED_OUT",
+      "reason": "tokensOwed is decremented BEFORE the transfer at L3129. Even if reentrancy succeeds, the second claim would see tokensOwed = 0. Additionally, the function is only callable via self-call (msg.sender == address(this)), and pool state is fully committed before flag clearing."
+    }
+  ],
+  "metadata": {
+    "agent_name": "insolvency-engineer",
+    "wave": 1,
+    "archetype": "insolvency-engineer",
+    "checklist_items_completed": "A: 4/5, B: 2/5, C: 14/20, D: 4/4, E: 8/11",
+    "tools_run": {
+      "slither": true,
+      "slither_mcp_run_detectors": true,
+      "aderyn": true,
+      "halmos": true,
+      "medusa": false,
+      "forge_test": true,
+      "forge_fuzz": true
+    },
+    "total_tests_written": 32,
+    "total_fuzz_runs": 5000,
+    "findings_count": 0,
+    "ruled_out_count": 15,
+    "severity_distribution": {},
+    "repos_analyzed": ["lbamm-core", "amm-pool-type-dynamic", "lbamm-hooks-and-handlers", "lbamm-pool-type-fixed", "lbamm-pool-type-single-provider"],
+    "tool_errors": [
+      "aderyn crashed on hooks-and-handlers and amm-pool-type-dynamic (v0.6.8 bug)",
+      "medusa could not auto-deploy AMMModule (requires constructor args)"
+    ]
+  }
+}

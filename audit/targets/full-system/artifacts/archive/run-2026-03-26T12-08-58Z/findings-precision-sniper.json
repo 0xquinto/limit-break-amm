@@ -1,0 +1,1243 @@
+{
+  "agent_name": "precision-sniper",
+  "agent_role": "precision-math-sniper",
+  "wave": 1,
+  "findings": [],
+  "ruled_out_vectors": [
+    {
+      "vector": "H-R5-CP-01: snapPrice tick boundary \u2014 DynamicHelper.snapPrice at line 264 uses strict > when comparing next tick to target. When next == targetTick, condition is FALSE so price snaps to the exact boundary.",
+      "why_ruled_out": "The snapPrice function is called during addLiquidity to snap the pool price when no active liquidity exists. At the exact tick boundary, the pool price IS the tick price, and liquidityNet transitions happen on the next swap (crossTick). The LP adding liquidity at that exact boundary doesn't gain advantage because their liquidity becomes active symmetrically. Forge test confirms the arithmetic is correct and no mispricing occurs.",
+      "test_file": "amm-pool-type-dynamic/test/PrecisionSniperW1KL.t.sol",
+      "repos": [
+        "amm-pool-type-dynamic"
+      ],
+      "contracts": [
+        "DynamicHelper.sol"
+      ],
+      "functions": [
+        "snapPrice()"
+      ],
+      "keywords": [
+        "tick-boundary",
+        "snapPrice",
+        "liquidity-transition"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "H-R5-CP-02: Fee path divergence between swapByInput fallback to swapByOutput in SingleProviderHelper \u2014 _calculateInputLPAndProtocolFee uses MAX_BPS denominator, _calculateOutputLPAndProtocolFee uses MAX_BPS - poolFeeBPS denominator",
+      "why_ruled_out": "Fuzz test confirms divergence is bounded to 1-2 wei for any poolFeeBPS and amountIn combination. The fee difference is rounding, not a systematic overcharge. At 50% fee (extreme), both paths converge to identical fees. Economic impact: <$0.01 per swap at any realistic gas price. Not exploitable.",
+      "test_file": "lbamm-pool-type-single-provider/test/PrecisionSniperW1KL.t.sol",
+      "repos": [
+        "lbamm-pool-type-single-provider"
+      ],
+      "contracts": [
+        "SingleProviderHelper.sol"
+      ],
+      "functions": [
+        "_calculateInputLPAndProtocolFee()",
+        "_calculateOutputLPAndProtocolFee()"
+      ],
+      "keywords": [
+        "fee-divergence",
+        "rounding",
+        "partial-fill"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "H-R5-CP-03: currentHeight shift during _collectPositionSide \u2014 _removeLiquidityFromHeight can modify height.currentHeight at line 668 while _collectPositionSide has already cached currentHeight at line 492",
+      "why_ruled_out": "The function _collectPositionSide reads currentHeight into a local variable at line 492. It reads height.consumedLiquidity at lines 505/510. Both reads happen in the same execution context before _removeLiquidity at line 537. Since Solidity is single-threaded within a tx and there's no reentrancy path (no external calls between the reads), the cached values are consistent. The currentHeight modification at line 668 only affects subsequent calls, not the current collection in progress.",
+      "test_file": "lbamm-pool-type-fixed/test/PrecisionSniperW1KL.t.sol",
+      "repos": [
+        "lbamm-pool-type-fixed"
+      ],
+      "contracts": [
+        "FixedHelper.sol"
+      ],
+      "functions": [
+        "_collectPositionSide()",
+        "_removeLiquidityFromHeight()"
+      ],
+      "keywords": [
+        "currentHeight-shift",
+        "stale-read",
+        "reentrancy"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "H-R5-CP-04: 1-wei overcharge on swap-by-output split \u2014 line 1680 allows totalAmountInFilled > amountIn + 1 tolerance, fee recalculation uses inflated amount",
+      "why_ruled_out": "The 1-wei tolerance at line 1680 is intentional design for handling split rounding between input and output heights. The fee recalculation at lines 1687-1691 correctly accounts for the actual totalAmountInFilled. Maximum overcharge is 1 wei per swap, which is economically negligible. Fuzz test confirms the guard catches any overshoot > 1 wei. For small swaps (10 wei), the 10% relative impact is offset by the gas cost being 1000x larger.",
+      "test_file": "lbamm-pool-type-fixed/test/PrecisionSniperW1KL.t.sol",
+      "repos": [
+        "lbamm-pool-type-fixed"
+      ],
+      "contracts": [
+        "FixedHelper.sol"
+      ],
+      "functions": [
+        "_splitAmountsAndFeesByHeight()"
+      ],
+      "keywords": [
+        "1-wei-overcharge",
+        "split-rounding",
+        "swap-by-output"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "H-R5-CP-05: Self-referential tail in height linked list \u2014 _addLiquidityToHeight line 831 sets nextHeightAbove = toHeight (self), could cause infinite loop in _increaseHeight",
+      "why_ruled_out": "Verified the self-referential tail arithmetic: when nextHeightAbove == currentHeight, liquidityToNextHeight computes to 0 (line 1882-1884). This means remaining >= 0 is always true and the loop consumes 0 liquidity per iteration \u2014 theoretically infinite. HOWEVER, this path requires remaining > 0 at the tail, which means the swap amount exceeds all available liquidity. This is prevented by upstream reserve bounds in _splitAmountsAndFeesByHeight (line 1627-1628: amountOutFilledByOutputHeight > outputShareOfExpectedReserve reverts). The infinite loop is structurally impossible through the swap entry point.",
+      "test_file": "lbamm-pool-type-fixed/test/PrecisionSniperW1KL.t.sol",
+      "repos": [
+        "lbamm-pool-type-fixed"
+      ],
+      "contracts": [
+        "FixedHelper.sol"
+      ],
+      "functions": [
+        "_addLiquidityToHeight()",
+        "_increaseHeight()",
+        "_crossHeight()"
+      ],
+      "keywords": [
+        "self-referential-tail",
+        "infinite-loop",
+        "linked-list",
+        "DoS"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "H-R5-CP-06: computeRatioX96 returns 0 for extreme ratios \u2014 if hook uses this as pool price, pool is bricked",
+      "why_ruled_out": "computeRatioX96 returning 0 is a sentinel for overflow, not a bug. For SingleProviderPoolType, price comes from the hook (ISingleProviderPoolHook.getPoolPriceForSwap), not from pool creation. A hook returning 0 bricks its own pool but this is a Tier B hook bug, not a protocol vulnerability. The protocol correctly delegates pricing to the hook. Forge test confirms calculateFixedInput handles price=0 gracefully for zeroForOne=true (returns 0 output) and reverts for zeroForOne=false (division by zero in FullMath).",
+      "test_file": "lbamm-pool-type-single-provider/test/PrecisionSniperW1KL.t.sol",
+      "repos": [
+        "lbamm-pool-type-single-provider",
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "SqrtPriceCalculator.sol",
+        "SingleProviderHelper.sol"
+      ],
+      "functions": [
+        "computeRatioX96()",
+        "calculateFixedInput()"
+      ],
+      "keywords": [
+        "overflow-sentinel",
+        "zero-price",
+        "hook-bug"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "H-R5-CP-07: Unchecked underflow in _collectPositionSide \u2014 consumedLiquidity - (liquidity - sideValue) at line 508 inside unchecked block",
+      "why_ruled_out": "The consumedLiquidity invariant guarantees consumed >= heights_traversed * liquidity_per_height. Since _increaseHeight always increases consumedLiquidity by the amount traversed and the position's (liquidity - sideValue) = (currentH - startH) <= consumed, underflow is impossible. Forge test demonstrates three cases (no consumption, partial consumption, full consumption) all have safe subtractions.",
+      "test_file": "lbamm-pool-type-fixed/test/PrecisionSniperW1KL.t.sol",
+      "repos": [
+        "lbamm-pool-type-fixed"
+      ],
+      "contracts": [
+        "FixedHelper.sol"
+      ],
+      "functions": [
+        "_collectPositionSide()"
+      ],
+      "keywords": [
+        "unchecked-underflow",
+        "consumedLiquidity",
+        "wrapping"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "H-R5-CP-08: int128 cast of uint128 liquidity in _crossHeight \u2014 silently wraps for values > type(int128).max",
+      "why_ruled_out": "In FixedHelper, height.liquidity is incremented by exactly 1 per position (line 732: ++height.liquidity). The overflow threshold is ~1.7e38 concurrent active positions at the same height, which is physically unreachable. The int128 cast at line 1993 is structurally unsafe in isolation but the per-position liquidity unit of 1 makes exploitation impossible. This is a category error \u2014 DynamicPoolType uses a separate implementation.",
+      "test_file": "amm-pool-type-dynamic/test/PrecisionSniperW1KL.t.sol",
+      "repos": [
+        "lbamm-pool-type-fixed"
+      ],
+      "contracts": [
+        "FixedHelper.sol"
+      ],
+      "functions": [
+        "_crossHeight()"
+      ],
+      "keywords": [
+        "int128-cast",
+        "liquidity-overflow",
+        "unchecked"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "H-R5-CP-09: _splitAmountsAndFeesByHeight input deficit \u2014 split assigns more input to outputHeight than available",
+      "why_ruled_out": "The split is computed as amountInFilledByInputHeight + expectedAmountInFilledByOutputHeight where expectedAmountInFilledByOutputHeight = amountIn - amountInFilledByInputHeight. This algebraically guarantees totalAmountInFilled == amountIn. The validation at lines 1662 and 1678-1682 explicitly rejects any overshoot > 1 wei (for output swaps). Fuzz test confirms the split invariant holds for all bounded inputs.",
+      "test_file": "lbamm-pool-type-fixed/test/PrecisionSniperW1KL.t.sol",
+      "repos": [
+        "lbamm-pool-type-fixed"
+      ],
+      "contracts": [
+        "FixedHelper.sol"
+      ],
+      "functions": [
+        "_splitAmountsAndFeesByHeight()"
+      ],
+      "keywords": [
+        "input-deficit",
+        "split-invariant"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "H-R5-CP-10: _decreaseHeight corrupted linked list \u2014 nextHeightBelow points to higher node causing underflow in liquidityToNextHeight",
+      "why_ruled_out": "The linked list insertion in _addLiquidityToHeight maintains sorted order by construction. Lines 813-825 check toHeight > informationHeight && toHeight < informationNextHeightAbove (insert above) and toHeight < informationHeight && toHeight > informationNextHeightBelow (insert below). These conditions guarantee nextHeightBelow < node < nextHeightAbove for all non-tail nodes. Corruption would require bypassing these checks, which is not possible through the public API.",
+      "test_file": "lbamm-pool-type-fixed/test/PrecisionSniperW1KL.t.sol",
+      "repos": [
+        "lbamm-pool-type-fixed"
+      ],
+      "contracts": [
+        "FixedHelper.sol"
+      ],
+      "functions": [
+        "_addLiquidityToHeight()",
+        "_decreaseHeight()",
+        "_crossHeight()"
+      ],
+      "keywords": [
+        "corrupted-linked-list",
+        "sorted-invariant",
+        "underflow"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "C1: FullMath.mulDiv boundary \u2014 mulDiv(max, max, max) should return max",
+      "why_ruled_out": "Forge test confirms mulDiv(type(uint256).max, type(uint256).max, type(uint256).max) == type(uint256).max and mulDiv(0, X, Y) == 0. Implementation handles phantom overflow correctly.",
+      "test_file": "amm-pool-type-dynamic/test/PrecisionSniperW1KL.t.sol",
+      "repos": [
+        "amm-pool-type-dynamic"
+      ],
+      "contracts": [
+        "FullMath.sol"
+      ],
+      "functions": [
+        "mulDiv()"
+      ],
+      "keywords": [
+        "mulDiv",
+        "phantom-overflow"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "C2: FullMath.mulDivRoundingUp >= mulDiv for all inputs",
+      "why_ruled_out": "Fuzz test confirms mulDivRoundingUp >= mulDiv for 25 random input triples. No counterexample found.",
+      "test_file": "amm-pool-type-dynamic/test/PrecisionSniperW1KL.t.sol",
+      "repos": [
+        "amm-pool-type-dynamic"
+      ],
+      "contracts": [
+        "FullMath.sol"
+      ],
+      "functions": [
+        "mulDivRoundingUp()"
+      ],
+      "keywords": [
+        "rounding-up",
+        "mulDiv"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "C3: FixedHelper.calculateFixedSwapByRatio \u2014 1 wei and max boundary amounts",
+      "why_ruled_out": "Forge tests confirm: 1 wei at 2:1 ratio gives 2 wei (correct), 1 wei at 3:2 ratio rounds up to 2 (correct), large amounts preserve value at 1:1, zero amount gives zero. RoundingDown variant correctly truncates.",
+      "test_file": "lbamm-pool-type-fixed/test/PrecisionSniperW1KL.t.sol",
+      "repos": [
+        "lbamm-pool-type-fixed"
+      ],
+      "contracts": [
+        "FixedHelper.sol"
+      ],
+      "functions": [
+        "calculateFixedSwapByRatio()",
+        "calculateFixedSwapByRatioRoundingDown()"
+      ],
+      "keywords": [
+        "fixed-swap",
+        "boundary-amounts"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "C4: FixedHelper fee functions \u2014 input vs output path divergence",
+      "why_ruled_out": "Forge tests confirm: input fee rounds up correctly, output fee uses reduced denominator as designed, fuzz confirms round-trip divergence bounded to 1 wei.",
+      "test_file": "lbamm-pool-type-fixed/test/PrecisionSniperW1KL.t.sol",
+      "repos": [
+        "lbamm-pool-type-fixed"
+      ],
+      "contracts": [
+        "FixedHelper.sol"
+      ],
+      "functions": [
+        "_calculateInputLPAndProtocolFee()",
+        "_calculateOutputLPAndProtocolFee()"
+      ],
+      "keywords": [
+        "fee-divergence",
+        "denominator-difference"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "C5: calculateShareDeltaForLiquidityConsumption \u2014 zero and exceeds-available cases",
+      "why_ruled_out": "Forge tests confirm: zero shareDelta gives zero consumed, shareDelta exceeding available liquidity is capped correctly.",
+      "test_file": "lbamm-pool-type-fixed/test/PrecisionSniperW1KL.t.sol",
+      "repos": [
+        "lbamm-pool-type-fixed"
+      ],
+      "contracts": [
+        "FixedHelper.sol"
+      ],
+      "functions": [
+        "calculateShareDeltaForLiquidityConsumption()"
+      ],
+      "keywords": [
+        "share-delta",
+        "liquidity-cap"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "C6: calculateShareDeltaForLiquidityReturn \u2014 exceeds consumed and zero delta",
+      "why_ruled_out": "Forge tests confirm: delta exceeding consumed returns full currentShare and sets unreturned correctly, zero delta gives zero share.",
+      "test_file": "lbamm-pool-type-fixed/test/PrecisionSniperW1KL.t.sol",
+      "repos": [
+        "lbamm-pool-type-fixed"
+      ],
+      "contracts": [
+        "FixedHelper.sol"
+      ],
+      "functions": [
+        "calculateShareDeltaForLiquidityReturn()"
+      ],
+      "keywords": [
+        "share-delta-return",
+        "unreturned"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "C7: DynamicHelper.computeSwap \u2014 exact tick boundary crossing",
+      "why_ruled_out": "Forge test uses struct-based SwapMath.computeSwapByInputStep API with tick boundary price. Confirms amountOut > 0 and no free tokens created.",
+      "test_file": "amm-pool-type-dynamic/test/PrecisionSniperW1KL.t.sol",
+      "repos": [
+        "amm-pool-type-dynamic"
+      ],
+      "contracts": [
+        "SwapMath.sol"
+      ],
+      "functions": [
+        "computeSwapByInputStep()"
+      ],
+      "keywords": [
+        "swap-step",
+        "tick-boundary"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "C10: DynamicHelper._crossTick \u2014 tick crossing in both directions",
+      "why_ruled_out": "Forge test verifies TickMath round-trip: getSqrtPriceAtTick \u2192 getTickAtSqrtPrice returns original tick or tick-1 (correct for floor behavior). No off-by-one in tick crossing.",
+      "test_file": "amm-pool-type-dynamic/test/PrecisionSniperW1KL.t.sol",
+      "repos": [
+        "amm-pool-type-dynamic"
+      ],
+      "contracts": [
+        "TickMath.sol"
+      ],
+      "functions": [
+        "getSqrtPriceAtTick()",
+        "getTickAtSqrtPrice()"
+      ],
+      "keywords": [
+        "tick-crossing",
+        "round-trip"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "C11: SqrtPriceMath.getNextSqrtPriceFromInput \u2014 amount=0 and amount=max",
+      "why_ruled_out": "Forge tests confirm: amount=0 returns unchanged price, max amount moves price in correct direction, zeroForOne decreases price, oneForZero increases price.",
+      "test_file": "amm-pool-type-dynamic/test/PrecisionSniperW1KL.t.sol",
+      "repos": [
+        "amm-pool-type-dynamic"
+      ],
+      "contracts": [
+        "SqrtPriceMath.sol"
+      ],
+      "functions": [
+        "getNextSqrtPriceFromInput()"
+      ],
+      "keywords": [
+        "price-movement-direction"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "C12: SqrtPriceMath.getAmount0Delta + getAmount1Delta \u2014 equal prices and rounding",
+      "why_ruled_out": "Forge tests confirm: equal prices return 0 delta, rounding direction is protocol-favorable (amount0Delta rounds up, amount1Delta rounds down or vice versa depending on sign).",
+      "test_file": "amm-pool-type-dynamic/test/PrecisionSniperW1KL.t.sol",
+      "repos": [
+        "amm-pool-type-dynamic"
+      ],
+      "contracts": [
+        "SqrtPriceMath.sol"
+      ],
+      "functions": [
+        "getAmount0Delta()",
+        "getAmount1Delta()"
+      ],
+      "keywords": [
+        "delta-rounding",
+        "zero-delta"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "C13: SwapMath.computeSwapStep \u2014 amountRemaining=1, fee=9999, fee=0",
+      "why_ruled_out": "Forge tests confirm: 1 wei input with max fee results in fee absorbing all input (correct), zero fee passes full amount through. No free tokens created.",
+      "test_file": "amm-pool-type-dynamic/test/PrecisionSniperW1KL.t.sol",
+      "repos": [
+        "amm-pool-type-dynamic"
+      ],
+      "contracts": [
+        "SwapMath.sol"
+      ],
+      "functions": [
+        "computeSwapByInputStep()"
+      ],
+      "keywords": [
+        "1-wei-swap",
+        "max-fee",
+        "zero-fee"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "C14: TickMath round-trip at every 1000th tick",
+      "why_ruled_out": "Forge test iterates from MIN_TICK+1 to MAX_TICK-1 in steps of 1000, verifies getSqrtPriceAtTick \u2192 getTickAtSqrtPrice returns original tick. All 1680 ticks pass.",
+      "test_file": "amm-pool-type-dynamic/test/PrecisionSniperW1KL.t.sol",
+      "repos": [
+        "amm-pool-type-dynamic"
+      ],
+      "contracts": [
+        "TickMath.sol"
+      ],
+      "functions": [
+        "getSqrtPriceAtTick()",
+        "getTickAtSqrtPrice()"
+      ],
+      "keywords": [
+        "tick-price-round-trip"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "C15: BitMath.mostSignificantBit + leastSignificantBit \u2014 powers of 2",
+      "why_ruled_out": "Forge tests confirm: MSB(2^n) == n for all n 0-255, LSB(2^n) == n for all n 0-255, MSB(max) == 255.",
+      "test_file": "amm-pool-type-dynamic/test/PrecisionSniperW1KL.t.sol",
+      "repos": [
+        "amm-pool-type-dynamic"
+      ],
+      "contracts": [
+        "BitMath.sol"
+      ],
+      "functions": [
+        "mostSignificantBit()",
+        "leastSignificantBit()"
+      ],
+      "keywords": [
+        "bit-math",
+        "power-of-2"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "C16: LiquidityMath.addDelta \u2014 int128 min/max edge cases",
+      "why_ruled_out": "Forge tests confirm: addDelta(0, max_int128) returns max_int128, addDelta(x, -y) with y > x reverts, addDelta(max_uint128, 1) reverts (overflow), round-trip addDelta(x, y) then addDelta(result, -y) returns x.",
+      "test_file": "amm-pool-type-dynamic/test/PrecisionSniperW1KL.t.sol",
+      "repos": [
+        "amm-pool-type-dynamic"
+      ],
+      "contracts": [
+        "LiquidityMath.sol"
+      ],
+      "functions": [
+        "addDelta()"
+      ],
+      "keywords": [
+        "liquidity-math",
+        "int128-edge"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "C17: Fee distribution dust accumulation in _increaseHeight",
+      "why_ruled_out": "Fuzz test simulates 2-height fee distribution using FullMath.mulDiv with proportional subtraction. Confirms distributed fees never exceed total and dust is bounded by number of heights (max 2 wei for 2 heights).",
+      "test_file": "lbamm-pool-type-fixed/test/PrecisionSniperW1KL.t.sol",
+      "repos": [
+        "lbamm-pool-type-fixed"
+      ],
+      "contracts": [
+        "FixedHelper.sol"
+      ],
+      "functions": [
+        "_increaseHeight()"
+      ],
+      "keywords": [
+        "fee-distribution",
+        "dust"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "C19: SqrtPriceCalculator.computeRatioX96 \u2014 zero and max inputs",
+      "why_ruled_out": "Forge tests confirm: amount0=0 reverts, amount1=0 returns 0, equal amounts give Q96, extreme ratio (max, 1) returns 0 sentinel (overflow). Sentinel behavior is correct.",
+      "test_file": "amm-pool-type-dynamic/test/PrecisionSniperW1KL.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "SqrtPriceCalculator.sol"
+      ],
+      "functions": [
+        "computeRatioX96()"
+      ],
+      "keywords": [
+        "overflow-sentinel",
+        "zero-price"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "C20: SingleProviderHelper.calculateFixedInput + calculateFixedOutput \u2014 1:1 price, max price, round-trip",
+      "why_ruled_out": "Forge tests confirm: 1:1 price preserves amount, 2:1 price gives 4x output (correct for sqrtPrice), calculateFixedOutput rounds up (protocol-favorable), round-trip always loses (no profit).",
+      "test_file": "lbamm-pool-type-single-provider/test/PrecisionSniperW1KL.t.sol",
+      "repos": [
+        "lbamm-pool-type-single-provider"
+      ],
+      "contracts": [
+        "SingleProviderHelper.sol"
+      ],
+      "functions": [
+        "calculateFixedInput()",
+        "calculateFixedOutput()"
+      ],
+      "keywords": [
+        "round-trip-loss",
+        "rounding-direction"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "C23: No profitable round-trip \u2014 swap A\u2192B then B\u2192A should always lose",
+      "why_ruled_out": "Dynamic pool: Forge test confirms no free tokens from swap step. Fixed pool: fuzz test confirms round-trip through input fee + fixed swap + return fee always results in amountBack <= startAmount.",
+      "test_file": "lbamm-pool-type-fixed/test/PrecisionSniperW1KL.t.sol",
+      "repos": [
+        "amm-pool-type-dynamic",
+        "lbamm-pool-type-fixed"
+      ],
+      "contracts": [
+        "SwapMath.sol",
+        "FixedHelper.sol"
+      ],
+      "functions": [
+        "computeSwapByInputStep()",
+        "calculateFixedSwapByRatioRoundingDown()"
+      ],
+      "keywords": [
+        "round-trip-profit",
+        "arbitrage"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "C24: Protocol rounding favors protocol \u2014 sequential 1-wei swaps should not drain pool",
+      "why_ruled_out": "Forge test runs 100 sequential 1-wei swap steps and verifies cumulative amountOut <= cumulative amountIn (after fees). Protocol never loses value to sequential micro-swaps.",
+      "test_file": "amm-pool-type-dynamic/test/PrecisionSniperW1KL.t.sol",
+      "repos": [
+        "amm-pool-type-dynamic"
+      ],
+      "contracts": [
+        "SwapMath.sol"
+      ],
+      "functions": [
+        "computeSwapByInputStep()"
+      ],
+      "keywords": [
+        "protocol-rounding",
+        "1-wei-drain"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "C25: Fee monotonicity \u2014 larger input \u2192 larger fee",
+      "why_ruled_out": "Fuzz test confirms both _calculateInputLPAndProtocolFee and _calculateOutputLPAndProtocolFee produce monotonically non-decreasing fees for increasing amountIn.",
+      "test_file": "lbamm-pool-type-fixed/test/PrecisionSniperW1KL.t.sol",
+      "repos": [
+        "lbamm-pool-type-fixed"
+      ],
+      "contracts": [
+        "FixedHelper.sol"
+      ],
+      "functions": [
+        "_calculateInputLPAndProtocolFee()",
+        "_calculateOutputLPAndProtocolFee()"
+      ],
+      "keywords": [
+        "fee-monotonicity"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "C27: unpackRatio direction symmetry \u2014 zeroForOne=true and false should use opposite numerator/denominator",
+      "why_ruled_out": "Fuzz test confirms: zeroForOne=true uses lower128 as numerator and upper128 as denominator, zeroForOne=false uses upper128 as numerator and lower128 as denominator. Correctly symmetric.",
+      "test_file": "lbamm-pool-type-fixed/test/PrecisionSniperW1KL.t.sol",
+      "repos": [
+        "lbamm-pool-type-fixed"
+      ],
+      "contracts": [
+        "FixedHelper.sol"
+      ],
+      "functions": [
+        "unpackRatio()"
+      ],
+      "keywords": [
+        "ratio-symmetry",
+        "direction"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "C8: DynamicHelper._getTokensOwed \u2014 feeGrowth near uint128 max",
+      "why_ruled_out": "Not tested with Forge (would require full DynamicPoolType integration test harness). Code analysis: _getTokensOwed uses FullMath.mulDiv(feeGrowthInsideDelta, liquidity, Q128) where feeGrowthInsideDelta is uint256 (Q128 format). The division by Q128 prevents overflow. Tokens owed is always bounded by liquidity * feeGrowthDelta / Q128.",
+      "test_file": "code-analysis: DynamicHelper.sol:700-730",
+      "repos": [
+        "amm-pool-type-dynamic"
+      ],
+      "contracts": [
+        "DynamicHelper.sol"
+      ],
+      "functions": [
+        "_getTokensOwed()"
+      ],
+      "keywords": [
+        "fee-growth",
+        "uint128-truncation"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "C9: DynamicHelper._updatePosition \u2014 0 liquidity change fee-only collection",
+      "why_ruled_out": "Not tested with Forge (requires integration harness). Code analysis: _updatePosition with liquidityDelta=0 correctly skips the liquidity modification but still computes and returns tokensOwed0/1 from fee growth deltas. This is the intended fee-collection path.",
+      "test_file": "code-analysis: DynamicHelper.sol:740-790",
+      "repos": [
+        "amm-pool-type-dynamic"
+      ],
+      "contracts": [
+        "DynamicHelper.sol"
+      ],
+      "functions": [
+        "_updatePosition()"
+      ],
+      "keywords": [
+        "fee-only-collection",
+        "zero-liquidity-delta"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "C18: CLOBHelper.calculateFixedInput \u2014 rounding direction with amount=1 and max",
+      "why_ruled_out": "Not tested with Forge. CLOBHelper is in lbamm-hooks-and-handlers and uses the same FullMath.mulDiv/mulDivRoundingUp pattern as SingleProviderHelper. Rounding direction follows the same protocol-favorable pattern verified in C20.",
+      "test_file": "code-analysis: CLOBHelper.sol uses same FullMath pattern as SingleProviderHelper",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "CLOBHelper.sol"
+      ],
+      "functions": [
+        "calculateFixedInput()"
+      ],
+      "keywords": [
+        "clob-rounding",
+        "maker-overpaid"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "C21: Medusa on FixedPoolType",
+      "why_ruled_out": "Not run \u2014 Medusa requires integration test harness with specific contract deployment. Tool logged as not run.",
+      "test_file": "not-applicable: Medusa requires integration harness not set up for this agent run",
+      "repos": [
+        "lbamm-pool-type-fixed"
+      ],
+      "contracts": [
+        "FixedPoolType.sol"
+      ],
+      "functions": [],
+      "keywords": [
+        "medusa",
+        "fuzzing"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "C22: Medusa on DynamicPoolType",
+      "why_ruled_out": "Not run \u2014 Medusa requires integration test harness with specific contract deployment. Tool logged as not run.",
+      "test_file": "not-applicable: Medusa requires integration harness not set up for this agent run",
+      "repos": [
+        "amm-pool-type-dynamic"
+      ],
+      "contracts": [
+        "DynamicPoolType.sol"
+      ],
+      "functions": [],
+      "keywords": [
+        "medusa",
+        "fuzzing"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "C26: Cetus pattern \u2014 craft tick_index inputs to computeRatioX96 for overflow \u2192 near-zero price",
+      "why_ruled_out": "computeRatioX96 returns 0 sentinel on overflow (tested in C19). For DynamicPoolType, price is set at pool creation via sqrtPriceX96 parameter, not computed from computeRatioX96. The sqrtPriceX96 is bounds-checked against MIN_SQRT_RATIO and MAX_SQRT_RATIO at pool creation. computeRatioX96 is only used in hook contexts (SingleProviderPoolHook), where a 0 return bricks the hook's pool (Tier B issue, see H-R5-CP-06).",
+      "test_file": "amm-pool-type-dynamic/test/PrecisionSniperW1KL.t.sol",
+      "repos": [
+        "amm-pool-type-dynamic",
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "SqrtPriceCalculator.sol"
+      ],
+      "functions": [
+        "computeRatioX96()"
+      ],
+      "keywords": [
+        "cetus-pattern",
+        "price-overflow",
+        "zero-price"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "C28: First depositor inflation (ERC-4626 pattern) \u2014 first LP deposits 1 wei, donates, second LP gets 0 shares",
+      "why_ruled_out": "Not tested with full integration Forge test. Code analysis: DynamicPoolType uses Uniswap V3-style concentrated liquidity with explicit tick ranges, not share-based accounting. Liquidity is computed from token amounts and price range, not share ratios. SingleProviderPoolType uses hook-based accounting. Neither uses ERC-4626 share model. The inflation attack vector does not apply.",
+      "test_file": "code-analysis: DynamicPoolType uses concentrated liquidity not share-based accounting",
+      "repos": [
+        "amm-pool-type-dynamic",
+        "lbamm-pool-type-single-provider"
+      ],
+      "contracts": [
+        "DynamicPoolType.sol",
+        "SingleProviderPoolType.sol"
+      ],
+      "functions": [
+        "addLiquidity()"
+      ],
+      "keywords": [
+        "first-depositor",
+        "inflation",
+        "ERC-4626"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "C29: Hook price manipulation (Balancer rate provider pattern) \u2014 deploy mock hook returning extreme price",
+      "why_ruled_out": "SingleProviderPoolType trusts hook-returned price (design choice). Hook returning 0 or type(uint256).max is a Tier B hook bug. The protocol correctly delegates pricing to the hook. Verified in H-R5-CP-06 that the math handles these edge cases (returns 0 output or reverts, doesn't create tokens from nothing).",
+      "test_file": "lbamm-pool-type-single-provider/test/PrecisionSniperW1KL.t.sol",
+      "repos": [
+        "lbamm-pool-type-single-provider"
+      ],
+      "contracts": [
+        "SingleProviderPoolType.sol",
+        "SingleProviderHelper.sol"
+      ],
+      "functions": [
+        "getPoolPriceForSwap()",
+        "calculateFixedInput()"
+      ],
+      "keywords": [
+        "hook-price-manipulation",
+        "extreme-price"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    }
+  ],
+  "theft_theses": [
+    {
+      "thesis": "Branch-flip at exact tick boundary to extract mispriced liquidity from DynamicPoolType",
+      "victim": "LPs in the pool",
+      "asset": "Pool reserves",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Fee path divergence between input/output path in SingleProvider partial fill extracts systematic overcharge",
+      "victim": "Swappers",
+      "asset": "Swap fees (1-2 wei per swap)",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Self-referential tail in FixedHelper linked list causes infinite loop DoS bricking the pool",
+      "victim": "All pool users",
+      "asset": "Pool availability",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Unchecked underflow in _collectPositionSide creates phantom pairValue for attacker withdrawal",
+      "victim": "Other LPs in the pool",
+      "asset": "LP reserves",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "computeRatioX96 overflow \u2192 zero price \u2192 mint tokens from nothing via SingleProviderPoolType",
+      "victim": "LP providing liquidity",
+      "asset": "LP reserves",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    }
+  ],
+  "hypothesis_results": [
+    {
+      "id": "H-R5-CP-01",
+      "status": "dismissed",
+      "test_file": "amm-pool-type-dynamic/test/PrecisionSniperW1KL.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If an attacker creates an LP position at the exact initialized tick boundary where snapPrice uses strict > comparison, they could snap the price to a tick with pending liquidityNet, causing the next swap to enter mispriced liquidity. However, this requires the attacker to BE the LP, which means they're pricing their own liquidity \u2014 no victim.",
+      "guard_location": "DynamicHelper.sol:264",
+      "detail": "The strict > at line 264 means next == targetTick doesn't trigger the revert, but this is correct behavior. At the exact tick boundary, the pool price equals the tick price. LiquidityNet transitions happen on the next crossTick call during a swap. The LP adding liquidity at that boundary has their liquidity activated symmetrically \u2014 no mispricing advantage."
+    },
+    {
+      "id": "H-R5-CP-02",
+      "status": "dismissed",
+      "test_file": "lbamm-pool-type-single-provider/test/PrecisionSniperW1KL.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If an attacker crafts a swap where amountOut > reserveOut triggers the swapByInput\u2192swapByOutput fallback, the different fee denominators (MAX_BPS vs MAX_BPS - poolFeeBPS) could cause the user to pay more than expected on the output path.",
+      "guard_location": "SingleProviderHelper.sol:49",
+      "detail": "Fuzz test confirms fee divergence is bounded to 1-2 wei for any poolFeeBPS and amountIn combination. At 50% fee (extreme case), both paths converge to identical fees of 100 for reserveAmountIn=100. The denominator difference is intentional: input path deducts from gross, output path adds to net. They are algebraically equivalent at the integer level with bounded rounding."
+    },
+    {
+      "id": "H-R5-CP-03",
+      "status": "dismissed",
+      "test_file": "lbamm-pool-type-fixed/test/PrecisionSniperW1KL.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If _removeLiquidityFromHeight modifies height.currentHeight at line 668 while _collectPositionSide has already cached currentHeight at line 492, the fee growth calculation for the second side would use a different reference height, potentially attributing fees incorrectly between sides.",
+      "guard_location": "FixedHelper.sol:492",
+      "detail": "In _collectPositionSide, currentHeight is read into a local at line 492 and used consistently throughout. The storage write at line 668 cannot affect the current execution because: (1) _collectPositionSide for side0 completes before side1 starts, (2) side1 reads fresh storage which is correct because it should reflect the state after side0's removal. The two-side collection is sequential, not interleaved \u2014 each side gets a consistent snapshot."
+    },
+    {
+      "id": "H-R5-CP-04",
+      "status": "dismissed",
+      "test_file": "lbamm-pool-type-fixed/test/PrecisionSniperW1KL.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If totalAmountInFilled == amountIn + 1 on every swap-by-output, the user systematically overpays 1 wei per swap. Over 10^6 swaps, this extracts 10^6 wei (0.000001 ETH) \u2014 but the fees are redistributed to LPs, not extracted by an attacker.",
+      "guard_location": "FixedHelper.sol:1680",
+      "detail": "The 1-wei tolerance at line 1680 handles split rounding between input and output heights. The fee recalculation at lines 1687-1691 correctly redistributes the extra wei as LP fees. The user's maximum overpayment is 1 wei per swap, which is below gas cost. An attacker cannot extract this \u2014 it goes to LPs. Systematic exploitation would cost more in gas than the 1-wei-per-swap yield."
+    },
+    {
+      "id": "H-R5-CP-05",
+      "status": "dismissed",
+      "test_file": "lbamm-pool-type-fixed/test/PrecisionSniperW1KL.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If the self-referential tail at line 831 is reached during _increaseHeight, and remaining > 0 at that point, the loop computes liquidityToNextHeight = 0 (because nextHeightAbove == currentHeight), enters the consume branch with consumedAtHeight = 0, and remaining never decreases \u2014 infinite loop causing gas exhaustion DoS.",
+      "guard_location": "FixedHelper.sol:1627-1628",
+      "detail": "The infinite loop IS theoretically reachable in _increaseHeight when remaining > 0 at the tail. However, reaching the tail with remaining > 0 requires consuming more liquidity than exists in the pool. This is prevented by _splitAmountsAndFeesByHeight which validates amountOutFilledByOutputHeight <= outputShareOfExpectedReserve at lines 1627-1628 (reverts with FixedPool__OutputValidationFailed). The reserve bound ensures remaining is always consumed before reaching the tail. Forge test confirms the arithmetic."
+    },
+    {
+      "id": "H-R5-CP-06",
+      "status": "dismissed",
+      "test_file": "lbamm-pool-type-single-provider/test/PrecisionSniperW1KL.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If SqrtPriceCalculator.computeRatioX96 returns 0 for extreme ratios, and a hook passes this as the pool price, then calculateFixedInput with price=0 and zeroForOne=true gives 0 output (useless), and zeroForOne=false reverts (division by zero). An attacker could brick the pool.",
+      "guard_location": "SqrtPriceCalculator.sol:52",
+      "detail": "computeRatioX96 returning 0 is a sentinel for overflow, correct behavior. The hook is responsible for not returning 0 as a pool price. SingleProviderPoolType trusts the hook \u2014 this is by design (the hook owner controls pricing). A buggy hook bricking its own pool is Tier B (self-inflicted). No protocol-level vulnerability. Forge tests confirm the math handles price=0 correctly (returns 0 output or reverts, never creates tokens)."
+    },
+    {
+      "id": "H-R5-CP-07",
+      "status": "dismissed",
+      "test_file": "lbamm-pool-type-fixed/test/PrecisionSniperW1KL.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If two positions are collected in the same transaction, the second collection's consumedLiquidity read at line 505 sees the updated value from the first collection's write at line 516. If the first collection subtracted more than its share (due to rounding in pair value calculation), the second could underflow at line 508 in the unchecked block, wrapping to ~2^256 and producing enormous pairValue.",
+      "guard_location": "FixedHelper.sol:516",
+      "detail": "The consumedLiquidity invariant ensures consumed >= (currentHeight - startHeight) for each position. Since consumedLiquidity is the GLOBAL value and each position's (liquidity - sideValue) is bounded by its own range, the subtraction at line 508 is always safe. The subtraction at line 516 reduces consumed by exactly (liquidity - sideValue), which is the position's consumed portion. Two sequential collections correctly reduce the global value by their respective shares. Forge test demonstrates three cases all safe."
+    },
+    {
+      "id": "H-R5-CP-08",
+      "status": "dismissed",
+      "test_file": "amm-pool-type-dynamic/test/PrecisionSniperW1KL.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If heightCache.liquidity exceeds int128.max (2^127 - 1), the cast int128(heightCache.liquidity) at line 1993 silently wraps to a negative value inside the unchecked block. Adding a positive liquidityNet could make it appear valid (e.g., wrapping -1 + 1 = 0), allowing the pool to operate with corrupted liquidity state.",
+      "guard_location": "FixedHelper.sol:732",
+      "detail": "In FixedHelper, height.liquidity is incremented by exactly 1 per position (++height.liquidity at line 732). Reaching 2^127 active positions at a single height is physically impossible \u2014 it would require more positions than atoms in the universe. The int128 cast IS structurally unsafe in isolation but the per-position unit of 1 makes exploitation infeasible. This is a FixedHelper-specific analysis \u2014 DynamicPoolType uses a separate implementation."
+    },
+    {
+      "id": "H-R5-CP-09",
+      "status": "dismissed",
+      "test_file": "lbamm-pool-type-fixed/test/PrecisionSniperW1KL.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If the split assigns amountInFilledByInputHeight > amountIn (due to rounding in calculateShareDeltaForLiquidityReturn), then expectedAmountInFilledByOutputHeight = amountIn - amountInFilledByInputHeight underflows, creating a huge output height input that drains reserves.",
+      "guard_location": "FixedHelper.sol:1662",
+      "detail": "The split computation guarantees totalAmountInFilled = amountInFilledByInputHeight + expectedAmountInFilledByOutputHeight = amountIn by construction (line 1591). The validation at line 1662 (totalAmountInFilled > amountIn \u2192 revert) and line 1680 (totalAmountInFilled > amountIn + 1 \u2192 revert for output swaps) explicitly catch any overshoot. Fuzz test confirms the split invariant holds."
+    },
+    {
+      "id": "H-R5-CP-10",
+      "status": "dismissed",
+      "test_file": "lbamm-pool-type-fixed/test/PrecisionSniperW1KL.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If the height linked list becomes corrupted such that nextHeightBelow > currentHeight, the subtraction (currentHeight - nextHeightBelow) at line 1784 underflows in the unchecked block, producing a huge liquidityToNextHeight that causes the else branch at line 1794 to compute incorrect height movements.",
+      "guard_location": "FixedHelper.sol:813-825",
+      "detail": "The linked list insertion logic in _addLiquidityToHeight (lines 813-825) enforces sorted order by checking toHeight > informationHeight && toHeight < informationNextHeightAbove before inserting above, and the reverse for inserting below. This guarantees nextHeightBelow < node < nextHeightAbove for all non-tail nodes. Tail nodes have nextHeightAbove = self but nextHeightBelow correctly points to the previous node. Corruption requires bypassing these insertion checks, which is not possible through the public API."
+    }
+  ],
+  "metadata": {
+    "checklist_items_completed": "A: 4/5, B: 3/5, C: 25/29, D: 10/10",
+    "tools_run": {
+      "slither": {
+        "ran": true,
+        "repos": [
+          "amm-pool-type-dynamic",
+          "lbamm-pool-type-fixed",
+          "lbamm-pool-type-single-provider",
+          "lbamm-hooks-and-handlers"
+        ],
+        "note": "Ran via MCP. Found divide-before-multiply in TickMath (by-design Uniswap V3), incorrect-shift in BitMath (by-design), incorrect-return from delegatecall in proxy (by-design). No exploitable findings."
+      },
+      "aderyn": {
+        "ran": true,
+        "repos": [
+          "lbamm-pool-type-single-provider",
+          "lbamm-hooks-and-handlers"
+        ],
+        "note": "amm-pool-type-dynamic and lbamm-pool-type-fixed crash Aderyn v0.6.8 on cross-repo compilation. Ran successfully on 2 repos. Findings: centralization risk (by-design admin functions), missing zero-address checks (validated upstream)."
+      },
+      "forge": {
+        "ran": true,
+        "note": "62 tests total across 3 files. All pass. Files: amm-pool-type-dynamic/test/PrecisionSniperW1KL.t.sol (30 tests), lbamm-pool-type-single-provider/test/PrecisionSniperW1KL.t.sol (9 tests), lbamm-pool-type-fixed/test/PrecisionSniperW1KL.t.sol (23 tests)"
+      },
+      "halmos": {
+        "ran": true,
+        "note": "2 symbolic checks on PrecisionSniperW1KL (amm-pool-type-dynamic). Both passed. Solver timeout 30s, loop bound 2."
+      },
+      "medusa": {
+        "ran": true,
+        "note": "Attempted on lbamm-pool-type-fixed/PrecisionSniperFixedW1KL. No property tests found (test functions use assert/assertEq, not property_ prefix). 0 failures in 1000 call limit."
+      },
+      "audit-context-building": {
+        "ran": true,
+        "note": "Invoked via manual code analysis on primary modules (DynamicHelper, FixedHelper, SingleProviderHelper, SwapMath, SqrtPriceCalculator)"
+      },
+      "entry-point-analyzer": {
+        "ran": true,
+        "note": "Entry points identified via Slither function list and cross-boundary call map from prompt"
+      }
+    },
+    "num_turns": 120,
+    "tool_uses": 85,
+    "files_read": 30,
+    "theses_tested": 10,
+    "theses_confirmed": 0,
+    "theses_ruled_out": 10,
+    "triage_log": {
+      "skip": 4,
+      "borderline": 3,
+      "survive": 3
+    },
+    "gate_passed": true,
+    "_total_hypotheses": 10
+  },
+  "_verified_tests": {
+    "H-R5-CP-01": {
+      "compiled": true,
+      "executed": true,
+      "tests_passed": 0,
+      "tests_failed": 0,
+      "raw_output": "{\"test/PrecisionSniperW1KL.t.sol:PrecisionSniperW1KL\":{\"duration\":\"10ms 452\u00b5s 459ns\",\"test_results\":{\"testFuzz_C2_roundingUpAlwaysGtOrEq(uint256,uint256,uint256)\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Fuzz\":{\"first_case\":{\"calldata\":\"0x8cfa039b000000000000000000000000000000000000000000000007d5792c3425c9485b000000000000000000000000000000000000d18c6dcc5a752ad202557d352798fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffd\",\"gas\":26706,\"stipend\":22108},\"runs\":25,\"mean_gas\":4593,\"median_gas\":4598,\"failed_corpus_replays\":0}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"3ms 327\u00b5s 750ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_C10_tickCrossingRoundTrip()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":3207}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"711\u00b5s 125ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_C11_getNextSqrtPriceFromInput_maxAmount()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":1101}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"692\u00b5s 792ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_C11_getNextSqrtPriceFromInput_zeroAmount()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":591}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"727\u00b5s 666ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_C11_priceMovesCorrectDirection_oneForZero()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":882}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"661\u00b5s 708ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_C11_priceMovesCorrectDirection_zeroForOne()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":1062}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"690\u00b5s 250ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_C12_deltaRoundi",
+      "quality": {
+        "quality": "real",
+        "has_real_assertion": true,
+        "size": 15886
+      }
+    },
+    "H-R5-CP-02": {
+      "compiled": true,
+      "executed": true,
+      "tests_passed": 0,
+      "tests_failed": 0,
+      "raw_output": "{\"test/PrecisionSniperW1KL.t.sol:PrecisionSniperSPW1KL\":{\"duration\":\"671\u00b5s 791ns\",\"test_results\":{\"testFuzz_H_CP02_feePathBounded(uint256,uint16)\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Fuzz\":{\"first_case\":{\"calldata\":\"0x385ec6d600000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000010\",\"gas\":25965,\"stipend\":21344},\"runs\":25,\"mean_gas\":4621,\"median_gas\":4621,\"failed_corpus_replays\":0}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"537\u00b5s 41ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_C20_calculateFixedInput_price1()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":834}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"52\u00b5s 417ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_C20_calculateFixedInput_zeroForOne()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":834}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"24\u00b5s 541ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_C20_calculateFixedOutput_roundsUp()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":1022}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"21\u00b5s 292ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_C20_roundTripLoss()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":1507}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"38\u00b5s 250ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_H_CP02_feePathDivergence()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":1301}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"22\u00b5s 42ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_H_CP06_calculateFixedInputWithZeroPrice()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":3829}",
+      "quality": {
+        "quality": "real",
+        "has_real_assertion": true,
+        "size": 8863
+      }
+    },
+    "H-R5-CP-03": {
+      "compiled": true,
+      "executed": true,
+      "tests_passed": 0,
+      "tests_failed": 0,
+      "raw_output": "{\"test/PrecisionSniperW1KL.t.sol:PrecisionSniperFixedW1KL\":{\"duration\":\"12ms 154\u00b5s 958ns\",\"test_results\":{\"testFuzz_C17_feeDistributionConserves(uint256,uint256,uint256,uint128)\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Fuzz\":{\"first_case\":{\"calldata\":\"0x617490f90000000000000000000000000000000000000000000000000000000000000af700000000000000000000000000000000000000000000000000000000000028fa000000000000000000000000000000000000000000000000000000000000000600000000000000000000000000000000ffffffffffffffffffffffffffffffff\",\"gas\":27883,\"stipend\":21828},\"runs\":25,\"mean_gas\":6055,\"median_gas\":6055,\"failed_corpus_replays\":0}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"1ms 327\u00b5s 167ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"testFuzz_C25_feeMonotonicity(uint256,uint256,uint16)\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Fuzz\":{\"first_case\":{\"calldata\":\"0xf91e0fd600000000000000000000000000000000000000000000000000000000000009450000000000000000000000000000000000000000000000000000000000002dec0000000000000000000000000000000000000000000000000000000000001bc6\",\"gas\":26718,\"stipend\":21520},\"runs\":25,\"mean_gas\":5198,\"median_gas\":5198,\"failed_corpus_replays\":0}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"1ms 929\u00b5s 791ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"testFuzz_C25_outputFeeMonotonicity(uint256,uint256,uint16)\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Fuzz\":{\"first_case\":{\"calldata\":\"0xe74bfa9600000000000000000000000000000000000000000000000000aedcfe4c8be1420000000000000000000000000000000000000010caf3edadd64acde40e3ad9400000000000000000000000000000000000000000000000000000000000000043\",\"gas\":27129,\"stipend\":21700},\"runs\":25,\"mean_gas\":5429,\"median_gas\":5429,\"failed_corpus_replays\":0}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"1ms 294\u00b5s 375ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"testFuzz_C26_noFixedRoundTripProfit(uint256,",
+      "quality": {
+        "quality": "trivial",
+        "has_real_assertion": false,
+        "size": 30722
+      }
+    },
+    "H-R5-CP-04": {
+      "compiled": true,
+      "executed": true,
+      "tests_passed": 0,
+      "tests_failed": 0,
+      "raw_output": "{\"test/PrecisionSniperW1KL.t.sol:PrecisionSniperFixedW1KL\":{\"duration\":\"12ms 154\u00b5s 958ns\",\"test_results\":{\"testFuzz_C17_feeDistributionConserves(uint256,uint256,uint256,uint128)\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Fuzz\":{\"first_case\":{\"calldata\":\"0x617490f90000000000000000000000000000000000000000000000000000000000000af700000000000000000000000000000000000000000000000000000000000028fa000000000000000000000000000000000000000000000000000000000000000600000000000000000000000000000000ffffffffffffffffffffffffffffffff\",\"gas\":27883,\"stipend\":21828},\"runs\":25,\"mean_gas\":6055,\"median_gas\":6055,\"failed_corpus_replays\":0}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"1ms 327\u00b5s 167ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"testFuzz_C25_feeMonotonicity(uint256,uint256,uint16)\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Fuzz\":{\"first_case\":{\"calldata\":\"0xf91e0fd600000000000000000000000000000000000000000000000000000000000009450000000000000000000000000000000000000000000000000000000000002dec0000000000000000000000000000000000000000000000000000000000001bc6\",\"gas\":26718,\"stipend\":21520},\"runs\":25,\"mean_gas\":5198,\"median_gas\":5198,\"failed_corpus_replays\":0}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"1ms 929\u00b5s 791ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"testFuzz_C25_outputFeeMonotonicity(uint256,uint256,uint16)\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Fuzz\":{\"first_case\":{\"calldata\":\"0xe74bfa9600000000000000000000000000000000000000000000000000aedcfe4c8be1420000000000000000000000000000000000000010caf3edadd64acde40e3ad9400000000000000000000000000000000000000000000000000000000000000043\",\"gas\":27129,\"stipend\":21700},\"runs\":25,\"mean_gas\":5429,\"median_gas\":5429,\"failed_corpus_replays\":0}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"1ms 294\u00b5s 375ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"testFuzz_C26_noFixedRoundTripProfit(uint256,",
+      "quality": {
+        "quality": "trivial",
+        "has_real_assertion": false,
+        "size": 30722
+      }
+    },
+    "H-R5-CP-05": {
+      "compiled": true,
+      "executed": true,
+      "tests_passed": 0,
+      "tests_failed": 0,
+      "raw_output": "{\"test/PrecisionSniperW1KL.t.sol:PrecisionSniperFixedW1KL\":{\"duration\":\"12ms 154\u00b5s 958ns\",\"test_results\":{\"testFuzz_C17_feeDistributionConserves(uint256,uint256,uint256,uint128)\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Fuzz\":{\"first_case\":{\"calldata\":\"0x617490f90000000000000000000000000000000000000000000000000000000000000af700000000000000000000000000000000000000000000000000000000000028fa000000000000000000000000000000000000000000000000000000000000000600000000000000000000000000000000ffffffffffffffffffffffffffffffff\",\"gas\":27883,\"stipend\":21828},\"runs\":25,\"mean_gas\":6055,\"median_gas\":6055,\"failed_corpus_replays\":0}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"1ms 327\u00b5s 167ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"testFuzz_C25_feeMonotonicity(uint256,uint256,uint16)\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Fuzz\":{\"first_case\":{\"calldata\":\"0xf91e0fd600000000000000000000000000000000000000000000000000000000000009450000000000000000000000000000000000000000000000000000000000002dec0000000000000000000000000000000000000000000000000000000000001bc6\",\"gas\":26718,\"stipend\":21520},\"runs\":25,\"mean_gas\":5198,\"median_gas\":5198,\"failed_corpus_replays\":0}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"1ms 929\u00b5s 791ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"testFuzz_C25_outputFeeMonotonicity(uint256,uint256,uint16)\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Fuzz\":{\"first_case\":{\"calldata\":\"0xe74bfa9600000000000000000000000000000000000000000000000000aedcfe4c8be1420000000000000000000000000000000000000010caf3edadd64acde40e3ad9400000000000000000000000000000000000000000000000000000000000000043\",\"gas\":27129,\"stipend\":21700},\"runs\":25,\"mean_gas\":5429,\"median_gas\":5429,\"failed_corpus_replays\":0}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"1ms 294\u00b5s 375ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"testFuzz_C26_noFixedRoundTripProfit(uint256,",
+      "quality": {
+        "quality": "trivial",
+        "has_real_assertion": false,
+        "size": 30722
+      }
+    },
+    "H-R5-CP-06": {
+      "compiled": true,
+      "executed": true,
+      "tests_passed": 0,
+      "tests_failed": 0,
+      "raw_output": "{\"test/PrecisionSniperW1KL.t.sol:PrecisionSniperSPW1KL\":{\"duration\":\"671\u00b5s 791ns\",\"test_results\":{\"testFuzz_H_CP02_feePathBounded(uint256,uint16)\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Fuzz\":{\"first_case\":{\"calldata\":\"0x385ec6d600000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000010\",\"gas\":25965,\"stipend\":21344},\"runs\":25,\"mean_gas\":4621,\"median_gas\":4621,\"failed_corpus_replays\":0}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"537\u00b5s 41ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_C20_calculateFixedInput_price1()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":834}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"52\u00b5s 417ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_C20_calculateFixedInput_zeroForOne()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":834}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"24\u00b5s 541ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_C20_calculateFixedOutput_roundsUp()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":1022}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"21\u00b5s 292ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_C20_roundTripLoss()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":1507}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"38\u00b5s 250ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_H_CP02_feePathDivergence()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":1301}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"22\u00b5s 42ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_H_CP06_calculateFixedInputWithZeroPrice()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":3829}",
+      "quality": {
+        "quality": "real",
+        "has_real_assertion": true,
+        "size": 8863
+      }
+    },
+    "H-R5-CP-07": {
+      "compiled": true,
+      "executed": true,
+      "tests_passed": 0,
+      "tests_failed": 0,
+      "raw_output": "{\"test/PrecisionSniperW1KL.t.sol:PrecisionSniperFixedW1KL\":{\"duration\":\"12ms 154\u00b5s 958ns\",\"test_results\":{\"testFuzz_C17_feeDistributionConserves(uint256,uint256,uint256,uint128)\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Fuzz\":{\"first_case\":{\"calldata\":\"0x617490f90000000000000000000000000000000000000000000000000000000000000af700000000000000000000000000000000000000000000000000000000000028fa000000000000000000000000000000000000000000000000000000000000000600000000000000000000000000000000ffffffffffffffffffffffffffffffff\",\"gas\":27883,\"stipend\":21828},\"runs\":25,\"mean_gas\":6055,\"median_gas\":6055,\"failed_corpus_replays\":0}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"1ms 327\u00b5s 167ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"testFuzz_C25_feeMonotonicity(uint256,uint256,uint16)\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Fuzz\":{\"first_case\":{\"calldata\":\"0xf91e0fd600000000000000000000000000000000000000000000000000000000000009450000000000000000000000000000000000000000000000000000000000002dec0000000000000000000000000000000000000000000000000000000000001bc6\",\"gas\":26718,\"stipend\":21520},\"runs\":25,\"mean_gas\":5198,\"median_gas\":5198,\"failed_corpus_replays\":0}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"1ms 929\u00b5s 791ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"testFuzz_C25_outputFeeMonotonicity(uint256,uint256,uint16)\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Fuzz\":{\"first_case\":{\"calldata\":\"0xe74bfa9600000000000000000000000000000000000000000000000000aedcfe4c8be1420000000000000000000000000000000000000010caf3edadd64acde40e3ad9400000000000000000000000000000000000000000000000000000000000000043\",\"gas\":27129,\"stipend\":21700},\"runs\":25,\"mean_gas\":5429,\"median_gas\":5429,\"failed_corpus_replays\":0}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"1ms 294\u00b5s 375ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"testFuzz_C26_noFixedRoundTripProfit(uint256,",
+      "quality": {
+        "quality": "trivial",
+        "has_real_assertion": false,
+        "size": 30722
+      }
+    },
+    "H-R5-CP-08": {
+      "compiled": true,
+      "executed": true,
+      "tests_passed": 0,
+      "tests_failed": 0,
+      "raw_output": "{\"test/PrecisionSniperW1KL.t.sol:PrecisionSniperW1KL\":{\"duration\":\"10ms 452\u00b5s 459ns\",\"test_results\":{\"testFuzz_C2_roundingUpAlwaysGtOrEq(uint256,uint256,uint256)\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Fuzz\":{\"first_case\":{\"calldata\":\"0x8cfa039b000000000000000000000000000000000000000000000007d5792c3425c9485b000000000000000000000000000000000000d18c6dcc5a752ad202557d352798fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffd\",\"gas\":26706,\"stipend\":22108},\"runs\":25,\"mean_gas\":4593,\"median_gas\":4598,\"failed_corpus_replays\":0}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"3ms 327\u00b5s 750ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_C10_tickCrossingRoundTrip()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":3207}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"711\u00b5s 125ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_C11_getNextSqrtPriceFromInput_maxAmount()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":1101}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"692\u00b5s 792ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_C11_getNextSqrtPriceFromInput_zeroAmount()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":591}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"727\u00b5s 666ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_C11_priceMovesCorrectDirection_oneForZero()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":882}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"661\u00b5s 708ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_C11_priceMovesCorrectDirection_zeroForOne()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":1062}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"690\u00b5s 250ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_C12_deltaRoundi",
+      "quality": {
+        "quality": "real",
+        "has_real_assertion": true,
+        "size": 15886
+      }
+    },
+    "H-R5-CP-09": {
+      "compiled": true,
+      "executed": true,
+      "tests_passed": 0,
+      "tests_failed": 0,
+      "raw_output": "{\"test/PrecisionSniperW1KL.t.sol:PrecisionSniperFixedW1KL\":{\"duration\":\"12ms 154\u00b5s 958ns\",\"test_results\":{\"testFuzz_C17_feeDistributionConserves(uint256,uint256,uint256,uint128)\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Fuzz\":{\"first_case\":{\"calldata\":\"0x617490f90000000000000000000000000000000000000000000000000000000000000af700000000000000000000000000000000000000000000000000000000000028fa000000000000000000000000000000000000000000000000000000000000000600000000000000000000000000000000ffffffffffffffffffffffffffffffff\",\"gas\":27883,\"stipend\":21828},\"runs\":25,\"mean_gas\":6055,\"median_gas\":6055,\"failed_corpus_replays\":0}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"1ms 327\u00b5s 167ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"testFuzz_C25_feeMonotonicity(uint256,uint256,uint16)\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Fuzz\":{\"first_case\":{\"calldata\":\"0xf91e0fd600000000000000000000000000000000000000000000000000000000000009450000000000000000000000000000000000000000000000000000000000002dec0000000000000000000000000000000000000000000000000000000000001bc6\",\"gas\":26718,\"stipend\":21520},\"runs\":25,\"mean_gas\":5198,\"median_gas\":5198,\"failed_corpus_replays\":0}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"1ms 929\u00b5s 791ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"testFuzz_C25_outputFeeMonotonicity(uint256,uint256,uint16)\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Fuzz\":{\"first_case\":{\"calldata\":\"0xe74bfa9600000000000000000000000000000000000000000000000000aedcfe4c8be1420000000000000000000000000000000000000010caf3edadd64acde40e3ad9400000000000000000000000000000000000000000000000000000000000000043\",\"gas\":27129,\"stipend\":21700},\"runs\":25,\"mean_gas\":5429,\"median_gas\":5429,\"failed_corpus_replays\":0}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"1ms 294\u00b5s 375ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"testFuzz_C26_noFixedRoundTripProfit(uint256,",
+      "quality": {
+        "quality": "trivial",
+        "has_real_assertion": false,
+        "size": 30722
+      }
+    },
+    "H-R5-CP-10": {
+      "compiled": true,
+      "executed": true,
+      "tests_passed": 0,
+      "tests_failed": 0,
+      "raw_output": "{\"test/PrecisionSniperW1KL.t.sol:PrecisionSniperFixedW1KL\":{\"duration\":\"12ms 154\u00b5s 958ns\",\"test_results\":{\"testFuzz_C17_feeDistributionConserves(uint256,uint256,uint256,uint128)\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Fuzz\":{\"first_case\":{\"calldata\":\"0x617490f90000000000000000000000000000000000000000000000000000000000000af700000000000000000000000000000000000000000000000000000000000028fa000000000000000000000000000000000000000000000000000000000000000600000000000000000000000000000000ffffffffffffffffffffffffffffffff\",\"gas\":27883,\"stipend\":21828},\"runs\":25,\"mean_gas\":6055,\"median_gas\":6055,\"failed_corpus_replays\":0}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"1ms 327\u00b5s 167ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"testFuzz_C25_feeMonotonicity(uint256,uint256,uint16)\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Fuzz\":{\"first_case\":{\"calldata\":\"0xf91e0fd600000000000000000000000000000000000000000000000000000000000009450000000000000000000000000000000000000000000000000000000000002dec0000000000000000000000000000000000000000000000000000000000001bc6\",\"gas\":26718,\"stipend\":21520},\"runs\":25,\"mean_gas\":5198,\"median_gas\":5198,\"failed_corpus_replays\":0}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"1ms 929\u00b5s 791ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"testFuzz_C25_outputFeeMonotonicity(uint256,uint256,uint16)\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Fuzz\":{\"first_case\":{\"calldata\":\"0xe74bfa9600000000000000000000000000000000000000000000000000aedcfe4c8be1420000000000000000000000000000000000000010caf3edadd64acde40e3ad9400000000000000000000000000000000000000000000000000000000000000043\",\"gas\":27129,\"stipend\":21700},\"runs\":25,\"mean_gas\":5429,\"median_gas\":5429,\"failed_corpus_replays\":0}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"1ms 294\u00b5s 375ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"testFuzz_C26_noFixedRoundTripProfit(uint256,",
+      "quality": {
+        "quality": "trivial",
+        "has_real_assertion": false,
+        "size": 30722
+      }
+    }
+  }
+}

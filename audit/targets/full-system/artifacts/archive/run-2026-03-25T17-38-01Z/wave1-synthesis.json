@@ -1,0 +1,1060 @@
+{
+  "wave": 1,
+  "name": "black-hat-offense",
+  "timestamp": "2026-03-25T18:42:49Z",
+  "run_id": "run-2026-03-25T17-38-01Z",
+  "hot_spots": [],
+  "findings": [
+    {
+      "id": "XB-001",
+      "title": "Direct swap pricing bounds bypass via pre-fee amount stored in transient storage",
+      "severity": "low",
+      "confidence_score": 85,
+      "confidence_deductions": [
+        "Impact is bounded by token creator configuration (-15)"
+      ],
+      "status": "lead",
+      "category": "pricing-bounds-bypass",
+      "description": "In AMMStandardHook._validatePricingBounds, for direct swaps, beforeSwap stores params.amount (pre-fee input) in transient storage. afterSwap reconstructs the price using this pre-fee amount as the denominator. Since the actual swap executes with post-fee input (smaller), the computed price is systematically lower than the actual execution price by sqrt(1 - feePercent). With a 5% hook fee, the deflation is ~253 BPS, allowing direct swaps to execute at prices up to 2.5% above the configured max pricing bound.",
+      "impact": "Token creators who set max pricing bounds for direct swaps can have those bounds exceeded proportional to the hook fee. For tokens with 5% sell fees, the max price can be exceeded by ~2.5%. This undermines the creator's anti-sniping and price protection configuration.",
+      "proof_sketch": "test_H04_directSwapPreFeeAmountMismatch in AuditCrossBoundaryHypotheses.t.sol demonstrates: computeRatioX96(95e18, 100e18) < computeRatioX96(95e18, 95e18) by 253 BPS",
+      "victim": "Token creators who set pricing bounds for their tokens",
+      "extractable_value": "Proportional to fee % - attacker executes direct swaps at prices above max bound",
+      "attack_sequence": [
+        "1. Token creator sets max pricing bound for their token via registry",
+        "2. Token has a 5% sell fee configured on the hook",
+        "3. Attacker executes a direct swap at a price 2.5% above the max bound",
+        "4. beforeSwap stores pre-fee amount (100) in tstore, returns 5% fee",
+        "5. AMM deducts fee, swap executes with 95 input at target price",
+        "6. afterSwap computes price using tstore=100 denominator, gets deflated price",
+        "7. Deflated price passes max bound check even though actual price exceeds bound"
+      ],
+      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundaryHypotheses.t.sol",
+      "test_passes": true,
+      "prerequisites": [
+        "Token with non-zero hook fee",
+        "Pricing bounds configured",
+        "Direct swap (not pool swap)"
+      ],
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "_validatePricingBounds()"
+      ],
+      "lines": {
+        "AMMStandardHook.sol": [
+          838,
+          839,
+          842,
+          843,
+          844,
+          846
+        ]
+      },
+      "keywords": [
+        "pricing-bounds",
+        "transient-storage",
+        "direct-swap",
+        "fee-mismatch"
+      ],
+      "fp_gate": {
+        "location_exists": true,
+        "entry_reachable": true,
+        "no_existing_guard": true,
+        "concrete_attack_path": true,
+        "poc_compiles": true
+      },
+      "source_hypothesis": "H-R4-HH-04",
+      "kill_gate": {
+        "status": "flagged",
+        "gate": "V2-refutation",
+        "reason": "Missing refutation_attempted \u2014 you must argue against your own finding before submitting"
+      },
+      "_source_agent": "cross-boundary",
+      "consensus_count": 1,
+      "contributing_agents": [
+        "cross-boundary"
+      ],
+      "canonical_id": "HOOK-001"
+    },
+    {
+      "id": "INSOL-001",
+      "title": "Direct swap pricing bounds bypass via pre-fee amount in transient storage",
+      "severity": "low",
+      "confidence_score": 75,
+      "confidence_deductions": [
+        "Attack path partial: bounds are advisory, not economic (-20)"
+      ],
+      "status": "lead",
+      "category": "pricing-bounds-bypass",
+      "description": "In AMMStandardHook._validatePricingBounds, for direct swaps (poolType==address(0)), beforeSwap stores params.amount (the pre-fee specified amount) in transient storage at DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT. In afterSwap, this pre-fee amount is used alongside the output amount to compute sqrtPriceX96. Since the hook fee reduces the actual input before the swap executes, the computed price ratio uses a larger denominator (pre-fee) than the actual execution price (post-fee input / output). This makes the computed price systematically lower than the true execution price, allowing swaps that execute above maxSqrtPriceX96 to pass the bounds check. For a 5% hook fee, the price discrepancy is ~5%.",
+      "impact": "Pricing bounds enforcement for direct swaps is weakened proportionally to the hook fee percentage. Orders that should be rejected as out-of-bounds may pass. Economic impact is indirect - pricing bounds are advisory constraints set by token creators, not economic guards on user funds.",
+      "proof_sketch": "See test_HR4_HH04_pricing_bounds_prefee_analysis in AuditInsolvencyKLR4.t.sol. Pre-fee input of 1000 with 5% fee (50) means actual swap uses 950 input to produce 900 output. True price ratio = 900/950 = 0.947. Computed ratio = 900/1000 = 0.9. Error = ~5%, proportional to fee.",
+      "victim": "Token creators who set pricing bounds",
+      "extractable_value": "No direct extraction - bounds are advisory. Indirect: swaps at out-of-bounds prices that token creators wanted to prevent.",
+      "attack_sequence": [
+        "1. Token creator sets maxSqrtPriceX96 at a specific price level",
+        "2. Token has 5% hook sell fee configured",
+        "3. Attacker executes direct swap at a price ~5% above the max bound",
+        "4. beforeSwap stores pre-fee amount (e.g., 1000)",
+        "5. AMM deducts 5% fee, swaps with 950 input, produces output at actual price above bound",
+        "6. afterSwap computes price using pre-fee amount (1000) as denominator, deflating the computed price",
+        "7. Deflated price passes the maxSqrtPriceX96 check even though execution price exceeds it"
+      ],
+      "test_file": "lbamm-core/test/AuditInsolvencyKLR4.t.sol",
+      "test_passes": true,
+      "prerequisites": [
+        "Token with non-zero hook fee for direct swaps",
+        "Pricing bounds set on token pair",
+        "afterSwap hook flag enabled"
+      ],
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "_validatePricingBounds"
+      ],
+      "lines": {
+        "AMMStandardHook.sol": [
+          838,
+          839,
+          842,
+          843,
+          844,
+          846
+        ]
+      },
+      "keywords": [
+        "pricing-bounds",
+        "transient-storage",
+        "direct-swap",
+        "pre-fee",
+        "hook-fee"
+      ],
+      "code_smells": [
+        "AMMStandardHook.sol:839 \u2014 beforeSwap stores pre-fee params.amount",
+        "AMMStandardHook.sol:842-844 \u2014 afterSwap uses stored pre-fee amount to compute price ratio"
+      ],
+      "what_remains_unverified": "Full integration test with deployed contracts demonstrating an actual out-of-bounds swap passing validation",
+      "source_hypothesis": "H-R4-HH-04",
+      "fp_gate": {
+        "location_exists": true,
+        "entry_reachable": true,
+        "no_existing_guard": true,
+        "concrete_attack_path": true,
+        "poc_compiles": true
+      },
+      "kill_gate": {
+        "status": "flagged",
+        "gate": "V2-refutation",
+        "reason": "Missing refutation_attempted \u2014 you must argue against your own finding before submitting"
+      },
+      "_source_agent": "insolvency-engineer",
+      "consensus_count": 1,
+      "contributing_agents": [
+        "insolvency-engineer"
+      ],
+      "canonical_id": "HOOK-002"
+    },
+    {
+      "id": "EH-002",
+      "title": "validateHandlerOrder bypasses all trading rules (pause, whitelist, direct swap block)",
+      "severity": "low",
+      "confidence_score": 80,
+      "confidence_deductions": [
+        "by-design: validateHandlerOrder is intentionally minimal for handler use",
+        "impact limited to CLOB order placement, not execution"
+      ],
+      "status": "confirmed",
+      "category": "access-control",
+      "description": "validateHandlerOrder has NO access control and performs NO trading rule checks (tradingIsPaused, blockDirectSwaps, pairedTokenWhitelist). Only pricing bounds are enforced. In contrast, beforeSwap/afterSwap enforce all trading rules. CLOB orders can be placed while trading is paused.",
+      "impact": "Token admin who pauses trading expects ALL activity to halt, but CLOB makers can continue placing orders. Orders placed during pause may fill when trading resumes.",
+      "proof_sketch": "test_H04_handlerOrderBypassesTradingPause: pauses trading, validateHandlerOrder succeeds, beforeSwap reverts",
+      "victim": "Token admins relying on trading pause for emergency stops",
+      "extractable_value": "Indirect - front-running advantage from placing orders during pause",
+      "attack_sequence": [
+        "Token admin pauses trading due to emergency",
+        "Attacker places CLOB orders via validateHandlerOrder (no pause check)",
+        "Orders queue at favorable prices during pause",
+        "When admin unpauses, orders fill before market adjusts"
+      ],
+      "test_file": "lbamm-hooks-and-handlers/test/audit/ExtHijackerKLoop.t.sol",
+      "test_passes": true,
+      "prerequisites": [
+        "Token with tradingIsPaused=true"
+      ],
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol",
+        "CLOBTransferHandler.sol",
+        "SqrtPriceCalculator.sol"
+      ],
+      "functions": [
+        "_enforceTokenHooks()",
+        "_validateTokenTradingRules()",
+        "beforeSwap()",
+        "computeRatioX96()",
+        "validateHandlerOrder()"
+      ],
+      "lines": {
+        "AMMStandardHook.sol": [
+          198,
+          207,
+          208,
+          110,
+          116,
+          117,
+          670,
+          675,
+          679,
+          685
+        ]
+      },
+      "keywords": [
+        "access-control",
+        "trading-pause",
+        "handler-order"
+      ],
+      "fp_gate": {
+        "location_exists": true,
+        "entry_reachable": true,
+        "no_existing_guard": true,
+        "concrete_attack_path": true,
+        "poc_compiles": true
+      },
+      "source_hypothesis": "H-R4-HR-04",
+      "kill_gate": {
+        "status": "flagged",
+        "gate": "V2-refutation",
+        "reason": "Missing refutation_attempted \u2014 you must argue against your own finding before submitting"
+      },
+      "_source_agent": "extension-hijacker",
+      "consensus_count": 5,
+      "contributing_agents": [
+        "cross-boundary",
+        "extension-hijacker",
+        "state-desync"
+      ],
+      "canonical_id": "HOOK-003"
+    }
+  ],
+  "contradictions": [
+    {
+      "finding_id": "XB-001",
+      "finding_agent": "cross-boundary",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "state-desync",
+      "shared_contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "match_reason": "keywords: ['pricing-bounds']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "XB-001",
+      "finding_agent": "cross-boundary",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "state-desync",
+      "shared_contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "match_reason": "functions: ['_validatePricingBounds()']; keywords: ['pricing-bounds', 'transient-storage']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "XB-001",
+      "finding_agent": "cross-boundary",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "auth-forger",
+      "shared_contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "match_reason": "keywords: ['pricing-bounds']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "XB-001",
+      "finding_agent": "cross-boundary",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "cross-boundary",
+      "shared_contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "match_reason": "functions: ['_validatePricingBounds()']; keywords: ['direct-swap']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "XB-001",
+      "finding_agent": "cross-boundary",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "cross-boundary",
+      "shared_contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "match_reason": "functions: ['_validatePricingBounds()']; keywords: ['transient-storage']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "XB-001",
+      "finding_agent": "cross-boundary",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "composability-exploiter",
+      "shared_contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "match_reason": "functions: ['_validatePricingBounds()']; keywords: ['direct-swap', 'pricing-bounds', 'transient-storage']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "XB-001",
+      "finding_agent": "cross-boundary",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "composability-exploiter",
+      "shared_contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "match_reason": "keywords: ['direct-swap', 'transient-storage']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "XB-001",
+      "finding_agent": "cross-boundary",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "composability-exploiter",
+      "shared_contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "match_reason": "keywords: ['pricing-bounds']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "XB-001",
+      "finding_agent": "cross-boundary",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "insolvency-engineer",
+      "shared_contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "match_reason": "keywords: ['direct-swap', 'pricing-bounds']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "XB-001",
+      "finding_agent": "cross-boundary",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "insolvency-engineer",
+      "shared_contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "match_reason": "keywords: ['pricing-bounds']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "XB-001",
+      "finding_agent": "cross-boundary",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "extension-hijacker",
+      "shared_contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "match_reason": "functions: ['_validatePricingBounds()']; keywords: ['direct-swap', 'pricing-bounds']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "XB-001",
+      "finding_agent": "cross-boundary",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "extension-hijacker",
+      "shared_contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "match_reason": "functions: ['_validatePricingBounds()']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "XB-001",
+      "finding_agent": "cross-boundary",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "extension-hijacker",
+      "shared_contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "match_reason": "functions: ['_validatePricingBounds()']; keywords: ['pricing-bounds']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "XB-001",
+      "finding_agent": "cross-boundary",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "extension-hijacker",
+      "shared_contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "match_reason": "keywords: ['pricing-bounds']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "INSOL-001",
+      "finding_agent": "insolvency-engineer",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "state-desync",
+      "shared_contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "match_reason": "keywords: ['pricing-bounds']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "INSOL-001",
+      "finding_agent": "insolvency-engineer",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "state-desync",
+      "shared_contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "match_reason": "keywords: ['pre-fee', 'pricing-bounds', 'transient-storage']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "INSOL-001",
+      "finding_agent": "insolvency-engineer",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "auth-forger",
+      "shared_contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "match_reason": "keywords: ['pricing-bounds']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "INSOL-001",
+      "finding_agent": "insolvency-engineer",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "cross-boundary",
+      "shared_contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "match_reason": "keywords: ['direct-swap']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "INSOL-001",
+      "finding_agent": "insolvency-engineer",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "cross-boundary",
+      "shared_contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "match_reason": "keywords: ['hook-fee']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "INSOL-001",
+      "finding_agent": "insolvency-engineer",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "cross-boundary",
+      "shared_contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "match_reason": "keywords: ['transient-storage']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "INSOL-001",
+      "finding_agent": "insolvency-engineer",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "composability-exploiter",
+      "shared_contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "match_reason": "keywords: ['direct-swap', 'pricing-bounds', 'transient-storage']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "INSOL-001",
+      "finding_agent": "insolvency-engineer",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "composability-exploiter",
+      "shared_contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "match_reason": "keywords: ['direct-swap', 'transient-storage']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "INSOL-001",
+      "finding_agent": "insolvency-engineer",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "composability-exploiter",
+      "shared_contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "match_reason": "keywords: ['pricing-bounds']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "INSOL-001",
+      "finding_agent": "insolvency-engineer",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "insolvency-engineer",
+      "shared_contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "match_reason": "functions: ['_validatePricingBounds']; keywords: ['direct-swap', 'pricing-bounds']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "INSOL-001",
+      "finding_agent": "insolvency-engineer",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "insolvency-engineer",
+      "shared_contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "match_reason": "keywords: ['pricing-bounds']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "INSOL-001",
+      "finding_agent": "insolvency-engineer",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "extension-hijacker",
+      "shared_contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "match_reason": "keywords: ['direct-swap', 'pricing-bounds']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "INSOL-001",
+      "finding_agent": "insolvency-engineer",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "extension-hijacker",
+      "shared_contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "match_reason": "keywords: ['pricing-bounds']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "INSOL-001",
+      "finding_agent": "insolvency-engineer",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "extension-hijacker",
+      "shared_contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "match_reason": "keywords: ['pricing-bounds']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "EH-002",
+      "finding_agent": "extension-hijacker",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "state-desync",
+      "shared_contracts": [
+        "AMMStandardHook.sol",
+        "SqrtPriceCalculator.sol"
+      ],
+      "match_reason": "functions: ['computeRatioX96()', 'validateHandlerOrder()']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "EH-002",
+      "finding_agent": "extension-hijacker",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "state-desync",
+      "shared_contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "match_reason": "functions: ['beforeSwap()']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "EH-002",
+      "finding_agent": "extension-hijacker",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "auth-forger",
+      "shared_contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "match_reason": "functions: ['beforeSwap()']; keywords: ['access-control']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "EH-002",
+      "finding_agent": "extension-hijacker",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "auth-forger",
+      "shared_contracts": [
+        "CLOBTransferHandler.sol"
+      ],
+      "match_reason": "keywords: ['access-control']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "EH-002",
+      "finding_agent": "extension-hijacker",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "auth-forger",
+      "shared_contracts": [
+        "CLOBTransferHandler.sol"
+      ],
+      "match_reason": "keywords: ['access-control']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "EH-002",
+      "finding_agent": "extension-hijacker",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "auth-forger",
+      "shared_contracts": [
+        "CLOBTransferHandler.sol"
+      ],
+      "match_reason": "keywords: ['access-control']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "EH-002",
+      "finding_agent": "extension-hijacker",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "auth-forger",
+      "shared_contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "match_reason": "functions: ['validateHandlerOrder()']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "EH-002",
+      "finding_agent": "extension-hijacker",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "auth-forger",
+      "shared_contracts": [
+        "SqrtPriceCalculator.sol"
+      ],
+      "match_reason": "functions: ['computeRatioX96()']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "EH-002",
+      "finding_agent": "extension-hijacker",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "cross-boundary",
+      "shared_contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "match_reason": "functions: ['beforeSwap()']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "EH-002",
+      "finding_agent": "extension-hijacker",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "cross-boundary",
+      "shared_contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "match_reason": "functions: ['beforeSwap()']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "EH-002",
+      "finding_agent": "extension-hijacker",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "composability-exploiter",
+      "shared_contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "match_reason": "functions: ['beforeSwap()']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "EH-002",
+      "finding_agent": "extension-hijacker",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "composability-exploiter",
+      "shared_contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "match_reason": "functions: ['beforeSwap()']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "EH-002",
+      "finding_agent": "extension-hijacker",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "composability-exploiter",
+      "shared_contracts": [
+        "AMMStandardHook.sol",
+        "CLOBTransferHandler.sol"
+      ],
+      "match_reason": "functions: ['_enforceTokenHooks()', 'validateHandlerOrder()']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "EH-002",
+      "finding_agent": "extension-hijacker",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "composability-exploiter",
+      "shared_contracts": [
+        "AMMStandardHook.sol",
+        "CLOBTransferHandler.sol"
+      ],
+      "match_reason": "functions: ['_enforceTokenHooks()', 'beforeSwap()']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "EH-002",
+      "finding_agent": "extension-hijacker",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "extension-hijacker",
+      "shared_contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "match_reason": "functions: ['validateHandlerOrder()']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "EH-002",
+      "finding_agent": "extension-hijacker",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "extension-hijacker",
+      "shared_contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "match_reason": "functions: ['validateHandlerOrder()']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    }
+  ],
+  "ruled_out_count": 149,
+  "invariants_formalized": [],
+  "tool_coverage_warnings": [
+    "TOOL_COVERAGE: precision-sniper (precision-sniper) did NOT run audit_context_building \u2014 reason: no reason given",
+    "TOOL_COVERAGE: precision-sniper (precision-sniper) did NOT run entry_point_analyzer \u2014 reason: no reason given",
+    "TOOL_COVERAGE: precision-sniper (precision-sniper) did not report on conditional tool token_integration_analyzer \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: precision-sniper (precision-sniper) did not report on conditional tool sharp_edges \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: state-desync (State Desync Operator) did NOT run audit_context_building \u2014 reason: no reason given",
+    "TOOL_COVERAGE: state-desync (State Desync Operator) did NOT run entry_point_analyzer \u2014 reason: no reason given",
+    "TOOL_COVERAGE: state-desync (State Desync Operator) did not report on conditional tool token_integration_analyzer \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: state-desync (State Desync Operator) did not report on conditional tool sharp_edges \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: auth-forger (Authorization & Settlement Forger) did NOT run audit_context_building \u2014 reason: no reason given",
+    "TOOL_COVERAGE: auth-forger (Authorization & Settlement Forger) did NOT run entry_point_analyzer \u2014 reason: no reason given",
+    "TOOL_COVERAGE: auth-forger (Authorization & Settlement Forger) did not report on conditional tool token_integration_analyzer \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: auth-forger (Authorization & Settlement Forger) did not report on conditional tool sharp_edges \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: math-deep-diver (Math Deep-Diver) did NOT run audit_context_building \u2014 reason: no reason given",
+    "TOOL_COVERAGE: math-deep-diver (Math Deep-Diver) did NOT run entry_point_analyzer \u2014 reason: no reason given",
+    "TOOL_COVERAGE: math-deep-diver (Math Deep-Diver) did not report on conditional tool token_integration_analyzer \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: math-deep-diver (Math Deep-Diver) did not report on conditional tool sharp_edges \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: cross-boundary (Cross-Boundary Tracer) did NOT run audit_context_building \u2014 reason: no reason given",
+    "TOOL_COVERAGE: cross-boundary (Cross-Boundary Tracer) did NOT run entry_point_analyzer \u2014 reason: no reason given",
+    "TOOL_COVERAGE: cross-boundary (Cross-Boundary Tracer) did not report on conditional tool token_integration_analyzer \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: cross-boundary (Cross-Boundary Tracer) did not report on conditional tool sharp_edges \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: composability-exploiter (Composability Exploiter) did NOT run audit_context_building \u2014 reason: no reason given",
+    "TOOL_COVERAGE: composability-exploiter (Composability Exploiter) did NOT run entry_point_analyzer \u2014 reason: no reason given",
+    "TOOL_COVERAGE: composability-exploiter (Composability Exploiter) did not report on conditional tool token_integration_analyzer \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: composability-exploiter (Composability Exploiter) did not report on conditional tool sharp_edges \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: price-distorter (Cross-Venue Price Distorter) did NOT run audit_context_building \u2014 reason: no reason given",
+    "TOOL_COVERAGE: price-distorter (Cross-Venue Price Distorter) did NOT run entry_point_analyzer \u2014 reason: no reason given",
+    "TOOL_COVERAGE: price-distorter (Cross-Venue Price Distorter) did not report on conditional tool token_integration_analyzer \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: price-distorter (Cross-Venue Price Distorter) did not report on conditional tool sharp_edges \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: insolvency-engineer (insolvency-engineer) did NOT run audit_context_building \u2014 reason: no reason given",
+    "TOOL_COVERAGE: insolvency-engineer (insolvency-engineer) did NOT run entry_point_analyzer \u2014 reason: no reason given",
+    "TOOL_COVERAGE: insolvency-engineer (insolvency-engineer) did not report on conditional tool token_integration_analyzer \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: insolvency-engineer (insolvency-engineer) did not report on conditional tool sharp_edges \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: extension-hijacker (extension-hijacker) did NOT run audit_context_building \u2014 reason: no reason given",
+    "TOOL_COVERAGE: extension-hijacker (extension-hijacker) did NOT run entry_point_analyzer \u2014 reason: no reason given",
+    "TOOL_COVERAGE: extension-hijacker (extension-hijacker) did not report on conditional tool token_integration_analyzer \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: extension-hijacker (extension-hijacker) did not report on conditional tool sharp_edges \u2014 add to tools_run with ran=false and reason if not applicable",
+    "LENS_COVERAGE: auth-forger (Authorization & Settlement Forger) has no lens_coverage in metadata \u2014 likely did NOT apply value lifecycle lenses",
+    "LENS_COVERAGE: math-deep-diver (Math Deep-Diver) has no lens_coverage in metadata \u2014 likely did NOT apply value lifecycle lenses",
+    "LENS_COVERAGE: cross-boundary (Cross-Boundary Tracer) has no lens_coverage in metadata \u2014 likely did NOT apply value lifecycle lenses",
+    "LENS_COVERAGE: composability-exploiter (Composability Exploiter) has no lens_coverage in metadata \u2014 likely did NOT apply value lifecycle lenses",
+    "LENS_COVERAGE: price-distorter (Cross-Venue Price Distorter) has no lens_coverage in metadata \u2014 likely did NOT apply value lifecycle lenses",
+    "LENS_COVERAGE: extension-hijacker (extension-hijacker) has no lens_coverage in metadata \u2014 likely did NOT apply value lifecycle lenses"
+  ],
+  "exploit_clusters": [
+    {
+      "primitive": "price_manipulation",
+      "boundary": "single_contract",
+      "asset": "Token creators who set pricing bounds for their tokens",
+      "findings": [
+        {
+          "id": "XB-001",
+          "title": "Direct swap pricing bounds bypass via pre-fee amount stored in transient storage",
+          "severity": "low",
+          "confidence_score": 85,
+          "confidence_deductions": [
+            "Impact is bounded by token creator configuration (-15)"
+          ],
+          "status": "lead",
+          "category": "pricing-bounds-bypass",
+          "description": "In AMMStandardHook._validatePricingBounds, for direct swaps, beforeSwap stores params.amount (pre-fee input) in transient storage. afterSwap reconstructs the price using this pre-fee amount as the denominator. Since the actual swap executes with post-fee input (smaller), the computed price is systematically lower than the actual execution price by sqrt(1 - feePercent). With a 5% hook fee, the deflation is ~253 BPS, allowing direct swaps to execute at prices up to 2.5% above the configured max pricing bound.",
+          "impact": "Token creators who set max pricing bounds for direct swaps can have those bounds exceeded proportional to the hook fee. For tokens with 5% sell fees, the max price can be exceeded by ~2.5%. This undermines the creator's anti-sniping and price protection configuration.",
+          "proof_sketch": "test_H04_directSwapPreFeeAmountMismatch in AuditCrossBoundaryHypotheses.t.sol demonstrates: computeRatioX96(95e18, 100e18) < computeRatioX96(95e18, 95e18) by 253 BPS",
+          "victim": "Token creators who set pricing bounds for their tokens",
+          "extractable_value": "Proportional to fee % - attacker executes direct swaps at prices above max bound",
+          "attack_sequence": [
+            "1. Token creator sets max pricing bound for their token via registry",
+            "2. Token has a 5% sell fee configured on the hook",
+            "3. Attacker executes a direct swap at a price 2.5% above the max bound",
+            "4. beforeSwap stores pre-fee amount (100) in tstore, returns 5% fee",
+            "5. AMM deducts fee, swap executes with 95 input at target price",
+            "6. afterSwap computes price using tstore=100 denominator, gets deflated price",
+            "7. Deflated price passes max bound check even though actual price exceeds bound"
+          ],
+          "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundaryHypotheses.t.sol",
+          "test_passes": true,
+          "prerequisites": [
+            "Token with non-zero hook fee",
+            "Pricing bounds configured",
+            "Direct swap (not pool swap)"
+          ],
+          "repos": [
+            "lbamm-hooks-and-handlers"
+          ],
+          "contracts": [
+            "AMMStandardHook.sol"
+          ],
+          "functions": [
+            "_validatePricingBounds()"
+          ],
+          "lines": {
+            "AMMStandardHook.sol": [
+              838,
+              839,
+              842,
+              843,
+              844,
+              846
+            ]
+          },
+          "keywords": [
+            "pricing-bounds",
+            "transient-storage",
+            "direct-swap",
+            "fee-mismatch"
+          ],
+          "fp_gate": {
+            "location_exists": true,
+            "entry_reachable": true,
+            "no_existing_guard": true,
+            "concrete_attack_path": true,
+            "poc_compiles": true
+          },
+          "source_hypothesis": "H-R4-HH-04",
+          "kill_gate": {
+            "status": "flagged",
+            "gate": "V2-refutation",
+            "reason": "Missing refutation_attempted \u2014 you must argue against your own finding before submitting"
+          },
+          "_source_agent": "cross-boundary",
+          "consensus_count": 1,
+          "contributing_agents": [
+            "cross-boundary"
+          ],
+          "canonical_id": "HOOK-001"
+        }
+      ],
+      "agent_count": 1,
+      "max_confidence": 30,
+      "has_test": true
+    },
+    {
+      "primitive": "callback_exploitation",
+      "boundary": "single_contract",
+      "asset": "Token creators who set pricing bounds",
+      "findings": [
+        {
+          "id": "INSOL-001",
+          "title": "Direct swap pricing bounds bypass via pre-fee amount in transient storage",
+          "severity": "low",
+          "confidence_score": 75,
+          "confidence_deductions": [
+            "Attack path partial: bounds are advisory, not economic (-20)"
+          ],
+          "status": "lead",
+          "category": "pricing-bounds-bypass",
+          "description": "In AMMStandardHook._validatePricingBounds, for direct swaps (poolType==address(0)), beforeSwap stores params.amount (the pre-fee specified amount) in transient storage at DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT. In afterSwap, this pre-fee amount is used alongside the output amount to compute sqrtPriceX96. Since the hook fee reduces the actual input before the swap executes, the computed price ratio uses a larger denominator (pre-fee) than the actual execution price (post-fee input / output). This makes the computed price systematically lower than the true execution price, allowing swaps that execute above maxSqrtPriceX96 to pass the bounds check. For a 5% hook fee, the price discrepancy is ~5%.",
+          "impact": "Pricing bounds enforcement for direct swaps is weakened proportionally to the hook fee percentage. Orders that should be rejected as out-of-bounds may pass. Economic impact is indirect - pricing bounds are advisory constraints set by token creators, not economic guards on user funds.",
+          "proof_sketch": "See test_HR4_HH04_pricing_bounds_prefee_analysis in AuditInsolvencyKLR4.t.sol. Pre-fee input of 1000 with 5% fee (50) means actual swap uses 950 input to produce 900 output. True price ratio = 900/950 = 0.947. Computed ratio = 900/1000 = 0.9. Error = ~5%, proportional to fee.",
+          "victim": "Token creators who set pricing bounds",
+          "extractable_value": "No direct extraction - bounds are advisory. Indirect: swaps at out-of-bounds prices that token creators wanted to prevent.",
+          "attack_sequence": [
+            "1. Token creator sets maxSqrtPriceX96 at a specific price level",
+            "2. Token has 5% hook sell fee configured",
+            "3. Attacker executes direct swap at a price ~5% above the max bound",
+            "4. beforeSwap stores pre-fee amount (e.g., 1000)",
+            "5. AMM deducts 5% fee, swaps with 950 input, produces output at actual price above bound",
+            "6. afterSwap computes price using pre-fee amount (1000) as denominator, deflating the computed price",
+            "7. Deflated price passes the maxSqrtPriceX96 check even though execution price exceeds it"
+          ],
+          "test_file": "lbamm-core/test/AuditInsolvencyKLR4.t.sol",
+          "test_passes": true,
+          "prerequisites": [
+            "Token with non-zero hook fee for direct swaps",
+            "Pricing bounds set on token pair",
+            "afterSwap hook flag enabled"
+          ],
+          "repos": [
+            "lbamm-hooks-and-handlers"
+          ],
+          "contracts": [
+            "AMMStandardHook.sol"
+          ],
+          "functions": [
+            "_validatePricingBounds"
+          ],
+          "lines": {
+            "AMMStandardHook.sol": [
+              838,
+              839,
+              842,
+              843,
+              844,
+              846
+            ]
+          },
+          "keywords": [
+            "pricing-bounds",
+            "transient-storage",
+            "direct-swap",
+            "pre-fee",
+            "hook-fee"
+          ],
+          "code_smells": [
+            "AMMStandardHook.sol:839 \u2014 beforeSwap stores pre-fee params.amount",
+            "AMMStandardHook.sol:842-844 \u2014 afterSwap uses stored pre-fee amount to compute price ratio"
+          ],
+          "what_remains_unverified": "Full integration test with deployed contracts demonstrating an actual out-of-bounds swap passing validation",
+          "source_hypothesis": "H-R4-HH-04",
+          "fp_gate": {
+            "location_exists": true,
+            "entry_reachable": true,
+            "no_existing_guard": true,
+            "concrete_attack_path": true,
+            "poc_compiles": true
+          },
+          "kill_gate": {
+            "status": "flagged",
+            "gate": "V2-refutation",
+            "reason": "Missing refutation_attempted \u2014 you must argue against your own finding before submitting"
+          },
+          "_source_agent": "insolvency-engineer",
+          "consensus_count": 1,
+          "contributing_agents": [
+            "insolvency-engineer"
+          ],
+          "canonical_id": "HOOK-002"
+        }
+      ],
+      "agent_count": 1,
+      "max_confidence": 30,
+      "has_test": true
+    },
+    {
+      "primitive": "callback_exploitation",
+      "boundary": "cross_contract:AMMStandardHook.sol+CLOBTransferHandler.sol+SqrtPriceCalculator.sol",
+      "asset": "Token admins relying on trading pause for emergency stops",
+      "findings": [
+        {
+          "id": "EH-002",
+          "title": "validateHandlerOrder bypasses all trading rules (pause, whitelist, direct swap block)",
+          "severity": "low",
+          "confidence_score": 80,
+          "confidence_deductions": [
+            "by-design: validateHandlerOrder is intentionally minimal for handler use",
+            "impact limited to CLOB order placement, not execution"
+          ],
+          "status": "confirmed",
+          "category": "access-control",
+          "description": "validateHandlerOrder has NO access control and performs NO trading rule checks (tradingIsPaused, blockDirectSwaps, pairedTokenWhitelist). Only pricing bounds are enforced. In contrast, beforeSwap/afterSwap enforce all trading rules. CLOB orders can be placed while trading is paused.",
+          "impact": "Token admin who pauses trading expects ALL activity to halt, but CLOB makers can continue placing orders. Orders placed during pause may fill when trading resumes.",
+          "proof_sketch": "test_H04_handlerOrderBypassesTradingPause: pauses trading, validateHandlerOrder succeeds, beforeSwap reverts",
+          "victim": "Token admins relying on trading pause for emergency stops",
+          "extractable_value": "Indirect - front-running advantage from placing orders during pause",
+          "attack_sequence": [
+            "Token admin pauses trading due to emergency",
+            "Attacker places CLOB orders via validateHandlerOrder (no pause check)",
+            "Orders queue at favorable prices during pause",
+            "When admin unpauses, orders fill before market adjusts"
+          ],
+          "test_file": "lbamm-hooks-and-handlers/test/audit/ExtHijackerKLoop.t.sol",
+          "test_passes": true,
+          "prerequisites": [
+            "Token with tradingIsPaused=true"
+          ],
+          "repos": [
+            "lbamm-hooks-and-handlers"
+          ],
+          "contracts": [
+            "AMMStandardHook.sol",
+            "CLOBTransferHandler.sol",
+            "SqrtPriceCalculator.sol"
+          ],
+          "functions": [
+            "_enforceTokenHooks()",
+            "_validateTokenTradingRules()",
+            "beforeSwap()",
+            "computeRatioX96()",
+            "validateHandlerOrder()"
+          ],
+          "lines": {
+            "AMMStandardHook.sol": [
+              198,
+              207,
+              208,
+              110,
+              116,
+              117,
+              670,
+              675,
+              679,
+              685
+            ]
+          },
+          "keywords": [
+            "access-control",
+            "trading-pause",
+            "handler-order"
+          ],
+          "fp_gate": {
+            "location_exists": true,
+            "entry_reachable": true,
+            "no_existing_guard": true,
+            "concrete_attack_path": true,
+            "poc_compiles": true
+          },
+          "source_hypothesis": "H-R4-HR-04",
+          "kill_gate": {
+            "status": "flagged",
+            "gate": "V2-refutation",
+            "reason": "Missing refutation_attempted \u2014 you must argue against your own finding before submitting"
+          },
+          "_source_agent": "extension-hijacker",
+          "consensus_count": 5,
+          "contributing_agents": [
+            "cross-boundary",
+            "extension-hijacker",
+            "state-desync"
+          ],
+          "canonical_id": "HOOK-003"
+        }
+      ],
+      "agent_count": 1,
+      "max_confidence": 30,
+      "has_test": true
+    }
+  ],
+  "claims": [],
+  "corroborated_theses": []
+}

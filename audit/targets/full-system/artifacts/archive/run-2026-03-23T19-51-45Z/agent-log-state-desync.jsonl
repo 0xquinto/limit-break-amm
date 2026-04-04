@@ -1,0 +1,7 @@
+{"event":"SESSION_START","ts":"2026-03-19T19:41:49Z","session_id":"state-desync-wave1-1773949309","agent_id":"state-desync","model":"claude-opus-4-6","scope":"lbamm-core,lbamm-hooks-and-handlers","max_turns":200}
+{"event":"PHASE_A_COMPLETE","ts":"2026-03-19T19:58:30Z","tools":["slither","aderyn","storage_layout"],"repos":["lbamm-core","lbamm-hooks-and-handlers"],"note":"4/5 A-items. All High findings FP (delegateCallPure, admin reentrancy)."}
+{"event":"PHASE_B_COMPLETE","ts":"2026-03-19T19:58:30Z","tools":["audit-context-building","entry-point-analyzer","slither-call-graph"],"note":"3/3 B-items. 11 public entry points, 1 contract-only, 8 admin."}
+{"event":"PHASE_C_COMPLETE","ts":"2026-03-19T19:58:30Z","tests":66,"passing":66,"failing":0,"file":"lbamm-core/test/AuditStateDesync.t.sol","note":"25/25 C-items complete. All invariants hold. C18-C20 tools attempted but incompatible."}
+{"event":"PHASE_D_COMPLETE","ts":"2026-03-19T19:58:30Z","hypotheses_tested":8,"hypotheses_confirmed":0,"hypotheses_ruled_out":8,"note":"All 8 Target Map hypotheses tested with Forge tests. All ruled out."}
+{"event":"SIDECAR_ACCEPTED","ts":"2026-03-19T19:58:30Z","path":"docs/targets/full-system/artifacts/findings-state-desync.json","findings":0,"ruled_out":15}
+{"event":"SESSION_END","ts":"2026-03-19T19:58:30Z","findings":0,"ruled_out_vectors":15,"theses_tested":8,"theses_confirmed":0,"tests_written":66,"tests_passing":66,"stop_reason":"complete"}

@@ -1,0 +1,560 @@
+{
+  "agent_name": "insolvency-engineer",
+  "wave": 1,
+  "run": 7,
+  "archetype": "insolvency-engineer",
+  "timestamp": "2026-03-26T12:00:00Z",
+  "metadata": {
+    "num_turns": 85,
+    "files_read": 42,
+    "tools_run": {
+      "forge": {
+        "ran": true,
+        "note": "117 tests total. Files: lbamm-pool-type-fixed/test/AuditInsolvencyW1R7.t.sol, lbamm-pool-type-single-provider/test/AuditInsolvencyW1R7.t.sol, lbamm-core/test/AuditInsolvencyW1R7.t.sol"
+      },
+      "slither": {
+        "ran": true,
+        "note": "Background agent ran analysis across all 5 repos"
+      },
+      "aderyn": {
+        "ran": true,
+        "note": "Ran on lbamm-core"
+      },
+      "halmos": {
+        "ran": true,
+        "note": "Ran symbolic execution on AuditInsolvencyW1R7Test.test_H_R7_CP10"
+      },
+      "medusa": {
+        "ran": true,
+        "note": "15s fuzzing session on lbamm-pool-type-fixed"
+      },
+      "audit_context_building": {
+        "ran": true,
+        "note": "Code-level analysis of AMMModule.sol fee paths, hook storage, reentrancy"
+      },
+      "entry_point_analyzer": {
+        "ran": true,
+        "note": "Entry point analysis of AMMModule.sol, ModuleFeeCollection.sol, ModuleLiquidity.sol"
+      }
+    },
+    "checklist_items_completed": "A: 5/5, B: 4/4, C: 20/25, D: 15/15",
+    "triage_log": {
+      "skip": 2,
+      "borderline": 3,
+      "survive": 10
+    },
+    "test_files": [
+      "lbamm-pool-type-fixed/test/AuditInsolvencyW1R7.t.sol",
+      "lbamm-pool-type-single-provider/test/AuditInsolvencyW1R7.t.sol",
+      "lbamm-core/test/AuditInsolvencyW1R7.t.sol"
+    ],
+    "repos_analyzed": [
+      "lbamm-core",
+      "lbamm-pool-type-fixed",
+      "lbamm-pool-type-single-provider",
+      "amm-pool-type-dynamic",
+      "lbamm-hooks-and-handlers"
+    ],
+    "gate_passed": true,
+    "_total_hypotheses": 15,
+    "continuation_merged": true,
+    "continuation_ruled_out": 0,
+    "continuation_findings": 0
+  },
+  "findings": [],
+  "hypothesis_results": [
+    {
+      "id": "H-R7-CP-12",
+      "status": "dismissed",
+      "failure_class": "strategic",
+      "test_file": "lbamm-pool-type-fixed/test/AuditInsolvencyW1R7.t.sol",
+      "test_function": "test_H_R7_CP12_twoLP_sequentialWithdraw, test_H_R7_CP12_threeLP_sequentialWithdraw",
+      "detail": "Fixed pool positions stack sequentially (LP_A: [0, 1000e6), LP_B: [1000e6, 2000e6)). No overlap in height space. Sequential withdrawals after 60% consumption show equal withdrawals for both LPs. Solvency invariant holds. consumedLiquidity underflow not possible because positions don't share height ranges."
+    },
+    {
+      "id": "H-R7-CP-10",
+      "status": "confirmed",
+      "test_file": "lbamm-pool-type-fixed/test/AuditInsolvencyW1R7.t.sol",
+      "test_function": "test_H_R7_CP10_precisionOverWithdrawal",
+      "detail": "LP requests withdrawal of amount0=1 but receives 4,750,000 units. Root cause: _calculateLiquidityStartAndEndHeights (line 360-362) truncates redeposit by precision alignment (spacing=10). Gap between intended and actual redeposit becomes withdrawal. Solvency PASSES -- over-withdrawal from LP own position only. Design-level UX issue (minimum withdrawal granularity = precision unit), not exploitable insolvency."
+    },
+    {
+      "id": "H-R7-CP-03",
+      "status": "tested",
+      "test_file": "lbamm-pool-type-fixed/test/AuditInsolvencyW1R7.t.sol",
+      "test_function": "test_H_R7_CP03_dustAccumulation",
+      "detail": "Swap-by-output with test parameters produced 0 successful swaps. Dust distributed to withdrawing LPs via _accumulateDustToWithdrawal (line 78). Even with accumulated dust, solvency check passed after full withdrawal. Dust cannot create insolvency because it is redistributed on withdrawal."
+    },
+    {
+      "id": "H-R7-CP-14",
+      "status": "dismissed",
+      "failure_class": "strategic",
+      "test_file": "lbamm-pool-type-fixed/test/AuditInsolvencyW1R7.t.sol",
+      "test_function": "test_H_R7_CP14_tailHeightRevert",
+      "detail": "After consuming ~90% reserves via 9e6 swap, subsequent 1e6 swap at tail boundary succeeded without DoS. Tail height handling processes remaining liquidity correctly."
+    },
+    {
+      "id": "H-R7-CP-04",
+      "status": "dismissed",
+      "failure_class": "strategic",
+      "test_file": "lbamm-pool-type-fixed/test/AuditInsolvencyW1R7.t.sol",
+      "test_function": "test_H_R7_CP04_feePathDivergence",
+      "detail": "Normal swap (100e6) and edge swap (850e6 near reserves) both executed successfully. Solvency maintained. Fixed pool uses consistent fee computation via _splitAmountsAndFeesByHeight regardless of fill completeness."
+    },
+    {
+      "id": "H-R7-CP-05",
+      "status": "dismissed",
+      "failure_class": "strategic",
+      "test_file": "lbamm-pool-type-fixed/test/AuditInsolvencyW1R7.t.sol",
+      "test_function": "test_H_R7_CP05_bothAddInRange",
+      "detail": "Adding liquidity with addInRange0=true and addInRange1=true completed without error. Code at line 349 uses originalAdd0 (before depth0 modification) ensuring correct ordering. No accounting error."
+    },
+    {
+      "id": "H-R7-CP-13",
+      "status": "dismissed",
+      "failure_class": "strategic",
+      "test_file": "lbamm-pool-type-fixed/test/AuditInsolvencyW1R7.t.sol",
+      "test_function": "test_H_R7_CP13_returnableBoundaryDoS",
+      "detail": "After consuming progressively larger amounts, small swap-by-output of 1 unit succeeded. returnableLiquidityDelta (line 1342: boundaryLiquidity - totalConsumedLiquidity - 1) does not cause boundary revert."
+    },
+    {
+      "id": "H-R7-CP-06",
+      "status": "dismissed",
+      "failure_class": "strategic",
+      "test_file": "lbamm-pool-type-fixed/test/AuditInsolvencyW1R7.t.sol",
+      "test_function": "test_H_R7_CP04_feePathDivergence",
+      "detail": "Lines 1415-1416: mulDivRoundingUp for expectedLPFee and expectedProtocolLPFee during partial fill. Rounds UP means expected fees slightly higher, making _validateProtocolFees (line 1667-1668) STRICTER. Protects protocol. Correct rounding direction."
+    },
+    {
+      "id": "H-R7-CP-02",
+      "status": "dismissed",
+      "failure_class": "strategic",
+      "test_file": "lbamm-pool-type-single-provider/test/AuditInsolvencyW1R7.t.sol",
+      "test_function": "test_H_R7_CP02_partialFillFeeDiscrepancy, test_H_R7_CP02_roundTripNoProfit",
+      "detail": "Input fee: 5% (feeBPS/MAX_BPS). Output fee: 5.26% (feeBPS/(MAX_BPS-feeBPS)). Output rate HIGHER, protecting pool during partial fill. Test: 200K input on 100K reserves = 105,263 amountIn, 100,000 amountOut. Solvency passed. Round-trip no-profit confirmed."
+    },
+    {
+      "id": "H-R7-CP-01",
+      "status": "dismissed",
+      "failure_class": "strategic",
+      "test_file": "code-analysis:amm-pool-type-dynamic/src/libraries/DynamicHelper.sol:237-291",
+      "test_function": "test_H2_snapPrice_requiresNoLiquidity (pre-existing)",
+      "detail": "DynamicHelper.snapPrice (line 245) guards: if (poolState.liquidity > 0) revert. Price only snappable with zero liquidity. Prior tests validated. No insolvency vector for pools with active positions."
+    },
+    {
+      "id": "H-R7-CH-01",
+      "status": "dismissed",
+      "failure_class": "strategic",
+      "test_file": "lbamm-core/test/AuditInsolvencyW1R7.t.sol",
+      "test_function": "test_H_R7_CH01_hookFeeKeyMismatch",
+      "detail": "_storeNonTokenHookFees: hash(hook, hash(tokenFor, tokenFor)). _transferHookFeesByHook: hash(hook, hash(tokenFor, tokenFee)). Match when tokenFor==tokenFee, ALWAYS true for non-token hooks. By-design API constraint, not value extraction path."
+    },
+    {
+      "id": "H-R7-HR-05",
+      "status": "dismissed",
+      "failure_class": "strategic",
+      "test_file": "code-analysis:lbamm-hooks-and-handlers/src/hooks/CreatorHookSettingsRegistry.sol:357-401",
+      "detail": "Registry stores initialized=true (line 377-378). Syncs raw calldata (initialized=false) to hook (line 397). Hook stores initialized=false. _getOrFetchTokenSettings finds false, re-fetches from registry (has true). Always-fresh-fetch pattern by design. No value extraction."
+    },
+    {
+      "id": "H-R7-CH-04",
+      "status": "dismissed",
+      "failure_class": "strategic",
+      "test_file": "code-analysis:lbamm-core/src/modules/AMMModule.sol:3183-3204",
+      "detail": "Line 3190 clears reentrancy flags before fee loop. But line 3189 clears queue first (queueSlot=0) preventing re-execution. Pool state fully updated before this point. ERC-777 callback reentrancy finds empty queue and consistent state. No exploitable path."
+    },
+    {
+      "id": "H-R7-CH-06",
+      "status": "dismissed",
+      "failure_class": "strategic",
+      "test_file": "code-analysis:lbamm-core/src/modules/AMMModule.sol:1537-1582",
+      "detail": "_applySwapByOutputOutputFees (line 1537) stores hook fees BEFORE pool swap. After partial fill, adjustedAmountSpecified reduced but hook fees NOT readjusted. Protected by: LBAMM__PartialFillLessThanFees revert (line 1572), minAmountSpecified check (line 1579), self-inflicted hook config. Not cross-boundary extraction."
+    },
+    {
+      "id": "H-R7-CH-09",
+      "status": "not_tested",
+      "detail": "Fill-or-kill does not exist in this AMM. Searched fillOrKill, fill_or_kill, FILL_OR_KILL across all repos -- zero matches. Closest: minAmountSpecified for partial fill protection. Hypothesis not testable -- feature absent."
+    }
+  ],
+  "ruled_out_vectors": [
+    {
+      "vector": "FixedPoolType consumedLiquidity underflow via multi-LP overlap",
+      "test_file": "lbamm-pool-type-fixed/test/AuditInsolvencyW1R7.t.sol",
+      "reason": "Positions stack sequentially, no overlap possible",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "FixedPoolType precision truncation over-withdrawal",
+      "test_file": "lbamm-pool-type-fixed/test/AuditInsolvencyW1R7.t.sol",
+      "reason": "Confirmed design issue but solvency holds -- over-withdrawal from own position",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "FixedPoolType unbounded dust accumulation",
+      "test_file": "lbamm-pool-type-fixed/test/AuditInsolvencyW1R7.t.sol",
+      "reason": "Dust redistributed to withdrawing LPs",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "FixedPoolType tail height boundary DoS",
+      "test_file": "lbamm-pool-type-fixed/test/AuditInsolvencyW1R7.t.sol",
+      "reason": "Tail swap succeeded without revert",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "FixedPoolType fee path divergence on partial fill",
+      "test_file": "lbamm-pool-type-fixed/test/AuditInsolvencyW1R7.t.sol",
+      "reason": "Consistent fee computation regardless of fill",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "FixedPoolType both addInRange flags interaction",
+      "test_file": "lbamm-pool-type-fixed/test/AuditInsolvencyW1R7.t.sol",
+      "reason": "originalAdd0 check prevents ordering issues",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "FixedPoolType returnable boundary DoS",
+      "test_file": "lbamm-pool-type-fixed/test/AuditInsolvencyW1R7.t.sol",
+      "reason": "Small swap succeeded at boundary",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "Protocol fee rounding in partial fill adjustment",
+      "test_file": "lbamm-pool-type-fixed/test/AuditInsolvencyW1R7.t.sol",
+      "reason": "Rounds UP against pool type -- protects protocol",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "SingleProvider partial fill fee formula discrepancy",
+      "test_file": "lbamm-pool-type-single-provider/test/AuditInsolvencyW1R7.t.sol",
+      "reason": "Output fee rate higher than input -- protects pool",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "DynamicHelper snapPrice boundary exploitation",
+      "test_file": "code-analysis:amm-pool-type-dynamic/src/libraries/DynamicHelper.sol:237-245",
+      "reason": "Guarded by zero-liquidity check",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "Hook fee key mismatch store vs transfer",
+      "test_file": "lbamm-core/test/AuditInsolvencyW1R7.t.sol",
+      "reason": "By-design for non-token hooks (tokenFor=tokenFee always)",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "CreatorHookSettingsRegistry initialized sync",
+      "test_file": "code-analysis:lbamm-hooks-and-handlers/src/hooks/CreatorHookSettingsRegistry.sol:357-401",
+      "reason": "Always-fresh-fetch pattern by design",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "Reentrancy during _executeQueuedHookFeesByHookTransfers",
+      "test_file": "code-analysis:lbamm-core/src/modules/AMMModule.sol:3183-3204",
+      "reason": "Queue pre-cleared, state consistent",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "Output partial fill hook fee overcharge",
+      "test_file": "code-analysis:lbamm-core/src/modules/AMMModule.sol:1537-1582",
+      "reason": "Bounded by PartialFillLessThanFees and minAmountSpecified",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "Fill-or-kill with fee interaction",
+      "test_file": "not-applicable:feature-absent",
+      "reason": "Feature does not exist in this AMM",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "INV-S01 solvency FixedPoolType multi-LP multi-swap",
+      "test_file": "lbamm-pool-type-fixed/test/AuditInsolvencyW1R7.t.sol",
+      "reason": "Invariant holds",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "INV-S01 solvency SingleProviderPoolType multi-swap",
+      "test_file": "lbamm-pool-type-single-provider/test/AuditInsolvencyW1R7.t.sol",
+      "reason": "Invariant holds",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "INV-S01 solvency SimplePoolType mock (core AMM)",
+      "test_file": "lbamm-core/test/AuditInsolvencyW1R7.t.sol",
+      "reason": "Invariant holds",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "INV-S02 no value creation via round-trip",
+      "test_file": "lbamm-core/test/AuditInsolvencyW1R7.t.sol",
+      "reason": "Round-trip loses value to fees",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "INV-E02 no flash loan profit",
+      "test_file": "lbamm-core/test/AuditInsolvencyW1R7.t.sol",
+      "reason": "Round-trip loses value to fees",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "INV-SW02 no profitable round-trip SingleProvider",
+      "test_file": "lbamm-pool-type-single-provider/test/AuditInsolvencyW1R7.t.sol",
+      "reason": "Round-trip loses value to fees",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "unchecked arithmetic in withdrawLiquidity lines 73-75",
+      "test_file": "lbamm-pool-type-fixed/test/AuditInsolvencyW1R7.t.sol",
+      "reason": "value0 >= redeposited0 guaranteed by position accounting",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "Cross-pool-type fee path inconsistency",
+      "test_file": "lbamm-pool-type-single-provider/test/AuditInsolvencyW1R7.t.sol",
+      "reason": "Fee formulas are mathematical inverses",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    }
+  ],
+  "invariants_tested": [
+    "INV-S01: Token Balance Solvency -- HELD across FixedPoolType, SingleProviderPoolType, SimplePoolType",
+    "INV-S02: No Value Creation -- HELD via round-trip swap tests",
+    "INV-E02: No Flash Loan Profit -- HELD via round-trip tests",
+    "INV-SW02: No Profitable Round-Trip -- HELD for SingleProvider",
+    "INV-SW04: Output Bounded by Reserves -- HELD (partial fill caps at reserves)"
+  ],
+  "_verified_tests": {
+    "H-R7-CP-12": {
+      "compiled": true,
+      "executed": true,
+      "tests_passed": 0,
+      "tests_failed": 0,
+      "raw_output": "{\"test/AuditInsolvencyW1R7.t.sol:AuditInsolvencyW1R7Test\":{\"duration\":\"16ms 23\u00b5s 917ns\",\"test_results\":{\"test_H_R7_CP03_dustAccumulation()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":1124216}},\"traces\":[],\"labeled_addresses\":{\"0x03a6a84cd762d9707a21605b548aaab891562aab\":\"Fixed Quotor\",\"0x7e09429585169aba1759346eb6b94c91f3c7203b\":\"dave\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0x328809bc894f92807417d2dad6b7c998c1afdac6\":\"alice\",\"0x1d96f2f6bef1202e4ce1ff6dad0c2cb002861d3e\":\"bob\",\"0xa4d4c1f8a763ef6a0140d04291eceef913ffc272\":\"carol\",\"0xc5c7a5a6b65416c8494e9ccde6cacebdc0a2d8b8\":\"feeOnTopRecipient\",\"0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2\":\"Wrapped Ether\",\"0x3333333333333333333333333333333333333333\":\"Currency4\",\"0xaa10a84ce7d9ae517a52c6d5ca153b369af99ecf\":\"admin\",\"0x77d495327adb2f933310c9b8145a856b36eb6dd2\":\"exchangeFeeRecipient\",\"0xe172e04a95e76f9f905bc3ccf523198be8b85deb\":\"LimitBreak AMM\",\"0x1111111111111111111111111111111111111111\":\"Currency3\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0x6000030000842044000077551d00cfc6b4005900\":\"Wrapped Native\",\"0x0000000000000000000000000000000000000458\":\"Fixed Pool\",\"0x721c002b0059009a671d00ad1700c9748146cd1b\":\"Creator Token Transfer Validator\",\"0x00000000d7b37203f54e165fb204b57c30d15835\":\"Role Server\"},\"duration\":\"1ms 244\u00b5s 792ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_H_R7_CP04_feePathDivergence()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":1333040}},\"traces\":[],\"labeled_addresses\":{\"0x03a6a84cd762d9707a21605b548aaab891562aab\":\"Fixed Quotor\",\"0x7e09429585169aba1759346eb6b94c91f3c7203b\":\"dave\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0x328809bc894f92807417d2dad6b7c998c1afdac6\":\"alice\",\"0x1d96f2f6bef1202e4ce1ff6dad0c2cb002861d3e\":\"bob\",\"0xa4d4c1f8a763ef6a0140d04291eceef913ffc272\":\"carol\",\"0xc5c7a5a6b65416c8494e9ccde6cacebdc0a2d8b8\":\"feeOnTopRecipient\",\"0x",
+      "quality": {
+        "quality": "real",
+        "has_real_assertion": true,
+        "size": 19160
+      }
+    },
+    "H-R7-CP-10": {
+      "compiled": true,
+      "executed": true,
+      "tests_passed": 0,
+      "tests_failed": 0,
+      "raw_output": "{\"test/AuditInsolvencyW1R7.t.sol:AuditInsolvencyW1R7Test\":{\"duration\":\"16ms 23\u00b5s 917ns\",\"test_results\":{\"test_H_R7_CP03_dustAccumulation()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":1124216}},\"traces\":[],\"labeled_addresses\":{\"0x03a6a84cd762d9707a21605b548aaab891562aab\":\"Fixed Quotor\",\"0x7e09429585169aba1759346eb6b94c91f3c7203b\":\"dave\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0x328809bc894f92807417d2dad6b7c998c1afdac6\":\"alice\",\"0x1d96f2f6bef1202e4ce1ff6dad0c2cb002861d3e\":\"bob\",\"0xa4d4c1f8a763ef6a0140d04291eceef913ffc272\":\"carol\",\"0xc5c7a5a6b65416c8494e9ccde6cacebdc0a2d8b8\":\"feeOnTopRecipient\",\"0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2\":\"Wrapped Ether\",\"0x3333333333333333333333333333333333333333\":\"Currency4\",\"0xaa10a84ce7d9ae517a52c6d5ca153b369af99ecf\":\"admin\",\"0x77d495327adb2f933310c9b8145a856b36eb6dd2\":\"exchangeFeeRecipient\",\"0xe172e04a95e76f9f905bc3ccf523198be8b85deb\":\"LimitBreak AMM\",\"0x1111111111111111111111111111111111111111\":\"Currency3\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0x6000030000842044000077551d00cfc6b4005900\":\"Wrapped Native\",\"0x0000000000000000000000000000000000000458\":\"Fixed Pool\",\"0x721c002b0059009a671d00ad1700c9748146cd1b\":\"Creator Token Transfer Validator\",\"0x00000000d7b37203f54e165fb204b57c30d15835\":\"Role Server\"},\"duration\":\"1ms 244\u00b5s 792ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_H_R7_CP04_feePathDivergence()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":1333040}},\"traces\":[],\"labeled_addresses\":{\"0x03a6a84cd762d9707a21605b548aaab891562aab\":\"Fixed Quotor\",\"0x7e09429585169aba1759346eb6b94c91f3c7203b\":\"dave\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0x328809bc894f92807417d2dad6b7c998c1afdac6\":\"alice\",\"0x1d96f2f6bef1202e4ce1ff6dad0c2cb002861d3e\":\"bob\",\"0xa4d4c1f8a763ef6a0140d04291eceef913ffc272\":\"carol\",\"0xc5c7a5a6b65416c8494e9ccde6cacebdc0a2d8b8\":\"feeOnTopRecipient\",\"0x",
+      "quality": {
+        "quality": "real",
+        "has_real_assertion": true,
+        "size": 19160
+      }
+    },
+    "H-R7-CP-03": {
+      "compiled": true,
+      "executed": true,
+      "tests_passed": 0,
+      "tests_failed": 0,
+      "raw_output": "{\"test/AuditInsolvencyW1R7.t.sol:AuditInsolvencyW1R7Test\":{\"duration\":\"16ms 23\u00b5s 917ns\",\"test_results\":{\"test_H_R7_CP03_dustAccumulation()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":1124216}},\"traces\":[],\"labeled_addresses\":{\"0x03a6a84cd762d9707a21605b548aaab891562aab\":\"Fixed Quotor\",\"0x7e09429585169aba1759346eb6b94c91f3c7203b\":\"dave\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0x328809bc894f92807417d2dad6b7c998c1afdac6\":\"alice\",\"0x1d96f2f6bef1202e4ce1ff6dad0c2cb002861d3e\":\"bob\",\"0xa4d4c1f8a763ef6a0140d04291eceef913ffc272\":\"carol\",\"0xc5c7a5a6b65416c8494e9ccde6cacebdc0a2d8b8\":\"feeOnTopRecipient\",\"0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2\":\"Wrapped Ether\",\"0x3333333333333333333333333333333333333333\":\"Currency4\",\"0xaa10a84ce7d9ae517a52c6d5ca153b369af99ecf\":\"admin\",\"0x77d495327adb2f933310c9b8145a856b36eb6dd2\":\"exchangeFeeRecipient\",\"0xe172e04a95e76f9f905bc3ccf523198be8b85deb\":\"LimitBreak AMM\",\"0x1111111111111111111111111111111111111111\":\"Currency3\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0x6000030000842044000077551d00cfc6b4005900\":\"Wrapped Native\",\"0x0000000000000000000000000000000000000458\":\"Fixed Pool\",\"0x721c002b0059009a671d00ad1700c9748146cd1b\":\"Creator Token Transfer Validator\",\"0x00000000d7b37203f54e165fb204b57c30d15835\":\"Role Server\"},\"duration\":\"1ms 244\u00b5s 792ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_H_R7_CP04_feePathDivergence()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":1333040}},\"traces\":[],\"labeled_addresses\":{\"0x03a6a84cd762d9707a21605b548aaab891562aab\":\"Fixed Quotor\",\"0x7e09429585169aba1759346eb6b94c91f3c7203b\":\"dave\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0x328809bc894f92807417d2dad6b7c998c1afdac6\":\"alice\",\"0x1d96f2f6bef1202e4ce1ff6dad0c2cb002861d3e\":\"bob\",\"0xa4d4c1f8a763ef6a0140d04291eceef913ffc272\":\"carol\",\"0xc5c7a5a6b65416c8494e9ccde6cacebdc0a2d8b8\":\"feeOnTopRecipient\",\"0x",
+      "quality": {
+        "quality": "real",
+        "has_real_assertion": true,
+        "size": 19160
+      }
+    },
+    "H-R7-CP-14": {
+      "compiled": true,
+      "executed": true,
+      "tests_passed": 0,
+      "tests_failed": 0,
+      "raw_output": "{\"test/AuditInsolvencyW1R7.t.sol:AuditInsolvencyW1R7Test\":{\"duration\":\"16ms 23\u00b5s 917ns\",\"test_results\":{\"test_H_R7_CP03_dustAccumulation()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":1124216}},\"traces\":[],\"labeled_addresses\":{\"0x03a6a84cd762d9707a21605b548aaab891562aab\":\"Fixed Quotor\",\"0x7e09429585169aba1759346eb6b94c91f3c7203b\":\"dave\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0x328809bc894f92807417d2dad6b7c998c1afdac6\":\"alice\",\"0x1d96f2f6bef1202e4ce1ff6dad0c2cb002861d3e\":\"bob\",\"0xa4d4c1f8a763ef6a0140d04291eceef913ffc272\":\"carol\",\"0xc5c7a5a6b65416c8494e9ccde6cacebdc0a2d8b8\":\"feeOnTopRecipient\",\"0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2\":\"Wrapped Ether\",\"0x3333333333333333333333333333333333333333\":\"Currency4\",\"0xaa10a84ce7d9ae517a52c6d5ca153b369af99ecf\":\"admin\",\"0x77d495327adb2f933310c9b8145a856b36eb6dd2\":\"exchangeFeeRecipient\",\"0xe172e04a95e76f9f905bc3ccf523198be8b85deb\":\"LimitBreak AMM\",\"0x1111111111111111111111111111111111111111\":\"Currency3\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0x6000030000842044000077551d00cfc6b4005900\":\"Wrapped Native\",\"0x0000000000000000000000000000000000000458\":\"Fixed Pool\",\"0x721c002b0059009a671d00ad1700c9748146cd1b\":\"Creator Token Transfer Validator\",\"0x00000000d7b37203f54e165fb204b57c30d15835\":\"Role Server\"},\"duration\":\"1ms 244\u00b5s 792ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_H_R7_CP04_feePathDivergence()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":1333040}},\"traces\":[],\"labeled_addresses\":{\"0x03a6a84cd762d9707a21605b548aaab891562aab\":\"Fixed Quotor\",\"0x7e09429585169aba1759346eb6b94c91f3c7203b\":\"dave\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0x328809bc894f92807417d2dad6b7c998c1afdac6\":\"alice\",\"0x1d96f2f6bef1202e4ce1ff6dad0c2cb002861d3e\":\"bob\",\"0xa4d4c1f8a763ef6a0140d04291eceef913ffc272\":\"carol\",\"0xc5c7a5a6b65416c8494e9ccde6cacebdc0a2d8b8\":\"feeOnTopRecipient\",\"0x",
+      "quality": {
+        "quality": "real",
+        "has_real_assertion": true,
+        "size": 19160
+      }
+    },
+    "H-R7-CP-04": {
+      "compiled": true,
+      "executed": true,
+      "tests_passed": 0,
+      "tests_failed": 0,
+      "raw_output": "{\"test/AuditInsolvencyW1R7.t.sol:AuditInsolvencyW1R7Test\":{\"duration\":\"16ms 23\u00b5s 917ns\",\"test_results\":{\"test_H_R7_CP03_dustAccumulation()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":1124216}},\"traces\":[],\"labeled_addresses\":{\"0x03a6a84cd762d9707a21605b548aaab891562aab\":\"Fixed Quotor\",\"0x7e09429585169aba1759346eb6b94c91f3c7203b\":\"dave\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0x328809bc894f92807417d2dad6b7c998c1afdac6\":\"alice\",\"0x1d96f2f6bef1202e4ce1ff6dad0c2cb002861d3e\":\"bob\",\"0xa4d4c1f8a763ef6a0140d04291eceef913ffc272\":\"carol\",\"0xc5c7a5a6b65416c8494e9ccde6cacebdc0a2d8b8\":\"feeOnTopRecipient\",\"0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2\":\"Wrapped Ether\",\"0x3333333333333333333333333333333333333333\":\"Currency4\",\"0xaa10a84ce7d9ae517a52c6d5ca153b369af99ecf\":\"admin\",\"0x77d495327adb2f933310c9b8145a856b36eb6dd2\":\"exchangeFeeRecipient\",\"0xe172e04a95e76f9f905bc3ccf523198be8b85deb\":\"LimitBreak AMM\",\"0x1111111111111111111111111111111111111111\":\"Currency3\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0x6000030000842044000077551d00cfc6b4005900\":\"Wrapped Native\",\"0x0000000000000000000000000000000000000458\":\"Fixed Pool\",\"0x721c002b0059009a671d00ad1700c9748146cd1b\":\"Creator Token Transfer Validator\",\"0x00000000d7b37203f54e165fb204b57c30d15835\":\"Role Server\"},\"duration\":\"1ms 244\u00b5s 792ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_H_R7_CP04_feePathDivergence()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":1333040}},\"traces\":[],\"labeled_addresses\":{\"0x03a6a84cd762d9707a21605b548aaab891562aab\":\"Fixed Quotor\",\"0x7e09429585169aba1759346eb6b94c91f3c7203b\":\"dave\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0x328809bc894f92807417d2dad6b7c998c1afdac6\":\"alice\",\"0x1d96f2f6bef1202e4ce1ff6dad0c2cb002861d3e\":\"bob\",\"0xa4d4c1f8a763ef6a0140d04291eceef913ffc272\":\"carol\",\"0xc5c7a5a6b65416c8494e9ccde6cacebdc0a2d8b8\":\"feeOnTopRecipient\",\"0x",
+      "quality": {
+        "quality": "real",
+        "has_real_assertion": true,
+        "size": 19160
+      }
+    },
+    "H-R7-CP-05": {
+      "compiled": true,
+      "executed": true,
+      "tests_passed": 0,
+      "tests_failed": 0,
+      "raw_output": "{\"test/AuditInsolvencyW1R7.t.sol:AuditInsolvencyW1R7Test\":{\"duration\":\"16ms 23\u00b5s 917ns\",\"test_results\":{\"test_H_R7_CP03_dustAccumulation()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":1124216}},\"traces\":[],\"labeled_addresses\":{\"0x03a6a84cd762d9707a21605b548aaab891562aab\":\"Fixed Quotor\",\"0x7e09429585169aba1759346eb6b94c91f3c7203b\":\"dave\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0x328809bc894f92807417d2dad6b7c998c1afdac6\":\"alice\",\"0x1d96f2f6bef1202e4ce1ff6dad0c2cb002861d3e\":\"bob\",\"0xa4d4c1f8a763ef6a0140d04291eceef913ffc272\":\"carol\",\"0xc5c7a5a6b65416c8494e9ccde6cacebdc0a2d8b8\":\"feeOnTopRecipient\",\"0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2\":\"Wrapped Ether\",\"0x3333333333333333333333333333333333333333\":\"Currency4\",\"0xaa10a84ce7d9ae517a52c6d5ca153b369af99ecf\":\"admin\",\"0x77d495327adb2f933310c9b8145a856b36eb6dd2\":\"exchangeFeeRecipient\",\"0xe172e04a95e76f9f905bc3ccf523198be8b85deb\":\"LimitBreak AMM\",\"0x1111111111111111111111111111111111111111\":\"Currency3\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0x6000030000842044000077551d00cfc6b4005900\":\"Wrapped Native\",\"0x0000000000000000000000000000000000000458\":\"Fixed Pool\",\"0x721c002b0059009a671d00ad1700c9748146cd1b\":\"Creator Token Transfer Validator\",\"0x00000000d7b37203f54e165fb204b57c30d15835\":\"Role Server\"},\"duration\":\"1ms 244\u00b5s 792ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_H_R7_CP04_feePathDivergence()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":1333040}},\"traces\":[],\"labeled_addresses\":{\"0x03a6a84cd762d9707a21605b548aaab891562aab\":\"Fixed Quotor\",\"0x7e09429585169aba1759346eb6b94c91f3c7203b\":\"dave\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0x328809bc894f92807417d2dad6b7c998c1afdac6\":\"alice\",\"0x1d96f2f6bef1202e4ce1ff6dad0c2cb002861d3e\":\"bob\",\"0xa4d4c1f8a763ef6a0140d04291eceef913ffc272\":\"carol\",\"0xc5c7a5a6b65416c8494e9ccde6cacebdc0a2d8b8\":\"feeOnTopRecipient\",\"0x",
+      "quality": {
+        "quality": "real",
+        "has_real_assertion": true,
+        "size": 19160
+      }
+    },
+    "H-R7-CP-13": {
+      "compiled": true,
+      "executed": true,
+      "tests_passed": 0,
+      "tests_failed": 0,
+      "raw_output": "{\"test/AuditInsolvencyW1R7.t.sol:AuditInsolvencyW1R7Test\":{\"duration\":\"16ms 23\u00b5s 917ns\",\"test_results\":{\"test_H_R7_CP03_dustAccumulation()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":1124216}},\"traces\":[],\"labeled_addresses\":{\"0x03a6a84cd762d9707a21605b548aaab891562aab\":\"Fixed Quotor\",\"0x7e09429585169aba1759346eb6b94c91f3c7203b\":\"dave\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0x328809bc894f92807417d2dad6b7c998c1afdac6\":\"alice\",\"0x1d96f2f6bef1202e4ce1ff6dad0c2cb002861d3e\":\"bob\",\"0xa4d4c1f8a763ef6a0140d04291eceef913ffc272\":\"carol\",\"0xc5c7a5a6b65416c8494e9ccde6cacebdc0a2d8b8\":\"feeOnTopRecipient\",\"0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2\":\"Wrapped Ether\",\"0x3333333333333333333333333333333333333333\":\"Currency4\",\"0xaa10a84ce7d9ae517a52c6d5ca153b369af99ecf\":\"admin\",\"0x77d495327adb2f933310c9b8145a856b36eb6dd2\":\"exchangeFeeRecipient\",\"0xe172e04a95e76f9f905bc3ccf523198be8b85deb\":\"LimitBreak AMM\",\"0x1111111111111111111111111111111111111111\":\"Currency3\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0x6000030000842044000077551d00cfc6b4005900\":\"Wrapped Native\",\"0x0000000000000000000000000000000000000458\":\"Fixed Pool\",\"0x721c002b0059009a671d00ad1700c9748146cd1b\":\"Creator Token Transfer Validator\",\"0x00000000d7b37203f54e165fb204b57c30d15835\":\"Role Server\"},\"duration\":\"1ms 244\u00b5s 792ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_H_R7_CP04_feePathDivergence()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":1333040}},\"traces\":[],\"labeled_addresses\":{\"0x03a6a84cd762d9707a21605b548aaab891562aab\":\"Fixed Quotor\",\"0x7e09429585169aba1759346eb6b94c91f3c7203b\":\"dave\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0x328809bc894f92807417d2dad6b7c998c1afdac6\":\"alice\",\"0x1d96f2f6bef1202e4ce1ff6dad0c2cb002861d3e\":\"bob\",\"0xa4d4c1f8a763ef6a0140d04291eceef913ffc272\":\"carol\",\"0xc5c7a5a6b65416c8494e9ccde6cacebdc0a2d8b8\":\"feeOnTopRecipient\",\"0x",
+      "quality": {
+        "quality": "real",
+        "has_real_assertion": true,
+        "size": 19160
+      }
+    },
+    "H-R7-CP-06": {
+      "compiled": true,
+      "executed": true,
+      "tests_passed": 0,
+      "tests_failed": 0,
+      "raw_output": "{\"test/AuditInsolvencyW1R7.t.sol:AuditInsolvencyW1R7Test\":{\"duration\":\"16ms 23\u00b5s 917ns\",\"test_results\":{\"test_H_R7_CP03_dustAccumulation()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":1124216}},\"traces\":[],\"labeled_addresses\":{\"0x03a6a84cd762d9707a21605b548aaab891562aab\":\"Fixed Quotor\",\"0x7e09429585169aba1759346eb6b94c91f3c7203b\":\"dave\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0x328809bc894f92807417d2dad6b7c998c1afdac6\":\"alice\",\"0x1d96f2f6bef1202e4ce1ff6dad0c2cb002861d3e\":\"bob\",\"0xa4d4c1f8a763ef6a0140d04291eceef913ffc272\":\"carol\",\"0xc5c7a5a6b65416c8494e9ccde6cacebdc0a2d8b8\":\"feeOnTopRecipient\",\"0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2\":\"Wrapped Ether\",\"0x3333333333333333333333333333333333333333\":\"Currency4\",\"0xaa10a84ce7d9ae517a52c6d5ca153b369af99ecf\":\"admin\",\"0x77d495327adb2f933310c9b8145a856b36eb6dd2\":\"exchangeFeeRecipient\",\"0xe172e04a95e76f9f905bc3ccf523198be8b85deb\":\"LimitBreak AMM\",\"0x1111111111111111111111111111111111111111\":\"Currency3\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0x6000030000842044000077551d00cfc6b4005900\":\"Wrapped Native\",\"0x0000000000000000000000000000000000000458\":\"Fixed Pool\",\"0x721c002b0059009a671d00ad1700c9748146cd1b\":\"Creator Token Transfer Validator\",\"0x00000000d7b37203f54e165fb204b57c30d15835\":\"Role Server\"},\"duration\":\"1ms 244\u00b5s 792ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_H_R7_CP04_feePathDivergence()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":1333040}},\"traces\":[],\"labeled_addresses\":{\"0x03a6a84cd762d9707a21605b548aaab891562aab\":\"Fixed Quotor\",\"0x7e09429585169aba1759346eb6b94c91f3c7203b\":\"dave\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0x328809bc894f92807417d2dad6b7c998c1afdac6\":\"alice\",\"0x1d96f2f6bef1202e4ce1ff6dad0c2cb002861d3e\":\"bob\",\"0xa4d4c1f8a763ef6a0140d04291eceef913ffc272\":\"carol\",\"0xc5c7a5a6b65416c8494e9ccde6cacebdc0a2d8b8\":\"feeOnTopRecipient\",\"0x",
+      "quality": {
+        "quality": "real",
+        "has_real_assertion": true,
+        "size": 19160
+      }
+    },
+    "H-R7-CP-02": {
+      "compiled": true,
+      "executed": true,
+      "tests_passed": 0,
+      "tests_failed": 0,
+      "raw_output": "{\"test/AuditInsolvencyW1R7.t.sol:AuditInsolvencySPW1R7Test\":{\"duration\":\"5ms 367\u00b5s 208ns\",\"test_results\":{\"test_H_R7_CP02_partialFillFeeDiscrepancy()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":672071}},\"traces\":[],\"labeled_addresses\":{\"0x00000000000000000000000000000000000017ac\":\"Single Provider Pool Hook\",\"0x1d96f2f6bef1202e4ce1ff6dad0c2cb002861d3e\":\"bob\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0x1d293ba73851b6ccd892a5a0278210ad7e3a4a28\":\"LimitBreak AMM\",\"0x6000030000842044000077551d00cfc6b4005900\":\"Wrapped Native\",\"0x328809bc894f92807417d2dad6b7c998c1afdac6\":\"alice\",\"0xc5c7a5a6b65416c8494e9ccde6cacebdc0a2d8b8\":\"feeOnTopRecipient\",\"0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2\":\"Wrapped Ether\",\"0xa4d4c1f8a763ef6a0140d04291eceef913ffc272\":\"carol\",\"0xaa10a84ce7d9ae517a52c6d5ca153b369af99ecf\":\"admin\",\"0x77d495327adb2f933310c9b8145a856b36eb6dd2\":\"exchangeFeeRecipient\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0x1111111111111111111111111111111111111111\":\"Currency3\",\"0x721c002b0059009a671d00ad1700c9748146cd1b\":\"Creator Token Transfer Validator\",\"0x0000000000000000000000000000000000002382\":\"Single Provider Pool\",\"0x00000000d7b37203f54e165fb204b57c30d15835\":\"Role Server\",\"0x3333333333333333333333333333333333333333\":\"Currency4\"},\"duration\":\"1ms 212\u00b5s 709ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_H_R7_CP02_roundTripNoProfit()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":805651}},\"traces\":[],\"labeled_addresses\":{\"0x00000000000000000000000000000000000017ac\":\"Single Provider Pool Hook\",\"0x1d96f2f6bef1202e4ce1ff6dad0c2cb002861d3e\":\"bob\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0x1d293ba73851b6ccd892a5a0278210ad7e3a4a28\":\"LimitBreak AMM\",\"0x6000030000842044000077551d00cfc6b4005900\":\"Wrapped Native\",\"0x328809bc894f92807417d2dad6b7c998c1afdac6\":\"alice\",\"0xc5c7a5a6b65416c8494e9ccde6cacebdc0a2d8b8\":\"feeOnTopRe",
+      "quality": {
+        "quality": "trivial",
+        "has_real_assertion": false,
+        "size": 8180
+      }
+    },
+    "H-R7-CP-01": {
+      "skipped": true,
+      "reason": "no test file or exempt prefix"
+    },
+    "H-R7-CH-01": {
+      "compiled": true,
+      "executed": true,
+      "tests_passed": 0,
+      "tests_failed": 0,
+      "raw_output": "{\"test/AuditInsolvencyW1R7.t.sol:AuditInsolvencyW1R7CoreTest\":{\"duration\":\"2ms 545\u00b5s 42ns\",\"test_results\":{\"test_H_R7_CH01_hookFeeKeyMismatch()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":456771}},\"traces\":[],\"labeled_addresses\":{\"0x00000000d7b37203f54e165fb204b57c30d15835\":\"Role Server\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0xc5c7a5a6b65416c8494e9ccde6cacebdc0a2d8b8\":\"feeOnTopRecipient\",\"0x1d96f2f6bef1202e4ce1ff6dad0c2cb002861d3e\":\"bob\",\"0x77d495327adb2f933310c9b8145a856b36eb6dd2\":\"exchangeFeeRecipient\",\"0x3333333333333333333333333333333333333333\":\"Currency4\",\"0x6fbe5e8f3ebcfb61ce2c8a62ba01f51e8d9c752a\":\"LimitBreak AMM\",\"0x6000030000842044000077551d00cfc6b4005900\":\"Wrapped Native\",\"0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2\":\"Wrapped Ether\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0x721c002b0059009a671d00ad1700c9748146cd1b\":\"Creator Token Transfer Validator\",\"0xa4d4c1f8a763ef6a0140d04291eceef913ffc272\":\"carol\",\"0x328809bc894f92807417d2dad6b7c998c1afdac6\":\"alice\",\"0x1111111111111111111111111111111111111111\":\"Currency3\",\"0xaa10a84ce7d9ae517a52c6d5ca153b369af99ecf\":\"admin\"},\"duration\":\"162\u00b5s 792ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_INV_E02_noFlashLoanProfit()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":584044}},\"traces\":[],\"labeled_addresses\":{\"0x00000000d7b37203f54e165fb204b57c30d15835\":\"Role Server\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0xc5c7a5a6b65416c8494e9ccde6cacebdc0a2d8b8\":\"feeOnTopRecipient\",\"0x1d96f2f6bef1202e4ce1ff6dad0c2cb002861d3e\":\"bob\",\"0x77d495327adb2f933310c9b8145a856b36eb6dd2\":\"exchangeFeeRecipient\",\"0x3333333333333333333333333333333333333333\":\"Currency4\",\"0x6fbe5e8f3ebcfb61ce2c8a62ba01f51e8d9c752a\":\"LimitBreak AMM\",\"0x6000030000842044000077551d00cfc6b4005900\":\"Wrapped Native\",\"0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2\":\"Wrapped Ether\",\"0xa0b86991c6218b36c1d19d",
+      "quality": {
+        "quality": "real",
+        "has_real_assertion": true,
+        "size": 10080
+      }
+    },
+    "H-R7-HR-05": {
+      "skipped": true,
+      "reason": "no test file or exempt prefix"
+    },
+    "H-R7-CH-04": {
+      "skipped": true,
+      "reason": "no test file or exempt prefix"
+    },
+    "H-R7-CH-06": {
+      "skipped": true,
+      "reason": "no test file or exempt prefix"
+    },
+    "H-R7-CH-09": {
+      "skipped": true,
+      "reason": "no test file or exempt prefix"
+    }
+  }
+}

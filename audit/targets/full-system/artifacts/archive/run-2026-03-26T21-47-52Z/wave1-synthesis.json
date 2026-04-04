@@ -1,0 +1,396 @@
+{
+  "wave": 1,
+  "name": "black-hat-offense",
+  "timestamp": "2026-03-27T00:26:19Z",
+  "run_id": "run-2026-03-26T21-47-52Z",
+  "hot_spots": [
+    {
+      "contract": "FixedHelper.sol",
+      "function": "_collectPositionSide",
+      "repo": "lbamm-pool-type-fixed",
+      "score": 6.0,
+      "reason": "Unchecked block with complex subtraction at line 516. The --sideValue adjustment and consumedLiquidity tracking are correct but subtle. Multi-LP withdrawal order matters for individual LP values (though totals are conserved).",
+      "static_hits": 0,
+      "cross_boundary": false,
+      "_score": 144.5
+    },
+    {
+      "contract": "FixedHelper.sol",
+      "function": "_splitAmountsAndFeesByHeight",
+      "repo": "lbamm-pool-type-fixed",
+      "score": 5.5,
+      "reason": "Complex swap splitting logic with multiple subtraction operations and boundary adjustments. The returnableInput path (lines 1601-1619) and the amountInFromOutputHeightDelta adjustment (lines 1636-1648) have multiple potential underflow points, all guarded by the validation at lines 1662-1682.",
+      "static_hits": 0,
+      "cross_boundary": false,
+      "_score": 144.0
+    },
+    {
+      "contract": "FixedHelper.sol",
+      "function": "_calculateLiquidityStartAndEndHeights",
+      "repo": "lbamm-pool-type-fixed",
+      "score": 4.5,
+      "reason": "Precision truncation at lines 360-378 causes withdrawal amplification (request 1, get precision). Not exploitable for value theft but could surprise LPs. Divide-before-multiply at lines 319/342 is intentional floor rounding.",
+      "static_hits": 2,
+      "cross_boundary": false,
+      "_score": 143.0
+    }
+  ],
+  "findings": [
+    {
+      "id": "AUTH-001",
+      "title": "Hook fees not proportionally adjusted on partial fill, causing user overcharge",
+      "severity": "medium",
+      "confidence_score": 65,
+      "confidence_deductions": [
+        "-10: requires partial fill (pool hits sqrtPrice limit)",
+        "-10: hook fees must be configured on the token (AMMStandardHook supports this natively)",
+        "-15: prior round R6 dismissed as by-design, but missed the asymmetry with exchange fee adjustment"
+      ],
+      "status": "confirmed",
+      "category": "fee-accounting",
+      "description": "In _poolSwapByOutput and _poolSwapByInput, hook fees are stored via _storeHookFees BEFORE the pool call. On partial fill, exchange fees and LP fees are proportionally reduced (lines 1415-1426 for input, lines 1569-1583 for output), but stored hook fees are NOT adjusted. This creates a disproportionate fee charge: the hook receives the full fee while the pool only consumed a fraction of the swap amount. The user absorbs the overcharge as reduced output (output swaps) or increased cost (input swaps).",
+      "impact": "User overpays hook fees on partial fills. For 10% hook fee and 50% partial fill: user loses ~5% of their swap value to the hook compared to proportional allocation. Token creator (hook fee recipient) profits.",
+      "proof_sketch": "Numerical trace: Output swap requesting 1000 tokens, 10% hook fee. _applySwapByOutputOutputFees stores 100 tokens as hook fee, inflates amountOut to 1100. Pool partial fills to 550. amountOutAdjustment=550, adjustedAmountSpecified=1000-550=450. User gets 450. Hook gets full 100. Proportionally correct: user should get 500, hook 50. User loses 50 tokens (5%).",
+      "victim": "Swap users who experience partial fills on pools with token hook fees",
+      "extractable_value": "hookFeeBPS * (originalAmount - actualAmount) / MAX_BPS per partial fill swap. For 500 BPS (5%) hook fee on 100 ETH swap with 50% fill: ~2.5 ETH overcharge.",
+      "attack_sequence": [
+        "1. Token creator configures hook fees via CreatorHookSettingsRegistry.setTokenSettings (e.g., 500 BPS sell fee)",
+        "2. User initiates output-based swap requesting X output tokens",
+        "3. AMMModule._executeBeforeSwapHooks computes hook fee F = hookBPS * X / MAX_BPS",
+        "4. _applySwapByOutputOutputFees stores F in tokensOwed and inflates amountOut to X + F",
+        "5. Pool type hits sqrtPriceLimit, returns actualAmountOut < X + F (partial fill)",
+        "6. Partial fill adjustment reduces adjustedAmountSpecified but does NOT reduce stored hook fee F",
+        "7. User receives adjustedAmountSpecified (reduced) while hook claims full F",
+        "8. Hook fee recipient (token creator) collects overcharge via collectHookFeesByHook"
+      ],
+      "test_file": "lbamm-hooks-and-handlers/test/AuditAuthForgerW1R7.t.sol",
+      "test_passes": true,
+      "prerequisites": [
+        "Token must have hook fees configured (AMMStandardHook supports natively)",
+        "Swap must hit sqrtPriceLimit causing partial fill (normal market condition)",
+        "Output-based or input-based swap (both affected)"
+      ],
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_applySwapByInputInputFees()",
+        "_applySwapByOutputOutputFees()",
+        "_poolSwapByInput()",
+        "_poolSwapByOutput()",
+        "_storeHookFees()"
+      ],
+      "lines": {
+        "AMMModule.sol": [
+          1374,
+          1413,
+          1415,
+          1416,
+          1419,
+          1420,
+          1423,
+          1537,
+          1559,
+          1569,
+          1576,
+          1577,
+          2625,
+          2642,
+          2871,
+          2887
+        ]
+      },
+      "keywords": [
+        "partial-fill",
+        "hook-fee",
+        "fee-accounting",
+        "overcharge",
+        "proportional-adjustment"
+      ],
+      "fp_gate": {
+        "location_exists": true,
+        "entry_reachable": true,
+        "no_existing_guard": true,
+        "concrete_attack_path": true,
+        "poc_compiles": true
+      },
+      "kill_gate": {
+        "status": "flagged",
+        "gate": "V2-refutation",
+        "reason": "Missing refutation_attempted \u2014 you must argue against your own finding before submitting"
+      },
+      "_source_agent": "auth-forger",
+      "consensus_count": 1,
+      "contributing_agents": [
+        "auth-forger"
+      ],
+      "canonical_id": "CORE-001"
+    }
+  ],
+  "contradictions": [
+    {
+      "finding_id": "AUTH-001",
+      "finding_agent": "auth-forger",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "auth-forger",
+      "shared_contracts": [
+        "AMMModule.sol"
+      ],
+      "match_reason": "keywords: ['hook-fee']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "AUTH-001",
+      "finding_agent": "auth-forger",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "auth-forger",
+      "shared_contracts": [
+        "AMMModule.sol"
+      ],
+      "match_reason": "functions: ['_applySwapByInputInputFees()']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "AUTH-001",
+      "finding_agent": "auth-forger",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "auth-forger",
+      "shared_contracts": [
+        "AMMModule.sol"
+      ],
+      "match_reason": "functions: ['_poolSwapByInput()', '_poolSwapByOutput()']; keywords: ['hook-fee']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "AUTH-001",
+      "finding_agent": "auth-forger",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "cross-boundary",
+      "shared_contracts": [
+        "AMMModule.sol"
+      ],
+      "match_reason": "functions: ['_applySwapByInputInputFees()']; keywords: ['hook-fee']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "AUTH-001",
+      "finding_agent": "auth-forger",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "cross-boundary",
+      "shared_contracts": [
+        "AMMModule.sol"
+      ],
+      "match_reason": "functions: ['_applySwapByInputInputFees()', '_applySwapByOutputOutputFees()']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "AUTH-001",
+      "finding_agent": "auth-forger",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "cross-boundary",
+      "shared_contracts": [
+        "AMMModule.sol"
+      ],
+      "match_reason": "functions: ['_applySwapByInputInputFees()', '_applySwapByOutputOutputFees()']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "AUTH-001",
+      "finding_agent": "auth-forger",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "composability-exploiter",
+      "shared_contracts": [
+        "AMMModule.sol"
+      ],
+      "match_reason": "keywords: ['partial-fill']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "AUTH-001",
+      "finding_agent": "auth-forger",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "composability-exploiter",
+      "shared_contracts": [
+        "AMMModule.sol"
+      ],
+      "match_reason": "functions: ['_poolSwapByInput()', '_poolSwapByOutput()']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "AUTH-001",
+      "finding_agent": "auth-forger",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "composability-exploiter",
+      "shared_contracts": [
+        "AMMModule.sol"
+      ],
+      "match_reason": "functions: ['_storeHookFees()']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "AUTH-001",
+      "finding_agent": "auth-forger",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "composability-exploiter",
+      "shared_contracts": [
+        "AMMModule.sol"
+      ],
+      "match_reason": "functions: ['_applySwapByInputInputFees()', '_applySwapByOutputOutputFees()', '_poolSwapByInput()', '_poolSwapByOutput()']; keywords: ['overcharge', 'partial-fill']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "AUTH-001",
+      "finding_agent": "auth-forger",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "composability-exploiter",
+      "shared_contracts": [
+        "AMMModule.sol"
+      ],
+      "match_reason": "functions: ['_poolSwapByInput()', '_poolSwapByOutput()']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    }
+  ],
+  "ruled_out_count": 142,
+  "invariants_formalized": [],
+  "tool_coverage_warnings": [
+    "TOOL_COVERAGE: precision-sniper (precision-sniper) did NOT run aderyn \u2014 reason: Slither coverage sufficient for precision-sniper scope",
+    "TOOL_COVERAGE: precision-sniper (precision-sniper) did NOT run entry_point_analyzer \u2014 reason: no reason given",
+    "TOOL_COVERAGE: precision-sniper (precision-sniper) did NOT run audit_context_building \u2014 reason: no reason given",
+    "TOOL_COVERAGE: precision-sniper (precision-sniper) did not report on conditional tool token_integration_analyzer \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: precision-sniper (precision-sniper) did not report on conditional tool sharp_edges \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: auth-forger (auth-forger) did not report on conditional tool token_integration_analyzer \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: auth-forger (auth-forger) did not report on conditional tool sharp_edges \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: math-deep-diver (math-deep-diver) has no tools_run in metadata \u2014 likely ran NO external tools",
+    "TOOL_COVERAGE: cross-boundary (Cross-Boundary Tracer) did not report on conditional tool token_integration_analyzer \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: cross-boundary (Cross-Boundary Tracer) did not report on conditional tool sharp_edges \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: composability-exploiter (Cross-component composition vulnerability hunter) did NOT run entry_point_analyzer \u2014 reason: no reason given",
+    "TOOL_COVERAGE: composability-exploiter (Cross-component composition vulnerability hunter) did NOT run audit_context_building \u2014 reason: no reason given",
+    "TOOL_COVERAGE: composability-exploiter (Cross-component composition vulnerability hunter) did not report on conditional tool token_integration_analyzer \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: composability-exploiter (Cross-component composition vulnerability hunter) did not report on conditional tool sharp_edges \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: price-distorter (price-distorter) did NOT run entry_point_analyzer \u2014 reason: no reason given",
+    "TOOL_COVERAGE: price-distorter (price-distorter) did NOT run audit_context_building \u2014 reason: no reason given",
+    "TOOL_COVERAGE: price-distorter (price-distorter) did not report on conditional tool token_integration_analyzer \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: price-distorter (price-distorter) did not report on conditional tool sharp_edges \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: insolvency-engineer (unknown) did not report on conditional tool token_integration_analyzer \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: insolvency-engineer (unknown) did not report on conditional tool sharp_edges \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: extension-hijacker (unknown) did not report on conditional tool token_integration_analyzer \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: extension-hijacker (unknown) did not report on conditional tool sharp_edges \u2014 add to tools_run with ran=false and reason if not applicable",
+    "LENS_COVERAGE: auth-forger (auth-forger) has no lens_coverage in metadata \u2014 likely did NOT apply value lifecycle lenses",
+    "LENS_COVERAGE: math-deep-diver (math-deep-diver) has no lens_coverage in metadata \u2014 likely did NOT apply value lifecycle lenses",
+    "LENS_COVERAGE: cross-boundary (Cross-Boundary Tracer) has no lens_coverage in metadata \u2014 likely did NOT apply value lifecycle lenses",
+    "LENS_COVERAGE: composability-exploiter (Cross-component composition vulnerability hunter) has no lens_coverage in metadata \u2014 likely did NOT apply value lifecycle lenses",
+    "LENS_COVERAGE: price-distorter (price-distorter) has no lens_coverage in metadata \u2014 likely did NOT apply value lifecycle lenses",
+    "LENS_COVERAGE: insolvency-engineer (unknown) has no lens_coverage in metadata \u2014 likely did NOT apply value lifecycle lenses",
+    "LENS_COVERAGE: extension-hijacker (unknown) has no lens_coverage in metadata \u2014 likely did NOT apply value lifecycle lenses"
+  ],
+  "exploit_clusters": [
+    {
+      "primitive": "price_manipulation",
+      "boundary": "single_contract",
+      "asset": "Swap users who experience partial fills on pools with token hook fees",
+      "findings": [
+        {
+          "id": "AUTH-001",
+          "title": "Hook fees not proportionally adjusted on partial fill, causing user overcharge",
+          "severity": "medium",
+          "confidence_score": 65,
+          "confidence_deductions": [
+            "-10: requires partial fill (pool hits sqrtPrice limit)",
+            "-10: hook fees must be configured on the token (AMMStandardHook supports this natively)",
+            "-15: prior round R6 dismissed as by-design, but missed the asymmetry with exchange fee adjustment"
+          ],
+          "status": "confirmed",
+          "category": "fee-accounting",
+          "description": "In _poolSwapByOutput and _poolSwapByInput, hook fees are stored via _storeHookFees BEFORE the pool call. On partial fill, exchange fees and LP fees are proportionally reduced (lines 1415-1426 for input, lines 1569-1583 for output), but stored hook fees are NOT adjusted. This creates a disproportionate fee charge: the hook receives the full fee while the pool only consumed a fraction of the swap amount. The user absorbs the overcharge as reduced output (output swaps) or increased cost (input swaps).",
+          "impact": "User overpays hook fees on partial fills. For 10% hook fee and 50% partial fill: user loses ~5% of their swap value to the hook compared to proportional allocation. Token creator (hook fee recipient) profits.",
+          "proof_sketch": "Numerical trace: Output swap requesting 1000 tokens, 10% hook fee. _applySwapByOutputOutputFees stores 100 tokens as hook fee, inflates amountOut to 1100. Pool partial fills to 550. amountOutAdjustment=550, adjustedAmountSpecified=1000-550=450. User gets 450. Hook gets full 100. Proportionally correct: user should get 500, hook 50. User loses 50 tokens (5%).",
+          "victim": "Swap users who experience partial fills on pools with token hook fees",
+          "extractable_value": "hookFeeBPS * (originalAmount - actualAmount) / MAX_BPS per partial fill swap. For 500 BPS (5%) hook fee on 100 ETH swap with 50% fill: ~2.5 ETH overcharge.",
+          "attack_sequence": [
+            "1. Token creator configures hook fees via CreatorHookSettingsRegistry.setTokenSettings (e.g., 500 BPS sell fee)",
+            "2. User initiates output-based swap requesting X output tokens",
+            "3. AMMModule._executeBeforeSwapHooks computes hook fee F = hookBPS * X / MAX_BPS",
+            "4. _applySwapByOutputOutputFees stores F in tokensOwed and inflates amountOut to X + F",
+            "5. Pool type hits sqrtPriceLimit, returns actualAmountOut < X + F (partial fill)",
+            "6. Partial fill adjustment reduces adjustedAmountSpecified but does NOT reduce stored hook fee F",
+            "7. User receives adjustedAmountSpecified (reduced) while hook claims full F",
+            "8. Hook fee recipient (token creator) collects overcharge via collectHookFeesByHook"
+          ],
+          "test_file": "lbamm-hooks-and-handlers/test/AuditAuthForgerW1R7.t.sol",
+          "test_passes": true,
+          "prerequisites": [
+            "Token must have hook fees configured (AMMStandardHook supports natively)",
+            "Swap must hit sqrtPriceLimit causing partial fill (normal market condition)",
+            "Output-based or input-based swap (both affected)"
+          ],
+          "repos": [
+            "lbamm-core"
+          ],
+          "contracts": [
+            "AMMModule.sol"
+          ],
+          "functions": [
+            "_applySwapByInputInputFees()",
+            "_applySwapByOutputOutputFees()",
+            "_poolSwapByInput()",
+            "_poolSwapByOutput()",
+            "_storeHookFees()"
+          ],
+          "lines": {
+            "AMMModule.sol": [
+              1374,
+              1413,
+              1415,
+              1416,
+              1419,
+              1420,
+              1423,
+              1537,
+              1559,
+              1569,
+              1576,
+              1577,
+              2625,
+              2642,
+              2871,
+              2887
+            ]
+          },
+          "keywords": [
+            "partial-fill",
+            "hook-fee",
+            "fee-accounting",
+            "overcharge",
+            "proportional-adjustment"
+          ],
+          "fp_gate": {
+            "location_exists": true,
+            "entry_reachable": true,
+            "no_existing_guard": true,
+            "concrete_attack_path": true,
+            "poc_compiles": true
+          },
+          "kill_gate": {
+            "status": "flagged",
+            "gate": "V2-refutation",
+            "reason": "Missing refutation_attempted \u2014 you must argue against your own finding before submitting"
+          },
+          "_source_agent": "auth-forger",
+          "consensus_count": 1,
+          "contributing_agents": [
+            "auth-forger"
+          ],
+          "canonical_id": "CORE-001"
+        }
+      ],
+      "agent_count": 1,
+      "max_confidence": 30,
+      "has_test": true
+    }
+  ],
+  "claims": [],
+  "corroborated_theses": []
+}

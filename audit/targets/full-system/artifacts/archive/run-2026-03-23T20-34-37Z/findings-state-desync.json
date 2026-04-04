@@ -1,0 +1,550 @@
+{
+  "agent_name": "state-desync",
+  "agent_role": "State Desync Operator",
+  "wave": 1,
+  "findings": [
+    {
+      "id": "HOOK-003",
+      "title": "validateHandlerOrder accepts extreme-price orders when sqrtPriceX96 overflows to 0 with max-only bounds",
+      "severity": "low",
+      "confidence_score": 95,
+      "confidence_deductions": [],
+      "status": "confirmed",
+      "category": "state-desync",
+      "description": "In AMMStandardHook.validateHandlerOrder (line 215), when computeRatioX96 overflows and returns 0 due to an extreme amount ratio, the max-only pricing bounds check is silently bypassed. The min check (line 218) passes because minSqrtPriceX96 is 0 (0 != 0 is false). The max check (line 221) passes because 0 > maxSqrtPriceX96 is false. Compare with _validatePricingBounds (line 847) which correctly reverts on sqrtPriceX96==0. A token creator who sets only a max price ceiling (no minimum) gets no protection against CLOB handler orders with extreme price ratios that overflow the uint160 computation.",
+      "impact": "Token creator sets max-only pricing bounds to prevent trading at extreme prices. CLOB orders with extreme ratios bypass the max bound entirely. The token is traded at prices far above the intended maximum through the CLOB handler. Impact is limited to CLOB handler orders (not direct AMM swaps which use _validatePricingBounds with the sqrtPriceX96==0 revert).",
+      "proof_sketch": "1. Token creator sets pricing bounds: min=0, max=1e30. 2. Attacker creates CLOB order with amountIn=1, amountOut=type(uint256).max. 3. computeRatioX96 overflows, returns 0. 4. validateHandlerOrder: min check skipped (min=0), max check 0>1e30=false, PASSES. 5. Order accepted at extreme price despite max bound.",
+      "victim": "Token creator who configured max-only pricing bounds",
+      "extractable_value": "Depends on CLOB order fill - attacker trades at price above intended maximum",
+      "attack_sequence": [
+        "Set up token with AMMStandardHook pricing bounds: min=0, max=reasonable_value",
+        "Create CLOB handler order with extreme ratio: amountIn=1 wei, amountOut=type(uint256).max",
+        "computeRatioX96 overflows, returns sqrtPriceX96=0",
+        "validateHandlerOrder: min check (0!=0) false, max check (0>maxPrice) false, PASSES",
+        "Order is accepted and can be filled despite effective price far exceeding max bound"
+      ],
+      "test_file": "lbamm-hooks-and-handlers/test/AuditStateDesyncWave1.t.sol",
+      "test_passes": true,
+      "prerequisites": [
+        "Token with AMMStandardHook configured with max-only pricing bounds",
+        "CLOB transfer handler for the token pair"
+      ],
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol",
+        "SqrtPriceCalculator.sol"
+      ],
+      "functions": [
+        "validateHandlerOrder()",
+        "computeRatioX96()"
+      ],
+      "lines": {
+        "AMMStandardHook.sol": [
+          198,
+          215,
+          217,
+          218,
+          221
+        ],
+        "SqrtPriceCalculator.sol": [
+          28,
+          51,
+          52,
+          53
+        ]
+      },
+      "keywords": [
+        "pricing-bounds-bypass",
+        "overflow",
+        "validateHandlerOrder",
+        "CLOB"
+      ],
+      "source_hypothesis": "H-R2-HR-02",
+      "fp_gate": {
+        "location_exists": true,
+        "entry_reachable": true,
+        "no_existing_guard": true,
+        "concrete_attack_path": true,
+        "poc_compiles": true
+      },
+      "kill_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "id": "HOOK-004",
+      "title": "Non-token hook fees stored with hash(tokenFor,tokenFor) but withdrawn with hash(tokenFor,tokenFee) - key mismatch locks fees when tokens differ",
+      "severity": "low",
+      "confidence_score": 85,
+      "confidence_deductions": [
+        "Requires hook developer to call collectHookFeesByHook with tokenFor != tokenFee (-15 for self-inflicted)"
+      ],
+      "status": "confirmed",
+      "category": "state-desync",
+      "description": "In AMMModule._storeNonTokenHookFees (line 3018), the storage key uses efficientHash(tokenFor, tokenFor) - the same address appears twice. But _transferHookFeesByHook (line 3125) uses efficientHash(tokenFor, tokenFee). When a hook developer calls collectHookFeesByHook with tokenFor != tokenFee, the withdrawal key doesn't match the storage key, and the fees are permanently locked. The API signature of collectHookFeesByHook(tokenFor, tokenFee, recipient, amount) suggests tokenFor and tokenFee can differ, but for non-token hooks (liquidity/pool hooks) they cannot.",
+      "impact": "Liquidity hook or pool hook fees become permanently non-withdrawable if the hook developer calls collectHookFeesByHook with different tokenFor and tokenFee parameters. The hook must use tokenFor=tokenFee to match the storage key. This is an API design footgun with potential for permanent fund lock.",
+      "proof_sketch": "1. Pool swap generates fees for liquidityHook. 2. _storeNonTokenHookFees(hook, token0, feeAmount) stores at key=hash(hook, hash(token0, token0)). 3. Hook calls collectHookFeesByHook(token0, token1, recipient, amount). 4. _transferHookFeesByHook computes key=hash(hook, hash(token0, token1)) - DIFFERENT key. 5. Lookup returns 0, underflow revert. Fees locked.",
+      "victim": "Hook developer whose fees are permanently locked due to API misuse",
+      "extractable_value": "No direct extraction - permanent fund lock for the hook",
+      "attack_sequence": [
+        "_storeNonTokenHookFees(hook, token0, 100e18) stores fees at hash(hook, hash(token0, token0))",
+        "Hook calls collectHookFeesByHook(token0, token1, recipient, 100e18)",
+        "_transferHookFeesByHook computes key = hash(hook, hash(token0, token1))",
+        "Key mismatch: lookup returns 0, subtraction underflows, revert",
+        "Fees permanently locked - no code path can recover them"
+      ],
+      "test_file": "lbamm-hooks-and-handlers/test/AuditStateDesyncWave1.t.sol",
+      "test_passes": true,
+      "prerequisites": [
+        "Liquidity or pool hook that accumulates fees",
+        "Hook developer calls collectHookFeesByHook with tokenFor != tokenFee"
+      ],
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_storeNonTokenHookFees()",
+        "_transferHookFeesByHook()",
+        "collectHookFeesByHook()"
+      ],
+      "lines": {
+        "AMMModule.sol": [
+          3011,
+          3016,
+          3017,
+          3018,
+          3116,
+          3123,
+          3124,
+          3125
+        ]
+      },
+      "keywords": [
+        "hash-key-mismatch",
+        "fund-lock",
+        "hook-fees",
+        "non-token-hook"
+      ],
+      "source_hypothesis": "H-R2-CH-11",
+      "fp_gate": {
+        "location_exists": true,
+        "entry_reachable": true,
+        "no_existing_guard": true,
+        "concrete_attack_path": true,
+        "poc_compiles": true
+      },
+      "kill_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    }
+  ],
+  "ruled_out_vectors": [
+    {
+      "vector": "H-R2-TS-03: Operator precedence bug in registryUpdatePricingBounds (line 567)",
+      "why_ruled_out": "Solidity's | operator has higher precedence than ==. Expression `minSqrtPriceX96 | maxSqrtPriceX96 == 0` evaluates as `(minSqrtPriceX96 | maxSqrtPriceX96) == 0`, which is the intended behavior. Forge test confirms all cases work correctly.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditStateDesyncWave1.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "registryUpdatePricingBounds()"
+      ],
+      "keywords": [
+        "operator-precedence",
+        "pricing-bounds"
+      ]
+    },
+    {
+      "vector": "H-R2-TS-08: Operator precedence bug in createPoolAndAddLiquidity (line 90)",
+      "why_ruled_out": "Same precedence: `deposit0 | deposit1 == 0` evaluates as `(deposit0 | deposit1) == 0`. Single-sided deposits with deposit1=0 correctly evaluate to false (no revert). Forge test confirms.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditStateDesyncWave1.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "ModuleLiquidity.sol"
+      ],
+      "functions": [
+        "createPool()"
+      ],
+      "keywords": [
+        "operator-precedence",
+        "liquidity"
+      ]
+    },
+    {
+      "vector": "H-R2-DP-03: Reentrancy via flag clearing during _executeQueuedHookFeesByHookTransfers",
+      "why_ruled_out": "While _setReentrancyFlags(NO_FLAGS) at line 3190 clears operation-type flags (SWAP_GUARD_FLAG etc.), the ENTERED bit is preserved. Although collectHookFeesByHook doesn't check ENTERED directly, a callback during the fee transfer loop that calls collectHookFeesByHook would succeed in subtracting from tokensOwed, but the subsequent queue iteration would underflow and revert the entire transaction. This is a DoS vector (ERC-777 griefing) not a fund extraction vector. Forge test test_DP03_flagClearingReentrancyIsDoSOnly confirms.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditStateDesyncWave1.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol",
+        "ModuleFeeCollection.sol"
+      ],
+      "functions": [
+        "_executeQueuedHookFeesByHookTransfers()",
+        "collectHookFeesByHook()"
+      ],
+      "keywords": [
+        "reentrancy",
+        "fee-distribution",
+        "flag-clearing",
+        "ERC-777"
+      ]
+    },
+    {
+      "vector": "H-R2-TS-02: Direct swap afterSwap-only with pricing bounds causes DoS",
+      "why_ruled_out": "Requires token hook configuration with afterSwap enabled but beforeSwap disabled. This is a configuration choice by the token creator (self-inflicted). The DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT being 0 causes computeRatioX96 to return MIN_SQRT_RATIO or MAX_SQRT_RATIO, which would likely exceed bounds. But token creators set their own hook flags - misconfiguration is self-inflicted, not attacker-exploitable.",
+      "test_file": "code-analysis: AMMStandardHook.sol:838-851",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "_validatePricingBounds()"
+      ],
+      "keywords": [
+        "direct-swap",
+        "afterSwap-only",
+        "transient-storage",
+        "DoS"
+      ]
+    },
+    {
+      "vector": "H-R2-CH-08: afterSwapRefund reentrancy into CLOB",
+      "why_ruled_out": "While afterSwapRefund lacks nonReentrant modifier, the executor's receive() callback can only call CLOB functions for the executor's own maker balance. Withdrawing own legitimate balance during a callback is not an exploit. The AMM's balance check has already passed by this point, and the CLOB's balance accounting is independent. Forge test test_C12_afterSwapRefundAMMGated confirms AMM-gated access.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditStateDesyncWave1.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "CLOBTransferHandler.sol"
+      ],
+      "functions": [
+        "afterSwapRefund()"
+      ],
+      "keywords": [
+        "reentrancy",
+        "CLOB",
+        "afterSwapRefund",
+        "WRAPPED_NATIVE"
+      ]
+    },
+    {
+      "vector": "C23: SIR pattern - reverted swap leaves dirty transient storage",
+      "why_ruled_out": "EVM spec (EIP-1153) guarantees TSTORE writes are reverted when the call frame reverts. A reverted first swap cannot leave stale transient data for a second swap. The known HOOK-001 issue (CP-001) is about SUCCESSFUL swaps leaving stale data, not reverted ones.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditStateDesyncWave1.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [],
+      "keywords": [
+        "transient-storage",
+        "revert",
+        "SIR-pattern",
+        "EIP-1153"
+      ]
+    },
+    {
+      "vector": "C25: Fee-on-transfer token creates phantom liquidity",
+      "why_ruled_out": "The AMM uses balance-before vs balance-after checks in _finalizeSwapCollectFundsAndDisburse (line 2208) and _collectToken (line 2915-2917). Fee-on-transfer tokens would cause the actual balance delta to be less than expected, triggering a revert. Forge tests test_C6 and test_C7 confirm the balance check pattern.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditStateDesyncWave1.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_finalizeSwapCollectFundsAndDisburse()",
+        "_collectToken()"
+      ],
+      "keywords": [
+        "fee-on-transfer",
+        "phantom-liquidity",
+        "balance-check"
+      ]
+    },
+    {
+      "vector": "H-R2-CH-06: CLOB rounding overconsumption makes orderbook unfillable",
+      "why_ruled_out": "The per-fill check at CLOBHelper.sol:228 (if stepOutput > fillOutputRemaining revert) prevents any single fill from exceeding the remaining. While cumulative rounding across many small orders could theoretically exceed the total, this is bounded by the per-fill check. Forge test test_CH06_CLOBRoundingBounded confirms bounded behavior.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditStateDesyncWave1.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "CLOBHelper.sol"
+      ],
+      "functions": [
+        "fillOrder()"
+      ],
+      "keywords": [
+        "rounding",
+        "CLOB",
+        "overconsumption",
+        "griefing"
+      ]
+    },
+    {
+      "vector": "H-R2-CP-01: Dust front-running in FixedHelper._accumulateDustToWithdrawal",
+      "why_ruled_out": "Dust accumulated from swap rounding is dust-level (at most 1 wei per swap). Even after 1000 swaps, total dust is at most 1000 wei - far below gas costs for a front-running transaction. Economic impact below submission threshold.",
+      "test_file": "code-analysis: FixedHelper.sol:271-290",
+      "repos": [
+        "lbamm-pool-type-fixed"
+      ],
+      "contracts": [
+        "FixedHelper.sol"
+      ],
+      "functions": [
+        "_accumulateDustToWithdrawal()"
+      ],
+      "keywords": [
+        "dust",
+        "front-running",
+        "rounding"
+      ]
+    },
+    {
+      "vector": "H-R2-CP-08: Off-by-one amountIn in FixedHelper._splitAmountsAndFeesByHeight",
+      "why_ruled_out": "The +1 tolerance at line 1680 allows totalAmountInFilled = amountIn + 1. Core's balance check at line 2208 uses actual token balances, not the returned amountIn. If the pool type returns amountIn+1 but only amountIn tokens were actually collected, the balance check would catch the discrepancy. Safe by design.",
+      "test_file": "code-analysis: FixedHelper.sol:1678-1692, AMMModule.sol:2207-2208",
+      "repos": [
+        "lbamm-pool-type-fixed",
+        "lbamm-core"
+      ],
+      "contracts": [
+        "FixedHelper.sol",
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_splitAmountsAndFeesByHeight()",
+        "_finalizeSwapCollectFundsAndDisburse()"
+      ],
+      "keywords": [
+        "off-by-one",
+        "amountIn",
+        "balance-check"
+      ]
+    }
+  ],
+  "theft_theses": [
+    {
+      "thesis": "Overflow in computeRatioX96 returns sqrtPriceX96=0, bypassing max-only pricing bounds in validateHandlerOrder. Token creator's max price ceiling is nullified for CLOB orders.",
+      "victim": "Token creator who set max-only pricing bounds",
+      "asset": "Price protection on CLOB handler orders",
+      "estimated_ev": 0,
+      "status": "confirmed"
+    },
+    {
+      "thesis": "Hash key mismatch in _storeNonTokenHookFees (uses tokenFor twice) vs _transferHookFeesByHook (uses tokenFor, tokenFee) causes permanent fund lock when hook developer calls collectHookFeesByHook with different tokens",
+      "victim": "Hook developer with locked fees",
+      "asset": "Accumulated non-token hook fees",
+      "estimated_ev": 0,
+      "status": "confirmed"
+    },
+    {
+      "thesis": "Reentrancy during _executeQueuedHookFeesByHookTransfers via ERC-777 callback allows collectHookFeesByHook to execute, causing underflow DoS",
+      "victim": "Swap users - transaction reverts",
+      "asset": "Swap availability (DoS)",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Operator precedence bug in registryUpdatePricingBounds line 567 makes max-only bounds silently ignored",
+      "victim": "Token creator",
+      "asset": "Price protection",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Operator precedence bug in createPoolAndAddLiquidity line 90 blocks single-sided pool creation",
+      "victim": "Pool creators",
+      "asset": "Pool creation functionality",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Flash loan callback can observe stale state and re-enter AMM for extraction",
+      "victim": "LPs and pool",
+      "asset": "Pool reserves",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Malicious token hook can sandwich AMM state during beforeSwap/afterSwap callback",
+      "victim": "Swap users",
+      "asset": "Swap output amount",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    }
+  ],
+  "hypothesis_results": [
+    {
+      "id": "H-R2-HR-02",
+      "status": "confirmed",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditStateDesyncWave1.t.sol",
+      "detail": "sqrtPriceX96=0 from overflow bypasses max-only bounds in validateHandlerOrder. Test test_HR02_overflowPriceBypasses_maxOnlyBounds passes without revert."
+    },
+    {
+      "id": "H-R2-DP-03",
+      "status": "dismissed",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditStateDesyncWave1.t.sol",
+      "detail": "Flag clearing preserves ENTERED bit. Callback reentrancy into collectHookFeesByHook would cause underflow revert (DoS not extraction). Test test_DP03_flagClearingReentrancyIsDoSOnly confirms."
+    },
+    {
+      "id": "H-R2-TS-02",
+      "status": "dismissed",
+      "test_file": "code-analysis: AMMStandardHook.sol:838-851",
+      "detail": "afterSwap-only + pricing bounds = self-inflicted configuration. Token creator controls hook flags."
+    },
+    {
+      "id": "H-R2-TS-03",
+      "status": "dismissed",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditStateDesyncWave1.t.sol",
+      "detail": "Solidity | has higher precedence than ==. Expression evaluates correctly as (a|b)==0."
+    },
+    {
+      "id": "H-R2-TS-08",
+      "status": "dismissed",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditStateDesyncWave1.t.sol",
+      "detail": "Same precedence - deposit0|deposit1==0 is (deposit0|deposit1)==0 (correct)."
+    },
+    {
+      "id": "H-R2-CP-01",
+      "status": "dismissed",
+      "test_file": "code-analysis: FixedHelper.sol:271-290",
+      "detail": "Dust is 1 wei per swap. Economic impact below gas cost threshold."
+    },
+    {
+      "id": "H-R2-CP-05",
+      "status": "dismissed",
+      "test_file": "code-analysis: DynamicPoolType.sol:216-234",
+      "detail": "Empty pool price manipulation via snapPrice is a known AMM design property. The snapPrice feature is permissioned and the attacker needs to add liquidity at manipulated price, bearing IL risk."
+    },
+    {
+      "id": "H-R2-CP-08",
+      "status": "dismissed",
+      "test_file": "code-analysis: FixedHelper.sol:1678-1692, AMMModule.sol:2207-2208",
+      "detail": "Core balance check catches any +1 discrepancy from pool type."
+    },
+    {
+      "id": "H-R2-CH-04",
+      "status": "dismissed",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditStateDesyncWave1.t.sol",
+      "detail": "Handler receives adjustedAmountSpecified (gross amount). Balance check at line 2208 uses same value. Test test_CH04_handlerAmountInConsistency confirms no mismatch."
+    },
+    {
+      "id": "H-R2-CH-06",
+      "status": "dismissed",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditStateDesyncWave1.t.sol",
+      "detail": "Per-fill check prevents overconsumption. Rounding is 1 wei max per fill. Test test_CH06_CLOBRoundingBounded confirms bounded behavior."
+    },
+    {
+      "id": "H-R2-CH-08",
+      "status": "dismissed",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditStateDesyncWave1.t.sol",
+      "detail": "Executor can only withdraw own balance. afterSwapRefund is AMM-gated. Test test_C12_afterSwapRefundAMMGated confirms."
+    },
+    {
+      "id": "H-R2-CH-11",
+      "status": "confirmed",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditStateDesyncWave1.t.sol",
+      "detail": "Storage key hash(tokenFor,tokenFor) doesn't match withdrawal key hash(tokenFor,tokenFee) when tokens differ. Funds locked."
+    },
+    {
+      "id": "H-R2-HH-01",
+      "status": "dismissed",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditStateDesyncWave1.t.sol",
+      "detail": "Rounding divergence between CLOB price computation and hook price reconstruction is bounded. Test test_C3_tickBoundaryComputeRatio shows valid boundary behavior."
+    },
+    {
+      "id": "H-R2-HH-05",
+      "status": "dismissed",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditStateDesyncWave1.t.sol",
+      "detail": "The amount0/amount1 ordering is based on tokenIn<tokenOut, which is the correct AMM convention regardless of CLOB order direction. Test test_C15 confirms fill-or-kill integrity."
+    },
+    {
+      "id": "H-R2-CH-13",
+      "status": "dismissed",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditStateDesyncWave1.t.sol",
+      "detail": "For input swaps, handler receives adjustedAmountSpecified (original amount). Check passes. Test test_CH13_permitHandlerAmountConsistency confirms."
+    }
+  ],
+  "metadata": {
+    "checklist_items_completed": "A: 5/5, B: 5/5, C: 25/25, D: 15/15",
+    "tools_run": {
+      "slither": {
+        "ran": true,
+        "repos": [
+          "lbamm-core",
+          "lbamm-hooks-and-handlers"
+        ],
+        "note": "High/Medium detectors. lbamm-core: 30 results (reentrancy-balance, arbitrary-send-erc20, uninitialized-local). hooks-and-handlers: 35 results."
+      },
+      "aderyn": {
+        "ran": true,
+        "repos": [
+          "lbamm-core"
+        ],
+        "note": "lbamm-core completed. lbamm-hooks-and-handlers crashed (aderyn v0.6.8 panic)."
+      },
+      "forge": {
+        "ran": true,
+        "note": "37 custom tests + 7 inherited = 44 tests total. File: lbamm-hooks-and-handlers/test/AuditStateDesyncWave1.t.sol. All 44 passed."
+      },
+      "halmos": {
+        "ran": true,
+        "repos": [
+          "lbamm-hooks-and-handlers"
+        ],
+        "note": "Symbolic execution on AuditStateDesyncWave1Test. test_HR02_computeRatioX96_returns_zero_on_overflow: 1 path, PASS. Solver time 3.87s. Fuzz tests C18/C19 also symbolically verified."
+      },
+      "medusa": {
+        "ran": true,
+        "repos": [
+          "lbamm-hooks-and-handlers"
+        ],
+        "note": "Fuzz campaign on AMMStandardHook. 94335 calls in 3s with 4 workers. 288 branches covered, 23 corpus items. 0/9444 assertion test failures. All 19 assertion tests PASSED."
+      },
+      "audit-context-building": {
+        "ran": true,
+        "note": "Deep context analysis on AMMModule.sol state desync vectors: reentrancy during fee distribution, transient storage hygiene, cross-module state consistency. Identified _executeQueuedHookFeesByHookTransfers flag clearing pattern and collectHookFeesByHook flag-only guard."
+      },
+      "entry-point-analyzer": {
+        "ran": true,
+        "note": "Entry point analysis via Slither MCP on AMMModule (2 external), ModuleFeeCollection (4 state-changing external: collectTokensOwed, collectHookFeesByHook, collectHookFeesByToken, executeQueuedHookFeesByHookTransfers), ModuleLiquidity (5 state-changing external: createPool, addLiquidity, removeLiquidity, collectFees, flashLoan)."
+      }
+    },
+    "num_turns": 55,
+    "tool_uses": 85,
+    "files_read": 35,
+    "theses_tested": 15,
+    "theses_confirmed": 2,
+    "theses_ruled_out": 13,
+    "triage_log": {
+      "skip": 3,
+      "borderline": 2,
+      "survive": 10
+    },
+    "gate_passed": true
+  }
+}

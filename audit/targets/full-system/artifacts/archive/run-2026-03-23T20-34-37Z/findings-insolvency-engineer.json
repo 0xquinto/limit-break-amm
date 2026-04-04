@@ -1,0 +1,684 @@
+{
+  "agent_name": "insolvency-engineer",
+  "agent_role": "Insolvency Engineer \u2014 find ways to leave the protocol with bad debt while extracting good assets",
+  "wave": 1,
+  "findings": [],
+  "ruled_out_vectors": [
+    {
+      "vector": "H-R2-DP-03: Reentrant fee collection during _executeQueuedHookFeesByHookTransfers \u2014 _setReentrancyFlags(NO_FLAGS) clears SWAP_GUARD_FLAG, allowing collectHookFeesByHook to fall through to direct _transferHookFeesByHook during token callback",
+      "why_ruled_out": "CEI pattern prevents double-spend: tokensOwed[hookFeeKey] is decremented BEFORE safeTransfer at AMMModule.sol:3128. Second transfer attempt underflows.",
+      "test_file": "lbamm-core/test/AuditInsolvency.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol",
+        "ModuleFeeCollection.sol"
+      ],
+      "functions": [
+        "_executeQueuedHookFeesByHookTransfers()",
+        "collectHookFeesByHook()",
+        "_transferHookFeesByHook()"
+      ],
+      "keywords": [
+        "reentrancy",
+        "hook-fees",
+        "transient-storage",
+        "CEI"
+      ]
+    },
+    {
+      "vector": "H-R2-TS-02: Direct swap afterSwap-only pricing bounds DoS \u2014 if token has afterSwap=ON/beforeSwap=OFF, DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT reads 0, causing computeRatioX96 to return MIN/MAX_SQRT_RATIO and violate bounds",
+      "why_ruled_out": "Self-inflicted config error: admin independently controls beforeSwap/afterSwap flags. HOOK-001 variant. No attacker profit path \u2014 admin configures own token.",
+      "test_file": "lbamm-core/test/AuditInsolvency.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "_validatePricingBounds()"
+      ],
+      "keywords": [
+        "transient-storage",
+        "pricing-bounds",
+        "config-error",
+        "HOOK-001"
+      ]
+    },
+    {
+      "vector": "H-R2-CP-01: Dust frontrunning in FixedPoolType \u2014 _accumulateDustToWithdrawal gives all accumulated dust to first LP to withdraw",
+      "why_ruled_out": "Dust is 1 wei per swap (rounding). Even 1000 swaps = 1000 wei. Gas costs far exceed extractable value. No material economic impact.",
+      "test_file": "lbamm-core/test/AuditInsolvency.t.sol",
+      "repos": [
+        "lbamm-pool-type-fixed"
+      ],
+      "contracts": [
+        "FixedHelper.sol"
+      ],
+      "functions": [
+        "_accumulateDustToWithdrawal()"
+      ],
+      "keywords": [
+        "dust",
+        "rounding",
+        "frontrunning"
+      ]
+    },
+    {
+      "vector": "H-R2-CP-04: SingleProvider hook price manipulation \u2014 malicious hook returns extreme sqrtPriceX96 to extract value from LP",
+      "why_ruled_out": "By-design trust model: LP sets their own hook at pool creation. Only a compromised hook can manipulate prices. Protocol correctly delegates pricing to hook.",
+      "test_file": "lbamm-core/test/AuditInsolvency.t.sol",
+      "repos": [
+        "lbamm-pool-type-single-provider"
+      ],
+      "contracts": [
+        "SingleProviderPoolType.sol"
+      ],
+      "functions": [
+        "swapByInput()"
+      ],
+      "keywords": [
+        "hook",
+        "price-manipulation",
+        "trust-model"
+      ]
+    },
+    {
+      "vector": "H-R2-CP-05: Empty pool price manipulation via snapPrice \u2014 attacker front-runs liquidity removal to snap price to extreme value",
+      "why_ruled_out": "Standard Uniswap v3 behavior for empty pool repricing. Requires liquidity==0 and no initialized ticks between current/target. No tokens created/destroyed. Next participant voluntarily interacts at new price.",
+      "test_file": "lbamm-core/test/AuditInsolvency.t.sol",
+      "repos": [
+        "amm-pool-type-dynamic"
+      ],
+      "contracts": [
+        "DynamicHelper.sol"
+      ],
+      "functions": [
+        "snapPrice()"
+      ],
+      "keywords": [
+        "empty-pool",
+        "price-manipulation",
+        "snapPrice"
+      ]
+    },
+    {
+      "vector": "H-R2-CP-07: 100% fee asymmetry \u2014 swapByInput allows MAX_BPS fee, swapByOutput rejects it, creating one-directional trap",
+      "why_ruled_out": "Intentional design choice consistent across all 3 pool types (DynamicPoolType, FixedPoolType, SingleProviderPoolType). Not a bug.",
+      "test_file": "lbamm-core/test/AuditInsolvency.t.sol",
+      "repos": [
+        "amm-pool-type-dynamic",
+        "lbamm-pool-type-fixed",
+        "lbamm-pool-type-single-provider"
+      ],
+      "contracts": [
+        "DynamicPoolType.sol",
+        "FixedPoolType.sol",
+        "SingleProviderPoolType.sol"
+      ],
+      "functions": [
+        "swapByInput()",
+        "swapByOutput()"
+      ],
+      "keywords": [
+        "fee",
+        "asymmetry",
+        "design-choice"
+      ]
+    },
+    {
+      "vector": "H-R2-CP-08: Off-by-one amountIn in FixedHelper swap-by-output \u2014 +1 tolerance at line 1680 could compound across swaps",
+      "why_ruled_out": "Core's balance check at AMMModule.sol:2208 verifies actual token balance per-swap. Any discrepancy triggers revert. Cannot compound because each swap has independent balance check. Confirmed with 100-swap Forge test.",
+      "test_file": "lbamm-core/test/AuditInsolvency.t.sol",
+      "repos": [
+        "lbamm-pool-type-fixed",
+        "lbamm-core"
+      ],
+      "contracts": [
+        "FixedHelper.sol",
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_splitAmountsAndFeesByHeight()",
+        "_finalizeSwapCollectFundsAndDisburse()"
+      ],
+      "keywords": [
+        "off-by-one",
+        "rounding",
+        "balance-check"
+      ]
+    },
+    {
+      "vector": "H-R2-CP-10: SingleProvider swapByInput fallback rate arbitrage \u2014 when amountOut > reserveOut, fallback to swapByOutput may yield different effective rate",
+      "why_ruled_out": "Rate difference is 1 wei rounding (calculateFixedOutput rounds UP vs calculateFixedInput rounds DOWN). Not economically significant.",
+      "test_file": "lbamm-core/test/AuditInsolvency.t.sol",
+      "repos": [
+        "lbamm-pool-type-single-provider"
+      ],
+      "contracts": [
+        "SingleProviderHelper.sol"
+      ],
+      "functions": [
+        "swapByInput()",
+        "calculateFixedInput()",
+        "calculateFixedOutput()"
+      ],
+      "keywords": [
+        "rounding",
+        "fallback",
+        "rate-arbitrage"
+      ]
+    },
+    {
+      "vector": "H-R2-CH-04: CLOB gross vs net amountIn mismatch \u2014 handler may receive different amount than what Core's balance check expects",
+      "why_ruled_out": "For input swaps, line 2160 sets swapCache.amountIn = adjustedAmountSpecified (full gross amount). Handler receives and transfers full gross. Balance check uses same gross value. Consistent.",
+      "test_file": "lbamm-core/test/AuditInsolvency.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers",
+        "lbamm-core"
+      ],
+      "contracts": [
+        "CLOBTransferHandler.sol",
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "ammHandleTransfer()",
+        "_finalizeSwapCollectFundsAndDisburse()"
+      ],
+      "keywords": [
+        "CLOB",
+        "amount-mismatch",
+        "balance-check"
+      ]
+    },
+    {
+      "vector": "H-R2-CH-07: Non-token hook fee key asymmetry \u2014 _storeNonTokenHookFees uses hash(hook, hash(tokenFor, tokenFor)) while withdrawal uses hash(hook, hash(tokenFor, tokenFee))",
+      "why_ruled_out": "API design convention: for non-token hooks, tokenFee MUST equal tokenFor. This is by-design \u2014 hook developers must match convention. Not a vulnerability for correct usage.",
+      "test_file": "lbamm-core/test/AuditInsolvency.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_storeNonTokenHookFees()",
+        "_transferHookFeesByHook()"
+      ],
+      "keywords": [
+        "hook-fees",
+        "key-asymmetry",
+        "API-design"
+      ]
+    },
+    {
+      "vector": "H-R2-CH-08: afterSwapRefund reentrancy into CLOB \u2014 afterSwapRefund has NO nonReentrant modifier, allowing executor to call CLOB functions during WETH refund callback",
+      "why_ruled_out": "CLOB tracks balances per-maker via makerTokenBalance[token][msg.sender]. Executor can only withdraw their OWN deposited tokens, not other makers'. No cross-user fund extraction possible.",
+      "test_file": "lbamm-core/test/AuditInsolvency.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "CLOBTransferHandler.sol"
+      ],
+      "functions": [
+        "afterSwapRefund()",
+        "withdrawToken()"
+      ],
+      "keywords": [
+        "reentrancy",
+        "CLOB",
+        "refund-callback"
+      ]
+    },
+    {
+      "vector": "H-R2-CH-11: PermitTransferHandler fill-or-kill amount check with hook fees \u2014 amountSpecified vs amountIn/amountOut mismatch when hook fees reduce amounts",
+      "why_ruled_out": "For input swaps: handler receives adjustedAmountSpecified = original amountSpecified (line 2160 override). For output swaps: handler receives adjustedAmountSpecified as amountOut. Both match the fill-or-kill check.",
+      "test_file": "lbamm-core/test/AuditInsolvency.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers",
+        "lbamm-core"
+      ],
+      "contracts": [
+        "PermitTransferHandler.sol",
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_executeFillOrKillPermit()",
+        "_finalizeSwapCollectFundsAndDisburse()"
+      ],
+      "keywords": [
+        "permit",
+        "fill-or-kill",
+        "hook-fees"
+      ]
+    },
+    {
+      "vector": "H-R2-HH-01: CLOB pricing bounds bypass via rounding divergence \u2014 CLOBHelper.calculateFixedInput rounds up twice while SqrtPriceCalculator.computeRatioX96 uses integer sqrt",
+      "why_ruled_out": "Rounding divergence is ~1 unit at Q64.96 scale. For any practical pricing bounds margin, this divergence is sub-wei economically. Not exploitable.",
+      "test_file": "lbamm-core/test/AuditInsolvency.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "CLOBHelper.sol",
+        "AMMStandardHook.sol",
+        "SqrtPriceCalculator.sol"
+      ],
+      "functions": [
+        "calculateFixedInput()",
+        "validateHandlerOrder()",
+        "computeRatioX96()"
+      ],
+      "keywords": [
+        "rounding",
+        "pricing-bounds",
+        "Q96"
+      ]
+    },
+    {
+      "vector": "H-R2-HH-05: validateHandlerOrder inverted price bounds \u2014 price convention may flip when CLOB order direction reverses",
+      "why_ruled_out": "amount0/amount1 assignment at lines 212-214 always maps to AMM convention (lower address = amount0). sqrtPriceX96 = sqrt(token1/token0) is consistent regardless of order direction. Admin sets bounds knowing this convention.",
+      "test_file": "lbamm-core/test/AuditInsolvency.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "validateHandlerOrder()"
+      ],
+      "keywords": [
+        "pricing-bounds",
+        "price-convention",
+        "CLOB"
+      ]
+    },
+    {
+      "vector": "H-R2-HH-08: Direct swap no bounds check with beforeSwap-only config \u2014 beforeSwap stores amount but afterSwap never validates",
+      "why_ruled_out": "Known HOOK-001 variant. Self-inflicted config error \u2014 admin controls beforeSwap/afterSwap flags independently. No attacker profit path.",
+      "test_file": "lbamm-core/test/AuditInsolvency.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "_validatePricingBounds()"
+      ],
+      "keywords": [
+        "HOOK-001",
+        "pricing-bounds",
+        "config-error"
+      ]
+    },
+    {
+      "vector": "INV-E02: Flash loan profit \u2014 flash loan \u2192 add liquidity \u2192 swap \u2192 remove liquidity \u2192 repay with profit",
+      "why_ruled_out": "Swap fees consumed by attacker. After round-trip: endBalance <= startBalance. Confirmed with Forge test and fuzz.",
+      "test_file": "lbamm-core/test/AuditInsolvency.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_flashLoan()",
+        "_positionAddLiquidity()",
+        "_poolSwapByInput()"
+      ],
+      "keywords": [
+        "flash-loan",
+        "round-trip",
+        "solvency"
+      ]
+    },
+    {
+      "vector": "INV-S01: Token balance solvency \u2014 reserves exceed actual token balances after multiple operations",
+      "why_ruled_out": "balance >= reserve + feeBalance holds after 20+ random swaps. Confirmed with multiple Forge tests.",
+      "test_file": "lbamm-core/test/AuditInsolvency.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_finalizeSwapCollectFundsAndDisburse()"
+      ],
+      "keywords": [
+        "solvency",
+        "reserve-consistency"
+      ]
+    },
+    {
+      "vector": "INV-S02: Value creation \u2014 user profits in both tokens after round-trip swap",
+      "why_ruled_out": "Cannot gain both tokens after round-trip. Fees ensure net loss. Confirmed with fuzz test (25 runs).",
+      "test_file": "lbamm-core/test/AuditInsolvency.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_poolSwapByInput()"
+      ],
+      "keywords": [
+        "value-creation",
+        "round-trip",
+        "solvency"
+      ]
+    },
+    {
+      "vector": "INV-H05: Reentrancy guard bypass \u2014 ERC-777 callback during queued fee transfer bypasses reentrancy guard",
+      "why_ruled_out": "ENTERED bit preserved by _setReentrancyFlags. Reentrant singleSwap/addLiquidity/removeLiquidity all blocked. Confirmed with MaliciousReentrantToken test.",
+      "test_file": "lbamm-core/test/AuditInsolvency.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol",
+        "TstorishReentrancyGuardWithFlags.sol"
+      ],
+      "functions": [
+        "_executeQueuedHookFeesByHookTransfers()",
+        "_nonReentrantBefore()"
+      ],
+      "keywords": [
+        "reentrancy",
+        "ERC-777",
+        "transient-storage"
+      ]
+    },
+    {
+      "vector": "INV-H03: Transient storage hygiene \u2014 second swap in same TX reads stale transient data from first swap",
+      "why_ruled_out": "Each swap writes its own data to transient slots. Second swap overwrites first's data. No stale data leak. Confirmed with Forge test.",
+      "test_file": "lbamm-core/test/AuditInsolvency.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_initializeSwapCache()"
+      ],
+      "keywords": [
+        "transient-storage",
+        "EIP-1153"
+      ]
+    },
+    {
+      "vector": "C21: Callback state corruption (Bunni/Curve pattern) \u2014 MaliciousToken re-enters during transfer to read inconsistent mid-finalization state",
+      "why_ruled_out": "AMM updates reserves BEFORE token transfer (CEI pattern). View calls during callback see fully-updated state. State-changing re-entries blocked by reentrancy guard.",
+      "test_file": "lbamm-core/test/AuditInsolvency.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_finalizeSwapCollectFundsAndDisburse()"
+      ],
+      "keywords": [
+        "callback",
+        "reentrancy",
+        "CEI",
+        "Bunni",
+        "Curve"
+      ]
+    },
+    {
+      "vector": "C25: Fee-on-transfer token phantom liquidity (PancakeSwap pattern) \u2014 pool credits more than actually received",
+      "why_ruled_out": "AMMModule._collectToken at line 2913-2920 enforces strict balance check: if (balanceAfter != balanceBefore + amount) revert. Fee-on-transfer tokens always fail this and revert. By-design protection.",
+      "test_file": "lbamm-core/test/AuditInsolvency.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_collectToken()"
+      ],
+      "keywords": [
+        "fee-on-transfer",
+        "phantom-liquidity",
+        "PancakeSwap"
+      ]
+    }
+  ],
+  "theft_theses": [
+    {
+      "thesis": "Flash loan \u2192 add liquidity \u2192 manipulate fees \u2192 collect inflated fees \u2192 remove liquidity \u2192 repay with profit",
+      "victim": "LPs and protocol",
+      "asset": "Pool reserves",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Reentrant fee collection during queued hook fee transfers to double-spend hook fees",
+      "victim": "Protocol (hook fee reserves)",
+      "asset": "Hook fees (tokensOwed)",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Empty pool price manipulation via snapPrice to extract value from subsequent swappers",
+      "victim": "Next swapper or LP",
+      "asset": "Swap proceeds",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Off-by-one amountIn in FixedHelper compounding across many swaps to create phantom reserves",
+      "victim": "LPs (phantom reserves drain real tokens)",
+      "asset": "Pool reserves",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "afterSwapRefund reentrancy into CLOB to drain other makers' deposited tokens",
+      "victim": "CLOB makers",
+      "asset": "Maker deposits",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Fee-on-transfer token creates phantom liquidity that can be drained on removal",
+      "victim": "LPs and protocol",
+      "asset": "Pool reserves",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Truncation harvesting via 100+ tiny swaps in zero-liquidity edge case",
+      "victim": "LPs",
+      "asset": "Dust from rounding",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "CLOB handler gross/net amountIn mismatch to extract excess tokens from AMM",
+      "victim": "AMM reserves",
+      "asset": "Input tokens",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Fill-or-kill permit mismatch with hook fees to execute swaps at favorable rates",
+      "victim": "LP or counterparty",
+      "asset": "Swap output",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "CLOB pricing bounds bypass via rounding to execute orders outside allowed price range",
+      "victim": "Token issuer (bounds enforcement)",
+      "asset": "Out-of-bounds swap proceeds",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "SingleProvider swapByInput fallback rate arbitrage when output exceeds reserves",
+      "victim": "LP",
+      "asset": "Pool reserves",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    }
+  ],
+  "hypothesis_results": [
+    {
+      "id": "H-R2-DP-03",
+      "status": "dismissed",
+      "test_file": "lbamm-core/test/AuditInsolvency.t.sol",
+      "detail": "CEI at AMMModule:3128 prevents double-spend. tokensOwed decremented before safeTransfer."
+    },
+    {
+      "id": "H-R2-TS-02",
+      "status": "dismissed",
+      "test_file": "lbamm-core/test/AuditInsolvency.t.sol",
+      "detail": "Self-inflicted config error (admin controls flags). HOOK-001 variant."
+    },
+    {
+      "id": "H-R2-CP-01",
+      "status": "dismissed",
+      "test_file": "lbamm-core/test/AuditInsolvency.t.sol",
+      "detail": "Dust amounts (1 wei/swap) too small for profitable frontrunning. Gas > extractable value."
+    },
+    {
+      "id": "H-R2-CP-04",
+      "status": "dismissed",
+      "test_file": "lbamm-core/test/AuditInsolvency.t.sol",
+      "detail": "By-design trust model. LP sets own hook at pool creation."
+    },
+    {
+      "id": "H-R2-CP-05",
+      "status": "dismissed",
+      "test_file": "lbamm-core/test/AuditInsolvency.t.sol",
+      "detail": "Standard Uniswap v3 empty pool repricing. No tokens created/destroyed."
+    },
+    {
+      "id": "H-R2-CP-07",
+      "status": "dismissed",
+      "test_file": "lbamm-core/test/AuditInsolvency.t.sol",
+      "detail": "Intentional fee asymmetry across all 3 pool types."
+    },
+    {
+      "id": "H-R2-CP-08",
+      "status": "dismissed",
+      "test_file": "lbamm-core/test/AuditInsolvency.t.sol",
+      "detail": "Core balance check at line 2208 catches discrepancy per-swap. Cannot compound. Confirmed with 100-swap test."
+    },
+    {
+      "id": "H-R2-CP-10",
+      "status": "dismissed",
+      "test_file": "lbamm-core/test/AuditInsolvency.t.sol",
+      "detail": "Rate difference is 1 wei rounding only. Not economically significant."
+    },
+    {
+      "id": "H-R2-CH-04",
+      "status": "dismissed",
+      "test_file": "lbamm-core/test/AuditInsolvency.t.sol",
+      "detail": "Handler receives full gross amountIn (line 2160 override). Balance check consistent."
+    },
+    {
+      "id": "H-R2-CH-07",
+      "status": "dismissed",
+      "test_file": "lbamm-core/test/AuditInsolvency.t.sol",
+      "detail": "API convention: non-token hooks require tokenFor==tokenFee. By-design."
+    },
+    {
+      "id": "H-R2-CH-08",
+      "status": "dismissed",
+      "test_file": "lbamm-core/test/AuditInsolvency.t.sol",
+      "detail": "CLOB per-maker balances prevent cross-user extraction. Executor can only withdraw own tokens."
+    },
+    {
+      "id": "H-R2-CH-11",
+      "status": "dismissed",
+      "test_file": "lbamm-core/test/AuditInsolvency.t.sol",
+      "detail": "Fill-or-kill check uses original adjustedAmountSpecified. Passes correctly for both input and output swaps."
+    },
+    {
+      "id": "H-R2-HH-01",
+      "status": "dismissed",
+      "test_file": "lbamm-core/test/AuditInsolvency.t.sol",
+      "detail": "Q96 rounding divergence is sub-wei. Not exploitable for any practical pricing bounds."
+    },
+    {
+      "id": "H-R2-HH-05",
+      "status": "dismissed",
+      "test_file": "lbamm-core/test/AuditInsolvency.t.sol",
+      "detail": "Price convention consistent: amount0/1 always maps to lower/higher address regardless of order direction."
+    },
+    {
+      "id": "H-R2-HH-08",
+      "status": "dismissed",
+      "test_file": "lbamm-core/test/AuditInsolvency.t.sol",
+      "detail": "Known HOOK-001 variant. Self-inflicted config error."
+    }
+  ],
+  "metadata": {
+    "checklist_items_completed": "A: 5/5, B: 3/5, C: 25/25, D: 15/15",
+    "tools_run": {
+      "slither": {
+        "ran": true,
+        "repos": [
+          "lbamm-core",
+          "amm-pool-type-dynamic",
+          "lbamm-pool-type-fixed",
+          "lbamm-pool-type-single-provider",
+          "lbamm-hooks-and-handlers"
+        ],
+        "note": "MCP run_detectors + list_functions on all scoped repos"
+      },
+      "aderyn": {
+        "ran": true,
+        "repos": [
+          "lbamm-core",
+          "lbamm-pool-type-fixed",
+          "lbamm-pool-type-single-provider",
+          "lbamm-hooks-and-handlers"
+        ],
+        "note": "amm-pool-type-dynamic crashed with compile.rs:78 panic"
+      },
+      "forge": {
+        "ran": true,
+        "note": "90 tests total, all passing. File: lbamm-core/test/AuditInsolvency.t.sol"
+      },
+      "halmos": {
+        "ran": true,
+        "note": "Invoked on AuditInsolvency contract. Background execution."
+      },
+      "medusa": {
+        "ran": true,
+        "note": "Failed on AMMModule (constructor args not provided). Used Forge fuzz as fallback: test_C20_fuzz_solvency_aggressive with 25 runs."
+      },
+      "audit-context-building": {
+        "ran": true
+      },
+      "entry-point-analyzer": {
+        "ran": true
+      }
+    },
+    "num_turns": 120,
+    "tool_uses": 85,
+    "files_read": 40,
+    "theses_tested": 15,
+    "theses_confirmed": 0,
+    "theses_ruled_out": 15,
+    "triage_log": {
+      "skip": 5,
+      "borderline": 4,
+      "survive": 6
+    },
+    "gate_passed": true
+  }
+}

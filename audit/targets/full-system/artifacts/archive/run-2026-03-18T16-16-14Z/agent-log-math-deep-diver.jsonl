@@ -1,0 +1,10 @@
+{"event":"SESSION_START","ts":"2026-03-16T10:00:00Z","session_id":"wave1-math-deep-diver","agent_id":"math-deep-diver","model":"claude-opus-4-6","scope":"FixedHelper.sol, DynamicHelper.sol, SqrtPriceMath.sol, SwapMath.sol, TickMath.sol, FeeHelper.sol, CLOBHelper.sol, SqrtPriceCalculator.sol, SingleProviderHelper.sol","max_turns":200}
+{"event":"PHASE_A","ts":"2026-03-16T10:15:00Z","tool":"slither","repos":["lbamm-pool-type-fixed","amm-pool-type-dynamic","lbamm-hooks-and-handlers"],"result":"standard false positives only"}
+{"event":"PHASE_A","ts":"2026-03-16T10:20:00Z","tool":"aderyn","repos":["lbamm-pool-type-fixed","amm-pool-type-dynamic"],"result":"fatal crash aderyn 0.6.8 compile.rs:78"}
+{"event":"CODE_READ","ts":"2026-03-16T10:30:00Z","files":["FixedHelper.sol","DynamicHelper.sol","SqrtPriceMath.sol","SwapMath.sol","TickMath.sol","FeeHelper.sol","CLOBHelper.sol","SqrtPriceCalculator.sol","SingleProviderHelper.sol"],"total_lines":4425}
+{"event":"ROUNDING_MAP","ts":"2026-03-16T11:00:00Z","anomalies":["CLOBHelper.calculateFixedInput rounds UP for maker output — bounded to 2 wei/fill, not exploitable"]}
+{"event":"FORGE_TESTS","ts":"2026-03-16T11:30:00Z","file":"lbamm-pool-type-fixed/test/AuditMathDeepDiver.t.sol","tests":39,"pass":39,"fail":0,"fuzz_properties":8}
+{"event":"HALMOS","ts":"2026-03-16T11:45:00Z","checks":3,"pass":1,"timeout":2,"counterexamples":0}
+{"event":"MEDUSA","ts":"2026-03-16T11:50:00Z","result":"no matching tests found (naming convention incompatible)"}
+{"event":"KV_INVESTIGATION","ts":"2026-03-16T12:00:00Z","patterns":["KV-1: ruled out (view-only, no profit path)","KV-2: ruled out (no executeSwap function)","KV-3: ruled out (atomic write, no desync)","KV-4: ruled out (by-design transient overwrite)"]}
+{"event":"SESSION_END","ts":"2026-03-16T12:30:00Z","findings":0,"ruled_out":12,"theses_tested":5,"theses_confirmed":0,"theses_ruled_out":5,"checklist":"A:6/15 B:0/5 C:22/25 D:4/4 E:5/5"}

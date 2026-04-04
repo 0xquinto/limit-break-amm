@@ -1,0 +1,1293 @@
+{
+  "wave": 1,
+  "name": "black-hat-offense",
+  "timestamp": "2026-03-25T22:18:27Z",
+  "run_id": "run-2026-03-25T21-24-07Z",
+  "hot_spots": [],
+  "findings": [
+    {
+      "id": "EH-006",
+      "title": "Output swap partial fill does not adjust pre-stored hook fees proportionally",
+      "severity": "medium",
+      "confidence_score": 55,
+      "confidence_deductions": [
+        {
+          "reason": "Requires SingleProviderPoolType that does partial fills (specific pool type)",
+          "points": -15
+        },
+        {
+          "reason": "Requires output token hook with non-zero fees",
+          "points": -10
+        },
+        {
+          "reason": "Hook fee excess accumulates slowly over many partial fills",
+          "points": -10
+        },
+        {
+          "reason": "No direct theft - excess fees go to hook owner (token project)",
+          "points": -10
+        }
+      ],
+      "status": "lead",
+      "category": "accounting-error",
+      "source_hypothesis": "H-R5-DP-05",
+      "description": "In AMMModule._poolSwapByOutput (lines 1537-1603), output hook fees are calculated and stored BEFORE the pool type call. If the pool type performs a partial fill (actualAmountOut < originalAmountOut), the code adjusts amountOut and adjustedAmountSpecified but does NOT adjust the already-stored hook fees. The stored fees were calculated on the full amountOut, creating an overcharge that drains pool solvency over many partial fills.",
+      "impact": "Hook owner (token project) receives excess fees on every partial-filled output swap. Over many swaps, this creates a solvency drain on the pool.",
+      "proof_sketch": "Code analysis: _applySwapByOutputOutputFees stores hook fees at line 1537 based on full amountOut. Partial fill adjustment at lines 1576-1577 does not recalculate stored hook fees. Overcharge = hookFee(originalAmount) - hookFee(actualAmount).",
+      "victim": "LPs in pools where output token has hook fees and pool type supports partial fills",
+      "extractable_value": "hookFee(original) - hookFee(actual) per partial fill, compounds over many swaps",
+      "attack_sequence": [
+        "1. Pool exists with output token hook charging N% fee",
+        "2. SingleProviderPoolType set to partial fill output swaps",
+        "3. Attacker submits output swap for large amount",
+        "4. Hook fees stored: N% * originalAmountOut",
+        "5. Pool type partial fills: actualAmountOut = 50% of original",
+        "6. Adjustment reduces amountOut but not stored hook fees",
+        "7. Hook owner receives N% * originalAmountOut but fair value is N% * actualAmountOut"
+      ],
+      "test_file": "lbamm-hooks-and-handlers/test/AuditExtHijackerKLoop.t.sol",
+      "test_passes": true,
+      "prerequisites": [
+        "SingleProviderPoolType supporting partial fills",
+        "Output token with hook fees"
+      ],
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_applySwapByOutputOutputFees()",
+        "_poolSwapByOutput()"
+      ],
+      "lines": {
+        "AMMModule.sol": [
+          1537,
+          1548,
+          1558,
+          1576,
+          1577,
+          2871,
+          2887
+        ]
+      },
+      "keywords": [
+        "accounting-error",
+        "partial-fill",
+        "hook-fees",
+        "solvency-drain"
+      ],
+      "code_smells": [
+        "AMMModule.sol:1537 - hook fees applied BEFORE pool type call",
+        "AMMModule.sol:1576-1577 - partial fill adjustment does not recalculate hook fees"
+      ],
+      "what_remains_unverified": "Whether any deployed pool type actually performs partial fills, and the exact magnitude of fee overcharge per swap",
+      "fp_gate": {
+        "location_exists": true,
+        "entry_reachable": true,
+        "no_existing_guard": true,
+        "concrete_attack_path": true,
+        "poc_compiles": true
+      },
+      "kill_gate": {
+        "status": "killed",
+        "gate": "D",
+        "reason": "attack_sequence has no function references"
+      },
+      "_source_agent": "extension-hijacker",
+      "consensus_count": 1,
+      "contributing_agents": [
+        "extension-hijacker"
+      ],
+      "canonical_id": "CORE-001"
+    },
+    {
+      "id": "EH-002",
+      "title": "validateHandlerOrder bypasses tradingIsPaused, blockDirectSwaps, checkDisabledPools, and whitelist checks",
+      "severity": "medium",
+      "confidence_score": 70,
+      "confidence_deductions": [
+        {
+          "reason": "Impact depends on CLOB handler semantics and order lifecycle",
+          "points": -15
+        },
+        {
+          "reason": "Orders placed during pause may not be fillable until unpause",
+          "points": -10
+        },
+        {
+          "reason": "Information advantage during pause window is situational",
+          "points": -5
+        }
+      ],
+      "status": "lead",
+      "category": "access-control",
+      "source_hypothesis": "H-R5-HR-04",
+      "description": "validateHandlerOrder (AMMStandardHook.sol:198-226) is external view with NO access control and NO trading rule enforcement. It performs zero checks for: tradingIsPaused, blockDirectSwaps, checkDisabledPools, pairedTokenWhitelistId. Compare with beforeSwap (lines 110-118) which enforces all of these. When a token admin pauses trading, CLOB handlers can still validate new orders through this function.",
+      "impact": "During trading pause, makers can place orders at stale prices via CLOB handlers. When trading resumes, these orders become immediately profitable against outdated pricing. Token admins lose the ability to fully halt trading activity.",
+      "proof_sketch": "Forge test test_H_R5_HR_04_validateHandlerOrderBypassesTradingPause confirms: with tradingIsPaused=true, validateHandlerOrder succeeds while beforeSwap reverts with AMMStandardHook__TradingPaused.",
+      "victim": "Token creators who pause trading expecting complete halt of order activity",
+      "extractable_value": "Information advantage profit during pause windows - depends on market conditions",
+      "attack_sequence": [
+        "1. Token admin pauses trading (tradingIsPaused=true) due to emergency",
+        "2. Market-moving information available during pause window",
+        "3. Attacker calls CLOB handler to place orders at current (stale) prices",
+        "4. Handler calls validateHandlerOrder - succeeds despite pause",
+        "5. When trading resumes, attacker's orders fill at stale prices for profit"
+      ],
+      "test_file": "lbamm-hooks-and-handlers/test/AuditExtHijackerKLoop.t.sol",
+      "test_passes": true,
+      "prerequisites": [
+        "CLOB transfer handler in scope",
+        "Token with tradingIsPaused=true"
+      ],
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol",
+        "SqrtPriceCalculator.sol"
+      ],
+      "functions": [
+        "_validateTokenTradingRules()",
+        "beforeSwap()",
+        "computeRatioX96()",
+        "validateHandlerOrder()"
+      ],
+      "lines": {
+        "AMMStandardHook.sol": [
+          198,
+          207,
+          208,
+          210,
+          110,
+          116,
+          117
+        ]
+      },
+      "keywords": [
+        "access-control",
+        "trading-pause-bypass",
+        "CLOB",
+        "missing-check"
+      ],
+      "code_smells": [
+        "AMMStandardHook.sol:198 - external view with no _requireCallerIsAMM() guard",
+        "AMMStandardHook.sol:198-226 - no tradingIsPaused check unlike beforeSwap:116",
+        "AMMStandardHook.sol:198-226 - no blockDirectSwaps check unlike beforeSwap:117"
+      ],
+      "what_remains_unverified": "Whether CLOB handlers actually use validateHandlerOrder for order placement, and whether fill execution re-validates pricing",
+      "fp_gate": {
+        "location_exists": true,
+        "entry_reachable": true,
+        "no_existing_guard": true,
+        "concrete_attack_path": true,
+        "poc_compiles": true
+      },
+      "kill_gate": {
+        "status": "flagged",
+        "gate": "V2-refutation",
+        "reason": "Missing refutation_attempted \u2014 you must argue against your own finding before submitting"
+      },
+      "_source_agent": "extension-hijacker",
+      "consensus_count": 5,
+      "contributing_agents": [
+        "auth-forger",
+        "extension-hijacker",
+        "state-desync"
+      ],
+      "canonical_id": "HOOK-002"
+    },
+    {
+      "id": "XB-002",
+      "title": "computeRatioX96 overflow returns 0, bypasses max-only bounds in validateHandlerOrder",
+      "severity": "low",
+      "confidence_score": 75,
+      "confidence_deductions": [
+        "Attack path is partial - price overflow required (-20)",
+        "Impact is bounded - only affects CLOB orders with max-only bounds (-5)"
+      ],
+      "status": "lead",
+      "category": "input-validation",
+      "description": "In AMMStandardHook.validateHandlerOrder (line 215), SqrtPriceCalculator.computeRatioX96 returns 0 when the amount ratio overflows uint160. With sqrtPriceX96=0 and only max bounds set (min=0), the min check passes (0 is not != 0) and the max check also passes (0 is not > maxSqrtPriceX96). A CLOB maker could place an order with extreme amounts that trigger overflow, passing the max bound validation despite the effective price being infinite.",
+      "impact": "CLOB order placed at effectively infinite price passes max bound check, allowing order execution at prices above the token creator's intended maximum",
+      "proof_sketch": "1. Token creator sets max pricing bound only (min=0, max=some_value). 2. Maker calls openOrder with amounts causing computeRatioX96 overflow. 3. sqrtPriceX96 = 0. 4. bounds.minSqrtPriceX96 = 0, so min check skipped. 5. 0 > maxSqrtPriceX96 is false, max check passes. 6. Order validated despite infinite effective price.",
+      "victim": "Token creator relying on max price bounds for protection",
+      "extractable_value": "Bounded by CLOB order volume at extreme prices",
+      "attack_sequence": [
+        "Token creator sets max-only pricing bounds via registry",
+        "Attacker places CLOB order with extreme amount ratio causing overflow",
+        "computeRatioX96 returns 0",
+        "validateHandlerOrder passes both bounds checks",
+        "Order executes at price above intended max bound"
+      ],
+      "test_file": "lbamm-hooks-and-handlers/test/audit/CrossBoundaryCLOB.t.sol",
+      "test_passes": true,
+      "prerequisites": [
+        "Token with max-only pricing bounds (no min bound)",
+        "CLOB handler in use"
+      ],
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol",
+        "SqrtPriceCalculator.sol"
+      ],
+      "functions": [
+        "computeRatioX96",
+        "validateHandlerOrder"
+      ],
+      "lines": {
+        "AMMStandardHook.sol": [
+          211,
+          215,
+          218,
+          221
+        ],
+        "SqrtPriceCalculator.sol": [
+          51,
+          52
+        ]
+      },
+      "keywords": [
+        "overflow",
+        "pricing-bounds",
+        "validation-bypass",
+        "computeRatioX96"
+      ],
+      "code_smells": [
+        "SqrtPriceCalculator.sol:52 - returns 0 on overflow instead of reverting",
+        "AMMStandardHook.sol:218 - min check skipped when min=0, allowing sqrtPriceX96=0 to pass"
+      ],
+      "what_remains_unverified": "Whether the overflow can actually be triggered via CLOB order amounts and whether this leads to profitable extraction",
+      "fp_gate": {
+        "location_exists": true,
+        "entry_reachable": true,
+        "no_existing_guard": true,
+        "concrete_attack_path": true,
+        "poc_compiles": true
+      },
+      "kill_gate": {
+        "status": "killed",
+        "gate": "D",
+        "reason": "attack_sequence has no function references"
+      },
+      "_source_agent": "cross-boundary",
+      "consensus_count": 1,
+      "contributing_agents": [
+        "cross-boundary"
+      ],
+      "canonical_id": "HOOK-003"
+    },
+    {
+      "id": "COMP-002",
+      "title": "CLOB calculateFixedInput double ceiling rounding systematically over-credits makers",
+      "severity": "low",
+      "confidence_score": 60,
+      "confidence_deductions": [
+        "Bounded non-compounding impact (max 2 wei per fill): -15",
+        "Dust-level impact: -25"
+      ],
+      "status": "lead",
+      "source_hypothesis": "H-R5-HH-08",
+      "category": "rounding",
+      "description": "CLOBHelper.calculateFixedInput (lines 313-314) applies mulDivRoundingUp twice, creating a double ceiling: ceil(ceil(amountIn * P / Q96) * P / Q96). This systematically over-credits each maker by up to 2 wei per fill step. Over many fills, the sum of maker credits exceeds the single-shot calculation, creating a dust-level solvency discrepancy.",
+      "impact": "Max 2 wei excess per fill step. For 1000 fills: 2000 wei (~$0.000002). Not economically exploitable - gas costs far exceed any rounding benefit.",
+      "proof_sketch": "test_H_R5_CH_08_CLOBRoundingUpAccumulation verifies that sum of individual fills > single-shot calculation. test_H_R5_HH_08_doubleRoundingUpExcessOutput verifies max excess is 2 wei per step.",
+      "victim": "Executors (fill providers) lose dust amounts",
+      "extractable_value": "~2000 wei for 1000 fills (dust)",
+      "attack_sequence": [
+        "Place many small CLOB orders at a price where rounding matters",
+        "Each fill: maker credited ceil(ceil(amountIn*P/Q96)*P/Q96) instead of floor",
+        "Over N fills: sum(credited) - exact = up to 2*N wei excess",
+        "Excess comes from fillOutputRemaining (executor's budget)"
+      ],
+      "test_file": "lbamm-hooks-and-handlers/test/AuditComposabilityW1KLoop.t.sol",
+      "test_passes": true,
+      "prerequisites": [
+        "Many small CLOB orders at specific prices"
+      ],
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "CLOBHelper.sol"
+      ],
+      "functions": [
+        "calculateFixedInput()"
+      ],
+      "lines": {
+        "CLOBHelper.sol": [
+          309,
+          313,
+          314
+        ]
+      },
+      "keywords": [
+        "rounding",
+        "double-ceiling",
+        "solvency",
+        "dust"
+      ],
+      "code_smells": [
+        "CLOBHelper.sol:313-314 - double mulDivRoundingUp over-credits makers by up to 2 wei per step"
+      ],
+      "what_remains_unverified": "Whether rounding can compound to material amounts in high-volume scenarios",
+      "fp_gate": {
+        "location_exists": true,
+        "entry_reachable": true,
+        "no_existing_guard": true,
+        "concrete_attack_path": true,
+        "poc_compiles": true
+      },
+      "kill_gate": {
+        "status": "flagged",
+        "gate": "V2-refutation",
+        "reason": "Missing refutation_attempted \u2014 you must argue against your own finding before submitting"
+      },
+      "_source_agent": "composability-exploiter",
+      "consensus_count": 1,
+      "contributing_agents": [
+        "composability-exploiter"
+      ],
+      "canonical_id": "HOOK-004"
+    }
+  ],
+  "contradictions": [
+    {
+      "finding_id": "EH-006",
+      "finding_agent": "extension-hijacker",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "cross-boundary",
+      "shared_contracts": [
+        "AMMModule.sol"
+      ],
+      "match_reason": "keywords: ['partial-fill']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "EH-006",
+      "finding_agent": "extension-hijacker",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "extension-hijacker",
+      "shared_contracts": [
+        "AMMModule.sol"
+      ],
+      "match_reason": "keywords: ['hook-fees']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "EH-002",
+      "finding_agent": "extension-hijacker",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "precision-sniper",
+      "shared_contracts": [
+        "SqrtPriceCalculator.sol"
+      ],
+      "match_reason": "functions: ['computeRatioX96()']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "EH-002",
+      "finding_agent": "extension-hijacker",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "precision-sniper",
+      "shared_contracts": [
+        "SqrtPriceCalculator.sol"
+      ],
+      "match_reason": "functions: ['computeRatioX96()']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "EH-002",
+      "finding_agent": "extension-hijacker",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "precision-sniper",
+      "shared_contracts": [
+        "SqrtPriceCalculator.sol"
+      ],
+      "match_reason": "functions: ['computeRatioX96()']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "EH-002",
+      "finding_agent": "extension-hijacker",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "state-desync",
+      "shared_contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "match_reason": "functions: ['validateHandlerOrder()']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "EH-002",
+      "finding_agent": "extension-hijacker",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "state-desync",
+      "shared_contracts": [
+        "SqrtPriceCalculator.sol"
+      ],
+      "match_reason": "functions: ['computeRatioX96()']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "EH-002",
+      "finding_agent": "extension-hijacker",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "state-desync",
+      "shared_contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "match_reason": "functions: ['beforeSwap()']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "EH-002",
+      "finding_agent": "extension-hijacker",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "state-desync",
+      "shared_contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "match_reason": "functions: ['beforeSwap()']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "EH-002",
+      "finding_agent": "extension-hijacker",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "auth-forger",
+      "shared_contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "match_reason": "functions: ['beforeSwap()']; keywords: ['access-control']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "EH-002",
+      "finding_agent": "extension-hijacker",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "composability-exploiter",
+      "shared_contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "match_reason": "functions: ['validateHandlerOrder()']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "EH-002",
+      "finding_agent": "extension-hijacker",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "price-distorter",
+      "shared_contracts": [
+        "AMMStandardHook.sol",
+        "SqrtPriceCalculator.sol"
+      ],
+      "match_reason": "functions: ['computeRatioX96()']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "EH-002",
+      "finding_agent": "extension-hijacker",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "price-distorter",
+      "shared_contracts": [
+        "SqrtPriceCalculator.sol"
+      ],
+      "match_reason": "functions: ['computeRatioX96()']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "EH-002",
+      "finding_agent": "extension-hijacker",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "price-distorter",
+      "shared_contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "match_reason": "functions: ['computeRatioX96()']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "EH-002",
+      "finding_agent": "extension-hijacker",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "extension-hijacker",
+      "shared_contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "match_reason": "keywords: ['access-control']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "EH-002",
+      "finding_agent": "extension-hijacker",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "extension-hijacker",
+      "shared_contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "match_reason": "functions: ['_validateTokenTradingRules()']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "EH-002",
+      "finding_agent": "extension-hijacker",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "extension-hijacker",
+      "shared_contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "match_reason": "functions: ['beforeSwap()']; keywords: ['access-control']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "EH-002",
+      "finding_agent": "extension-hijacker",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "extension-hijacker",
+      "shared_contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "match_reason": "functions: ['beforeSwap()']; keywords: ['access-control']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "EH-002",
+      "finding_agent": "extension-hijacker",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "extension-hijacker",
+      "shared_contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "match_reason": "functions: ['beforeSwap()']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "EH-002",
+      "finding_agent": "extension-hijacker",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "extension-hijacker",
+      "shared_contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "match_reason": "functions: ['beforeSwap()', 'validateHandlerOrder()']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "XB-002",
+      "finding_agent": "cross-boundary",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "state-desync",
+      "shared_contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "match_reason": "keywords: ['pricing-bounds']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "XB-002",
+      "finding_agent": "cross-boundary",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "state-desync",
+      "shared_contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "match_reason": "keywords: ['pricing-bounds']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "XB-002",
+      "finding_agent": "cross-boundary",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "state-desync",
+      "shared_contracts": [
+        "SqrtPriceCalculator.sol"
+      ],
+      "match_reason": "keywords: ['overflow']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "XB-002",
+      "finding_agent": "cross-boundary",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "state-desync",
+      "shared_contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "match_reason": "keywords: ['pricing-bounds']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "XB-002",
+      "finding_agent": "cross-boundary",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "cross-boundary",
+      "shared_contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "match_reason": "keywords: ['pricing-bounds']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "XB-002",
+      "finding_agent": "cross-boundary",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "cross-boundary",
+      "shared_contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "match_reason": "keywords: ['pricing-bounds']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "XB-002",
+      "finding_agent": "cross-boundary",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "cross-boundary",
+      "shared_contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "match_reason": "keywords: ['pricing-bounds']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "XB-002",
+      "finding_agent": "cross-boundary",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "composability-exploiter",
+      "shared_contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "match_reason": "keywords: ['overflow', 'pricing-bounds']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "XB-002",
+      "finding_agent": "cross-boundary",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "composability-exploiter",
+      "shared_contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "match_reason": "keywords: ['pricing-bounds']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "XB-002",
+      "finding_agent": "cross-boundary",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "composability-exploiter",
+      "shared_contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "match_reason": "keywords: ['pricing-bounds']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "XB-002",
+      "finding_agent": "cross-boundary",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "composability-exploiter",
+      "shared_contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "match_reason": "keywords: ['pricing-bounds']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "XB-002",
+      "finding_agent": "cross-boundary",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "price-distorter",
+      "shared_contracts": [
+        "AMMStandardHook.sol",
+        "SqrtPriceCalculator.sol"
+      ],
+      "match_reason": "keywords: ['overflow']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "XB-002",
+      "finding_agent": "cross-boundary",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "price-distorter",
+      "shared_contracts": [
+        "SqrtPriceCalculator.sol"
+      ],
+      "match_reason": "keywords: ['overflow']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "XB-002",
+      "finding_agent": "cross-boundary",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "price-distorter",
+      "shared_contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "match_reason": "keywords: ['overflow']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "XB-002",
+      "finding_agent": "cross-boundary",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "insolvency-engineer",
+      "shared_contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "match_reason": "keywords: ['pricing-bounds']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "XB-002",
+      "finding_agent": "cross-boundary",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "insolvency-engineer",
+      "shared_contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "match_reason": "keywords: ['pricing-bounds']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "XB-002",
+      "finding_agent": "cross-boundary",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "extension-hijacker",
+      "shared_contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "match_reason": "keywords: ['pricing-bounds']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "COMP-002",
+      "finding_agent": "composability-exploiter",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "precision-sniper",
+      "shared_contracts": [
+        "CLOBHelper.sol"
+      ],
+      "match_reason": "functions: ['calculateFixedInput()']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "COMP-002",
+      "finding_agent": "composability-exploiter",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "state-desync",
+      "shared_contracts": [
+        "CLOBHelper.sol"
+      ],
+      "match_reason": "functions: ['calculateFixedInput()']; keywords: ['dust', 'rounding', 'solvency']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "COMP-002",
+      "finding_agent": "composability-exploiter",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "state-desync",
+      "shared_contracts": [
+        "CLOBHelper.sol"
+      ],
+      "match_reason": "functions: ['calculateFixedInput()']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "COMP-002",
+      "finding_agent": "composability-exploiter",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "auth-forger",
+      "shared_contracts": [
+        "CLOBHelper.sol"
+      ],
+      "match_reason": "functions: ['calculateFixedInput()']; keywords: ['rounding', 'solvency']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "COMP-002",
+      "finding_agent": "composability-exploiter",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "cross-boundary",
+      "shared_contracts": [
+        "CLOBHelper.sol"
+      ],
+      "match_reason": "keywords: ['double-ceiling', 'dust', 'rounding']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "COMP-002",
+      "finding_agent": "composability-exploiter",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "composability-exploiter",
+      "shared_contracts": [
+        "CLOBHelper.sol"
+      ],
+      "match_reason": "functions: ['calculateFixedInput()']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "COMP-002",
+      "finding_agent": "composability-exploiter",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "price-distorter",
+      "shared_contracts": [
+        "CLOBHelper.sol"
+      ],
+      "match_reason": "functions: ['calculateFixedInput()']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "COMP-002",
+      "finding_agent": "composability-exploiter",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "insolvency-engineer",
+      "shared_contracts": [
+        "CLOBHelper.sol"
+      ],
+      "match_reason": "functions: ['calculateFixedInput()']; keywords: ['rounding', 'solvency']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    }
+  ],
+  "ruled_out_count": 160,
+  "invariants_formalized": [],
+  "tool_coverage_warnings": [
+    "TOOL_COVERAGE: precision-sniper (precision-math-sniper) did NOT run audit_context_building \u2014 reason: no reason given",
+    "TOOL_COVERAGE: precision-sniper (precision-math-sniper) did NOT run entry_point_analyzer \u2014 reason: no reason given",
+    "TOOL_COVERAGE: precision-sniper (precision-math-sniper) did not report on conditional tool token_integration_analyzer \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: precision-sniper (precision-math-sniper) did not report on conditional tool sharp_edges \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: state-desync (State Desync Operator) did NOT run audit_context_building \u2014 reason: no reason given",
+    "TOOL_COVERAGE: state-desync (State Desync Operator) did NOT run entry_point_analyzer \u2014 reason: no reason given",
+    "TOOL_COVERAGE: state-desync (State Desync Operator) did not report on conditional tool token_integration_analyzer \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: state-desync (State Desync Operator) did not report on conditional tool sharp_edges \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: auth-forger (Authorization & Settlement Forger) did NOT run audit_context_building \u2014 reason: no reason given",
+    "TOOL_COVERAGE: auth-forger (Authorization & Settlement Forger) did NOT run entry_point_analyzer \u2014 reason: no reason given",
+    "TOOL_COVERAGE: auth-forger (Authorization & Settlement Forger) did not report on conditional tool token_integration_analyzer \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: auth-forger (Authorization & Settlement Forger) did not report on conditional tool sharp_edges \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: cross-boundary (Cross-Boundary Tracer) did NOT run audit_context_building \u2014 reason: no reason given",
+    "TOOL_COVERAGE: cross-boundary (Cross-Boundary Tracer) did NOT run entry_point_analyzer \u2014 reason: no reason given",
+    "TOOL_COVERAGE: cross-boundary (Cross-Boundary Tracer) did not report on conditional tool token_integration_analyzer \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: cross-boundary (Cross-Boundary Tracer) did not report on conditional tool sharp_edges \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: composability-exploiter (composability-exploiter) did NOT run audit_context_building \u2014 reason: no reason given",
+    "TOOL_COVERAGE: composability-exploiter (composability-exploiter) did NOT run entry_point_analyzer \u2014 reason: no reason given",
+    "TOOL_COVERAGE: composability-exploiter (composability-exploiter) did not report on conditional tool token_integration_analyzer \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: composability-exploiter (composability-exploiter) did not report on conditional tool sharp_edges \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: price-distorter (Cross-Venue Price Distorter) did NOT run audit_context_building \u2014 reason: no reason given",
+    "TOOL_COVERAGE: price-distorter (Cross-Venue Price Distorter) did NOT run entry_point_analyzer \u2014 reason: no reason given",
+    "TOOL_COVERAGE: price-distorter (Cross-Venue Price Distorter) did not report on conditional tool token_integration_analyzer \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: price-distorter (Cross-Venue Price Distorter) did not report on conditional tool sharp_edges \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: insolvency-engineer (insolvency-engineer) did NOT run audit_context_building \u2014 reason: no reason given",
+    "TOOL_COVERAGE: insolvency-engineer (insolvency-engineer) did NOT run entry_point_analyzer \u2014 reason: no reason given",
+    "TOOL_COVERAGE: insolvency-engineer (insolvency-engineer) did not report on conditional tool token_integration_analyzer \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: insolvency-engineer (insolvency-engineer) did not report on conditional tool sharp_edges \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: extension-hijacker (Extension Hijacker) did NOT run audit_context_building \u2014 reason: no reason given",
+    "TOOL_COVERAGE: extension-hijacker (Extension Hijacker) did NOT run entry_point_analyzer \u2014 reason: no reason given",
+    "TOOL_COVERAGE: extension-hijacker (Extension Hijacker) did not report on conditional tool token_integration_analyzer \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: extension-hijacker (Extension Hijacker) did not report on conditional tool sharp_edges \u2014 add to tools_run with ran=false and reason if not applicable",
+    "LENS_COVERAGE: precision-sniper (precision-math-sniper) has no lens_coverage in metadata \u2014 likely did NOT apply value lifecycle lenses",
+    "LENS_COVERAGE: state-desync (State Desync Operator) has no lens_coverage in metadata \u2014 likely did NOT apply value lifecycle lenses",
+    "LENS_COVERAGE: auth-forger (Authorization & Settlement Forger) has no lens_coverage in metadata \u2014 likely did NOT apply value lifecycle lenses",
+    "LENS_COVERAGE: composability-exploiter (composability-exploiter) has no lens_coverage in metadata \u2014 likely did NOT apply value lifecycle lenses",
+    "LENS_COVERAGE: price-distorter (Cross-Venue Price Distorter) has no lens_coverage in metadata \u2014 likely did NOT apply value lifecycle lenses",
+    "LENS_COVERAGE: insolvency-engineer (insolvency-engineer) has no lens_coverage in metadata \u2014 likely did NOT apply value lifecycle lenses",
+    "LENS_COVERAGE: extension-hijacker (Extension Hijacker) has no lens_coverage in metadata \u2014 likely did NOT apply value lifecycle lenses"
+  ],
+  "exploit_clusters": [
+    {
+      "primitive": "extension_abuse",
+      "boundary": "single_contract",
+      "asset": "LPs in pools where output token has hook fees and pool type supports partial fills",
+      "findings": [
+        {
+          "id": "EH-006",
+          "title": "Output swap partial fill does not adjust pre-stored hook fees proportionally",
+          "severity": "medium",
+          "confidence_score": 55,
+          "confidence_deductions": [
+            {
+              "reason": "Requires SingleProviderPoolType that does partial fills (specific pool type)",
+              "points": -15
+            },
+            {
+              "reason": "Requires output token hook with non-zero fees",
+              "points": -10
+            },
+            {
+              "reason": "Hook fee excess accumulates slowly over many partial fills",
+              "points": -10
+            },
+            {
+              "reason": "No direct theft - excess fees go to hook owner (token project)",
+              "points": -10
+            }
+          ],
+          "status": "lead",
+          "category": "accounting-error",
+          "source_hypothesis": "H-R5-DP-05",
+          "description": "In AMMModule._poolSwapByOutput (lines 1537-1603), output hook fees are calculated and stored BEFORE the pool type call. If the pool type performs a partial fill (actualAmountOut < originalAmountOut), the code adjusts amountOut and adjustedAmountSpecified but does NOT adjust the already-stored hook fees. The stored fees were calculated on the full amountOut, creating an overcharge that drains pool solvency over many partial fills.",
+          "impact": "Hook owner (token project) receives excess fees on every partial-filled output swap. Over many swaps, this creates a solvency drain on the pool.",
+          "proof_sketch": "Code analysis: _applySwapByOutputOutputFees stores hook fees at line 1537 based on full amountOut. Partial fill adjustment at lines 1576-1577 does not recalculate stored hook fees. Overcharge = hookFee(originalAmount) - hookFee(actualAmount).",
+          "victim": "LPs in pools where output token has hook fees and pool type supports partial fills",
+          "extractable_value": "hookFee(original) - hookFee(actual) per partial fill, compounds over many swaps",
+          "attack_sequence": [
+            "1. Pool exists with output token hook charging N% fee",
+            "2. SingleProviderPoolType set to partial fill output swaps",
+            "3. Attacker submits output swap for large amount",
+            "4. Hook fees stored: N% * originalAmountOut",
+            "5. Pool type partial fills: actualAmountOut = 50% of original",
+            "6. Adjustment reduces amountOut but not stored hook fees",
+            "7. Hook owner receives N% * originalAmountOut but fair value is N% * actualAmountOut"
+          ],
+          "test_file": "lbamm-hooks-and-handlers/test/AuditExtHijackerKLoop.t.sol",
+          "test_passes": true,
+          "prerequisites": [
+            "SingleProviderPoolType supporting partial fills",
+            "Output token with hook fees"
+          ],
+          "repos": [
+            "lbamm-core"
+          ],
+          "contracts": [
+            "AMMModule.sol"
+          ],
+          "functions": [
+            "_applySwapByOutputOutputFees()",
+            "_poolSwapByOutput()"
+          ],
+          "lines": {
+            "AMMModule.sol": [
+              1537,
+              1548,
+              1558,
+              1576,
+              1577,
+              2871,
+              2887
+            ]
+          },
+          "keywords": [
+            "accounting-error",
+            "partial-fill",
+            "hook-fees",
+            "solvency-drain"
+          ],
+          "code_smells": [
+            "AMMModule.sol:1537 - hook fees applied BEFORE pool type call",
+            "AMMModule.sol:1576-1577 - partial fill adjustment does not recalculate hook fees"
+          ],
+          "what_remains_unverified": "Whether any deployed pool type actually performs partial fills, and the exact magnitude of fee overcharge per swap",
+          "fp_gate": {
+            "location_exists": true,
+            "entry_reachable": true,
+            "no_existing_guard": true,
+            "concrete_attack_path": true,
+            "poc_compiles": true
+          },
+          "kill_gate": {
+            "status": "killed",
+            "gate": "D",
+            "reason": "attack_sequence has no function references"
+          },
+          "_source_agent": "extension-hijacker",
+          "consensus_count": 1,
+          "contributing_agents": [
+            "extension-hijacker"
+          ],
+          "canonical_id": "CORE-001"
+        }
+      ],
+      "agent_count": 1,
+      "max_confidence": 30,
+      "has_test": true
+    },
+    {
+      "primitive": "callback_exploitation",
+      "boundary": "cross_contract:AMMStandardHook.sol+SqrtPriceCalculator.sol",
+      "asset": "Token creators who pause trading expecting complete halt of order activity",
+      "findings": [
+        {
+          "id": "EH-002",
+          "title": "validateHandlerOrder bypasses tradingIsPaused, blockDirectSwaps, checkDisabledPools, and whitelist checks",
+          "severity": "medium",
+          "confidence_score": 70,
+          "confidence_deductions": [
+            {
+              "reason": "Impact depends on CLOB handler semantics and order lifecycle",
+              "points": -15
+            },
+            {
+              "reason": "Orders placed during pause may not be fillable until unpause",
+              "points": -10
+            },
+            {
+              "reason": "Information advantage during pause window is situational",
+              "points": -5
+            }
+          ],
+          "status": "lead",
+          "category": "access-control",
+          "source_hypothesis": "H-R5-HR-04",
+          "description": "validateHandlerOrder (AMMStandardHook.sol:198-226) is external view with NO access control and NO trading rule enforcement. It performs zero checks for: tradingIsPaused, blockDirectSwaps, checkDisabledPools, pairedTokenWhitelistId. Compare with beforeSwap (lines 110-118) which enforces all of these. When a token admin pauses trading, CLOB handlers can still validate new orders through this function.",
+          "impact": "During trading pause, makers can place orders at stale prices via CLOB handlers. When trading resumes, these orders become immediately profitable against outdated pricing. Token admins lose the ability to fully halt trading activity.",
+          "proof_sketch": "Forge test test_H_R5_HR_04_validateHandlerOrderBypassesTradingPause confirms: with tradingIsPaused=true, validateHandlerOrder succeeds while beforeSwap reverts with AMMStandardHook__TradingPaused.",
+          "victim": "Token creators who pause trading expecting complete halt of order activity",
+          "extractable_value": "Information advantage profit during pause windows - depends on market conditions",
+          "attack_sequence": [
+            "1. Token admin pauses trading (tradingIsPaused=true) due to emergency",
+            "2. Market-moving information available during pause window",
+            "3. Attacker calls CLOB handler to place orders at current (stale) prices",
+            "4. Handler calls validateHandlerOrder - succeeds despite pause",
+            "5. When trading resumes, attacker's orders fill at stale prices for profit"
+          ],
+          "test_file": "lbamm-hooks-and-handlers/test/AuditExtHijackerKLoop.t.sol",
+          "test_passes": true,
+          "prerequisites": [
+            "CLOB transfer handler in scope",
+            "Token with tradingIsPaused=true"
+          ],
+          "repos": [
+            "lbamm-hooks-and-handlers"
+          ],
+          "contracts": [
+            "AMMStandardHook.sol",
+            "SqrtPriceCalculator.sol"
+          ],
+          "functions": [
+            "_validateTokenTradingRules()",
+            "beforeSwap()",
+            "computeRatioX96()",
+            "validateHandlerOrder()"
+          ],
+          "lines": {
+            "AMMStandardHook.sol": [
+              198,
+              207,
+              208,
+              210,
+              110,
+              116,
+              117
+            ]
+          },
+          "keywords": [
+            "access-control",
+            "trading-pause-bypass",
+            "CLOB",
+            "missing-check"
+          ],
+          "code_smells": [
+            "AMMStandardHook.sol:198 - external view with no _requireCallerIsAMM() guard",
+            "AMMStandardHook.sol:198-226 - no tradingIsPaused check unlike beforeSwap:116",
+            "AMMStandardHook.sol:198-226 - no blockDirectSwaps check unlike beforeSwap:117"
+          ],
+          "what_remains_unverified": "Whether CLOB handlers actually use validateHandlerOrder for order placement, and whether fill execution re-validates pricing",
+          "fp_gate": {
+            "location_exists": true,
+            "entry_reachable": true,
+            "no_existing_guard": true,
+            "concrete_attack_path": true,
+            "poc_compiles": true
+          },
+          "kill_gate": {
+            "status": "flagged",
+            "gate": "V2-refutation",
+            "reason": "Missing refutation_attempted \u2014 you must argue against your own finding before submitting"
+          },
+          "_source_agent": "extension-hijacker",
+          "consensus_count": 5,
+          "contributing_agents": [
+            "auth-forger",
+            "extension-hijacker",
+            "state-desync"
+          ],
+          "canonical_id": "HOOK-002"
+        }
+      ],
+      "agent_count": 1,
+      "max_confidence": 30,
+      "has_test": true
+    },
+    {
+      "primitive": "price_manipulation",
+      "boundary": "cross_contract:AMMStandardHook.sol+SqrtPriceCalculator.sol",
+      "asset": "Token creator relying on max price bounds for protection",
+      "findings": [
+        {
+          "id": "XB-002",
+          "title": "computeRatioX96 overflow returns 0, bypasses max-only bounds in validateHandlerOrder",
+          "severity": "low",
+          "confidence_score": 75,
+          "confidence_deductions": [
+            "Attack path is partial - price overflow required (-20)",
+            "Impact is bounded - only affects CLOB orders with max-only bounds (-5)"
+          ],
+          "status": "lead",
+          "category": "input-validation",
+          "description": "In AMMStandardHook.validateHandlerOrder (line 215), SqrtPriceCalculator.computeRatioX96 returns 0 when the amount ratio overflows uint160. With sqrtPriceX96=0 and only max bounds set (min=0), the min check passes (0 is not != 0) and the max check also passes (0 is not > maxSqrtPriceX96). A CLOB maker could place an order with extreme amounts that trigger overflow, passing the max bound validation despite the effective price being infinite.",
+          "impact": "CLOB order placed at effectively infinite price passes max bound check, allowing order execution at prices above the token creator's intended maximum",
+          "proof_sketch": "1. Token creator sets max pricing bound only (min=0, max=some_value). 2. Maker calls openOrder with amounts causing computeRatioX96 overflow. 3. sqrtPriceX96 = 0. 4. bounds.minSqrtPriceX96 = 0, so min check skipped. 5. 0 > maxSqrtPriceX96 is false, max check passes. 6. Order validated despite infinite effective price.",
+          "victim": "Token creator relying on max price bounds for protection",
+          "extractable_value": "Bounded by CLOB order volume at extreme prices",
+          "attack_sequence": [
+            "Token creator sets max-only pricing bounds via registry",
+            "Attacker places CLOB order with extreme amount ratio causing overflow",
+            "computeRatioX96 returns 0",
+            "validateHandlerOrder passes both bounds checks",
+            "Order executes at price above intended max bound"
+          ],
+          "test_file": "lbamm-hooks-and-handlers/test/audit/CrossBoundaryCLOB.t.sol",
+          "test_passes": true,
+          "prerequisites": [
+            "Token with max-only pricing bounds (no min bound)",
+            "CLOB handler in use"
+          ],
+          "repos": [
+            "lbamm-hooks-and-handlers"
+          ],
+          "contracts": [
+            "AMMStandardHook.sol",
+            "SqrtPriceCalculator.sol"
+          ],
+          "functions": [
+            "computeRatioX96",
+            "validateHandlerOrder"
+          ],
+          "lines": {
+            "AMMStandardHook.sol": [
+              211,
+              215,
+              218,
+              221
+            ],
+            "SqrtPriceCalculator.sol": [
+              51,
+              52
+            ]
+          },
+          "keywords": [
+            "overflow",
+            "pricing-bounds",
+            "validation-bypass",
+            "computeRatioX96"
+          ],
+          "code_smells": [
+            "SqrtPriceCalculator.sol:52 - returns 0 on overflow instead of reverting",
+            "AMMStandardHook.sol:218 - min check skipped when min=0, allowing sqrtPriceX96=0 to pass"
+          ],
+          "what_remains_unverified": "Whether the overflow can actually be triggered via CLOB order amounts and whether this leads to profitable extraction",
+          "fp_gate": {
+            "location_exists": true,
+            "entry_reachable": true,
+            "no_existing_guard": true,
+            "concrete_attack_path": true,
+            "poc_compiles": true
+          },
+          "kill_gate": {
+            "status": "killed",
+            "gate": "D",
+            "reason": "attack_sequence has no function references"
+          },
+          "_source_agent": "cross-boundary",
+          "consensus_count": 1,
+          "contributing_agents": [
+            "cross-boundary"
+          ],
+          "canonical_id": "HOOK-003"
+        }
+      ],
+      "agent_count": 1,
+      "max_confidence": 30,
+      "has_test": true
+    },
+    {
+      "primitive": "price_manipulation",
+      "boundary": "single_contract",
+      "asset": "Executors (fill providers) lose dust amounts",
+      "findings": [
+        {
+          "id": "COMP-002",
+          "title": "CLOB calculateFixedInput double ceiling rounding systematically over-credits makers",
+          "severity": "low",
+          "confidence_score": 60,
+          "confidence_deductions": [
+            "Bounded non-compounding impact (max 2 wei per fill): -15",
+            "Dust-level impact: -25"
+          ],
+          "status": "lead",
+          "source_hypothesis": "H-R5-HH-08",
+          "category": "rounding",
+          "description": "CLOBHelper.calculateFixedInput (lines 313-314) applies mulDivRoundingUp twice, creating a double ceiling: ceil(ceil(amountIn * P / Q96) * P / Q96). This systematically over-credits each maker by up to 2 wei per fill step. Over many fills, the sum of maker credits exceeds the single-shot calculation, creating a dust-level solvency discrepancy.",
+          "impact": "Max 2 wei excess per fill step. For 1000 fills: 2000 wei (~$0.000002). Not economically exploitable - gas costs far exceed any rounding benefit.",
+          "proof_sketch": "test_H_R5_CH_08_CLOBRoundingUpAccumulation verifies that sum of individual fills > single-shot calculation. test_H_R5_HH_08_doubleRoundingUpExcessOutput verifies max excess is 2 wei per step.",
+          "victim": "Executors (fill providers) lose dust amounts",
+          "extractable_value": "~2000 wei for 1000 fills (dust)",
+          "attack_sequence": [
+            "Place many small CLOB orders at a price where rounding matters",
+            "Each fill: maker credited ceil(ceil(amountIn*P/Q96)*P/Q96) instead of floor",
+            "Over N fills: sum(credited) - exact = up to 2*N wei excess",
+            "Excess comes from fillOutputRemaining (executor's budget)"
+          ],
+          "test_file": "lbamm-hooks-and-handlers/test/AuditComposabilityW1KLoop.t.sol",
+          "test_passes": true,
+          "prerequisites": [
+            "Many small CLOB orders at specific prices"
+          ],
+          "repos": [
+            "lbamm-hooks-and-handlers"
+          ],
+          "contracts": [
+            "CLOBHelper.sol"
+          ],
+          "functions": [
+            "calculateFixedInput()"
+          ],
+          "lines": {
+            "CLOBHelper.sol": [
+              309,
+              313,
+              314
+            ]
+          },
+          "keywords": [
+            "rounding",
+            "double-ceiling",
+            "solvency",
+            "dust"
+          ],
+          "code_smells": [
+            "CLOBHelper.sol:313-314 - double mulDivRoundingUp over-credits makers by up to 2 wei per step"
+          ],
+          "what_remains_unverified": "Whether rounding can compound to material amounts in high-volume scenarios",
+          "fp_gate": {
+            "location_exists": true,
+            "entry_reachable": true,
+            "no_existing_guard": true,
+            "concrete_attack_path": true,
+            "poc_compiles": true
+          },
+          "kill_gate": {
+            "status": "flagged",
+            "gate": "V2-refutation",
+            "reason": "Missing refutation_attempted \u2014 you must argue against your own finding before submitting"
+          },
+          "_source_agent": "composability-exploiter",
+          "consensus_count": 1,
+          "contributing_agents": [
+            "composability-exploiter"
+          ],
+          "canonical_id": "HOOK-004"
+        }
+      ],
+      "agent_count": 1,
+      "max_confidence": 30,
+      "has_test": true
+    }
+  ],
+  "claims": [],
+  "corroborated_theses": []
+}

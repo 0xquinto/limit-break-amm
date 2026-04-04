@@ -1,0 +1,25 @@
+{"ts":"2026-03-25T00:00:00Z","phase":"A","action":"slither","repos":["lbamm-core","amm-pool-type-dynamic","lbamm-pool-type-fixed"],"result":"Standard patterns: reentrancy-balance, arbitrary-send-erc20, divide-before-multiply"}
+{"ts":"2026-03-25T00:01:00Z","phase":"A","action":"aderyn","repos":["lbamm-core"],"result":"1 high (ModuleAdmin state after call), 9 low. amm-pool-type-dynamic crashed."}
+{"ts":"2026-03-25T00:02:00Z","phase":"B","action":"audit-context-building","target":"AMMModule critical functions","result":"Ultra-granular analysis of 7 functions: _finalizeSwapCollectFundsAndDisburse, _applySwapByInputInputFees, _validateProtocolFees, _positionAddLiquidity, _positionRemoveLiquidity, _distributeOrCollectLiquidityToken, _storeTokensOwed"}
+{"ts":"2026-03-25T00:03:00Z","phase":"B","action":"entry-point-analyzer","target":"AMMModule","result":"20+ state-changing entry points classified: public (swap, addLiq, removeLiq, flashLoan), admin (settings), contract-only (hook callbacks)"}
+{"ts":"2026-03-25T00:04:00Z","phase":"D","action":"hypothesis_test","id":"H-R4-CP-01","result":"dismissed","detail":"Operator precedence: Solidity type system forces (uint256|uint256)==0 parse"}
+{"ts":"2026-03-25T00:05:00Z","phase":"D","action":"hypothesis_test","id":"H-R4-DP-03","result":"dismissed","detail":"Fee amplification capped by limitAmount"}
+{"ts":"2026-03-25T00:06:00Z","phase":"D","action":"hypothesis_test","id":"H-R4-CP-08","result":"dismissed","detail":"Precision truncation guarantees redeposited <= value"}
+{"ts":"2026-03-25T00:07:00Z","phase":"D","action":"hypothesis_test","id":"H-R4-CH-03","result":"dismissed","detail":"ENTERED bit blocks reentrancy during fee distribution"}
+{"ts":"2026-03-25T00:08:00Z","phase":"D","action":"hypothesis_test","id":"H-R4-HH-04","result":"tested","detail":"LEAD: Pre-fee amount in transient storage deflates pricing bounds check"}
+{"ts":"2026-03-25T00:09:00Z","phase":"D","action":"hypothesis_test","id":"H-R4-HH-07","result":"dismissed","detail":"Known issue CP-004"}
+{"ts":"2026-03-25T00:10:00Z","phase":"D","action":"hypothesis_test","id":"H-R4-CP-05","result":"dismissed","detail":"Each pool reads own pre-swap state correctly"}
+{"ts":"2026-03-25T00:11:00Z","phase":"D","action":"hypothesis_test","id":"H-R4-CP-02","result":"dismissed","detail":"snapPrice is admin-only, no extraction path"}
+{"ts":"2026-03-25T00:12:00Z","phase":"D","action":"hypothesis_test","id":"H-R4-CP-04","result":"dismissed","detail":"Dust bounded by precision, 500 wei over 500 swaps"}
+{"ts":"2026-03-25T00:13:00Z","phase":"D","action":"hypothesis_test","id":"H-R4-CP-06","result":"dismissed","detail":"K-1 wei per swap, dust-level rounding"}
+{"ts":"2026-03-25T00:14:00Z","phase":"D","action":"hypothesis_test","id":"H-R4-CP-09","result":"dismissed","detail":"Proportional adjustment uses RoundingUp (protocol-favoring)"}
+{"ts":"2026-03-25T00:15:00Z","phase":"D","action":"hypothesis_test","id":"H-R4-CH-04","result":"dismissed","detail":"Non-current orders never partially filled"}
+{"ts":"2026-03-25T00:16:00Z","phase":"D","action":"hypothesis_test","id":"H-R4-HH-02","result":"dismissed","detail":"Dual-field design intentional, closeOrder dispatches correctly"}
+{"ts":"2026-03-25T00:17:00Z","phase":"D","action":"hypothesis_test","id":"H-R4-HH-06","result":"dismissed","detail":"validateExecutor validates upper bounds, smaller fills always safe"}
+{"ts":"2026-03-25T00:18:00Z","phase":"D","action":"hypothesis_test","id":"H-R4-HH-03","result":"dismissed","detail":"Integer sqrt truncation counteracts rounding up, sub-wei error"}
+{"ts":"2026-03-25T00:19:00Z","phase":"C","action":"forge_test","file":"AuditInsolvencyKLR4.t.sol","result":"113 tests passed, 0 failed"}
+{"ts":"2026-03-25T00:20:00Z","phase":"C","action":"halmos","file":"AuditInsolvencyKLR4.t.sol","result":"3 check_ functions: 2 PASS, 1 TIMEOUT (CP08 - solver timeout at 10s)"}
+{"ts":"2026-03-25T00:21:00Z","phase":"C","action":"medusa","file":"AuditInsolvencyKLR4.t.sol","result":"Failed: contract too complex to deploy in Medusa environment"}
+{"ts":"2026-03-25T00:22:00Z","phase":"C","action":"checklist_C10-C17","result":"Tests added for C10 (hook reentrancy), C11 (collectHookFees), C12 (deposit/refund), C13 (multihop), C14 (tick boundary), C15 (cross-pool), C16 (flash roundtrip), C17 (settings+swap)"}
+{"ts":"2026-03-25T00:23:00Z","phase":"C","action":"checklist_C18-C25","result":"Tests added for C18 (reserve consistency), C19 (settlement conservation), C21 (callback state), C22 (read-only reentrancy), C23 (transient storage), C24 (settings cache), C25 (fee-on-transfer)"}
+{"ts":"2026-03-25T00:24:00Z","phase":"gate","action":"sidecar_gate","result":"ACCEPTED","output":"findings-insolvency-engineer.json"}

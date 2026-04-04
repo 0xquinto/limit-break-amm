@@ -1,0 +1,215 @@
+{
+  "wave": 1,
+  "name": "black-hat-offense",
+  "timestamp": "2026-03-16T22:15:20Z",
+  "run_id": "run-2026-03-16T21-39-19Z",
+  "hot_spots": [],
+  "findings": [],
+  "contradictions": [],
+  "ruled_out_count": 124,
+  "invariants_formalized": [],
+  "tool_coverage_warnings": [
+    "TOOL_COVERAGE: unknown (unknown) did NOT run entry_point_analyzer \u2014 reason: no reason given",
+    "TOOL_COVERAGE: unknown (unknown) did NOT run audit_context_building \u2014 reason: no reason given",
+    "TOOL_COVERAGE: unknown (unknown) did not report on conditional tool token_integration_analyzer \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: unknown (unknown) did not report on conditional tool sharp_edges \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: state-desync (State Desync Operator) did NOT run entry_point_analyzer \u2014 reason: no reason given",
+    "TOOL_COVERAGE: state-desync (State Desync Operator) did NOT run audit_context_building \u2014 reason: no reason given",
+    "TOOL_COVERAGE: state-desync (State Desync Operator) did not report on conditional tool token_integration_analyzer \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: state-desync (State Desync Operator) did not report on conditional tool sharp_edges \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: auth-forger (Authorization & Settlement Forger) did NOT run entry_point_analyzer \u2014 reason: no reason given",
+    "TOOL_COVERAGE: auth-forger (Authorization & Settlement Forger) did NOT run audit_context_building \u2014 reason: no reason given",
+    "TOOL_COVERAGE: auth-forger (Authorization & Settlement Forger) did not report on conditional tool token_integration_analyzer \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: auth-forger (Authorization & Settlement Forger) did not report on conditional tool sharp_edges \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: math-deep-diver (Math Deep-Diver) did NOT run entry_point_analyzer \u2014 reason: no reason given",
+    "TOOL_COVERAGE: math-deep-diver (Math Deep-Diver) did NOT run audit_context_building \u2014 reason: no reason given",
+    "TOOL_COVERAGE: math-deep-diver (Math Deep-Diver) did not report on conditional tool token_integration_analyzer \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: math-deep-diver (Math Deep-Diver) did not report on conditional tool sharp_edges \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: cross-boundary (Cross-Boundary Tracer) did NOT run entry_point_analyzer \u2014 reason: no reason given",
+    "TOOL_COVERAGE: cross-boundary (Cross-Boundary Tracer) did NOT run audit_context_building \u2014 reason: no reason given",
+    "TOOL_COVERAGE: cross-boundary (Cross-Boundary Tracer) did not report on conditional tool token_integration_analyzer \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: cross-boundary (Cross-Boundary Tracer) did not report on conditional tool sharp_edges \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: composability-exploiter (Composability Exploiter) did NOT run entry_point_analyzer \u2014 reason: no reason given",
+    "TOOL_COVERAGE: composability-exploiter (Composability Exploiter) did NOT run audit_context_building \u2014 reason: no reason given",
+    "TOOL_COVERAGE: composability-exploiter (Composability Exploiter) did not report on conditional tool token_integration_analyzer \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: composability-exploiter (Composability Exploiter) did not report on conditional tool sharp_edges \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: price-distorter (Cross-Venue Price Distorter) did NOT run entry_point_analyzer \u2014 reason: no reason given",
+    "TOOL_COVERAGE: price-distorter (Cross-Venue Price Distorter) did NOT run audit_context_building \u2014 reason: no reason given",
+    "TOOL_COVERAGE: price-distorter (Cross-Venue Price Distorter) did not report on conditional tool token_integration_analyzer \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: price-distorter (Cross-Venue Price Distorter) did not report on conditional tool sharp_edges \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: insolvency-engineer (Insolvency Engineer) did NOT run entry_point_analyzer \u2014 reason: no reason given",
+    "TOOL_COVERAGE: insolvency-engineer (Insolvency Engineer) did NOT run audit_context_building \u2014 reason: no reason given",
+    "TOOL_COVERAGE: insolvency-engineer (Insolvency Engineer) did not report on conditional tool token_integration_analyzer \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: insolvency-engineer (Insolvency Engineer) did not report on conditional tool sharp_edges \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: extension-hijacker (Extension Hijacker) did NOT run entry_point_analyzer \u2014 reason: no reason given",
+    "TOOL_COVERAGE: extension-hijacker (Extension Hijacker) did NOT run audit_context_building \u2014 reason: no reason given",
+    "TOOL_COVERAGE: extension-hijacker (Extension Hijacker) did not report on conditional tool token_integration_analyzer \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: extension-hijacker (Extension Hijacker) did not report on conditional tool sharp_edges \u2014 add to tools_run with ran=false and reason if not applicable",
+    "LENS_COVERAGE: unknown (unknown) has no lens_coverage in metadata \u2014 likely did NOT apply value lifecycle lenses",
+    "LENS_COVERAGE: state-desync (State Desync Operator) has no lens_coverage in metadata \u2014 likely did NOT apply value lifecycle lenses",
+    "LENS_COVERAGE: auth-forger (Authorization & Settlement Forger) has no lens_coverage in metadata \u2014 likely did NOT apply value lifecycle lenses",
+    "LENS_COVERAGE: math-deep-diver (Math Deep-Diver) has no lens_coverage in metadata \u2014 likely did NOT apply value lifecycle lenses",
+    "LENS_COVERAGE: cross-boundary (Cross-Boundary Tracer) has no lens_coverage in metadata \u2014 likely did NOT apply value lifecycle lenses",
+    "LENS_COVERAGE: composability-exploiter (Composability Exploiter) has no lens_coverage in metadata \u2014 likely did NOT apply value lifecycle lenses",
+    "LENS_COVERAGE: price-distorter (Cross-Venue Price Distorter) has no lens_coverage in metadata \u2014 likely did NOT apply value lifecycle lenses",
+    "LENS_COVERAGE: insolvency-engineer (Insolvency Engineer) has no lens_coverage in metadata \u2014 likely did NOT apply value lifecycle lenses",
+    "LENS_COVERAGE: extension-hijacker (Extension Hijacker) has no lens_coverage in metadata \u2014 likely did NOT apply value lifecycle lenses"
+  ],
+  "exploit_clusters": [],
+  "claims": [
+    {
+      "agent": "precision-sniper",
+      "thesis": "uint128 truncation in DynamicHelper._getTokensOwed when feeGrowthInside delta * liquidity / Q128 exceeds uint128.max",
+      "victim": "LPs with large positions",
+      "asset": "Uncollected swap fees",
+      "estimated_ev": 0,
+      "status": "ruled_out",
+      "test_file": "amm-pool-type-dynamic/test/audit/AuditPrecisionSniperW1V2.t.sol::test_C8_tokensOwed_noTruncation",
+      "ts": "2026-03-16T17:00:00Z",
+      "_source_agent": "precision-sniper"
+    },
+    {
+      "agent": "precision-sniper",
+      "thesis": "computeRatioX96 overflow returns 0 allowing zero-price bypass in downstream consumers",
+      "victim": "Token creators with pricing bounds",
+      "asset": "Trading rule enforcement",
+      "estimated_ev": 0,
+      "status": "ruled_out",
+      "test_file": "amm-pool-type-dynamic/test/audit/AuditPrecisionSniperW1V2.t.sol::test_C19_computeRatioX96_overflow",
+      "ts": "2026-03-16T17:00:00Z",
+      "_source_agent": "precision-sniper"
+    },
+    {
+      "agent": "precision-sniper",
+      "thesis": "Round-trip swap profit via rounding direction mismatch between input and output fee calculations",
+      "victim": "LPs providing liquidity",
+      "asset": "Pool reserves",
+      "estimated_ev": 0,
+      "status": "ruled_out",
+      "test_file": "amm-pool-type-dynamic/test/audit/AuditPrecisionSniperW1V2.t.sol::test_C23_noRoundTripProfit",
+      "ts": "2026-03-16T17:00:00Z",
+      "_source_agent": "precision-sniper"
+    },
+    {
+      "thesis": "Pool type returns amountOut > actual tokens moved, Core credits user excess",
+      "victim": "AMM liquidity providers",
+      "asset": "pool reserve tokens",
+      "estimated_ev": 0,
+      "status": "ruled_out",
+      "reason": "_safeDecrementUint128 underflow check at AMMModule.sol:3520 catches amountOut > reserve. Core also validates balance before/after at line 2208.",
+      "_source_agent": "cross-boundary"
+    },
+    {
+      "thesis": "Transfer handler called with mismatched token pair steals from settlement",
+      "victim": "swap counterparty",
+      "asset": "input tokens",
+      "estimated_ev": 0,
+      "status": "ruled_out",
+      "reason": "ammHandleTransfer requires msg.sender==AMM (line 230 CLOBTransferHandler, line 115 PermitTransferHandler). Balance check at AMMModule:2208 catches under-delivery.",
+      "_source_agent": "cross-boundary"
+    },
+    {
+      "thesis": "Reentrancy through wrapped native deposit/refund corrupts swap state",
+      "victim": "AMM",
+      "asset": "wrapped native tokens",
+      "estimated_ev": 0,
+      "status": "ruled_out",
+      "reason": "Balance-before/after check at AMMModule:2208 validates exact amount transferred. The _depositWrappedNativeAndRefundExcess refund callback cannot manipulate the AMM's balance because WETH deposit is atomic and the excess refund goes to executor.",
+      "_source_agent": "cross-boundary"
+    },
+    {
+      "id": "EH-T1",
+      "thesis": "Malicious pool type returns inflated amountOut to drain pool reserves",
+      "status": "ruled_out",
+      "confidence": "high",
+      "evidence": "Pool type address must have 6 leading zero bytes (AMMModule.sol:109). _safeDecrementUint128 reverts if amountOut > reserve (AMMModule.sol:1437). Balance check at AMMModule.sol:2208 verifies actual ERC20 transfer.",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_singleSwapInputBased",
+        "_finalizeSwapCollectFundsAndDisburse"
+      ],
+      "_source_agent": "extension-hijacker"
+    },
+    {
+      "id": "EH-T2",
+      "thesis": "Malicious transfer handler skips token transfer but core believes funds arrived",
+      "status": "ruled_out",
+      "confidence": "high",
+      "evidence": "Core checks balanceInBefore + swapCache.amountIn != balanceInAfter at AMMModule.sol:2208. Non-transferring handler caught by balance verification.",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_finalizeSwapCollectFundsAndDisburse"
+      ],
+      "_source_agent": "extension-hijacker"
+    },
+    {
+      "id": "EH-T3",
+      "thesis": "Bypass pricing bounds via computeRatioX96 overflow in validateHandlerOrder",
+      "status": "ruled_out",
+      "confidence": "high",
+      "evidence": "computeRatioX96 returns 0 on overflow (SqrtPriceCalculator.sol:51-53). validateHandlerOrder missing zero check vs _validatePricingBounds which has it (line 847). But CLOB fills go through AMM swap path which has the check. Low severity only (CP-003). Confirmed via Halmos symbolic execution.",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol",
+        "SqrtPriceCalculator.sol"
+      ],
+      "functions": [
+        "validateHandlerOrder",
+        "computeRatioX96",
+        "_validatePricingBounds"
+      ],
+      "_source_agent": "extension-hijacker"
+    },
+    {
+      "id": "EH-T4",
+      "thesis": "Storage slot collision across diamond facets corrupts pool accounting",
+      "status": "ruled_out",
+      "confidence": "high",
+      "evidence": "Slither storage layout confirms all 4 modules have 0 local slots. All state via LBAMMStorage.appStorage() at slot 0x9A1D. No collision possible.",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol",
+        "ModuleAdmin.sol",
+        "ModuleFeeCollection.sol",
+        "ModuleLiquidity.sol"
+      ],
+      "functions": [],
+      "_source_agent": "extension-hijacker"
+    },
+    {
+      "id": "EH-T5",
+      "thesis": "Forged hook caller triggers hook logic with fake parameters to extract value",
+      "status": "ruled_out",
+      "confidence": "high",
+      "evidence": "All state-changing hooks check _requireCallerIsAMM() (lines 110, 159, 253, 320, 366, 386). validateHandlerOrder is view-only. Confirmed via Medusa fuzzing (10000 sequences, 0 failures).",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "beforeSwap",
+        "afterSwap",
+        "validateAddLiquidity",
+        "validateRemoveLiquidity"
+      ],
+      "_source_agent": "extension-hijacker"
+    }
+  ],
+  "corroborated_theses": []
+}

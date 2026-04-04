@@ -1,0 +1,474 @@
+{
+  "agent_name": "insolvency-engineer",
+  "findings": [],
+  "ruled_out_vectors": [
+    {
+      "id": "ROV-01",
+      "title": "INV-S01: Token Balance Solvency (reserves + feeBalance + protocolFees)",
+      "description": "Verified balance >= reserves + feeBalance + protocolFees for both tokens after swaps, add/remove liquidity, fee collection, and multi-step compositions. 54 tests covering 20+ operation sequences all pass.",
+      "test_file": "test/AuditInsolvencyW1New.t.sol",
+      "status": "ruled_out",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "id": "ROV-02",
+      "title": "INV-S02: No Value Creation (round-trip swap profit)",
+      "description": "Fuzz-tested round-trip swaps (A->B->A) with both input and output modes. Protocol-favorable rounding ensures end0 <= start0 in all cases. 25 fuzz runs each for input and output round-trips.",
+      "test_file": "test/AuditInsolvencyW1New.t.sol",
+      "status": "ruled_out",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "id": "ROV-03",
+      "title": "INV-S03: Liquidity Withdrawal Guarantee",
+      "description": "After random swap sequences, LP can always removeLiquidity. Tested with SimplePoolType and verified solvency holds after withdrawal.",
+      "test_file": "test/AuditInsolvencyW1New.t.sol",
+      "status": "ruled_out",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "id": "ROV-04",
+      "title": "INV-H03: Transient Storage Hygiene (two-swap independence)",
+      "description": "Two swaps in same tx produce independent results. Second swap gets worse price (correct price impact). Bidirectional swaps maintain solvency. No transient leakage between operations.",
+      "test_file": "test/AuditInsolvencyW1New.t.sol",
+      "status": "ruled_out",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "id": "ROV-05",
+      "title": "INV-H05: Reentrancy Guard Persistence (ERC-777 mock)",
+      "description": "Deployed MaliciousReentrantToken that attempts reentry during transfer callback. ENTERED bit preserved through fee distribution because _setReentrancyFlags preserves bit 1 (ENTERED) when clearing custom flags.",
+      "test_file": "test/AuditInsolvencyW1New.t.sol",
+      "status": "ruled_out",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "id": "ROV-06",
+      "title": "INV-E02: Flash Loan No-Profit",
+      "description": "Fuzz-tested flash loan amounts (1e15 to 50e18). Attacker always ends with less than starting balance due to mandatory fee. Solvency maintained post-flash.",
+      "test_file": "test/AuditInsolvencyW1New.t.sol",
+      "status": "ruled_out",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "id": "ROV-07",
+      "title": "Protocol Fee Lifecycle (accumulate -> collect -> re-accumulate)",
+      "description": "15 swaps with exchange fees accumulate protocol fees. Admin collectProtocolFees zeros storage and transfers. Subsequent swaps re-accumulate correctly. Solvency holds throughout.",
+      "test_file": "test/AuditInsolvencyW1New.t.sol",
+      "status": "ruled_out",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "id": "ROV-08",
+      "title": "Multi-Swap Two-Pool Value Conservation",
+      "description": "Multi-hop swap through 2 pools with round-trip verification. No value creation across pool boundaries. Both pools remain solvent after forward and reverse multi-hop.",
+      "test_file": "test/AuditInsolvencyW1New.t.sol",
+      "status": "ruled_out",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "id": "ROV-09",
+      "title": "Output Swap Solvency (negative amountSpecified)",
+      "description": "Swap-by-output correctly charges amountIn and delivers exact amountOut. Multiple output swaps maintain solvency. Output round-trip (output swap -> input swap back) loses money.",
+      "test_file": "test/AuditInsolvencyW1New.t.sol",
+      "status": "ruled_out",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "id": "ROV-10",
+      "title": "Dust Swap Extraction (100 x 1-wei swaps)",
+      "description": "100 consecutive 1-wei swaps produce no insolvency. Protocol rounding consistently rounds against swapper. Pool balance increases or stays constant.",
+      "test_file": "test/AuditInsolvencyW1New.t.sol",
+      "status": "ruled_out",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "id": "ROV-11",
+      "title": "Fee-on-Transfer Token Defense",
+      "description": "_collectToken uses strict equality: balanceOf != before + amount reverts. Blocks all fee-on-transfer, rebasing, or deflationary tokens from causing reserve mismatch.",
+      "test_file": "code-analysis:AMMModule.sol:2913-2920",
+      "status": "ruled_out",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "id": "ROV-12",
+      "title": "tokensOwed Overflow Check",
+      "description": "_storeTokensOwed uses unchecked addition but includes explicit overflow check: (existingAmount + amount < existingAmount) -> revert. No silent overflow possible.",
+      "test_file": "test/AuditInsolvencyW1New.t.sol",
+      "status": "ruled_out",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "id": "ROV-13",
+      "title": "Output Swap Hook Fee Inflation (INV-S04 denomination check)",
+      "description": "_applySwapByOutputOutputFees inflates amountOut by hook fees BEFORE pool call. Pool computes amountIn on inflated output. Reserves decrement by inflated amount. User only receives original requested output. Hook fees backed by reserve decrement. Conservation proven algebraically.",
+      "test_file": "code-analysis:AMMModule.sol:2851-2895,1506-1627",
+      "status": "ruled_out",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "id": "ROV-14",
+      "title": "Flash Loan Cross-Token Fee Path",
+      "description": "When feeToken != loanToken, both tokens are independently verified: loan repayment via balance check on loanToken, fee via balance check on feeToken. No denomination confusion. Hook fee key correctly uses (loanToken, feeToken) pair.",
+      "test_file": "code-analysis:AMMModule.sol:3288-3382",
+      "status": "ruled_out",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "id": "ROV-15",
+      "title": "Multi-Hop Intermediate Token Conservation",
+      "description": "In multi-hop swaps, intermediate tokens never physically transfer. Algebraic proof: net change in total B claims (pool0_reserve + pool1_reserve + fees + protocolFees + tokensOwed) equals exactly zero for intermediate token B.",
+      "test_file": "test/AuditInsolvencyW1New.t.sol",
+      "status": "ruled_out",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "id": "ROV-16",
+      "title": "Hook Fee Key Collision",
+      "description": "_storeHookFees uses keccak256(hookAddress, keccak256(tokenFor, tokenFee)). Hook-managed keys use contract address as domain separator. Token-managed uses 0x7F constant. Cross-namespace collision requires contract at precompile address (impossible).",
+      "test_file": "code-analysis:AMMModule.sol:2971-2995,Constants.sol:59-62",
+      "status": "ruled_out",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "id": "ROV-17",
+      "title": "Partial Fill + Hook Fee Over-Extraction",
+      "description": "In output swaps with partial fill, hook fees NOT pro-rated. User absorbs full shortfall. If actualAmountOut < hookFees, reverts with LBAMM__PartialFillLessThanFees. Hook fees always covered. Unfavorable UX but not insolvency.",
+      "test_file": "code-analysis:AMMModule.sol:1567-1589",
+      "status": "ruled_out",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "id": "ROV-18",
+      "title": "DynamicHelper Tick Crossing Fee Growth (modular arithmetic)",
+      "description": "Standard Uniswap V3 pattern. All fee growth computed in unchecked blocks. Subtraction produces correct delta via modular arithmetic. _getTokensOwed truncates to uint128 (always under-reports, protects solvency).",
+      "test_file": "code-analysis:DynamicHelper.sol:502-511,600-629,568-581",
+      "status": "ruled_out",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "id": "ROV-19",
+      "title": "snapPrice + addLiquidity Composition Attack",
+      "description": "snapPrice requires zero active liquidity and no initialized ticks between current and target price. Price is correctly repriced. Subsequent add/swap operations use the new price with correct deposit/output calculations. No value extraction.",
+      "test_file": "code-analysis:DynamicHelper.sol:237-291",
+      "status": "ruled_out",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "id": "ROV-20",
+      "title": "Rounding Direction Consistency (all pool types)",
+      "description": "Add liquidity: rounds UP (LP deposits more). Remove: rounds DOWN (LP gets less). Swap input: mulDiv rounds DOWN on output. Swap output: mulDivRoundingUp on input. Fees: always mulDivRoundingUp. Consistent across Dynamic, Fixed, SingleProvider pool types.",
+      "test_file": "code-analysis:SwapMath.sol:36-84,109-150;FixedHelper.sol:908-919;SingleProviderHelper.sol:101-113",
+      "status": "ruled_out",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "id": "ROV-21",
+      "title": "Handler Settlement Token Conservation (INV-H02)",
+      "description": "AMM strict balance equality check (balanceInBefore + amountIn == balanceInAfter) blocks all handler-mediated extraction. CLOB handler caps output to fillOutputRemaining. Permit handler transfers directly from signer to AMM.",
+      "test_file": "code-analysis:AMMModule.sol:2207-2209;CLOBTransferHandler.sol:296;PermitTransferHandler.sol:262-273",
+      "status": "ruled_out",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "id": "ROV-22",
+      "title": "Fixed Pool Height System Value Creation",
+      "description": "No share-based accounting (immune to first-depositor inflation). Precision loss absorbed by depositor. Output capped to expectedReserve. Dust bounded to 1 ratio unit per swap.",
+      "test_file": "code-analysis:FixedHelper.sol:180-262,908-919,1694-1710",
+      "status": "ruled_out",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "id": "ROV-23",
+      "title": "SingleProvider Hook Price Manipulation",
+      "description": "Hook controls price by design. amountOut hard-capped to reserveOut in SingleProviderHelper.swapByInput (L43). swapByOutput also caps to reserveOut. Pool type itself prevents over-draining regardless of hook behavior.",
+      "test_file": "code-analysis:SingleProviderPoolType.sol:323-327;SingleProviderHelper.sol:43",
+      "status": "ruled_out",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "id": "ROV-24",
+      "title": "Interleaved Multi-User Operations",
+      "description": "Alice swaps, Bob adds liquidity, Carol swaps, admin collects protocol fees, Bob removes liquidity. Solvency maintained throughout interleaved operations from multiple users.",
+      "test_file": "test/AuditInsolvencyW1New.t.sol",
+      "status": "ruled_out",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "id": "ROV-25",
+      "title": "createPool delegatecall Reentrancy Window",
+      "description": "_clearReentrancyGuard called before delegatecall to addLiquidity. No external call window between clear and delegatecall. addLiquidity immediately sets ENTERED via nonReentrantWithFlags.",
+      "test_file": "test/StateDesyncInvariantTest.t.sol",
+      "status": "ruled_out",
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    }
+  ],
+  "theft_theses": [
+    {
+      "id": "TT-01",
+      "title": "Extract value via flash loan + swap composition",
+      "description": "Flash loan token A, swap to B, swap back to A, repay loan. Hypothesis: can net positive A after all fees.",
+      "status": "ruled_out",
+      "evidence": "Flash loan fee + swap fees + price impact ensure attacker loses money. Fuzz-tested 25 amounts."
+    },
+    {
+      "id": "TT-02",
+      "title": "Drain pool via iterated dust swaps",
+      "description": "Execute thousands of 1-wei swaps to exploit rounding. Hypothesis: rounding error accumulates in attacker's favor.",
+      "status": "ruled_out",
+      "evidence": "100 x 1-wei swaps tested. Protocol rounding (mulDiv rounds down on output, mulDivRoundingUp on fees) consistently favors pool. Attacker loses to gas costs."
+    },
+    {
+      "id": "TT-03",
+      "title": "Leave protocol with bad debt via reentrancy during fee distribution",
+      "description": "After _setReentrancyFlags(NO_FLAGS), attempt reentry through ERC-777 callback. Hypothesis: custom flags cleared allows nested operations.",
+      "status": "ruled_out",
+      "evidence": "ENTERED bit (bit 1) is preserved when clearing custom flags. All nonReentrant/nonReentrantWithFlags functions check ENTERED bit. Proven in pure test + mock token test."
+    },
+    {
+      "id": "TT-04",
+      "title": "Extract value via output swap hook fee inflation",
+      "description": "In output swaps, hook fees inflate amountOut before pool call. Hypothesis: pool reserves decrease by inflated amount but user + hooks only receive uninflated amount.",
+      "status": "ruled_out",
+      "evidence": "Algebraic proof: reserve_decrement = user_output + hook_fees. Conservation holds. User output = adjustedAmountSpecified (original request minus shortfall). Hook fees stored as tokensOwed claims backed by reserve decrement."
+    },
+    {
+      "id": "TT-05",
+      "title": "Exploit multi-hop intermediate token accounting",
+      "description": "In multi-hop swap A->B->C, intermediate token B never physically transfers. Hypothesis: accounting error in B leaves protocol insolvent.",
+      "status": "ruled_out",
+      "evidence": "Net change in total B claims across both pools equals zero. Each fee category (pool fees, protocol fees, hook fees) is offset by corresponding reserve decrease. Verified with multi-swap round-trip test."
+    }
+  ],
+  "hypothesis_results": [
+    {
+      "id": "CH-14",
+      "status": "dismissed",
+      "failure_class": "strategic",
+      "detail": "Reentrancy via flag clearing in _executeQueuedHookFeesByHookTransfers. ENTERED bit preserved because _setReentrancyFlags masks with ENTERED constant (bit 1). Pure logic test proves ENTERED always present after flag clearing.",
+      "test_file": "test/AuditInsolvencyW1R8.t.sol"
+    },
+    {
+      "id": "CH-04",
+      "status": "dismissed",
+      "failure_class": "strategic",
+      "detail": "Nested operation during fee distribution drops fees. Same root cause as CH-14: ENTERED bit blocks all nested operations (swap, addLiquidity, flashLoan).",
+      "test_file": "test/AuditInsolvencyW1R8.t.sol"
+    },
+    {
+      "id": "CH-01",
+      "status": "dismissed",
+      "failure_class": "strategic",
+      "detail": "Hook fee key mismatch between storage and collection. Key construction uses keccak256(hookAddress, keccak256(tokenFor, tokenFee)). Collection regenerates identical key. No collision possible.",
+      "test_file": "test/AuditInsolvencyW1R8.t.sol"
+    },
+    {
+      "id": "TS-01",
+      "status": "dismissed",
+      "failure_class": "strategic",
+      "detail": "Transient storage leak across operations. Transient storage resets per-transaction. Two consecutive swaps produce independent results (tested).",
+      "test_file": "test/AuditInsolvencyW1R8.t.sol"
+    },
+    {
+      "id": "TS-03",
+      "status": "dismissed",
+      "failure_class": "strategic",
+      "detail": "afterSwapRefund reentrancy. ENTERED bit preserved during callback. All entry points guarded by nonReentrant check.",
+      "test_file": "test/AuditInsolvencyW1R8.t.sol"
+    },
+    {
+      "id": "CH-09",
+      "status": "dismissed",
+      "failure_class": "strategic",
+      "detail": "Fill-or-kill design constraint. CLOB handler only supports input-based swaps (positive amountSpecified). Output-based rejected at handler level.",
+      "test_file": "test/AuditInsolvencyW1R8.t.sol"
+    },
+    {
+      "id": "CH-06",
+      "status": "dismissed",
+      "failure_class": "strategic",
+      "detail": "Partial fill hook fee overcharge. Hook fees stored at pre-partial-fill amounts. User absorbs shortfall. If output < hookFees, reverts with LBAMM__PartialFillLessThanFees.",
+      "test_file": "test/AuditInsolvencyW1R8.t.sol"
+    },
+    {
+      "id": "HR-06",
+      "status": "dismissed",
+      "failure_class": "strategic",
+      "detail": "Whitelist desync admin error. Self-inflicted configuration issue, not an attacker-exploitable vulnerability.",
+      "test_file": "test/AuditInsolvencyW1R8.t.sol"
+    },
+    {
+      "id": "HH-07",
+      "status": "dismissed",
+      "failure_class": "strategic",
+      "detail": "Order ID slot zero collision in CLOB. keccak256-based key construction prevents collisions. Zero order ID would need hash collision.",
+      "test_file": "test/AuditInsolvencyW1R8.t.sol"
+    },
+    {
+      "id": "HR-02",
+      "status": "dismissed",
+      "failure_class": "strategic",
+      "detail": "Pool creation cross-token bounds gap. Pool creation validates tick bounds. No gap exploitable between pool types.",
+      "test_file": "test/AuditInsolvencyW1R8.t.sol"
+    },
+    {
+      "id": "DH-01",
+      "status": "tested",
+      "detail": "Multi-swap through 2 pools cannot create value. Forward + reverse multi-hop swap tested. Attacker ends with less tokenIn. Both pools solvent.",
+      "test_file": "test/AuditInsolvencyW1New.t.sol"
+    },
+    {
+      "id": "DH-02",
+      "status": "tested",
+      "detail": "Protocol fee rounding cannot create dust profit. 50 x 100-wei swaps with protocol fees. Solvency maintained. Rounding consistently favors protocol.",
+      "test_file": "test/AuditInsolvencyW1New.t.sol"
+    },
+    {
+      "id": "DH-03",
+      "status": "tested",
+      "detail": "Interleaved operations from multiple users cannot desync state. Alice/Bob/Carol sequence with swaps, add/remove liquidity, protocol fee collection. Solvency maintained.",
+      "test_file": "test/AuditInsolvencyW1New.t.sol"
+    }
+  ],
+  "metadata": {
+    "num_turns": 85,
+    "files_read": 32,
+    "tools_run": {
+      "slither": {
+        "ran": true,
+        "note": "20 High/Medium findings on lbamm-core (excluding lib/test). All false positives: delegateCallPure pattern (5), uninitialized struct defaults (10), reentrancy-balance with nonReentrant guard (2), arbitrary-send-erc20 by design (1), incorrect-equality on early-return (1), fee var init (1)."
+      },
+      "aderyn": {
+        "ran": true,
+        "note": "88 detectors on lbamm-core. 1 High (reentrancy state change after external call - false positive, nonReentrant guarded). 9 Low (empty blocks, large literals, unchecked returns - all by design)."
+      },
+      "forge": {
+        "ran": true,
+        "note": "726 tests total. File: test/AuditInsolvencyW1New.t.sol (54 tests), test/AuditInsolvencyW1R8.t.sol (18 tests), test/AuditInsolvency.t.sol (26 tests), test/StateDesyncInvariantTest.t.sol (26 tests). All pass. Includes 3 fuzz campaigns (25 runs each)."
+      },
+      "halmos": {
+        "ran": true,
+        "note": "Halmos v0.3.3. test_C25_round_trip_no_profit_fuzz failed due to unsupported cheat code readCallers() (changePrank compatibility). Halmos checks from R8 (entered_bit_preserved, no_value_creation) passed in prior runs."
+      },
+      "medusa": {
+        "ran": true,
+        "note": "Medusa v1.5.0. 94 assertion tests passed, 0 failed. Target: AuditInsolvencyW1NewTest. 500 test limit, seq-len 3."
+      },
+      "audit-context-building": {
+        "ran": true,
+        "note": "Deep architectural analysis of AMMModule.sol (3550 lines), DynamicHelper.sol (795 lines), SwapMath.sol (151 lines), FeeHelper.sol, ModuleFeeCollection.sol, ModuleLiquidity.sol, FixedPoolType.sol, SingleProviderPoolType.sol, CLOBTransferHandler.sol, PermitTransferHandler.sol. Full token flow traced for swap, liquidity, flash loan, and handler settlement paths."
+      },
+      "entry-point-analyzer": {
+        "ran": true,
+        "note": "All state-changing entry points identified: singleSwap, multiSwap, directSwap (nonReentrantWithFlags), addLiquidity/removeLiquidity/collectFees (nonReentrantWithFlags via delegateCallPure), flashLoan (nonReentrantWithFlags), collectProtocolFees (nonReentrant, admin-only), collectTokensOwed/collectHookFees (nonReentrant). All guarded by reentrancy protection."
+      }
+    },
+    "checklist_items_completed": "A: 5/5, B: 2/2, C: 25/25, D: 11/11",
+    "triage_log": {
+      "skip": 12,
+      "borderline": 8,
+      "survive": 5
+    },
+    "gate_passed": true
+  }
+}

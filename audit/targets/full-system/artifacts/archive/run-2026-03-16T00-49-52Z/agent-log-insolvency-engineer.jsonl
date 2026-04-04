@@ -1,0 +1,24 @@
+{"ts":"2026-03-16T00:50:00Z","event":"agent_start","agent":"insolvency-engineer","wave":1}
+{"ts":"2026-03-16T00:51:00Z","event":"phase_start","phase":"A","description":"Static analysis across all repos"}
+{"ts":"2026-03-16T00:55:00Z","event":"tool_run","tool":"slither","target":"lbamm-core","status":"success","detectors_triggered":["reentrancy-balance"]}
+{"ts":"2026-03-16T00:57:00Z","event":"tool_run","tool":"slither","target":"amm-pool-type-dynamic","status":"success"}
+{"ts":"2026-03-16T00:58:00Z","event":"tool_run","tool":"slither","target":"lbamm-hooks-and-handlers","status":"success"}
+{"ts":"2026-03-16T00:59:00Z","event":"tool_run","tool":"slither","target":"lbamm-pool-type-fixed","status":"success"}
+{"ts":"2026-03-16T01:00:00Z","event":"tool_run","tool":"slither","target":"lbamm-pool-type-single-provider","status":"success"}
+{"ts":"2026-03-16T01:01:00Z","event":"tool_run","tool":"aderyn","target":"lbamm-core","status":"success"}
+{"ts":"2026-03-16T01:02:00Z","event":"tool_run","tool":"aderyn","target":"lbamm-hooks-and-handlers","status":"error","error":"Fatal bug in v0.6.8 compile.rs:78"}
+{"ts":"2026-03-16T01:03:00Z","event":"tool_run","tool":"aderyn","target":"amm-pool-type-dynamic","status":"error","error":"Fatal bug in v0.6.8 compile.rs:78"}
+{"ts":"2026-03-16T01:05:00Z","event":"phase_end","phase":"A","items_completed":"4/5"}
+{"ts":"2026-03-16T01:06:00Z","event":"phase_start","phase":"B","description":"Architectural analysis"}
+{"ts":"2026-03-16T01:15:00Z","event":"phase_end","phase":"B","items_completed":"2/5"}
+{"ts":"2026-03-16T01:16:00Z","event":"phase_start","phase":"C","description":"C-STATE invariant testing"}
+{"ts":"2026-03-16T01:40:00Z","event":"tool_run","tool":"forge_test","status":"success","tests_passed":32,"tests_failed":0}
+{"ts":"2026-03-16T01:45:00Z","event":"tool_run","tool":"forge_fuzz","status":"success","runs":5000}
+{"ts":"2026-03-16T01:48:00Z","event":"tool_run","tool":"halmos","status":"success","properties_checked":4}
+{"ts":"2026-03-16T01:49:00Z","event":"tool_run","tool":"medusa","status":"error","error":"Cannot auto-deploy AMMModule without constructor args"}
+{"ts":"2026-03-16T01:50:00Z","event":"phase_end","phase":"C","items_completed":"14/20"}
+{"ts":"2026-03-16T01:51:00Z","event":"phase_start","phase":"D","description":"Known vector patterns KV-1 through KV-4"}
+{"ts":"2026-03-16T02:03:00Z","event":"phase_end","phase":"D","items_completed":"4/4"}
+{"ts":"2026-03-16T02:04:00Z","event":"phase_start","phase":"E","description":"Hypothesis-driven exploits"}
+{"ts":"2026-03-16T02:30:00Z","event":"phase_end","phase":"E","items_completed":"8/11"}
+{"ts":"2026-03-16T02:31:00Z","event":"agent_end","agent":"insolvency-engineer","findings":0,"ruled_out":15,"verdict":"well-hardened"}

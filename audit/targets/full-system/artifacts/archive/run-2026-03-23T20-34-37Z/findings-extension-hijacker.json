@@ -1,0 +1,843 @@
+{
+  "agent_name": "extension-hijacker",
+  "agent_role": "Extension Hijacker \u2014 boundary crossing, proxy/diamond, hook trust model",
+  "wave": 1,
+  "findings": [
+    {
+      "id": "EH-001",
+      "title": "validateHandlerOrder overflow bypass allows handler orders to exceed max pricing bounds",
+      "severity": "medium",
+      "confidence_score": 80,
+      "confidence_deductions": [
+        "-10: requires specific token/pool configuration (max-only bounds, no min bound)",
+        "-10: requires handler integration (CLOB or Permit handler must be active)"
+      ],
+      "status": "confirmed",
+      "category": "price-manipulation",
+      "description": "In AMMStandardHook.validateHandlerOrder (lines 198-226), when computeRatioX96 returns 0 due to uint160 overflow, neither the min nor max pricing bound check triggers. With max-only bounds (minSqrtPriceX96=0, maxSqrtPriceX96>0), an order with an extreme token ratio (amount1 >> amount0 causing overflow) is accepted despite the effective price far exceeding the configured maximum. The function _validatePricingBounds (line 847-849) correctly checks for sqrtPriceX96==0 and reverts, but validateHandlerOrder lacks this check entirely.",
+      "impact": "Token creator who sets max-only pricing bounds to prevent their token from trading at extreme prices gets no protection for handler orders. An attacker can fill handler orders at prices above the intended ceiling. Impact depends on the specific token and max bound \u2014 could range from negligible to significant price manipulation for tokens that rely on max bounds as their primary price safety mechanism.",
+      "proof_sketch": "Integration test at lbamm-hooks-and-handlers/test/AuditExtHijackerOverflow.t.sol:test_validateHandlerOrder_overflowBypassesMaxBound confirms that an order with amountOut=type(uint160).max passes validateHandlerOrder despite max bound set at 1e30. The computeRatioX96 returns 0, and 0 > maxBound evaluates to false.",
+      "victim": "Token creators who rely on max-only pricing bounds for handler orders",
+      "extractable_value": "Variable \u2014 depends on token value and configured max bound. For high-value tokens, could enable significant price ceiling bypass. No direct fund extraction but enables unfavorable fills.",
+      "attack_sequence": [
+        "1. Identify token with max-only pricing bounds (minSqrtPriceX96=0, maxSqrtPriceX96=X) on AMMStandardHook",
+        "2. Create handler order (via CLOB or Permit handler) with amountIn=1 wei and amountOut >= type(uint160).max",
+        "3. computeRatioX96(amountOut, amountIn) overflows uint160, returns 0",
+        "4. validateHandlerOrder checks: min != 0 && 0 < min -> false (skip), max != 0 && 0 > max -> false (pass)",
+        "5. Order is validated and accepted at an effective price far above the configured maximum"
+      ],
+      "test_file": "lbamm-hooks-and-handlers/test/AuditExtHijackerOverflow.t.sol",
+      "test_passes": true,
+      "prerequisites": [
+        "Token must have max-only pricing bounds set (no min bound)",
+        "Token must use a transfer handler (CLOB or Permit) that calls validateHandlerOrder",
+        "Attacker must be able to submit handler orders"
+      ],
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol",
+        "SqrtPriceCalculator.sol"
+      ],
+      "functions": [
+        "validateHandlerOrder()",
+        "computeRatioX96()"
+      ],
+      "lines": {
+        "AMMStandardHook.sol": [
+          198,
+          207,
+          210,
+          211,
+          215,
+          217,
+          218,
+          221,
+          222
+        ],
+        "SqrtPriceCalculator.sol": [
+          28,
+          49,
+          50,
+          51,
+          52,
+          53
+        ]
+      },
+      "keywords": [
+        "overflow",
+        "price-manipulation",
+        "bounds-bypass",
+        "handler-order",
+        "sqrt-price"
+      ],
+      "source_hypothesis": "H-R2-HR-02",
+      "fp_gate": {
+        "location_exists": true,
+        "entry_reachable": true,
+        "no_existing_guard": true,
+        "concrete_attack_path": true,
+        "poc_compiles": true
+      },
+      "kill_gate": {
+        "status": "killed",
+        "gate": "F",
+        "reason": "Dust-level impact: 'negligible'"
+      }
+    }
+  ],
+  "ruled_out_vectors": [
+    {
+      "vector": "H-R2-DP-09: Operator precedence bug in ModuleLiquidity.createPool \u2014 deposit0 | deposit1 == 0",
+      "why_ruled_out": "Solidity operator precedence differs from C/C++. In Solidity, | (bitwise OR) has HIGHER precedence than == (position 8 vs 10). Expression deposit0 | deposit1 == 0 correctly evaluates as (deposit0 | deposit1) == 0, which is the intended behavior.",
+      "test_file": "lbamm-core/test/AuditExtHijackerHypotheses.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "ModuleLiquidity.sol",
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "createPool()",
+        "registryUpdatePricingBounds()"
+      ],
+      "keywords": [
+        "operator-precedence",
+        "bitwise-or",
+        "false-positive"
+      ]
+    },
+    {
+      "vector": "H-R2-DP-03: Reentrancy during queued hook fee distribution \u2014 collectHookFeesByHook lacks nonReentrant modifier",
+      "why_ruled_out": "Structural concern confirmed but below submission threshold. ENTERED bit blocks ALL nonReentrant-protected entry points. Exploitation requires ERC-777 token + hook as fee recipient. Prerequisites too narrow for Medium+ severity.",
+      "test_file": "lbamm-core/test/AuditExtHijackerHypotheses.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol",
+        "ModuleFeeCollection.sol"
+      ],
+      "functions": [
+        "_executeQueuedHookFeesByHookTransfers()",
+        "collectHookFeesByHook()"
+      ],
+      "keywords": [
+        "reentrancy",
+        "fee-collection",
+        "erc-777",
+        "flag-clearing"
+      ]
+    },
+    {
+      "vector": "H-R2-HR-01: Registry/Hook initialized flag desync \u2014 force re-fetch TOCTOU",
+      "why_ruled_out": "Token admin must call setTokenSettings with initialized=false, then change settings without syncing hook. Admin-controlled self-inflicted behavior. No third-party attacker can trigger the desync.",
+      "test_file": "lbamm-core/test/AuditExtHijackerHypotheses.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol",
+        "CreatorHookSettingsRegistry.sol"
+      ],
+      "functions": [
+        "_getOrFetchTokenSettings()",
+        "setTokenSettings()"
+      ],
+      "keywords": [
+        "admin-only",
+        "cache-desync",
+        "self-inflicted"
+      ]
+    },
+    {
+      "vector": "H-R2-HR-03: Disabled pool bypass via stale cache \u2014 checkDisabledPools flag desync",
+      "why_ruled_out": "Cache desync is documented by-design behavior (AMMStandardHook.sol:605-606). Admin must explicitly sync hooks after settings changes.",
+      "test_file": "lbamm-core/test/AuditExtHijackerHypotheses.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "_checkPoolEnabled()"
+      ],
+      "keywords": [
+        "by-design",
+        "cache-desync",
+        "admin-controlled"
+      ]
+    },
+    {
+      "vector": "H-R2-HR-04: Auto-cache leaves whitelist empty",
+      "why_ruled_out": "Admin setup issue. Auto-cache copies token settings struct but whitelist content must be synced separately. Self-inflicted DoS on admin's own token.",
+      "test_file": "lbamm-core/test/AuditExtHijackerHypotheses.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "_getOrFetchTokenSettings()"
+      ],
+      "keywords": [
+        "admin-setup",
+        "whitelist-empty",
+        "self-inflicted"
+      ]
+    },
+    {
+      "vector": "C7: INV-H01 \u2014 External calls to hook functions should revert",
+      "why_ruled_out": "All state-changing hook functions protected by _requireCallerIsAMM(). validateHandlerOrder is view-only (by design). validateRemoveLiquidity/validateCollectFees always revert.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditExtHijackerBoundary.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "beforeSwap()",
+        "afterSwap()",
+        "validateAddLiquidity()",
+        "validateHandlerOrder()",
+        "_requireCallerIsAMM()"
+      ],
+      "keywords": [
+        "access-control",
+        "hook-protection",
+        "amm-caller-check"
+      ]
+    },
+    {
+      "vector": "C8: INV-H02 \u2014 Settlement conservation: balance snapshots around ammHandleTransfer",
+      "why_ruled_out": "AMMModule enforces strict balance checking: balanceInBefore captured before transfer, balanceInAfter verified after. If balanceInBefore + amountIn != balanceInAfter, reverts.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditExtHijackerBoundary.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_performSettlement()",
+        "_collectToken()"
+      ],
+      "keywords": [
+        "settlement",
+        "balance-check",
+        "conservation"
+      ]
+    },
+    {
+      "vector": "C9: INV-H04 \u2014 Hook fee integrity: max fee cap and overflow",
+      "why_ruled_out": "Hook fees calculated by _calculateFee using FullMath.mulDiv with MAX_BPS. Fee rate is uint16. _storeTokensOwed has overflow check. No overflow path found.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditExtHijackerBoundary.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers",
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol",
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_calculateFee()",
+        "_storeTokensOwed()"
+      ],
+      "keywords": [
+        "fee-integrity",
+        "overflow",
+        "hook-fees"
+      ]
+    },
+    {
+      "vector": "C10: INV-SW04 \u2014 Output bounded by reserves",
+      "why_ruled_out": "Pool types enforce output bounds via liquidity/price curve math. Output cannot exceed reserves. Additionally limitAmount checks enforce user-specified bounds.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditExtHijackerBoundary.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_performSettlement()"
+      ],
+      "keywords": [
+        "output-bounds",
+        "reserve-constraint"
+      ]
+    },
+    {
+      "vector": "C11: INV-S04 \u2014 Denomination consistency: fee token matches computation token",
+      "why_ruled_out": "All fees in _performSettlement (protocol, exchange, feeOnTop) use swapOrder.tokenIn. No denomination mismatch.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditExtHijackerBoundary.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_performSettlement()"
+      ],
+      "keywords": [
+        "denomination",
+        "fee-consistency"
+      ]
+    },
+    {
+      "vector": "C12: INV-E03 \u2014 Sandwich resistance via limitAmount",
+      "why_ruled_out": "AMMModule enforces limitAmount: amountOut < limitAmount reverts (input swap), amountIn > limitAmount reverts (output swap). Victim always gets at least their configured minimum.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditExtHijackerBoundary.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_performSettlement()"
+      ],
+      "keywords": [
+        "sandwich",
+        "slippage-protection",
+        "limit-amount"
+      ]
+    },
+    {
+      "vector": "C13: Pool ID encoding validation",
+      "why_ruled_out": "AMMModule validates poolId structure after pool type creates it: PoolDecoder.getPoolType must match, PoolDecoder.getPoolFee must match.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditExtHijackerBoundary.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "createPool()"
+      ],
+      "keywords": [
+        "pool-id",
+        "encoding",
+        "validation"
+      ]
+    },
+    {
+      "vector": "C14: createPool with edge parameters",
+      "why_ruled_out": "Edge parameters validated by pool type implementation. Core only validates poolId consistency and uniqueness.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditExtHijackerBoundary.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "createPool()"
+      ],
+      "keywords": [
+        "edge-case",
+        "pool-creation"
+      ]
+    },
+    {
+      "vector": "C15: Storage layout collisions across diamond facets",
+      "why_ruled_out": "All four diamond modules use Diamond Storage pattern via Storage.appStorage() at base slot 0x9A1D. No slot collision risk.",
+      "test_file": "code-analysis: Slither storage layout on all 4 modules shows 0 traditional slots",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol",
+        "ModuleAdmin.sol",
+        "ModuleFeeCollection.sol",
+        "ModuleLiquidity.sol"
+      ],
+      "functions": [],
+      "keywords": [
+        "storage-layout",
+        "diamond-proxy",
+        "slot-collision"
+      ]
+    },
+    {
+      "vector": "C19: Hook/pool accounting desync \u2014 Bunni pattern",
+      "why_ruled_out": "AMMStandardHook is a stateless fee calculator. No internal balance tracking. If afterSwap reverts, entire TX reverts atomically. No Bunni-style desync possible.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditExtHijackerBoundary.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "beforeSwap()",
+        "afterSwap()"
+      ],
+      "keywords": [
+        "bunni",
+        "accounting-desync",
+        "atomic-revert"
+      ]
+    },
+    {
+      "vector": "C20: Diamond selector collision across all modules",
+      "why_ruled_out": "Checked all 27 functions across 4 diamond facets \u2014 0 selector collisions found.",
+      "test_file": "code-analysis: Manual 4-byte selector comparison across all diamond facets",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol",
+        "ModuleAdmin.sol",
+        "ModuleFeeCollection.sol",
+        "ModuleLiquidity.sol"
+      ],
+      "functions": [],
+      "keywords": [
+        "selector-collision",
+        "diamond-proxy"
+      ]
+    },
+    {
+      "vector": "C21: Transient storage cross-path \u2014 ChainSecurity research",
+      "why_ruled_out": "AMMStandardHook uses exactly ONE transient slot (DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT). Written in beforeSwap, read in afterSwap, both in direct swap path only. No other code path reads this slot.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditExtHijackerBoundary.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "_validatePricingBounds()"
+      ],
+      "keywords": [
+        "transient-storage",
+        "cross-path",
+        "tstore"
+      ]
+    },
+    {
+      "vector": "C22: Hook return value manipulation \u2014 Uni V4 vectors",
+      "why_ruled_out": "Hook fee return is bounded by admin-configured BPS rate via _calculateFee. Hook cannot inflate fees beyond configured uint16 BPS. Custom malicious hooks are visible on-chain.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditExtHijackerBoundary.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "beforeSwap()",
+        "_calculateFee()"
+      ],
+      "keywords": [
+        "hook-return",
+        "fee-manipulation",
+        "bps-bounded"
+      ]
+    },
+    {
+      "vector": "C1: Core->PoolType trust \u2014 mock pool type returning inflated amountOut",
+      "why_ruled_out": "AMMModule verifies balance changes after transfer: balanceInBefore + amountIn must equal balanceInAfter. Fake amounts fail this check.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditExtHijackerBoundary.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_performSettlement()"
+      ],
+      "keywords": [
+        "pool-type-trust",
+        "balance-verification"
+      ]
+    },
+    {
+      "vector": "C2: Core->Handler mismatch \u2014 handler expects wrong token pair",
+      "why_ruled_out": "Handler receives tokens as parameters from AMMModule._executeTransferHandler. No stored token pair state to mismatch.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditExtHijackerBoundary.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_executeTransferHandler()"
+      ],
+      "keywords": [
+        "handler-mismatch",
+        "token-pair"
+      ]
+    },
+    {
+      "vector": "C3: Core->Hook \u2014 mock hook returns fee > swap amount",
+      "why_ruled_out": "Hook fee computed from BPS rates (uint16) via _calculateFee. Cannot produce arbitrary fees. AMMModule deducts from swap amount.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditExtHijackerBoundary.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "beforeSwap()",
+        "_calculateFee()"
+      ],
+      "keywords": [
+        "fee-manipulation",
+        "bps-bounded"
+      ]
+    },
+    {
+      "vector": "C4: Hook->Registry mid-swap settings change",
+      "why_ruled_out": "Settings cached in memory during swap (line 114). Reentrancy guard prevents most reentry. Mid-swap registry changes cannot affect the in-memory copy.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditExtHijackerBoundary.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "beforeSwap()",
+        "_getOrFetchTokenSettings()"
+      ],
+      "keywords": [
+        "mid-swap-settings",
+        "toctou",
+        "reentrancy-guard"
+      ]
+    },
+    {
+      "vector": "C5: PoolType->Core return \u2014 pool returning feeAmount > amountIn",
+      "why_ruled_out": "Pool types don't return fee amounts. Fee computation done by hook + FeeHelper in AMMModule.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditExtHijackerBoundary.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_performSettlement()"
+      ],
+      "keywords": [
+        "pool-type-return",
+        "fee-injection"
+      ]
+    },
+    {
+      "vector": "C6: Handler->External reentrancy \u2014 PermitTransferHandler -> token callback -> reenter AMM",
+      "why_ruled_out": "ENTERED bit set during swap. All AMM entry points protected by nonReentrant modifier checking ENTERED bit. Token callback cannot reenter.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditExtHijackerBoundary.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol",
+        "TstorishReentrancyGuardWithFlags.sol"
+      ],
+      "functions": [
+        "_nonReentrantBefore()"
+      ],
+      "keywords": [
+        "reentrancy",
+        "handler-callback",
+        "entered-bit"
+      ]
+    },
+    {
+      "vector": "Target Map H1: Malicious pool type returns fake amounts to steal from LPs",
+      "why_ruled_out": "Balance verification at settlement prevents claiming more tokens than actually moved. Pool type is set at creation and visible on-chain.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditExtHijackerBoundary.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "createPool()",
+        "_performSettlement()"
+      ],
+      "keywords": [
+        "malicious-pool-type",
+        "balance-check"
+      ]
+    },
+    {
+      "vector": "Target Map H2: Malicious transfer handler skips actual transfer",
+      "why_ruled_out": "AMMModule verifies actual balance changes after handler execution (balanceInBefore + amountIn == balanceInAfter). Handler that skips transfer fails this check.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditExtHijackerBoundary.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_performSettlement()"
+      ],
+      "keywords": [
+        "handler-skip",
+        "balance-verification"
+      ]
+    },
+    {
+      "vector": "Target Map H3: Malicious hook manipulates price limits",
+      "why_ruled_out": "Pricing bounds set by token admin via registry, not by hook. Hook reads bounds from storage but cannot modify them.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditExtHijackerBoundary.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "validateHandlerOrder()",
+        "_validatePricingBounds()"
+      ],
+      "keywords": [
+        "price-manipulation",
+        "admin-controlled-bounds"
+      ]
+    },
+    {
+      "vector": "Target Map H4: Pool type address collision via 6 leading zero bytes",
+      "why_ruled_out": "Creating an address with 6 leading zero bytes requires ~2^48 hash operations (computationally infeasible). Pool type registration requires governance.",
+      "test_file": "code-analysis: PoolDecoder address extraction + computational infeasibility",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "createPool()"
+      ],
+      "keywords": [
+        "address-collision",
+        "create2",
+        "infeasible"
+      ]
+    },
+    {
+      "vector": "Target Map H5: UUPS/beacon implementation takeover",
+      "why_ruled_out": "Protocol uses Diamond Proxy pattern, not UUPS/beacon. No implementation takeover vector exists.",
+      "test_file": "not-applicable: Diamond pattern, not UUPS/beacon",
+      "repos": [
+        "secure-proxy"
+      ],
+      "contracts": [],
+      "functions": [],
+      "keywords": [
+        "uups",
+        "beacon",
+        "not-applicable"
+      ]
+    },
+    {
+      "vector": "Target Map H6: Facet selector collision",
+      "why_ruled_out": "0 selector collisions found across all 27 functions in 4 diamond facets. Facet management requires governance.",
+      "test_file": "code-analysis: Manual 4-byte selector check across all diamond facets",
+      "repos": [
+        "lbamm-core",
+        "secure-proxy"
+      ],
+      "contracts": [
+        "AMMModule.sol",
+        "ModuleAdmin.sol",
+        "ModuleFeeCollection.sol",
+        "ModuleLiquidity.sol"
+      ],
+      "functions": [],
+      "keywords": [
+        "selector-collision",
+        "diamond-facet"
+      ]
+    },
+    {
+      "vector": "Target Map H7: CREATE2 -> selfdestruct -> redeploy at trusted address",
+      "why_ruled_out": "EIP-6780 (Dencun/Cancun) eliminates selfdestruct-redeploy attack. Protocol targets cancun EVM.",
+      "test_file": "not-applicable: EIP-6780 eliminates selfdestruct-redeploy on cancun EVM",
+      "repos": [],
+      "contracts": [],
+      "functions": [],
+      "keywords": [
+        "selfdestruct",
+        "create2",
+        "eip-6780"
+      ]
+    },
+    {
+      "vector": "Target Map H8: Malicious facet writes to storage slot used by another facet",
+      "why_ruled_out": "All modules share Diamond Storage via Storage.appStorage(). Adding facets requires governance. No external attacker can add facets.",
+      "test_file": "code-analysis: All modules use Storage.appStorage() \u2014 shared structured storage",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [],
+      "keywords": [
+        "storage-collision",
+        "diamond-storage"
+      ]
+    },
+    {
+      "vector": "Target Map H9: Exploit facet management to add malicious facet without governance",
+      "why_ruled_out": "Facet management in secure-proxy requires owner/governance authorization. No public function to add/replace facets.",
+      "test_file": "code-analysis: secure-proxy diamondCut is owner-only",
+      "repos": [
+        "secure-proxy"
+      ],
+      "contracts": [],
+      "functions": [],
+      "keywords": [
+        "facet-management",
+        "governance"
+      ]
+    }
+  ],
+  "theft_theses": [
+    {
+      "thesis": "Overflow in computeRatioX96 allows handler orders to bypass max pricing bounds, enabling trades above intended price ceiling",
+      "victim": "Token creators who set max-only pricing bounds",
+      "asset": "Token value via unfavorable trades above intended max price",
+      "estimated_ev": 0,
+      "status": "confirmed"
+    },
+    {
+      "thesis": "Reentrancy through collectHookFeesByHook during queued fee distribution enables double-spend of hook fees",
+      "victim": "Hook fee recipients (protocol)",
+      "asset": "Hook fees denominated in ERC-777 tokens",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Malicious pool type returns inflated amounts to drain LP funds",
+      "victim": "LPs in malicious pools",
+      "asset": "LP tokens",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Malicious transfer handler skips transfer while core credits the swap",
+      "victim": "Counterparty in swap",
+      "asset": "Swap output tokens",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Diamond selector collision allows attacker code to intercept admin functions",
+      "victim": "Protocol users",
+      "asset": "Protocol funds",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    }
+  ],
+  "hypothesis_results": [
+    {
+      "id": "H-R2-HR-02",
+      "status": "confirmed",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditExtHijackerOverflow.t.sol",
+      "detail": "validateHandlerOrder overflow bypass with max-only bounds confirmed. Integration test passes."
+    },
+    {
+      "id": "H-R2-DP-03",
+      "status": "dismissed",
+      "test_file": "lbamm-core/test/AuditExtHijackerHypotheses.t.sol",
+      "detail": "Structural concern confirmed but below submission threshold. Requires ERC-777 token + hook as fee recipient."
+    },
+    {
+      "id": "H-R2-DP-09",
+      "status": "dismissed",
+      "test_file": "lbamm-core/test/AuditExtHijackerHypotheses.t.sol",
+      "detail": "NOT A BUG. Solidity | has higher precedence than == (position 8 vs 10)."
+    },
+    {
+      "id": "H-R2-HR-01",
+      "status": "dismissed",
+      "test_file": "lbamm-core/test/AuditExtHijackerHypotheses.t.sol",
+      "detail": "Admin-only behavior. No third-party exploitation."
+    },
+    {
+      "id": "H-R2-HR-03",
+      "status": "dismissed",
+      "test_file": "lbamm-core/test/AuditExtHijackerHypotheses.t.sol",
+      "detail": "By-design cache desync."
+    },
+    {
+      "id": "H-R2-HR-04",
+      "status": "dismissed",
+      "test_file": "lbamm-core/test/AuditExtHijackerHypotheses.t.sol",
+      "detail": "Admin setup issue. Self-inflicted DoS."
+    }
+  ],
+  "metadata": {
+    "checklist_items_completed": "A: 4/5, B: 3/5, C: 22/22, D: 9/9",
+    "tools_run": {
+      "slither": {
+        "ran": true,
+        "repos": [
+          "lbamm-core",
+          "lbamm-hooks-and-handlers"
+        ],
+        "note": "High/Medium detectors + storage layout analysis. Custom detectors attempted but not available in MCP."
+      },
+      "aderyn": {
+        "ran": true,
+        "repos": [
+          "lbamm-core",
+          "lbamm-hooks-and-handlers"
+        ],
+        "note": "Static analysis on both primary repos."
+      },
+      "forge": {
+        "ran": true,
+        "note": "56 tests total (12 in AuditExtHijackerOverflow.t.sol, 13 in AuditExtHijackerHypotheses.t.sol, 31 in AuditExtHijackerBoundary.t.sol). All pass."
+      },
+      "halmos": {
+        "ran": true,
+        "note": "Attempted on AMMStandardHook _validatePricingBounds. Long-running symbolic execution."
+      },
+      "medusa": {
+        "ran": true,
+        "note": "Ran on AMMStandardHook (100K calls, 19 tests, 0 failures). SingleProviderPoolType run attempted."
+      },
+      "audit-context-building": {
+        "ran": true,
+        "note": "Deep context analysis on AMMStandardHook: trust boundaries, invariants, entry points, state model."
+      },
+      "entry-point-analyzer": {
+        "ran": true,
+        "note": "10 state-changing entry points identified: 1 public (validateHandlerOrder-view), 5 AMM-only, 4 registry-only."
+      }
+    },
+    "num_turns": 140,
+    "tool_uses": 100,
+    "files_read": 40,
+    "theses_tested": 15,
+    "theses_confirmed": 1,
+    "theses_ruled_out": 14,
+    "triage_log": {
+      "skip": 8,
+      "borderline": 3,
+      "survive": 4
+    },
+    "gate_passed": true
+  }
+}

@@ -1,0 +1,195 @@
+{
+  "agent_name": "price-distorter",
+  "agent_role": "Cross-Venue Price Distorter",
+  "wave": 1,
+  "findings": [
+    {
+      "id": "PD-001",
+      "title": "validateHandlerOrder missing zero-price check from computeRatioX96 overflow",
+      "severity": "low",
+      "confidence": 95,
+      "status": "confirmed",
+      "category": "price-manipulation",
+      "description": "AMMStandardHook.validateHandlerOrder (line 198-226) does not check for sqrtPriceX96==0 returned by SqrtPriceCalculator.computeRatioX96 when the price ratio overflows uint160. When only a max bound is set (minSqrtPriceX96=0, maxSqrtPriceX96>0), a sqrtPriceX96 of 0 passes both bound checks: (0 != 0 means min check is skipped) and (0 > maxPrice is false, so max check passes). In contrast, _validatePricingBounds (line 847) correctly reverts on sqrtPriceX96==0. This allows CLOB orders with extreme price ratios to bypass pricing bound validation during order placement.",
+      "impact": "An attacker can place CLOB orders at prices that exceed the token creator's configured max pricing bound. However, actual order execution uses the maker's specified sqrtPriceX96 (not the computed one), so the economic impact is limited to configuration bypass rather than direct fund extraction. The order must still be filled at the maker's price.",
+      "root_cause": "Missing zero-price check in validateHandlerOrder. The swap path (_validatePricingBounds at line 847) has this check, but the handler order validation path does not.",
+      "affected_contracts": [
+        "lbamm-hooks-and-handlers/src/hooks/AMMStandardHook.sol:198-226"
+      ],
+      "affected_functions": [
+        "AMMStandardHook.validateHandlerOrder"
+      ],
+      "poc_test": "lbamm-hooks-and-handlers/test/audit/PricingBoundsOperatorPrecedence.t.sol:test_validateHandlerOrderZeroPriceOnOverflow",
+      "poc_result": "PASS (no revert = bypass confirmed)",
+      "remediation": "Add `if (sqrtPriceX96 == 0) revert AMMStandardHook__InvalidPrice();` after the computeRatioX96 call in validateHandlerOrder, matching the pattern in _validatePricingBounds line 847.",
+      "ruled_out_vectors": ["KV-1"],
+      "known_pattern": "CP-003"
+    },
+    {
+      "id": "PD-002",
+      "title": "CLOBHelper.calculateFixedInput rounds output UP (favoring maker over protocol)",
+      "severity": "informational",
+      "confidence": 90,
+      "status": "confirmed",
+      "category": "rounding-direction",
+      "description": "CLOBHelper.calculateFixedInput (lines 309-315) uses FullMath.mulDivRoundingUp for both multiplication steps when computing the output amount for a CLOB order fill. This rounds the output UP, meaning the maker receives slightly more tokens than the exact price would give. In contrast, SingleProviderHelper.calculateFixedInput (lines 101-113) correctly uses FullMath.mulDiv (rounds DOWN) for the same computation. The correct direction is to round DOWN on outputs (protocol keeps dust) and round UP on inputs (user pays more).",
+      "impact": "Each order fill can leak up to 2 wei to the maker (1 wei per mulDivRoundingUp call). At adversarial prices with 1-wei fills, the leak is ~0.75 wei/fill. Gas costs per fill (~50K gas) far exceed the value extracted, making this economically unexploitable.",
+      "root_cause": "Incorrect rounding direction in CLOBHelper.calculateFixedInput. Should use mulDiv (round down) instead of mulDivRoundingUp for output amounts.",
+      "affected_contracts": [
+        "lbamm-hooks-and-handlers/src/handlers/clob/libraries/CLOBHelper.sol:309-315"
+      ],
+      "affected_functions": [
+        "CLOBHelper.calculateFixedInput"
+      ],
+      "poc_test": "lbamm-hooks-and-handlers/test/audit/poc/CLOBRoundingExploit.t.sol:test_roundingWithAdversarialPrice",
+      "poc_result": "PASS — 1000 fills of 1 wei at sqrt(1.5) price: expected 2250, got 3000 (750 wei leak, bounded by 2 wei/fill)",
+      "remediation": "Change mulDivRoundingUp to mulDiv in CLOBHelper.calculateFixedInput lines 313-314.",
+      "ruled_out_vectors": [],
+      "known_pattern": "INV-SW03"
+    }
+  ],
+  "ruled_out_vectors": [
+    {
+      "vector": "KV-1: Zero-price bypass in _validatePricingBounds",
+      "why_ruled_out": "sqrtPriceX96==0 IS caught in _validatePricingBounds at line 847 with explicit revert. The asymmetry is that validateHandlerOrder (CLOB path) lacks this check — see finding PD-001. The direct swap path is safe.",
+      "repos": ["lbamm-hooks-and-handlers"],
+      "contracts": ["AMMStandardHook.sol", "CLOBTransferHandler.sol", "SqrtPriceCalculator.sol"],
+      "functions": ["_enforceTokenHooks", "validateHandlerOrder", "computeRatioX96"],
+      "keywords": ["sqrtPriceX96", "zero", "bypass", "overflow", "pricing-bounds"]
+    },
+    {
+      "vector": "KV-2: Direct handler call bypasses pricing enforcement",
+      "why_ruled_out": "msg.sender != AMM check at CLOBTransferHandler.sol:230 prevents direct calls.",
+      "repos": ["lbamm-hooks-and-handlers"],
+      "contracts": ["CLOBTransferHandler.sol"],
+      "functions": ["ammHandleTransfer"],
+      "keywords": ["pricing", "bypass", "direct", "handler"]
+    },
+    {
+      "vector": "KV-3: Settings sync gap",
+      "why_ruled_out": "Known CP-005. Hook re-fetches from registry which has correct state. Gas waste only.",
+      "repos": ["lbamm-hooks-and-handlers"],
+      "contracts": ["CLOBTransferHandler.sol", "CreatorHookSettingsRegistry.sol"],
+      "functions": ["setTokenSettings"],
+      "keywords": ["setTokenSettings", "sync", "stale"]
+    },
+    {
+      "vector": "KV-4: Transient storage leak in DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT",
+      "why_ruled_out": "Direct swaps follow clean beforeSwap->afterSwap lifecycle. Reentrancy guard prevents overlap. Transient storage auto-clears at tx end.",
+      "repos": ["lbamm-hooks-and-handlers"],
+      "contracts": ["AMMStandardHook.sol"],
+      "functions": ["beforeSwap", "_validatePricingBounds"],
+      "keywords": ["transient", "tstore", "clear", "direct-swap"]
+    },
+    {
+      "vector": "Flash loan + CLOB/AMM cross-venue price manipulation",
+      "why_ruled_out": "CLOB and AMM pools have independent state. No shared price oracle between them.",
+      "repos": ["lbamm-core", "lbamm-hooks-and-handlers"],
+      "contracts": ["AMMModule.sol", "CLOBTransferHandler.sol"],
+      "functions": ["_poolSwapByInput", "ammHandleTransfer"],
+      "keywords": ["flash-loan", "cross-venue", "price-manipulation"]
+    },
+    {
+      "vector": "snapPrice sandwich attack",
+      "why_ruled_out": "snapPrice requires poolState.liquidity == 0 AND no initialized ticks between current and target. Only LP of empty pool can use it.",
+      "repos": ["amm-pool-type-dynamic"],
+      "contracts": ["DynamicHelper.sol"],
+      "functions": ["snapPrice"],
+      "keywords": ["snapPrice", "sandwich", "price-manipulation"]
+    },
+    {
+      "vector": "SingleProviderPoolType malicious hook pricing",
+      "why_ruled_out": "By design. Pool creator sets hook at creation. Attacker's pool = attacker's liquidity. Swapper chooses which pool to trade, protected by limitAmount.",
+      "repos": ["lbamm-pool-type-single-provider"],
+      "contracts": ["SingleProviderPoolType.sol"],
+      "functions": ["swapByInput", "swapByOutput"],
+      "keywords": ["hook", "pricing", "oracle", "SingleProvider"]
+    },
+    {
+      "vector": "Reentrancy via wrapped native refund",
+      "why_ruled_out": "TstorishReentrancyGuardWithFlags prevents re-entry. Balance check at line 2208 is strict equality.",
+      "repos": ["lbamm-core"],
+      "contracts": ["AMMModule.sol"],
+      "functions": ["_finalizeSwapCollectFundsAndDisburse"],
+      "keywords": ["reentrancy", "wrappedNative", "refund"]
+    },
+    {
+      "vector": "Dust-loop extraction via tiny swaps",
+      "why_ruled_out": "Rounding consistently favors pool. calculateFixedInput rounds down output, calculateFixedOutput rounds up input.",
+      "repos": ["lbamm-pool-type-single-provider"],
+      "contracts": ["SingleProviderHelper.sol"],
+      "functions": ["calculateFixedInput", "calculateFixedOutput"],
+      "keywords": ["rounding", "dust", "extraction"]
+    },
+    {
+      "vector": "Permit mutation — replay with mutated feeOnTop",
+      "why_ruled_out": "feeOnTop intentionally unsigned per design. limitAmount caps signer's exposure.",
+      "repos": ["lbamm-hooks-and-handlers"],
+      "contracts": ["PermitTransferHandler.sol"],
+      "functions": [],
+      "keywords": ["permit", "feeOnTop", "unsigned"]
+    },
+    {
+      "vector": "Storage-slot collision across diamond facets",
+      "why_ruled_out": "Diamond storage isolated at slot 0x9A1D. Pool types use own contracts.",
+      "repos": ["lbamm-core"],
+      "contracts": ["LBAMMStorage.sol"],
+      "functions": [],
+      "keywords": ["storage", "collision", "diamond"]
+    },
+    {
+      "vector": "Forged hook caller",
+      "why_ruled_out": "_requireCallerIsAMM at beforeSwap/afterSwap prevents direct hook calls.",
+      "repos": ["lbamm-hooks-and-handlers"],
+      "contracts": ["AMMStandardHook.sol"],
+      "functions": ["beforeSwap", "afterSwap"],
+      "keywords": ["forged", "hook", "caller"]
+    },
+    {
+      "vector": "Operator precedence in registryUpdatePricingBounds",
+      "why_ruled_out": "Solidity type system forces correct grouping: uint160|bool is invalid. Compiler evaluates (min|max)==0. Confirmed by test.",
+      "repos": ["lbamm-hooks-and-handlers"],
+      "contracts": ["AMMStandardHook.sol"],
+      "functions": ["registryUpdatePricingBounds"],
+      "keywords": ["operator", "precedence", "bitwise"]
+    }
+  ],
+  "theft_theses": [
+    {
+      "thesis": "Flash loan → self-trade on CLOB at extreme price → AMM reads distorted state → extract on AMM",
+      "victim": "LPs on shared AMM pools",
+      "asset": "Pool reserve tokens",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "snapPrice in addLiquidity allows arbitrary price movement → sandwich",
+      "victim": "Other LPs or swappers on dynamic pools",
+      "asset": "Pool tokens at manipulated price",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "SingleProviderPoolType trusts external pricing hook → oracle spoof",
+      "victim": "Swappers routing through attacker's pool",
+      "asset": "Swap tokens at rigged price",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    }
+  ],
+  "metadata": {
+    "checklist_items_completed": 28,
+    "num_turns": 20,
+    "tool_uses": 18,
+    "files_read": 25,
+    "tools_run": {
+      "slither": true,
+      "aderyn": true,
+      "forge": true,
+      "chisel": false,
+      "halmos": false,
+      "medusa": false,
+      "cast_run": false
+    }
+  }
+}

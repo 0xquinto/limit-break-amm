@@ -1,0 +1,471 @@
+{
+  "agent_name": "extension-hijacker",
+  "agent_role": "extension-hijacker",
+  "wave": 1,
+  "findings": [
+    {
+      "id": "XB-001",
+      "title": "validateHandlerOrder bypasses tradingIsPaused check, allowing CLOB orders during trading pause",
+      "severity": "low",
+      "confidence_score": 85,
+      "confidence_deductions": [
+        "Impact is limited: orders queued during pause may execute at stale prices on unpause (-15)"
+      ],
+      "status": "lead",
+      "category": "access-control",
+      "description": "AMMStandardHook.validateHandlerOrder (line 198-226) performs pricing bounds validation but does NOT check tradingIsPaused (compare with beforeSwap line 675 which checks). The CLOB handler calls validateHandlerOrder via _enforceTokenHooks during openOrder. When a token admin pauses trading, CLOB makers can still place new orders that bypass the pause. These orders get deposited and queued; on unpause, they may execute at stale prices.",
+      "impact": "Token creators who pause trading to respond to market events (exploit, oracle failure) cannot prevent CLOB order placement during the pause. A sophisticated maker monitoring the pause tx can front-run the unpause by placing orders at pre-pause prices.",
+      "proof_sketch": "test_H03_validateHandlerOrderBypassesTradingPause: Sets tradingIsPaused=true, calls validateHandlerOrder — passes. Calls beforeSwap — reverts with TradingPaused.",
+      "victim": "Token creators expecting trading pause to halt all trading activity",
+      "extractable_value": "Depends on price movement during pause. Could be significant if pause is due to oracle manipulation.",
+      "attack_sequence": [
+        "1. Token admin pauses trading (tradingIsPaused=true) due to market event",
+        "2. Attacker calls CLOB openOrder → _enforceTokenHooks → validateHandlerOrder",
+        "3. validateHandlerOrder passes (no tradingIsPaused check)",
+        "4. Order is deposited at pre-pause price",
+        "5. Price moves during pause",
+        "6. Admin unpauses trading",
+        "7. Order executes at stale pre-pause price, attacker captures arbitrage"
+      ],
+      "test_file": "lbamm-hooks-and-handlers/test/hooks/ExtensionHijackerAudit.t.sol",
+      "test_passes": true,
+      "prerequisites": ["Token must have trading pause enabled", "CLOB handler registered", "Price movement during pause"],
+      "repos": ["lbamm-hooks-and-handlers"],
+      "contracts": ["AMMStandardHook.sol", "CLOBTransferHandler.sol"],
+      "functions": ["validateHandlerOrder()", "openOrder()", "_enforceTokenHooks()"],
+      "lines": {"AMMStandardHook.sol": [198, 207, 208, 210], "CLOBTransferHandler.sol": [482, 534, 574]},
+      "keywords": ["trading-pause", "bypass", "CLOB", "validateHandlerOrder"],
+      "source_hypothesis": "H-R6-HR-03",
+      "fp_gate": {
+        "location_exists": true,
+        "entry_reachable": true,
+        "no_existing_guard": true,
+        "concrete_attack_path": true,
+        "poc_compiles": true
+      }
+    },
+    {
+      "id": "XB-002",
+      "title": "validateHandlerOrder bypasses pair token whitelist, allowing CLOB orders against non-whitelisted tokens",
+      "severity": "low",
+      "confidence_score": 80,
+      "confidence_deductions": [
+        "Orders placed against non-whitelisted pairs become unfillable via AMM — funds locked until cancel (-20)"
+      ],
+      "status": "lead",
+      "category": "access-control",
+      "description": "AMMStandardHook.validateHandlerOrder (line 198-226) does NOT enforce pairedTokenWhitelistId. Compare with _validateTokenTradingRules (line 684-687) which checks the pair whitelist for direct swaps. A token creator who sets pairedTokenWhitelistId to restrict trading pairs gets that restriction enforced for AMM swaps but not for CLOB orders. Makers can place CLOB orders against any arbitrary token, bypassing the creator's whitelist.",
+      "impact": "Token creators who restrict pair tokens (e.g., 'only trade against USDC') find their restriction bypassed for CLOB orders. Makers can lock funds in orders against non-whitelisted pairs that cannot be filled via the AMM.",
+      "proof_sketch": "test_H09_validateHandlerOrderBypassesPairWhitelist: Sets pairedTokenWhitelistId=1 with only whitelistedPair. Calls validateHandlerOrder with nonWhitelistedPair — passes. Calls beforeSwap for direct swap — reverts with PairNotAllowed.",
+      "victim": "Token creators relying on pair whitelist for trading restrictions",
+      "extractable_value": "No direct profit extraction but undermines creator's trading restrictions",
+      "attack_sequence": [
+        "1. Token creator sets pairedTokenWhitelistId=1 (only USDC allowed)",
+        "2. Maker calls CLOB openOrder with token paired against WETH (not whitelisted)",
+        "3. validateHandlerOrder passes (no whitelist check)",
+        "4. Maker's funds are deposited into order book",
+        "5. Order cannot be filled via AMM (beforeSwap enforces whitelist)",
+        "6. Maker's funds locked until they cancel the order"
+      ],
+      "test_file": "lbamm-hooks-and-handlers/test/hooks/ExtensionHijackerAudit.t.sol",
+      "test_passes": true,
+      "prerequisites": ["Token must have pairedTokenWhitelistId set", "CLOB handler registered"],
+      "repos": ["lbamm-hooks-and-handlers"],
+      "contracts": ["AMMStandardHook.sol", "CLOBTransferHandler.sol"],
+      "functions": ["validateHandlerOrder()", "_validateTokenTradingRules()"],
+      "lines": {"AMMStandardHook.sol": [198, 208, 210, 670, 684, 685, 686, 687]},
+      "keywords": ["pair-whitelist", "bypass", "CLOB", "validateHandlerOrder"],
+      "source_hypothesis": "H-R6-HR-09",
+      "fp_gate": {
+        "location_exists": true,
+        "entry_reachable": true,
+        "no_existing_guard": true,
+        "concrete_attack_path": true,
+        "poc_compiles": true
+      }
+    },
+    {
+      "id": "XB-003",
+      "title": "validateHandlerOrder missing sqrtPriceX96==0 check allows max bound bypass on price overflow",
+      "severity": "low",
+      "confidence_score": 75,
+      "confidence_deductions": [
+        "Requires extreme amount ratios that are unlikely in normal CLOB usage (-15)",
+        "Impact limited to bypassing max pricing bound for orders (-10)"
+      ],
+      "status": "lead",
+      "category": "input-validation",
+      "description": "AMMStandardHook.validateHandlerOrder (line 215) calls SqrtPriceCalculator.computeRatioX96 but does NOT check for sqrtPriceX96==0 return (overflow case). Compare with _validatePricingBounds (line 847) which explicitly checks sqrtPriceX96==0 and reverts. When the ratio overflows to 0, the max bound check (0 > maxSqrtPriceX96) is always false, effectively bypassing the max price bound.",
+      "impact": "A handler can submit orders at effectively infinite price ratios while max pricing bounds are set. The known pattern CP-003 documents this exact issue.",
+      "proof_sketch": "test_H02_overflowPriceBypassesMaxBound: Verifies computeRatioX96 returns 0 on overflow, sets max bound=1e30, calls validateHandlerOrder with amounts causing overflow to 0 — passes (max bound bypassed).",
+      "victim": "Token creators setting max pricing bounds",
+      "extractable_value": "Depends on order book depth and price manipulation opportunity",
+      "attack_sequence": [
+        "1. Token creator sets maxSqrtPriceX96=1e30 (reasonable bound)",
+        "2. Custom handler calls validateHandlerOrder with extreme amount ratio",
+        "3. computeRatioX96 overflows to 0",
+        "4. Max bound check: 0 > 1e30 → false → bypassed",
+        "5. Order accepted despite violating max pricing bound"
+      ],
+      "test_file": "lbamm-hooks-and-handlers/test/hooks/ExtensionHijackerAudit.t.sol",
+      "test_passes": true,
+      "prerequisites": ["Max pricing bounds set without min", "Handler can pass extreme amounts"],
+      "repos": ["lbamm-hooks-and-handlers"],
+      "contracts": ["AMMStandardHook.sol", "SqrtPriceCalculator.sol"],
+      "functions": ["validateHandlerOrder()", "computeRatioX96()"],
+      "lines": {"AMMStandardHook.sol": [198, 215, 217, 218, 221], "SqrtPriceCalculator.sol": [51, 52, 53]},
+      "keywords": ["overflow", "sqrtPriceX96", "pricing-bounds", "bypass"],
+      "source_hypothesis": "H-R6-HR-02",
+      "fp_gate": {
+        "location_exists": true,
+        "entry_reachable": true,
+        "no_existing_guard": true,
+        "concrete_attack_path": true,
+        "poc_compiles": true
+      }
+    },
+    {
+      "id": "XB-004",
+      "title": "validateAddLiquidity missing sqrtPriceX96==0 check allows max bound bypass when pool returns zero price",
+      "severity": "low",
+      "confidence_score": 70,
+      "confidence_deductions": [
+        "Requires pool type to return price 0 (unlikely for well-implemented pools) (-20)",
+        "Impact limited to adding liquidity at incorrect price (-10)"
+      ],
+      "status": "lead",
+      "category": "input-validation",
+      "description": "AMMStandardHook.validateAddLiquidity (line 264-276) reads price from pool type but does NOT check for sqrtPriceX96==0. Same pattern as validateHandlerOrder — 0 bypasses max bound check. Requires a pool type that returns 0 price (edge case: uninitialized pool, all liquidity drained).",
+      "impact": "Liquidity can be added to a pool at zero price despite max bounds being set, potentially giving the LP an outsized share.",
+      "proof_sketch": "test_H05_validateAddLiquidityZeroPriceBypassMaxBound: Mock pool returns 0, max bound=1e30, validateAddLiquidity passes.",
+      "victim": "Token creators setting pricing bounds for liquidity additions",
+      "extractable_value": "Depends on pool state and liquidity amounts",
+      "attack_sequence": [
+        "1. Pool type has edge case returning price 0",
+        "2. Token creator has max pricing bounds set",
+        "3. LP calls addLiquidity, hook gets price 0",
+        "4. Max bound check bypassed (0 > max is false)",
+        "5. Liquidity added at zero price"
+      ],
+      "test_file": "lbamm-hooks-and-handlers/test/hooks/ExtensionHijackerAudit.t.sol",
+      "test_passes": true,
+      "prerequisites": ["Pool type returns sqrtPriceX96=0", "Max pricing bounds set"],
+      "repos": ["lbamm-hooks-and-handlers"],
+      "contracts": ["AMMStandardHook.sol"],
+      "functions": ["validateAddLiquidity()"],
+      "lines": {"AMMStandardHook.sol": [264, 265, 266, 268, 272, 273]},
+      "keywords": ["zero-price", "pricing-bounds", "liquidity", "bypass"],
+      "source_hypothesis": "H-R6-HR-05",
+      "fp_gate": {
+        "location_exists": true,
+        "entry_reachable": true,
+        "no_existing_guard": true,
+        "concrete_attack_path": true,
+        "poc_compiles": true
+      }
+    }
+  ],
+  "ruled_out_vectors": [
+    {
+      "vector": "H-R6-HR-01: setTokenSettings syncs raw settings (initialized=false) instead of memSettings",
+      "why_ruled_out": "Confirmed the bug exists (registry stores initialized=true but syncs initialized=false to hooks), but impact is LOW and not exploitable: the re-fetch behavior actually makes settings more up-to-date, not stale. It undermines the explicit sync model but doesn't enable value extraction. Known pattern CP-005.",
+      "test_file": "lbamm-hooks-and-handlers/test/hooks/ExtensionHijackerAudit.t.sol",
+      "repos": ["lbamm-hooks-and-handlers"],
+      "contracts": ["CreatorHookSettingsRegistry.sol", "AMMStandardHook.sol"],
+      "functions": ["setTokenSettings()", "registryUpdateTokenSettings()", "_getOrFetchTokenSettings()"],
+      "keywords": ["initialized", "sync", "cache", "settings"]
+    },
+    {
+      "vector": "H-R6-HR-07: Fee BPS > MAX_BPS (10000) accepted without validation",
+      "why_ruled_out": "Confirmed: uint16 allows feeBPS up to 65535, no validation at registry or hook level. But this is self-inflicted by token admin (Known FP: 'Self-inflicted config errors'). No external attacker can set fees. AMM correctly reverts with InsufficientInputForFees when fee > 100%.",
+      "test_file": "lbamm-hooks-and-handlers/test/hooks/ExtensionHijackerAudit.t.sol",
+      "repos": ["lbamm-hooks-and-handlers"],
+      "contracts": ["AMMStandardHook.sol", "CreatorHookSettingsRegistry.sol"],
+      "functions": ["_calculateFee()", "setTokenSettings()"],
+      "keywords": ["fee", "BPS", "overflow", "config-error"]
+    },
+    {
+      "vector": "H-R6-DP-02: Reentrancy during queued hook fee transfer (NO_FLAGS clearing)",
+      "why_ruled_out": "Code analysis confirms _setReentrancyFlags(NO_FLAGS) at AMMModule.sol:3190 clears flags before safeTransfer to hook recipient. However, the self-call pattern (msg.sender == address(this) check at ModuleFeeCollection.sol:128) means this executes via a CALL to self. The reentrancy is theoretically possible but the hook fee recipient is chosen by the hook (not the attacker), and the AMM's balance accounting uses pre/post balance checks that would catch any re-entrant manipulation. The recipient would need to be a malicious contract controlled by the hook deployer — this is Tier B (requires custom hook).",
+      "test_file": "lbamm-hooks-and-handlers/test/hooks/ExtensionHijackerAudit.t.sol",
+      "repos": ["lbamm-core"],
+      "contracts": ["AMMModule.sol", "ModuleFeeCollection.sol"],
+      "functions": ["_executeQueuedHookFeesByHookTransfers()", "executeQueuedHookFeesByHookTransfers()"],
+      "keywords": ["reentrancy", "NO_FLAGS", "hook-fee", "safeTransfer"]
+    },
+    {
+      "vector": "H-R6-DP-03: Output swap partial fill does not adjust hook fees",
+      "why_ruled_out": "Code analysis confirms hook fees are stored BEFORE pool type call at line 1537 (_applySwapByOutputOutputFees), and partial fill adjustment at lines 1569-1577 does NOT recalculate hook fees. However, the adjustedAmountSpecified at line 1576 reduces the overall swap amount the user pays. The hook fees were computed as a percentage of the original requested output — the pool type's partial fill means less of the output was delivered, but the hook fee was on the REQUESTED amount, not the delivered amount. This may be intentional: the hook charges fees on what was requested. The excess fee comes from the pool's reserves (covered by the amountIn the user provides). Needs deeper investigation but not clearly exploitable by an external attacker.",
+      "test_file": "code-analysis: AMMModule.sol:1537-1577, 2851-2894",
+      "repos": ["lbamm-core"],
+      "contracts": ["AMMModule.sol"],
+      "functions": ["_poolSwapByOutput()", "_applySwapByOutputOutputFees()"],
+      "keywords": ["partial-fill", "hook-fees", "output-swap"]
+    },
+    {
+      "vector": "H-R6-DP-01: _storeNonTokenHookFees key mismatch (tokenFor doubled)",
+      "why_ruled_out": "Code analysis: _storeNonTokenHookFees at line 3011-3026 uses hash(hook, hash(tokenFor, tokenFor)) while _transferHookFeesByHook at line 3123-3125 uses hash(hook, hash(tokenFor, tokenFee)). Currently tokenFor==tokenFee in all call sites (lines 790/794/838/842/1160/1164/1220/1224). The mismatch only manifests if a future hook returns cross-token fees, which no existing hook does. Latent risk only.",
+      "test_file": "code-analysis: AMMModule.sol:3011-3026, 3116-3139",
+      "repos": ["lbamm-core"],
+      "contracts": ["AMMModule.sol"],
+      "functions": ["_storeNonTokenHookFees()", "_transferHookFeesByHook()"],
+      "keywords": ["hash-key", "mismatch", "hook-fees", "locked-funds"]
+    },
+    {
+      "vector": "H-R6-DP-07: addLiquidity failed distribution inflates reserves via _storeTokensOwed",
+      "why_ruled_out": "Code analysis: When safeTransfer fails at line 1298, _storeTokensOwed is called at line 1300 instead of reverting. This means the AMM holds the tokens but the provider has a debt claim. The AMM's solvency is maintained because it holds the tokens — they're just tracked as owed. The provider can claim them via collectTokensOwed. If the token blacklists both the AMM and provider, the tokens are stuck but this is a token-level issue, not an AMM vulnerability.",
+      "test_file": "code-analysis: AMMModule.sol:1282-1300, 2913-2920",
+      "repos": ["lbamm-core"],
+      "contracts": ["AMMModule.sol"],
+      "functions": ["_distributeOrCollectLiquidityToken()", "_storeTokensOwed()"],
+      "keywords": ["failed-transfer", "tokensOwed", "reserves", "solvency"]
+    },
+    {
+      "vector": "H-R6-DP-10: Token settings change orphans hook fees",
+      "why_ruled_out": "Code analysis: When token admin changes hook from A to B via setTokenSettings, hook A's accumulated fees remain accessible via collectHookFeesByHook because the storage key uses hook A's address (which hasn't changed). Hook A can still call collectHookFeesByHook regardless of whether it's the active hook. The fees are 'socially orphaned' (hook A may choose not to collect) but not technically locked. This is admin-controlled behavior, not an exploit path.",
+      "test_file": "code-analysis: ModuleAdmin.sol:272-294, ModuleFeeCollection.sol:72-81",
+      "repos": ["lbamm-core"],
+      "contracts": ["ModuleAdmin.sol", "ModuleFeeCollection.sol"],
+      "functions": ["setTokenSettings()", "collectHookFeesByHook()"],
+      "keywords": ["hook-change", "orphaned-fees", "token-settings"]
+    },
+    {
+      "vector": "H-R6-DP-11: collectFees hook drains provider via hookFee > fees",
+      "why_ruled_out": "Code analysis: The hookFee0 is checked against maxHookFee0 at AMMModule.sol:338-340. If user sets maxHookFee to type(uint256).max, a malicious hook CAN return excessive fees. But this is Tier B (requires malicious token hook) and user-controlled (maxHookFee parameter). The user's permit/approval caps exposure. Not exploitable by external attacker without the user's cooperation in setting dangerous maxHookFee.",
+      "test_file": "code-analysis: AMMModule.sol:329-362, 338-340",
+      "repos": ["lbamm-core"],
+      "contracts": ["AMMModule.sol"],
+      "functions": ["_positionCollectFees()"],
+      "keywords": ["hook-fee", "drain", "maxHookFee", "collectFees"]
+    },
+    {
+      "vector": "H-R6-HR-04: Stale transient storage for direct swap pricing",
+      "why_ruled_out": "Code analysis: The beforeSwap at line 838-840 only writes to DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT when bounds.isSet is true. If bounds are set between beforeSwap and afterSwap within the SAME swap (requires callback during swap), afterSwap could read stale data. But this requires setting pricing bounds during swap execution, which needs registry access during a swap callback — extremely unlikely. Additionally, the Tstorish pattern clears transient storage between transactions, so cross-tx staleness is not an issue.",
+      "test_file": "code-analysis: AMMStandardHook.sol:828-851",
+      "repos": ["lbamm-hooks-and-handlers"],
+      "contracts": ["AMMStandardHook.sol"],
+      "functions": ["_validatePricingBounds()"],
+      "keywords": ["transient-storage", "stale", "direct-swap", "pricing"]
+    },
+    {
+      "vector": "H-R6-HR-06: Pool creation bounds check reads both directions from single hook",
+      "why_ruled_out": "Code analysis: _enforcePoolCreationSettings reads bounds0 (token0→token1) and bounds1 (token1→token0) at lines 780-781. The hook only has bounds for its own token direction cached. But the AMM calls validatePoolCreation on BOTH token hooks, so the combined coverage is complete. If only one token has a hook, the unhookable token's bounds are correctly empty (no enforcement needed — that token has no hook-managed restrictions).",
+      "test_file": "code-analysis: AMMStandardHook.sol:750-807",
+      "repos": ["lbamm-hooks-and-handlers"],
+      "contracts": ["AMMStandardHook.sol"],
+      "functions": ["_enforcePoolCreationSettings()"],
+      "keywords": ["pool-creation", "pricing-bounds", "dual-direction"]
+    },
+    {
+      "vector": "H-R6-HR-08: Directional exemption trusts pool type price direction",
+      "why_ruled_out": "Code analysis: _validatePricingBounds at lines 854-869 allows recovery-direction swaps to pass bounds checks. This trusts that swap direction corresponds to price movement. For standard pool types (Dynamic, Fixed, SingleProvider), this invariant always holds. A malicious pool type could break this, but pool types require 6 leading zero bytes and are Tier B (requires custom pool type deployment). The directional exemption is intentional design for price recovery.",
+      "test_file": "code-analysis: AMMStandardHook.sol:854-869",
+      "repos": ["lbamm-hooks-and-handlers"],
+      "contracts": ["AMMStandardHook.sol"],
+      "functions": ["_validatePricingBounds()"],
+      "keywords": ["directional-exemption", "price-direction", "pool-type"]
+    },
+    {
+      "vector": "C7: INV-H01 — External hook function access control",
+      "why_ruled_out": "All AMM-facing hook functions (beforeSwap, afterSwap, validateAddLiquidity) correctly revert for non-AMM callers with CallerIsNotAMM. validateRemoveLiquidity and validateCollectFees revert with HookFunctionNotSupported. validateHandlerOrder is intentionally external/view with no access control — it's designed to be called by transfer handlers.",
+      "test_file": "lbamm-hooks-and-handlers/test/hooks/ExtensionHijackerAudit.t.sol",
+      "repos": ["lbamm-hooks-and-handlers"],
+      "contracts": ["AMMStandardHook.sol"],
+      "functions": ["beforeSwap()", "afterSwap()", "validateAddLiquidity()", "validateHandlerOrder()"],
+      "keywords": ["access-control", "CallerIsNotAMM", "hook"]
+    }
+  ],
+  "theft_theses": [
+    {
+      "thesis": "CLOB orders bypass trading pause via validateHandlerOrder missing tradingIsPaused check",
+      "victim": "Token creators pausing trading",
+      "asset": "Value lost to stale-price arbitrage during pause periods",
+      "estimated_ev": 0,
+      "status": "confirmed"
+    },
+    {
+      "thesis": "CLOB orders bypass pair whitelist via validateHandlerOrder missing pairedTokenWhitelistId check",
+      "victim": "Token creators restricting pair tokens",
+      "asset": "Maker funds locked in unfillable orders against non-whitelisted pairs",
+      "estimated_ev": 0,
+      "status": "confirmed"
+    },
+    {
+      "thesis": "validateHandlerOrder max pricing bound bypass via sqrtPriceX96 overflow to 0",
+      "victim": "Token creators setting max pricing bounds",
+      "asset": "Orders at extreme prices bypassing creator restrictions",
+      "estimated_ev": 0,
+      "status": "confirmed"
+    },
+    {
+      "thesis": "validateAddLiquidity max pricing bound bypass when pool returns zero price",
+      "victim": "Token creators with pricing bounds for liquidity",
+      "asset": "Liquidity added at zero price bypassing max bound",
+      "estimated_ev": 0,
+      "status": "confirmed"
+    },
+    {
+      "thesis": "Reentrancy during queued hook fee transfer via NO_FLAGS clearing",
+      "victim": "AMM users during fee distribution",
+      "asset": "Potential state manipulation during reentrancy window",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    }
+  ],
+  "hypothesis_results": [
+    {
+      "id": "H-R6-HR-03",
+      "status": "confirmed",
+      "test_file": "lbamm-hooks-and-handlers/test/hooks/ExtensionHijackerAudit.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If a maker calls CLOB openOrder while trading is paused, the order is accepted because validateHandlerOrder has no tradingIsPaused check. This creates an asymmetry where AMM swaps are blocked but CLOB orders are allowed during pause.",
+      "guard_location": "No guard exists — validateHandlerOrder does not call _validateTokenTradingRules or check tradingIsPaused",
+      "detail": "Forge test demonstrates validateHandlerOrder passes while beforeSwap reverts with TradingPaused for the same token."
+    },
+    {
+      "id": "H-R6-DP-02",
+      "status": "tested",
+      "test_file": "code-analysis: AMMModule.sol:3183-3204",
+      "failure_class": "tactical",
+      "refutation_case": "If a malicious hook fee recipient re-enters the AMM during _executeQueuedHookFeesByHookTransfers, the reentrancy flags are cleared (NO_FLAGS at line 3190), allowing the recipient to call singleSwap/addLiquidity. The AMM's balance checks would catch double-spending but partial state could be manipulated.",
+      "guard_location": "AMMModule.sol:3190 — _setReentrancyFlags(NO_FLAGS) — this IS the vulnerability point, not a guard",
+      "detail": "Reentrancy is theoretically possible but requires Tier B conditions (malicious hook with controlled fee recipient). Balance validation provides secondary defense."
+    },
+    {
+      "id": "H-R6-HR-01",
+      "status": "tested",
+      "test_file": "lbamm-hooks-and-handlers/test/hooks/ExtensionHijackerAudit.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If registry syncs initialized=false to hooks, every subsequent swap re-fetches from registry instead of using cached values. The attacker could change registry settings and know the hook will pick them up immediately, bypassing the explicit sync model.",
+      "guard_location": "CreatorHookSettingsRegistry.sol:397 — syncs `settings` (calldata) instead of `memSettings` (memory with initialized=true)",
+      "detail": "Bug confirmed: line 397 passes raw `settings` calldata (initialized=false) to hooks, while line 378 stores `memSettings` (initialized=true) in registry. Low impact — makes settings more up-to-date, doesn't enable extraction."
+    },
+    {
+      "id": "H-R6-HR-02",
+      "status": "confirmed",
+      "test_file": "lbamm-hooks-and-handlers/test/hooks/ExtensionHijackerAudit.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If computeRatioX96 overflows to 0 with extreme amounts, the max bound check (0 > max) is always false, bypassing the price ceiling. _validatePricingBounds has an explicit sqrtPriceX96==0 revert but validateHandlerOrder does not.",
+      "guard_location": "AMMStandardHook.sol:847 — the sqrtPriceX96==0 check exists in _validatePricingBounds but NOT in validateHandlerOrder at line 215-224",
+      "detail": "Forge test demonstrates overflow to 0 bypasses max bound. Known pattern CP-003."
+    },
+    {
+      "id": "H-R6-HR-05",
+      "status": "confirmed",
+      "test_file": "lbamm-hooks-and-handlers/test/hooks/ExtensionHijackerAudit.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If a pool type returns getCurrentPriceX96=0 (edge case), the max bound check in validateAddLiquidity (0 > max) is always false, allowing liquidity addition at zero price despite max bounds.",
+      "guard_location": "AMMStandardHook.sol:847 — sqrtPriceX96==0 check exists in _validatePricingBounds but NOT in validateAddLiquidity at line 268-275",
+      "detail": "Forge test demonstrates zero-price bypass with mock pool returning 0."
+    },
+    {
+      "id": "H-R6-HR-06",
+      "status": "dismissed",
+      "test_file": "code-analysis: AMMStandardHook.sol:750-807",
+      "failure_class": "strategic",
+      "refutation_case": "If one token has no hook, the other hook reads both directions but only its own direction has bounds cached. The unhookable direction is skipped.",
+      "guard_location": "AMMModule.sol:230,254 — AMM calls validatePoolCreation on BOTH token hooks, providing complete coverage",
+      "detail": "Cross-hook gap doesn't exist because AMM calls both hooks independently. Each hook correctly validates its own direction."
+    },
+    {
+      "id": "H-R6-HR-09",
+      "status": "confirmed",
+      "test_file": "lbamm-hooks-and-handlers/test/hooks/ExtensionHijackerAudit.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If a maker places a CLOB order against a non-whitelisted pair token, validateHandlerOrder passes because it never checks pairedTokenWhitelistId. The order is deposited but cannot be filled via AMM (beforeSwap checks whitelist).",
+      "guard_location": "AMMStandardHook.sol:684-687 — pair whitelist check exists in _validateTokenTradingRules but NOT in validateHandlerOrder",
+      "detail": "Forge test demonstrates non-whitelisted pair passes validateHandlerOrder while beforeSwap correctly reverts."
+    },
+    {
+      "id": "H-R6-DP-01",
+      "status": "dismissed",
+      "test_file": "code-analysis: AMMModule.sol:3011-3026, 3116-3139",
+      "failure_class": "strategic",
+      "refutation_case": "If a hook stored cross-token fees (hookFee0 in token1), the hash key mismatch would make fees uncollectable. But all current call sites use tokenFor==tokenFee, so keys match.",
+      "guard_location": "AMMModule.sol:790,794,838,842 — all call _storeHookFees with same-token parameters",
+      "detail": "Latent risk only. No current code path triggers the mismatch. Would require a new hook design."
+    },
+    {
+      "id": "H-R6-DP-03",
+      "status": "tested",
+      "test_file": "code-analysis: AMMModule.sol:1537-1577, 2851-2894",
+      "failure_class": "tactical",
+      "refutation_case": "If pool type partial fills (actualAmountOut < originalAmountOut), the already-stored hook fees are not adjusted. The hook collects fees on the full requested amount, not the partial fill.",
+      "guard_location": "AMMModule.sol:1576 — adjustedAmountSpecified reduced but hook fees at lines 2871/2887 already stored",
+      "detail": "Potential overcollection of hook fees on partial fills. Needs deeper investigation to determine if the fee excess creates a solvency issue or is absorbed by the amountIn adjustment."
+    },
+    {
+      "id": "H-R6-DP-07",
+      "status": "dismissed",
+      "test_file": "code-analysis: AMMModule.sol:1282-1300",
+      "failure_class": "strategic",
+      "refutation_case": "If safeTransfer fails during addLiquidity distribution, _storeTokensOwed tracks the debt. The provider can collect later.",
+      "guard_location": "AMMModule.sol:1298-1300 — failed transfer falls through to _storeTokensOwed instead of reverting",
+      "detail": "The AMM's solvency is maintained because it holds the tokens. The provider has a collectible claim. No external exploit path."
+    },
+    {
+      "id": "H-R6-DP-10",
+      "status": "dismissed",
+      "test_file": "code-analysis: ModuleAdmin.sol:272-294, ModuleFeeCollection.sol:72-81",
+      "failure_class": "strategic",
+      "refutation_case": "If token admin changes hook from A to B, hook A's stored fees are still accessible via collectHookFeesByHook with hook A's address as msg.sender.",
+      "guard_location": "ModuleFeeCollection.sol:75-81 — collectHookFeesByHook checks msg.sender == hook, which is the old hook's address (still valid)",
+      "detail": "Fees are socially orphaned but technically accessible. Admin-controlled behavior."
+    },
+    {
+      "id": "H-R6-DP-11",
+      "status": "dismissed",
+      "test_file": "code-analysis: AMMModule.sol:329-362, 338-340",
+      "failure_class": "strategic",
+      "refutation_case": "Malicious hook can return hookFee > fees, causing provider to send tokens. But maxHookFee parameter is user-controlled defense.",
+      "guard_location": "AMMModule.sol:338-340 — hookFee checked against maxHookFee0/maxHookFee1",
+      "detail": "Tier B: requires malicious token hook. User's maxHookFee provides defense. Not exploitable by external attacker."
+    },
+    {
+      "id": "H-R6-HR-04",
+      "status": "dismissed",
+      "test_file": "code-analysis: AMMStandardHook.sol:828-851",
+      "failure_class": "strategic",
+      "refutation_case": "Stale transient storage between transactions is cleared by Tstorish. Within-transaction staleness requires setting pricing bounds during swap callback — extremely unlikely.",
+      "guard_location": "AMMStandardHook.sol:829-830 — bounds.isSet check gates both write and read paths",
+      "detail": "Requires extremely unlikely preconditions. Tstorish pattern handles cross-tx case."
+    },
+    {
+      "id": "H-R6-HR-07",
+      "status": "dismissed",
+      "test_file": "lbamm-hooks-and-handlers/test/hooks/ExtensionHijackerAudit.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "Fee BPS > MAX_BPS makes token untradeable via AMM. But this is self-inflicted by token admin.",
+      "guard_location": "AMMModule.sol:2616 — InsufficientInputForFees revert provides secondary defense",
+      "detail": "Self-inflicted config error. Known FP pattern in digest."
+    },
+    {
+      "id": "H-R6-HR-08",
+      "status": "dismissed",
+      "test_file": "code-analysis: AMMStandardHook.sol:854-869",
+      "failure_class": "strategic",
+      "refutation_case": "Directional exemption assumes swap direction = price movement direction. This holds for all standard pool types.",
+      "guard_location": "Standard pool type implementations guarantee direction=price movement invariant",
+      "detail": "Tier B: requires malicious pool type (6 leading zero bytes constraint). Intentional design for recovery direction."
+    }
+  ],
+  "metadata": {
+    "checklist_items_completed": "A: 4/5, B: 0/3, C: 7/22, D: 9/9",
+    "tools_run": {
+      "slither": {"ran": true, "repos": ["lbamm-hooks-and-handlers", "lbamm-core"], "note": "High: arbitrary-send-erc20, incorrect-return, uninitialized-state, reentrancy-balance. Medium: uninitialized-local, unused-return."},
+      "aderyn": {"ran": true, "repos": ["lbamm-core"], "note": "H-1: reentrancy state change after external call in ModuleAdmin. Hooks-and-handlers: crashed (aderyn bug)."},
+      "forge": {"ran": true, "note": "7 tests written and passing. File: lbamm-hooks-and-handlers/test/hooks/ExtensionHijackerAudit.t.sol"},
+      "halmos": {"ran": false, "reason": "No formal verification targets identified for extension-hijacker scope"},
+      "medusa": {"ran": false, "reason": "Hook functions require complex setup with AMM integration — targeted Forge tests more effective"},
+      "audit-context-building": {"ran": false, "reason": "Focused on direct code analysis and hypothesis testing"},
+      "entry-point-analyzer": {"ran": false, "reason": "Entry points identified via manual analysis of hook interfaces"}
+    },
+    "num_turns": 50,
+    "tool_uses": 35,
+    "files_read": 15,
+    "theses_tested": 15,
+    "theses_confirmed": 4,
+    "theses_ruled_out": 11,
+    "triage_log": {"skip": 3, "borderline": 5, "survive": 7}
+  }
+}

@@ -1,0 +1,287 @@
+{
+  "agent": "price-distorter",
+  "wave": 1,
+  "timestamp": "2026-03-26T00:00:00Z",
+  "test_files": [
+    "amm-pool-type-dynamic/test/AuditPriceDistorterExploits.t.sol",
+    "lbamm-hooks-and-handlers/test/handlers/clob/H01_PricingBoundsRoundtripBypass.t.sol"
+  ],
+  "findings": [
+    {
+      "id": "H-handler-hook-01",
+      "title": "Pricing Bounds Bypass via Roundtrip Rounding Inflation in CLOB validateHandlerOrder",
+      "severity": "medium",
+      "confidence": "high",
+      "status": "confirmed",
+      "contracts": [
+        "lbamm-hooks-and-handlers/src/hooks/AMMStandardHook.sol",
+        "lbamm-hooks-and-handlers/src/handlers/clob/libraries/CLOBHelper.sol",
+        "lbamm-hooks-and-handlers/src/hooks/libraries/SqrtPriceCalculator.sol"
+      ],
+      "functions": [
+        "AMMStandardHook.validateHandlerOrder",
+        "CLOBHelper.calculateFixedInput",
+        "SqrtPriceCalculator.computeRatioX96"
+      ],
+      "description": "Token creator's pricing bounds (minSqrtPriceX96) are bypassed when placing CLOB orders at extreme low prices. The root cause is that validateHandlerOrder ignores the exact order price from handlerOrderParams and reconstructs it from (amountIn, amountOut). When CLOBHelper.calculateFixedInput rounds up output to 1 wei via double mulDivRoundingUp, the reconstructed price is inflated by up to 7.9 billion times above the actual order price.",
+      "attack_sequence": [
+        "1. Token creator sets minSqrtPriceX96 = 1e18 as price floor",
+        "2. Attacker calls openOrder(tokenIn, tokenOut, sqrtPriceX96=1e10, orderAmount=1e18)",
+        "3. _enforceTokenHooks computes amountOut = calculateFixedInput(1e18, 1e10) = 1 (true value ~1.26e-19, rounded up to 1)",
+        "4. validateHandlerOrder reconstructs sqrtPriceX96 = computeRatioX96(1, 1e18) = 7.92e19",
+        "5. Bounds check: 7.92e19 > 1e18 → PASSES, but actual price is 1e10 (1e8x below floor)"
+      ],
+      "impact": "Orders placed at prices far below token creator's intended floor. Price inflation factor up to 7,922,816,251x. When these orders are filled, tokens are purchased at prices the creator explicitly prohibited.",
+      "poc": "lbamm-hooks-and-handlers/test/handlers/clob/H01_PricingBoundsRoundtripBypass.t.sol",
+      "poc_command": "cd lbamm-hooks-and-handlers && forge test --match-test 'test_H01' -vvv",
+      "recommendation": "In validateHandlerOrder, decode the actual sqrtPriceX96 from handlerOrderParams instead of reconstructing from amounts."
+    }
+  ],
+  "informational": [
+    {
+      "id": "I-01",
+      "title": "CLOBHelper.calculateFixedInput rounds UP output (favors maker over filler)",
+      "severity": "info",
+      "description": "CLOBHelper.calculateFixedInput uses double mulDivRoundingUp, giving makers slightly more output than true price. At extreme price ratios (sqrtPriceX96 >> Q96), the compounded rounding can leak up to ~2231 wei per fill. Relative leakage is bounded below 0.1% for amountIn > 1000. Not economically exploitable due to gas costs exceeding leakage value.",
+      "test": "test_CLOB_rounding_leakage_per_fill"
+    },
+    {
+      "id": "I-02",
+      "title": "FixedPoolType createPool stores sqrtPriceX96=0 for extreme ratio values",
+      "severity": "info",
+      "description": "When creating a FixedPool with extreme ratio values (e.g., ratio0=1, ratio1=uint128.max), SqrtPriceCalculator.computeRatioX96 overflows and returns 0. This 0 is stored as the pool's sqrtPriceX96. Impact: getCurrentPriceX96 returns 0, which causes any hook-based pricing bounds to fail (DoS). However, actual swap math uses packedRatio (unaffected), and remove liquidity is not blocked by hooks.",
+      "test": "test_computeRatioX96_extreme_fixedPool_ratio"
+    }
+  ],
+  "ruled_out": [
+    {
+      "id": "RO-20",
+      "hypothesis": "TickMath edge-case overflow or off-by-one at MIN/MAX tick boundaries",
+      "checklist_items": ["C14"],
+      "result": "getSqrtPriceAtTick(MIN_TICK) returns MIN_SQRT_RATIO exactly. MAX_TICK produces valid uint160. Out-of-range ticks (±887273) revert. Round-trip (tick→price→tick) is consistent within 1 tick. getTickAtSqrtPrice rejects invalid prices. No exploitable edge case.",
+      "test": "test_C14_tickMath_minTick, test_C14_tickMath_maxTick, test_C14_tickMath_outOfRange_reverts, test_C14_tickMath_roundTrip"
+    },
+    {
+      "id": "RO-21",
+      "hypothesis": "BitMath returns incorrect bit position causing tick bitmap corruption",
+      "checklist_items": ["C15"],
+      "result": "mostSignificantBit and leastSignificantBit both revert on zero input. Boundary values (1, max) produce correct results. Fuzz confirms MSB >= LSB and MSB bit is actually set. No discrepancy found.",
+      "test": "test_C15_bitMath_msb_zero_reverts, test_C15_bitMath_boundaries, test_C15_bitMath_fuzz_consistency"
+    },
+    {
+      "id": "RO-22",
+      "hypothesis": "LiquidityMath.addDelta silently underflows or overflows liquidity",
+      "checklist_items": ["C16"],
+      "result": "addDelta correctly reverts on underflow (0, -1), overflow (max, +1), and large negative delta. Positive and negative paths work correctly. Assembly implementation is safe.",
+      "test": "test_C16_liquidityMath_underflow_reverts, test_C16_liquidityMath_overflow_reverts, test_C16_liquidityMath_addPositive"
+    },
+    {
+      "id": "RO-23",
+      "hypothesis": "Non-monotonic fee response — higher fee could give MORE output",
+      "checklist_items": ["C25"],
+      "result": "Fixed test confirms 1% > 5% > 30% output ordering. Fuzz (25 runs) confirms for arbitrary liquidity, price, and fee pairs that higher fee always produces less output. Fee monotonicity holds.",
+      "test": "test_C25_feeMonotonicity_inputSwap, test_C25_feeMonotonicity_fuzz"
+    },
+    {
+      "id": "RO-24",
+      "hypothesis": "Pool type registration is permissionless — malicious pool type could return inflated values",
+      "checklist_items": [],
+      "result": "Pool type address must have 6 leading zero bytes (POOL_TYPE_ADDRESS_MASK) but is otherwise permissionless. However, AMM validates: (a) totalFees <= amountIn, (b) actual token balance change matches expected, (c) reserves tracked per pool. Malicious pool type can only harm LPs who voluntarily deposit into that pool. Self-inflicted config.",
+      "test": "N/A (code analysis)"
+    },
+    {
+      "id": "RO-25",
+      "hypothesis": "Reentrancy via transfer handler callback during token settlement",
+      "checklist_items": [],
+      "result": "All three swap entry points use TstorishReentrancyGuardWithFlags with ENTERED bit check. Different swap types share the same ENTERED bit — cross-type reentry is blocked. Transfer handler callback at line 2251 occurs after reentrancy guard is set. Safe.",
+      "test": "N/A (code analysis)"
+    },
+    {
+      "id": "RO-26",
+      "hypothesis": "DynamicPoolType fee growth global wrapping causes LP fee theft",
+      "checklist_items": [],
+      "result": "Fee growth uses intentional unchecked wrapping (Uniswap V3 pattern). _getTokensOwed uses truncating uint128 cast but requires >2^128 accumulated fees to trigger. Truncation reduces LP payout (no theft). Protocol-standard design.",
+      "test": "N/A (code analysis)"
+    },
+    {
+      "id": "RO-27",
+      "hypothesis": "Output-based swap fee calculation with 99.99% fee causes division by 1",
+      "checklist_items": [],
+      "result": "computeSwapByOutputStep line 143: feeAmount = mulDivRoundingUp(amountIn, poolFeeBPS, MAX_BPS - poolFeeBPS). At 9999 BPS: feeAmount = amountIn * 9999 / 1 = 9999x input. But this is within one tick step and the accumulated fee is validated by _validateProtocolFees. No free tokens created.",
+      "test": "N/A (code analysis)"
+    },
+    {
+      "id": "RO-28",
+      "hypothesis": "CLOB partial fill + cancel returns more than unfilled amount",
+      "checklist_items": ["C18"],
+      "result": "closeOrder correctly returns ptrOrderBucket.inputAmountRemaining for current (partially filled) orders, and ptrOrder.inputAmount for unfilled orders. fillOrder correctly decrements orderInputRemaining and stores it back. No double-spend or over-refund path found. CLOBHelper only has calculateFixedInput (no calculateFixedOutput) — unidirectional pricing.",
+      "test": "N/A (code analysis)"
+    },
+    {
+      "id": "RO-01",
+      "hypothesis": "Round-trip swap profitability on SingleProvider fixed price math",
+      "checklist_items": ["C23"],
+      "result": "No profitable round-trip found. Fuzz test (25 runs) confirms amountBack <= amountIn for all valid price/amount combinations. Rounding consistently favors protocol.",
+      "test": "test_C23_roundTrip_SingleProvider_neverProfitable"
+    },
+    {
+      "id": "RO-02",
+      "hypothesis": "Round-trip with fees still profitable via rounding exploitation",
+      "checklist_items": ["C23"],
+      "result": "No profitable round-trip even with 0.3% fee. Fuzz test confirms.",
+      "test": "test_C23_roundTrip_withFees_neverProfitable"
+    },
+    {
+      "id": "RO-03",
+      "hypothesis": "Dust loop value creation through repeated 1-wei swaps",
+      "checklist_items": ["C24"],
+      "result": "1000 forward + 1000 reverse 1-wei swaps at 1:1 price maintain protocol solvency. Reserve sum >= initial.",
+      "test": "test_C24_dustLoop_fixedInput_noValueCreation"
+    },
+    {
+      "id": "RO-04",
+      "hypothesis": "Cetus-pattern overflow causing near-zero price via computeRatioX96",
+      "checklist_items": ["C26"],
+      "result": "Confirmed computeRatioX96 returns 0 for 128 input combinations (amount1 >= 2^128, amount0=1). However, in production: (a) FixedPoolType ratio values are uint128 (bounded), (b) AMMStandardHook only uses this with deposit amounts (bounded by token supply), (c) the zero-return vector is already captured in H-01.",
+      "test": "test_C26_cetus_pattern_computeRatioX96_overflow_to_zero"
+    },
+    {
+      "id": "RO-05",
+      "hypothesis": "Cross-implementation mismatch between SqrtPriceCalculator and SqrtPriceMath",
+      "checklist_items": ["C19"],
+      "result": "25 amount combinations tested — both implementations produce identical results. No discrepancy exploitable.",
+      "test": "test_C19_computeRatioX96_cross_implementation_consistency"
+    },
+    {
+      "id": "RO-06",
+      "hypothesis": "First depositor inflation (ERC-4626 pattern)",
+      "checklist_items": ["C28"],
+      "result": "Not applicable. SingleProviderPoolType uses direct amount specification (not shares). DynamicPoolType uses concentrated liquidity with L^2 invariant, also not share-based.",
+      "test": "N/A (design analysis)"
+    },
+    {
+      "id": "RO-07",
+      "hypothesis": "Free tokens from SwapMath.computeSwapByInputStep",
+      "checklist_items": ["C13"],
+      "result": "Fuzz test (25 runs) with random liquidity, prices, and fees. No free tokens produced. amountIn + feeAmount always >= 0.",
+      "test": "test_C13_noFreeTokens_inputSwap"
+    },
+    {
+      "id": "RO-08",
+      "hypothesis": "Fee exceeds input amount in FullMath.mulDivRoundingUp",
+      "checklist_items": ["C17"],
+      "result": "Fuzz test confirms fee <= amount for all feeBPS in [0, 10000]. At 100% fee, fee == amount exactly.",
+      "test": "test_C17_fee_never_exceeds_input"
+    },
+    {
+      "id": "RO-09",
+      "hypothesis": "Output swap undercharges input (rounding direction error)",
+      "checklist_items": ["C20"],
+      "result": "calculateFixedOutput always produces requiredIn such that calculateFixedInput(requiredIn) >= desiredOut. Rounding direction correct.",
+      "test": "test_C20_outputSwap_overcharges"
+    },
+    {
+      "id": "RO-10",
+      "hypothesis": "Non-monotonic output from calculateFixedInput",
+      "checklist_items": ["C27"],
+      "result": "For 1 wei input that rounds to 0 output — this is protocol-favorable. For 2 wei input, output >= 1 wei output. Monotonicity holds.",
+      "test": "test_C27_fixedInput_roundsDown"
+    },
+    {
+      "id": "RO-11",
+      "hypothesis": "Hook returns extreme prices to SingleProviderPoolType",
+      "checklist_items": ["C29"],
+      "result": "MIN_SQRT_RATIO+1 and MAX_SQRT_RATIO-1 tested. At extreme prices, one direction gives 0 output (total loss to swapper) and the reverse gives massive output. However, SingleProviderPoolType validates price >= MIN and < MAX. The hook price is constrained. Value extraction requires hook controller to be the attacker AND victim to be a user who voluntarily interacts with that pool — self-inflicted config.",
+      "test": "test_C29_extremePrice_nearZero, test_C29_extremePrice_nearMax"
+    },
+    {
+      "id": "RO-12",
+      "hypothesis": "DynamicPoolType snapPrice manipulation to steal reserves",
+      "checklist_items": [],
+      "result": "snapPrice traverses tick bitmap and reverts if any initialized ticks exist between current and target price. Empty pools (no liquidity) have no reserves to steal. Price movement within uninitialized tick ranges is limited value.",
+      "test": "N/A (code analysis)"
+    },
+    {
+      "id": "RO-13",
+      "hypothesis": "Multi-hop swap amountIn not properly transitioned between hops",
+      "checklist_items": [],
+      "result": "AMMModule.sol line 1469: swapCache.amountIn = swapCache.amountOut correctly transfers output of hop N to input of hop N+1.",
+      "test": "N/A (code analysis)"
+    },
+    {
+      "id": "RO-14",
+      "hypothesis": "Unchecked fee subtraction underflow in AMMModule._validateProtocolFees",
+      "checklist_items": [],
+      "result": "Line 1662 validates totalFees <= amountIn before unchecked subtraction at line 1675. Safe.",
+      "test": "N/A (code analysis)"
+    },
+    {
+      "id": "RO-15",
+      "hypothesis": "Hook fee manipulation causing reserve accounting underflow in AMMModule",
+      "checklist_items": [],
+      "result": "Lines 2616 and 2629 validate hook fee <= remaining swapAmountIn before deduction. Insufficient input reverts.",
+      "test": "N/A (code analysis)"
+    },
+    {
+      "id": "RO-16",
+      "hypothesis": "FixedPoolType height-based swap accounting inconsistency",
+      "checklist_items": ["C3-C6"],
+      "result": "FixedHelper has extensive validation: InputValidationFailed (line 1662/1678), OutputValidationFailed (line 1628), InvalidInputDust (line 1672), InvalidOutputDust (line 1700). Dust bounded to 1 output unit. Height crossing validated at each step.",
+      "test": "N/A (code analysis)"
+    },
+    {
+      "id": "RO-17",
+      "hypothesis": "Protocol fee shortage calculation underflow when hook fees are large",
+      "checklist_items": [],
+      "result": "Line 2652 conditional guarantees minimumProtocolFee > protocolFeeFromHookFees + expectedProtocolLPFee before unchecked subtraction at line 2656. Safe.",
+      "test": "N/A (code analysis)"
+    },
+    {
+      "id": "RO-18",
+      "hypothesis": "CLOB rounding-up output creates profitable extraction for makers",
+      "checklist_items": [],
+      "result": "CLOBHelper.calculateFixedInput uses mulDivRoundingUp which at extreme prices leaks up to 2231 wei per fill (found via fuzzer counterexample: amountIn=17351, sqrtPriceX96=1.77e32). However, relative leakage is negligible and gas costs far exceed extractable value. Dust-level, not economically exploitable.",
+      "test": "test_CLOB_rounding_leakage_per_fill, test_CLOB_cumulative_leakage"
+    },
+    {
+      "id": "RO-19",
+      "hypothesis": "FixedPool with zero sqrtPriceX96 traps user liquidity",
+      "checklist_items": [],
+      "result": "Extreme ratio values (ratio0=1, ratio1=uint128.max) cause computeRatioX96 to return 0. Pool creation succeeds but getCurrentPriceX96 returns 0. However: (1) swap math uses packedRatio not sqrtPriceX96, (2) validateRemoveLiquidity in AMMStandardHook reverts unconditionally (not supported), so LPs can always exit, (3) pool creator chose extreme ratio voluntarily. Self-inflicted config.",
+      "test": "test_computeRatioX96_extreme_fixedPool_ratio"
+    },
+    {
+      "id": "RO-29",
+      "hypothesis": "FixedPoolType math allows value extraction via round-trip, mixed rounding, or direction games",
+      "checklist_items": ["C21"],
+      "result": "Medusa corpus-guided fuzzer: 7/7 property tests passed, 511K calls, 0 failures across 5113 sequences, 185 branches. Properties tested: noRoundTripProfit, noRoundTripProfitRoundingUp, noMixedRoundingProfit, directionSymmetryNoExtract, inputMonotonicity, feeNeverExceedsInput, roundingDownLeRoundingUp. No price distortion vector found.",
+      "test": "MedusaFixedMath (Medusa harness)"
+    },
+    {
+      "id": "RO-30",
+      "hypothesis": "DynamicPoolType math allows value extraction via round-trip at arbitrary prices, non-monotonic output, or broken liquidity invariants",
+      "checklist_items": ["C22"],
+      "result": "Medusa corpus-guided fuzzer: 11 assertion tests passed (4 property_ + 7 fuzz_), 517K calls, 0 failures across 5169 sequences, 131 branches. Properties tested: noRoundTripAtArbitraryPrice, priceMovementMonotonicity, outputMonotonicity, liquidityAddRemove, zeroFeeFullConsumption, priceDirection, deltaRounding, feeConservation, mulDivRounding. No price distortion vector found.",
+      "test": "MedusaDynamicMath (Medusa harness)"
+    }
+  ],
+  "tools_used": {
+    "forge_test": true,
+    "forge_fuzz": true,
+    "slither": true,
+    "aderyn": false,
+    "halmos": false,
+    "medusa": true
+  },
+  "checklist_completed": {
+    "C1": true, "C2": true, "C3": true, "C4": true, "C5": true, "C6": true,
+    "C7": true, "C8": true, "C9": true, "C10": true, "C11": true, "C12": true,
+    "C13": true, "C14": true, "C15": true, "C16": true, "C17": true,
+    "C18": true, "C19": true, "C20": true, "C21": true, "C22": true,
+    "C23": true, "C24": true, "C25": true, "C26": true, "C27": true,
+    "C28": true, "C29": true
+  },
+  "vectors_explored": 30,
+  "total_tests": 41,
+  "tests_passing": 41
+}

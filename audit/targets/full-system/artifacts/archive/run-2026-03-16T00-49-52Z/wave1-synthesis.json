@@ -1,0 +1,854 @@
+{
+  "wave": 1,
+  "name": "black-hat-offense",
+  "timestamp": "2026-03-16T01:10:01Z",
+  "run_id": "run-2026-03-16T00-49-52Z",
+  "hot_spots": [],
+  "findings": [],
+  "contradictions": [],
+  "ruled_out_count": 117,
+  "invariants_formalized": [],
+  "tool_coverage_warnings": [
+    "TOOL_COVERAGE: precision-sniper (Precision Math Sniper) did NOT run audit_context_building \u2014 reason: no reason given",
+    "TOOL_COVERAGE: precision-sniper (Precision Math Sniper) did NOT run entry_point_analyzer \u2014 reason: no reason given",
+    "TOOL_COVERAGE: precision-sniper (Precision Math Sniper) did not report on conditional tool sharp_edges \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: precision-sniper (Precision Math Sniper) did not report on conditional tool token_integration_analyzer \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: state-desync (State Desync Operator) did NOT run audit_context_building \u2014 reason: no reason given",
+    "TOOL_COVERAGE: state-desync (State Desync Operator) did NOT run entry_point_analyzer \u2014 reason: no reason given",
+    "TOOL_COVERAGE: state-desync (State Desync Operator) did not report on conditional tool sharp_edges \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: state-desync (State Desync Operator) did not report on conditional tool token_integration_analyzer \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: auth-forger (Authorization & Settlement Forger) did NOT run audit_context_building \u2014 reason: no reason given",
+    "TOOL_COVERAGE: auth-forger (Authorization & Settlement Forger) did NOT run entry_point_analyzer \u2014 reason: no reason given",
+    "TOOL_COVERAGE: auth-forger (Authorization & Settlement Forger) did not report on conditional tool sharp_edges \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: auth-forger (Authorization & Settlement Forger) did not report on conditional tool token_integration_analyzer \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: math-deep-diver (Math Deep-Diver) did NOT run audit_context_building \u2014 reason: no reason given",
+    "TOOL_COVERAGE: math-deep-diver (Math Deep-Diver) did NOT run entry_point_analyzer \u2014 reason: no reason given",
+    "TOOL_COVERAGE: math-deep-diver (Math Deep-Diver) did not report on conditional tool sharp_edges \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: math-deep-diver (Math Deep-Diver) did not report on conditional tool token_integration_analyzer \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: cross-boundary (Cross-Boundary Tracer) did NOT run audit_context_building \u2014 reason: Used manual deep-reading of all 6 boundary interfaces instead",
+    "TOOL_COVERAGE: cross-boundary (Cross-Boundary Tracer) did NOT run entry_point_analyzer \u2014 reason: Used Slither list_functions + manual code reading instead",
+    "TOOL_COVERAGE: cross-boundary (Cross-Boundary Tracer) did not report on conditional tool sharp_edges \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: cross-boundary (Cross-Boundary Tracer) did not report on conditional tool token_integration_analyzer \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: composability-exploiter (composability-exploiter) did NOT run audit_context_building \u2014 reason: no reason given",
+    "TOOL_COVERAGE: composability-exploiter (composability-exploiter) did NOT run entry_point_analyzer \u2014 reason: no reason given",
+    "TOOL_COVERAGE: composability-exploiter (composability-exploiter) did not report on conditional tool sharp_edges \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: composability-exploiter (composability-exploiter) did not report on conditional tool token_integration_analyzer \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: price-distorter (Cross-Venue Price Distorter) did NOT run audit_context_building \u2014 reason: no reason given",
+    "TOOL_COVERAGE: price-distorter (Cross-Venue Price Distorter) did NOT run entry_point_analyzer \u2014 reason: no reason given",
+    "TOOL_COVERAGE: price-distorter (Cross-Venue Price Distorter) did not report on conditional tool sharp_edges \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: price-distorter (Cross-Venue Price Distorter) did not report on conditional tool token_integration_analyzer \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: insolvency-engineer (unknown) did NOT run audit_context_building \u2014 reason: no reason given",
+    "TOOL_COVERAGE: insolvency-engineer (unknown) did NOT run entry_point_analyzer \u2014 reason: no reason given",
+    "TOOL_COVERAGE: insolvency-engineer (unknown) did not report on conditional tool sharp_edges \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: insolvency-engineer (unknown) did not report on conditional tool token_integration_analyzer \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: extension-hijacker (extension-hijacker) did NOT run audit_context_building \u2014 reason: skipped \u2014 manual deep-dive covered all extension points",
+    "TOOL_COVERAGE: extension-hijacker (extension-hijacker) did NOT run entry_point_analyzer \u2014 reason: skipped \u2014 manual analysis of all entry points via Slither and code reading",
+    "TOOL_COVERAGE: extension-hijacker (extension-hijacker) did not report on conditional tool sharp_edges \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: extension-hijacker (extension-hijacker) did not report on conditional tool token_integration_analyzer \u2014 add to tools_run with ran=false and reason if not applicable",
+    "LENS_COVERAGE: precision-sniper (Precision Math Sniper) has no lens_coverage in metadata \u2014 likely did NOT apply value lifecycle lenses",
+    "LENS_COVERAGE: state-desync (State Desync Operator) has no lens_coverage in metadata \u2014 likely did NOT apply value lifecycle lenses",
+    "LENS_COVERAGE: auth-forger (Authorization & Settlement Forger) has no lens_coverage in metadata \u2014 likely did NOT apply value lifecycle lenses",
+    "LENS_COVERAGE: math-deep-diver (Math Deep-Diver) has no lens_coverage in metadata \u2014 likely did NOT apply value lifecycle lenses",
+    "LENS_COVERAGE: price-distorter (Cross-Venue Price Distorter) has no lens_coverage in metadata \u2014 likely did NOT apply value lifecycle lenses",
+    "LENS_COVERAGE: insolvency-engineer (unknown) has no lens_coverage in metadata \u2014 likely did NOT apply value lifecycle lenses"
+  ],
+  "exploit_clusters": [],
+  "claims": [
+    {
+      "agent": "precision-sniper",
+      "thesis": "Tick crossing at exact boundary causes liquidity mismatch allowing free tokens via dynamic pool",
+      "victim": "LPs in dynamic pools",
+      "asset": "USDC/WETH pool tokens",
+      "estimated_ev": 0,
+      "status": "ruled_out",
+      "test_file": "amm-pool-type-dynamic/test/audit/AuditPrecisionSniper.t.sol",
+      "ts": "2026-03-15T23:00:00Z",
+      "_source_agent": "precision-sniper"
+    },
+    {
+      "agent": "precision-sniper",
+      "thesis": "Fixed pool dust swaps (1 wei) compound rounding errors over 100+ iterations to extract value",
+      "victim": "LPs in fixed pools",
+      "asset": "Pool tokens",
+      "estimated_ev": 0,
+      "status": "ruled_out",
+      "test_file": "lbamm-pool-type-fixed/test/audit/AuditPrecisionSniperFixed.t.sol",
+      "ts": "2026-03-15T23:00:00Z",
+      "_source_agent": "precision-sniper"
+    },
+    {
+      "agent": "precision-sniper",
+      "thesis": "computeRatioX96 overflow returns 0, bypassing pricing bounds in validateHandlerOrder for direct swaps",
+      "victim": "Token creators with pricing bounds",
+      "asset": "Tokens traded below floor price",
+      "estimated_ev": 0,
+      "status": "ruled_out",
+      "test_file": "lbamm-pool-type-fixed/test/audit/AuditPrecisionSniperFixed.t.sol",
+      "ts": "2026-03-15T23:00:00Z",
+      "_source_agent": "precision-sniper"
+    },
+    {
+      "type": "ruled_out",
+      "vector": "KV-1: Zero-price bypass via SqrtPriceCalculator.computeRatioX96() returning 0",
+      "reason": "computeRatioX96 returns 0 on overflow, but AMMStandardHook._validatePricingBounds (line 847) explicitly checks sqrtPriceX96 == 0 and reverts with AMMStandardHook__InvalidPrice.",
+      "_source_agent": "state-desync"
+    },
+    {
+      "type": "ruled_out",
+      "vector": "KV-2: Direct handler call bypassing pricing enforcement",
+      "reason": "CLOBTransferHandler.ammHandleTransfer requires msg.sender == AMM. Direct external call reverts.",
+      "_source_agent": "state-desync"
+    },
+    {
+      "type": "ruled_out",
+      "vector": "KV-3: Settings sync gap in CLOBTransferHandler / CreatorHookSettingsRegistry",
+      "reason": "CLOBTransferHandler reads settings from AMM via ILimitBreakAMM.getTokenSettings() on each openOrder call. Cache invalidation handled by syncTokenSettings callback.",
+      "_source_agent": "state-desync"
+    },
+    {
+      "type": "ruled_out",
+      "vector": "KV-4: Transient storage leak in DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT",
+      "reason": "beforeSwap always writes before afterSwap reads within same swap. Second direct swap in same TX overwrites slot in its own beforeSwap. Confirmed via C1 Forge test.",
+      "_source_agent": "state-desync"
+    },
+    {
+      "type": "ruled_out",
+      "vector": "Re-enter via transfer handler during swap to read stale reserves",
+      "reason": "CLOBTransferHandler has nonReentrant. AMM ENTERED bit blocks callbacks. Reserves updated atomically in _poolSwapByInput before afterSwap hooks.",
+      "_source_agent": "state-desync"
+    },
+    {
+      "type": "ruled_out",
+      "vector": "Multi-swap within hook callback overwrites transient slot mid-swap",
+      "reason": "Hook callbacks execute during AMM nonReentrant guard. Second swap attempt hits ENTERED bit and reverts. Confirmed via C2 Forge test.",
+      "_source_agent": "state-desync"
+    },
+    {
+      "type": "ruled_out",
+      "vector": "Native ETH refund during hook enables reentrancy",
+      "reason": "_depositWrappedNativeAndRefundExcess sends ETH inside nonReentrant guard. Low-level call with empty calldata gives 2300 gas. ENTERED guard blocks reentry. Confirmed via C2 extended Forge test.",
+      "_source_agent": "state-desync"
+    },
+    {
+      "type": "ruled_out",
+      "vector": "CLOB settlement callback reads AMM state before swap finalizes",
+      "reason": "ammHandleTransfer called after pool reserves updated by _poolSwapByInput. Handler uses AMM-passed parameters, not direct AMM state reads.",
+      "_source_agent": "state-desync"
+    },
+    {
+      "type": "ruled_out",
+      "vector": "Reentrancy during _executeQueuedHookFeesByHookTransfers clears guard flags",
+      "reason": "_setReentrancyFlags(NO_FLAGS) preserves ENTERED bit via mask. Token transfer callbacks face ENTERED guard. Confirmed via C10 Forge test.",
+      "_source_agent": "state-desync"
+    },
+    {
+      "type": "ruled_out",
+      "vector": "Dust-loop extraction via tiny swaps",
+      "reason": "Rounding favors protocol (mulDivRoundingUp). Each tiny swap loses dust to pool. Confirmed via Forge test: 25 round-trip swaps, no profit.",
+      "_source_agent": "state-desync"
+    },
+    {
+      "type": "ruled_out",
+      "vector": "Forged hook caller with fake pool identity",
+      "reason": "_requireCallerIsAMM checks msg.sender == AMM on all hook entry points.",
+      "_source_agent": "state-desync"
+    },
+    {
+      "type": "ruled_out",
+      "vector": "Permit mutation replay with unsigned feeOnTop",
+      "reason": "limitAmount caps total exposure. Known design property per Guardian Defender submission #8.",
+      "_source_agent": "state-desync"
+    },
+    {
+      "type": "ruled_out",
+      "vector": "Storage-slot collision across diamond proxy facets",
+      "reason": "All AMM state at Diamond slot 0x9A1D via AppStorage. Pool types use delegatecall with same layout. 6-leading-zero-byte constraint prevents address collision.",
+      "_source_agent": "state-desync"
+    },
+    {
+      "type": "test_result",
+      "test": "C1_INV_H03_transient_storage_independence",
+      "result": "pass",
+      "invariant": "Two swaps in same TX produce independent outputs",
+      "_source_agent": "state-desync"
+    },
+    {
+      "type": "test_result",
+      "test": "C2_INV_H05_reentrancy_guard_blocks_reentry",
+      "result": "pass",
+      "invariant": "MaliciousReentrantToken reentry during swap reverts",
+      "_source_agent": "state-desync"
+    },
+    {
+      "type": "test_result",
+      "test": "C2_INV_H05_reentrancy_via_native_refund",
+      "result": "pass",
+      "invariant": "Reentry during ETH refund reverts",
+      "_source_agent": "state-desync"
+    },
+    {
+      "type": "test_result",
+      "test": "C3_INV_L01_liquidity_consistency",
+      "result": "pass",
+      "invariant": "Reserves change correctly after swap",
+      "_source_agent": "state-desync"
+    },
+    {
+      "type": "test_result",
+      "test": "C4_INV_L02_liquidityNet_sum_zero",
+      "result": "pass",
+      "invariant": "Balance >= reserves after multiple adds and swaps",
+      "_source_agent": "state-desync"
+    },
+    {
+      "type": "test_result",
+      "test": "C5_INV_L03_price_direction_consistency",
+      "result": "pass",
+      "invariant": "Price moves in correct direction per swap direction",
+      "_source_agent": "state-desync"
+    },
+    {
+      "type": "test_result",
+      "test": "C6_INV_S01_solvency_after_swap",
+      "result": "pass",
+      "invariant": "balance >= reserve + feeBalance for both tokens",
+      "_source_agent": "state-desync"
+    },
+    {
+      "type": "test_result",
+      "test": "C7_INV_S02_no_value_creation_round_trip",
+      "result": "pass",
+      "invariant": "Round-trip swap does not create value",
+      "_source_agent": "state-desync"
+    },
+    {
+      "type": "test_result",
+      "test": "C8_INV_S03_withdrawal_guarantee",
+      "result": "pass",
+      "invariant": "Reserves positive and balance covers them after 20 random swaps",
+      "_source_agent": "state-desync"
+    },
+    {
+      "type": "test_result",
+      "test": "C9_INV_E02_no_flash_loan_profit",
+      "result": "pass",
+      "invariant": "Flash loan + swap cycle does not profit attacker",
+      "_source_agent": "state-desync"
+    },
+    {
+      "type": "test_result",
+      "test": "C10_reentrancy_all_entry_points",
+      "result": "pass",
+      "invariant": "Reentrancy from malicious token during fee distribution blocked",
+      "_source_agent": "state-desync"
+    },
+    {
+      "type": "test_result",
+      "test": "C12_no_value_leak_native_refund",
+      "result": "pass",
+      "invariant": "No raw ETH stuck in AMM after wrapped native pool operations",
+      "_source_agent": "state-desync"
+    },
+    {
+      "type": "test_result",
+      "test": "C13_multiSwap_two_pools",
+      "result": "pass",
+      "invariant": "Multi-pool swap produces correct output and balance change",
+      "_source_agent": "state-desync"
+    },
+    {
+      "type": "test_result",
+      "test": "C14_addLiquidity_then_swap_same_tx",
+      "result": "pass",
+      "invariant": "addLiquidity + immediate swap in same TX works correctly",
+      "_source_agent": "state-desync"
+    },
+    {
+      "type": "test_result",
+      "test": "C15_cross_pool_no_value_leak",
+      "result": "pass",
+      "invariant": "Cross-pool arbitrage does not profit due to fees",
+      "_source_agent": "state-desync"
+    },
+    {
+      "type": "test_result",
+      "test": "C16_flash_loan_swap_round_trip",
+      "result": "pass",
+      "invariant": "Flash loan + large swap + reverse swap loses money",
+      "_source_agent": "state-desync"
+    },
+    {
+      "agent": "auth-forger",
+      "thesis": "Forge permit with arbitrary feeOnTop to drain extra tokens",
+      "victim": "permit signer",
+      "asset": "ERC20 tokens",
+      "estimated_ev": 0,
+      "status": "ruled_out",
+      "test_file": "lbamm-hooks-and-handlers/test/audit/AuthForgerDeepDive.t.sol",
+      "ts": "2026-03-16T01:30:00Z",
+      "_source_agent": "auth-forger"
+    },
+    {
+      "agent": "auth-forger",
+      "thesis": "Bypass pricing bounds via computeRatioX96 overflow in validateHandlerOrder",
+      "victim": "token creators",
+      "asset": "token value",
+      "estimated_ev": 0,
+      "status": "ruled_out",
+      "test_file": "lbamm-hooks-and-handlers/test/audit/AuthForgerInvariantTests.t.sol",
+      "ts": "2026-03-16T01:35:00Z",
+      "_source_agent": "auth-forger"
+    },
+    {
+      "agent": "auth-forger",
+      "thesis": "Call handler directly bypassing pricing enforcement",
+      "victim": "CLOB makers",
+      "asset": "deposited tokens",
+      "estimated_ev": 0,
+      "status": "ruled_out",
+      "test_file": "lbamm-hooks-and-handlers/test/audit/AuthForgerDeepDive.t.sol",
+      "ts": "2026-03-16T01:40:00Z",
+      "_source_agent": "auth-forger"
+    },
+    {
+      "agent": "auth-forger",
+      "thesis": "Exploit transient storage stale read for pricing manipulation",
+      "victim": "direct swap users",
+      "asset": "swap output",
+      "estimated_ev": 0,
+      "status": "ruled_out",
+      "test_file": "lbamm-hooks-and-handlers/test/audit/AuthForgerDeepDive.t.sol",
+      "ts": "2026-03-16T01:45:00Z",
+      "_source_agent": "auth-forger"
+    },
+    {
+      "agent": "auth-forger",
+      "thesis": "Replay CLOB order nonce for double-fill",
+      "victim": "CLOB makers",
+      "asset": "deposited tokens",
+      "estimated_ev": 0,
+      "status": "ruled_out",
+      "test_file": "lbamm-hooks-and-handlers/test/audit/AuthForgerInvariantTests.t.sol",
+      "ts": "2026-03-16T01:50:00Z",
+      "_source_agent": "auth-forger"
+    },
+    {
+      "agent": "math-deep-diver",
+      "thesis": "CLOBHelper.calculateFixedInput rounds UP output (mulDivRoundingUp x2), potentially overpaying maker by dust per trade",
+      "victim": "takers/protocol",
+      "asset": "dust per trade from rounding",
+      "estimated_ev": 0,
+      "status": "ruled_out",
+      "test_file": "amm-pool-type-dynamic/test/audit/AuditMathDeepDiverWave.t.sol",
+      "ts": "2026-03-16T01:30:00Z",
+      "_source_agent": "math-deep-diver"
+    },
+    {
+      "agent": "math-deep-diver",
+      "thesis": "computeRatioX96 overflow returns 0, bypassing pricing bounds in validateHandlerOrder for zero-price swaps",
+      "victim": "LPs",
+      "asset": "pool tokens via mispriced swap",
+      "estimated_ev": 0,
+      "status": "ruled_out",
+      "test_file": "code-analysis: AMMStandardHook.sol:215-223,847-849",
+      "ts": "2026-03-16T01:30:00Z",
+      "_source_agent": "math-deep-diver"
+    },
+    {
+      "agent": "math-deep-diver",
+      "thesis": "Profitable round-trip swap via rounding inconsistency between getAmount0Delta and getAmount1Delta",
+      "victim": "pool/LPs",
+      "asset": "arbitrage profit",
+      "estimated_ev": 0,
+      "status": "ruled_out",
+      "test_file": "amm-pool-type-dynamic/test/audit/AuditMathDeepDiverWave.t.sol",
+      "ts": "2026-03-16T01:30:00Z",
+      "_source_agent": "math-deep-diver"
+    },
+    {
+      "agent": "cross-boundary",
+      "thesis": "Pool type returns inflated amountOut, draining reserves",
+      "victim": "LPs",
+      "asset": "Reserve tokens",
+      "estimated_ev": 0,
+      "status": "ruled_out",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundary.t.sol",
+      "ts": "2026-03-15T00:00:00Z",
+      "_source_agent": "cross-boundary"
+    },
+    {
+      "agent": "cross-boundary",
+      "thesis": "Transfer handler under-delivers tokens during settlement",
+      "victim": "AMM protocol",
+      "asset": "Pool tokens",
+      "estimated_ev": 0,
+      "status": "ruled_out",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundary.t.sol",
+      "ts": "2026-03-15T00:00:00Z",
+      "_source_agent": "cross-boundary"
+    },
+    {
+      "agent": "cross-boundary",
+      "thesis": "Stale transient storage poisons pricing bounds check in same-tx multi-swap",
+      "victim": "Token creator",
+      "asset": "Token value",
+      "estimated_ev": 0,
+      "status": "ruled_out",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundary.t.sol",
+      "ts": "2026-03-15T00:00:00Z",
+      "_source_agent": "cross-boundary"
+    },
+    {
+      "agent": "composability-exploiter",
+      "thesis": "Reentrancy during hook fee queue execution bypasses guard to double-collect fees",
+      "victim": "LPs/protocol fee pool",
+      "asset": "Hook fee tokens",
+      "estimated_ev": 0,
+      "status": "ruled_out",
+      "test_file": "code-analysis: AMMModule.sol:3183-3204, TstorishReentrancyGuardWithFlags.sol:68-71",
+      "ts": "2026-03-15T10:30:00Z",
+      "_source_agent": "composability-exploiter"
+    },
+    {
+      "agent": "composability-exploiter",
+      "thesis": "MultiSwap intermediate pool state observable by hooks allows extraction between hops",
+      "victim": "LPs in intermediate pools",
+      "asset": "Pool reserves",
+      "estimated_ev": 0,
+      "status": "ruled_out",
+      "test_file": "code-analysis: AMMModule.sol:1343-1470",
+      "ts": "2026-03-15T10:45:00Z",
+      "_source_agent": "composability-exploiter"
+    },
+    {
+      "agent": "composability-exploiter",
+      "thesis": "Flash loan + swap composition to manipulate pool then extract at distorted price",
+      "victim": "LPs",
+      "asset": "Pool reserves",
+      "estimated_ev": 0,
+      "status": "ruled_out",
+      "test_file": "code-analysis: AMMModule.sol:3288-3382",
+      "ts": "2026-03-15T11:00:00Z",
+      "_source_agent": "composability-exploiter"
+    },
+    {
+      "agent": "composability-exploiter",
+      "thesis": "Permit + CLOB double-spend composition",
+      "victim": "Permit signer or CLOB maker",
+      "asset": "ERC20 tokens",
+      "estimated_ev": 0,
+      "status": "ruled_out",
+      "test_file": "code-analysis: PermitTransferHandler.sol, CLOBTransferHandler.sol",
+      "ts": "2026-03-15T11:15:00Z",
+      "_source_agent": "composability-exploiter"
+    },
+    {
+      "agent": "composability-exploiter",
+      "thesis": "Direct handler call to CLOB bypasses AMM pricing enforcement",
+      "victim": "CLOB order makers",
+      "asset": "Maker deposits",
+      "estimated_ev": 0,
+      "status": "ruled_out",
+      "test_file": "code-analysis: CLOBTransferHandler.sol:229-232",
+      "ts": "2026-03-15T11:30:00Z",
+      "_source_agent": "composability-exploiter"
+    },
+    {
+      "agent": "composability-exploiter",
+      "thesis": "Cross-pool arbitrage between Fixed and Dynamic pool types",
+      "victim": "LPs",
+      "asset": "IL beyond normal",
+      "estimated_ev": 0,
+      "status": "ruled_out",
+      "test_file": "code-analysis: DynamicPoolType.sol, FixedPoolType.sol",
+      "ts": "2026-03-15T11:45:00Z",
+      "_source_agent": "composability-exploiter"
+    },
+    {
+      "thesis": "Flash loan + CLOB price manipulation: borrow large, move AMM price, exploit CLOB orders at stale prices",
+      "victim": "CLOB makers with orders at pre-manipulation prices",
+      "asset": "Token difference between AMM-distorted and CLOB-stated prices",
+      "estimated_ev": 0,
+      "status": "ruled_out",
+      "evidence": "CLOB fills use stored currentPrice (CLOBHelper.sol:180-239), not AMM curve price. No shared oracle between venues.",
+      "_source_agent": "price-distorter"
+    },
+    {
+      "thesis": "Controlled hook returns fake sqrtPriceX96 in SingleProviderPool, attacker swaps at rigged price",
+      "victim": "Users swapping through attacker-controlled pool",
+      "asset": "Token output difference at manipulated vs fair price",
+      "estimated_ev": 0,
+      "status": "ruled_out",
+      "evidence": "Pool hook set at creation by LP, cannot be changed. Price bounded by MIN/MAX_SQRT_RATIO (SingleProviderPoolType.sol:328-330). Attacker-controlled pool only harms voluntary users (Tier B).",
+      "_source_agent": "price-distorter"
+    },
+    {
+      "thesis": "Dust-loop rounding extraction: iterated 1-wei swaps compound rounding errors",
+      "victim": "LP reserves in any pool type",
+      "asset": "Accumulated rounding dust over thousands of swaps",
+      "estimated_ev": 0,
+      "status": "ruled_out",
+      "evidence": "Rounding favors protocol (mulDivRoundingUp for charges, mulDiv for payouts). Fuzz testing 36 tests confirms no round-trip profit. Max compound error is 1 wei per operation, not economically viable after gas.",
+      "_source_agent": "price-distorter"
+    },
+    {
+      "ts": "2026-03-16T01:00:00Z",
+      "agent": "insolvency-engineer",
+      "type": "thesis",
+      "id": "INV-H01",
+      "title": "Flash loan fee bypass via callback manipulation",
+      "status": "testing",
+      "_source_agent": "insolvency-engineer"
+    },
+    {
+      "ts": "2026-03-16T01:05:00Z",
+      "agent": "insolvency-engineer",
+      "type": "thesis",
+      "id": "INV-H01",
+      "title": "Flash loan fee bypass via callback manipulation",
+      "status": "ruled_out",
+      "reason": "Strict balance check + reentrancy guard. No bypass path.",
+      "_source_agent": "insolvency-engineer"
+    },
+    {
+      "ts": "2026-03-16T01:06:00Z",
+      "agent": "insolvency-engineer",
+      "type": "thesis",
+      "id": "INV-H02",
+      "title": "Reserve desync through partial liquidity removal",
+      "status": "testing",
+      "_source_agent": "insolvency-engineer"
+    },
+    {
+      "ts": "2026-03-16T01:10:00Z",
+      "agent": "insolvency-engineer",
+      "type": "thesis",
+      "id": "INV-H02",
+      "title": "Reserve desync through partial liquidity removal",
+      "status": "ruled_out",
+      "reason": "Atomic reserve updates before external calls. _storeTokensOwed defers transfers.",
+      "_source_agent": "insolvency-engineer"
+    },
+    {
+      "ts": "2026-03-16T01:11:00Z",
+      "agent": "insolvency-engineer",
+      "type": "thesis",
+      "id": "INV-H03",
+      "title": "Fee balance inflation via repeated small swaps",
+      "status": "testing",
+      "_source_agent": "insolvency-engineer"
+    },
+    {
+      "ts": "2026-03-16T01:18:00Z",
+      "agent": "insolvency-engineer",
+      "type": "thesis",
+      "id": "INV-H03",
+      "title": "Fee balance inflation via repeated small swaps",
+      "status": "ruled_out",
+      "reason": "5000-run fuzz confirms fee monotonicity. Rounding favors protocol.",
+      "_source_agent": "insolvency-engineer"
+    },
+    {
+      "ts": "2026-03-16T01:19:00Z",
+      "agent": "insolvency-engineer",
+      "type": "thesis",
+      "id": "INV-H04",
+      "title": "Cross-pool reserve manipulation via shared token",
+      "status": "testing",
+      "_source_agent": "insolvency-engineer"
+    },
+    {
+      "ts": "2026-03-16T01:22:00Z",
+      "agent": "insolvency-engineer",
+      "type": "thesis",
+      "id": "INV-H04",
+      "title": "Cross-pool reserve manipulation via shared token",
+      "status": "ruled_out",
+      "reason": "Independent PoolState per poolId. No shared mutable state.",
+      "_source_agent": "insolvency-engineer"
+    },
+    {
+      "ts": "2026-03-16T01:23:00Z",
+      "agent": "insolvency-engineer",
+      "type": "thesis",
+      "id": "INV-H05",
+      "title": "Reentrancy during hook fee distribution",
+      "status": "testing",
+      "_source_agent": "insolvency-engineer"
+    },
+    {
+      "ts": "2026-03-16T01:30:00Z",
+      "agent": "insolvency-engineer",
+      "type": "thesis",
+      "id": "INV-H05",
+      "title": "Reentrancy during hook fee distribution",
+      "status": "ruled_out",
+      "reason": "Pool state committed before flag clearing. tokensOwed decremented before transfer.",
+      "_source_agent": "insolvency-engineer"
+    },
+    {
+      "ts": "2026-03-16T01:31:00Z",
+      "agent": "insolvency-engineer",
+      "type": "thesis",
+      "id": "INV-H06",
+      "title": "Wrapped native deposit/refund race condition",
+      "status": "testing",
+      "_source_agent": "insolvency-engineer"
+    },
+    {
+      "ts": "2026-03-16T01:35:00Z",
+      "agent": "insolvency-engineer",
+      "type": "thesis",
+      "id": "INV-H06",
+      "title": "Wrapped native deposit/refund race condition",
+      "status": "ruled_out",
+      "reason": "Reentrancy guard active during ETH refund. Balance check at L2208 is strict.",
+      "_source_agent": "insolvency-engineer"
+    },
+    {
+      "ts": "2026-03-16T01:36:00Z",
+      "agent": "insolvency-engineer",
+      "type": "thesis",
+      "id": "INV-H07",
+      "title": "Protocol fee validation bypass",
+      "status": "testing",
+      "_source_agent": "insolvency-engineer"
+    },
+    {
+      "ts": "2026-03-16T01:38:00Z",
+      "agent": "insolvency-engineer",
+      "type": "thesis",
+      "id": "INV-H07",
+      "title": "Protocol fee validation bypass",
+      "status": "ruled_out",
+      "reason": "_validateProtocolFees reverts on insufficient fees. No bypass path.",
+      "_source_agent": "insolvency-engineer"
+    },
+    {
+      "ts": "2026-03-16T01:39:00Z",
+      "agent": "insolvency-engineer",
+      "type": "thesis",
+      "id": "INV-H08",
+      "title": "Liquidity addition with zero tokens",
+      "status": "testing",
+      "_source_agent": "insolvency-engineer"
+    },
+    {
+      "ts": "2026-03-16T01:42:00Z",
+      "agent": "insolvency-engineer",
+      "type": "thesis",
+      "id": "INV-H08",
+      "title": "Liquidity addition with zero tokens",
+      "status": "ruled_out",
+      "reason": "Zero liquidity delta produces zero token amounts. No state change.",
+      "_source_agent": "insolvency-engineer"
+    },
+    {
+      "ts": "2026-03-16T01:43:00Z",
+      "agent": "insolvency-engineer",
+      "type": "thesis",
+      "id": "INV-H09",
+      "title": "Fee growth overflow in concentrated liquidity",
+      "status": "testing",
+      "_source_agent": "insolvency-engineer"
+    },
+    {
+      "ts": "2026-03-16T01:48:00Z",
+      "agent": "insolvency-engineer",
+      "type": "thesis",
+      "id": "INV-H09",
+      "title": "Fee growth overflow in concentrated liquidity",
+      "status": "ruled_out",
+      "reason": "Q128.128 wrapping arithmetic is intentional (Uniswap V3 design). Halmos confirms conservation.",
+      "_source_agent": "insolvency-engineer"
+    },
+    {
+      "ts": "2026-03-16T01:49:00Z",
+      "agent": "insolvency-engineer",
+      "type": "thesis",
+      "id": "INV-H10",
+      "title": "Swap output exceeds reserves",
+      "status": "testing",
+      "_source_agent": "insolvency-engineer"
+    },
+    {
+      "ts": "2026-03-16T01:55:00Z",
+      "agent": "insolvency-engineer",
+      "type": "thesis",
+      "id": "INV-H10",
+      "title": "Swap output exceeds reserves",
+      "status": "ruled_out",
+      "reason": "Pool type bounds output by liquidity. 5000-run fuzz confirms round-trip <= input.",
+      "_source_agent": "insolvency-engineer"
+    },
+    {
+      "ts": "2026-03-16T01:56:00Z",
+      "agent": "insolvency-engineer",
+      "type": "thesis",
+      "id": "INV-H11",
+      "title": "Token collection balance manipulation",
+      "status": "testing",
+      "_source_agent": "insolvency-engineer"
+    },
+    {
+      "ts": "2026-03-16T01:59:00Z",
+      "agent": "insolvency-engineer",
+      "type": "thesis",
+      "id": "INV-H11",
+      "title": "Token collection balance manipulation",
+      "status": "ruled_out",
+      "reason": "Before/after balance pattern under reentrancy guard. Direct transfers not credited.",
+      "_source_agent": "insolvency-engineer"
+    },
+    {
+      "ts": "2026-03-16T02:00:00Z",
+      "agent": "insolvency-engineer",
+      "type": "kv_check",
+      "id": "KV-1",
+      "title": "Zero-price bypass via SqrtPriceCalculator overflow",
+      "status": "ruled_out",
+      "reason": "computeRatioX96 returns 0 on overflow but bounds check catches it when minSqrtPriceX96 > 0. Low severity \u2014 requires no bounds set.",
+      "_source_agent": "insolvency-engineer"
+    },
+    {
+      "ts": "2026-03-16T02:01:00Z",
+      "agent": "insolvency-engineer",
+      "type": "kv_check",
+      "id": "KV-2",
+      "title": "feeOnTop not in permit signature",
+      "status": "ruled_out",
+      "reason": "feeOnTop paid by swapper. Malicious relayer can only grief, not extract funds. Not insolvency.",
+      "_source_agent": "insolvency-engineer"
+    },
+    {
+      "ts": "2026-03-16T02:02:00Z",
+      "agent": "insolvency-engineer",
+      "type": "kv_check",
+      "id": "KV-3",
+      "title": "Transient storage not cleared after direct swap",
+      "status": "ruled_out",
+      "reason": "EIP-1153 clears transient storage at end of tx. No cross-tx risk.",
+      "_source_agent": "insolvency-engineer"
+    },
+    {
+      "ts": "2026-03-16T02:03:00Z",
+      "agent": "insolvency-engineer",
+      "type": "kv_check",
+      "id": "KV-4",
+      "title": "swapExtraData silent default",
+      "status": "ruled_out",
+      "reason": "Silent default uses valid parameters. Swap executes correctly with proper fee/reserve accounting.",
+      "_source_agent": "insolvency-engineer"
+    },
+    {
+      "ts": "2026-03-16T02:04:00Z",
+      "agent": "insolvency-engineer",
+      "type": "summary",
+      "findings": 0,
+      "ruled_out": 15,
+      "tools_used": [
+        "slither",
+        "aderyn",
+        "halmos",
+        "forge_test",
+        "forge_fuzz"
+      ],
+      "verdict": "Protocol is well-hardened against insolvency vectors. No exploitable paths found.",
+      "_source_agent": "insolvency-engineer"
+    },
+    {
+      "thesis": "Malicious transfer handler does not send tokens but AMM sends output anyway",
+      "victim": "AMM protocol (pool reserves)",
+      "asset": "Pool tokens",
+      "estimated_ev": 0,
+      "status": "ruled_out",
+      "agent": "extension-hijacker",
+      "wave": 1,
+      "_source_agent": "extension-hijacker"
+    },
+    {
+      "thesis": "Exploit unsigned feeOnTop in permit to redirect user funds to attacker",
+      "victim": "Permit signer",
+      "asset": "Input tokens above limit amount",
+      "estimated_ev": 0,
+      "status": "ruled_out",
+      "agent": "extension-hijacker",
+      "wave": 1,
+      "_source_agent": "extension-hijacker"
+    },
+    {
+      "thesis": "Storage slot collision between proxy and AMM corrupts accounting",
+      "victim": "All users",
+      "asset": "Pool reserves and fee balances",
+      "estimated_ev": 0,
+      "status": "ruled_out",
+      "agent": "extension-hijacker",
+      "wave": 1,
+      "_source_agent": "extension-hijacker"
+    }
+  ],
+  "corroborated_theses": [
+    {
+      "thesis": "",
+      "agents": [
+        "state-desync",
+        "state-desync",
+        "state-desync",
+        "state-desync",
+        "state-desync",
+        "state-desync",
+        "state-desync",
+        "state-desync",
+        "state-desync",
+        "state-desync",
+        "state-desync",
+        "state-desync",
+        "state-desync",
+        "state-desync",
+        "state-desync",
+        "state-desync",
+        "state-desync",
+        "state-desync",
+        "state-desync",
+        "state-desync",
+        "state-desync",
+        "state-desync",
+        "state-desync",
+        "state-desync",
+        "state-desync",
+        "state-desync",
+        "state-desync",
+        "state-desync",
+        "state-desync",
+        "insolvency-engineer",
+        "insolvency-engineer",
+        "insolvency-engineer",
+        "insolvency-engineer",
+        "insolvency-engineer",
+        "insolvency-engineer",
+        "insolvency-engineer",
+        "insolvency-engineer",
+        "insolvency-engineer",
+        "insolvency-engineer",
+        "insolvency-engineer",
+        "insolvency-engineer",
+        "insolvency-engineer",
+        "insolvency-engineer",
+        "insolvency-engineer",
+        "insolvency-engineer",
+        "insolvency-engineer",
+        "insolvency-engineer",
+        "insolvency-engineer",
+        "insolvency-engineer",
+        "insolvency-engineer",
+        "insolvency-engineer",
+        "insolvency-engineer",
+        "insolvency-engineer",
+        "insolvency-engineer",
+        "insolvency-engineer",
+        "insolvency-engineer"
+      ],
+      "count": 56
+    }
+  ]
+}

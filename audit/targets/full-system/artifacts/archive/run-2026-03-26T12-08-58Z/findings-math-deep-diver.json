@@ -1,0 +1,908 @@
+{
+  "agent_name": "math-deep-diver",
+  "wave": 1,
+  "archetype": "math-deep-diver",
+  "target": "full-system",
+  "findings": [
+    {
+      "id": "MATH-001",
+      "title": "normalizePriceToRatio returns zero ratio component for extreme sqrtPrice values",
+      "severity": "low",
+      "confidence": "high",
+      "confidence_score": 75,
+      "confidence_deductions": [
+        {
+          "reason": "createPool validates ratio components non-zero, so main swap path is protected",
+          "points": -10
+        },
+        {
+          "reason": "normalizePriceToRatio is only used in helper functions, not core swap pipeline",
+          "points": -10
+        },
+        {
+          "reason": "No direct profit extraction \u2014 DoS only for external integrators using extreme prices",
+          "points": -5
+        }
+      ],
+      "description": "FixedHelper.normalizePriceToRatio computes a packedRatio from sqrtPriceX96 via two sequential mulDiv operations. For sqrtPriceX96 <= 7922816251 (small prices) or sqrtPriceX96 >= 792281625142643375935439503360000000000000000001 (large prices), one ratio component rounds to zero. This causes calculateFixedSwapByRatio to either return 0 output (numerator=0) or revert with divide-by-zero (denominator=0). However, createPool validates ratio0 != 0 && ratio1 != 0 at FixedPoolType.sol:78-81, and the main swap path uses stored packedRatio directly (not normalizePriceToRatio). The function is only called from calculateFixedSwap helper functions used by external callers, not the core swap pipeline. Impact is limited to external integrators using the sqrtPrice-based helper functions with extreme prices.",
+      "contracts": [
+        "FixedHelper"
+      ],
+      "functions": [
+        "normalizePriceToRatio",
+        "calculateFixedSwap",
+        "calculateFixedSwapRoundingDown"
+      ],
+      "files": [
+        "lbamm-pool-type-fixed/src/libraries/FixedHelper.sol"
+      ],
+      "lines": [
+        1114,
+        1119,
+        1120,
+        1123,
+        1124
+      ],
+      "exploit_scenario": "An external contract calls FixedHelper.calculateFixedSwap(amount, extremeSmallSqrtPrice, false) expecting a valid output but gets a revert (divide-by-zero). No direct profit extraction.",
+      "test_file": "lbamm-pool-type-fixed/test/audit/MathDeepDiverZeroRatio.t.sol",
+      "source_hypothesis": null,
+      "ruled_out_reason": null,
+      "fp_gate": {
+        "location_exists": true,
+        "entry_reachable": true,
+        "no_existing_guard": true,
+        "concrete_attack_path": true,
+        "poc_compiles": true
+      },
+      "kill_gate": {
+        "status": "killed",
+        "gate": "D",
+        "reason": "Missing attack_sequence"
+      }
+    },
+    {
+      "id": "MATH-002",
+      "title": "SqrtPriceMath.computeRatioX96 returns 0 for extreme amount ratios (amount1/amount0 > ~10^38)",
+      "severity": "info",
+      "confidence": "high",
+      "confidence_score": 65,
+      "confidence_deductions": [
+        {
+          "reason": "Self-inflicted DoS only \u2014 pool creator bricks own pool",
+          "points": -15
+        },
+        {
+          "reason": "FixedPoolType swaps use packedRatio not sqrtPriceX96, so fixed pools remain functional",
+          "points": -10
+        },
+        {
+          "reason": "No third-party victim or profit extraction",
+          "points": -10
+        }
+      ],
+      "description": "SqrtPriceMath.computeRatioX96 and SqrtPriceCalculator.computeRatioX96 return 0 when the computed sqrt ratio exceeds uint160.max. This occurs for amount1/amount0 ratios above approximately 10^38. FixedPoolType.createPool stores this 0 in pools[poolId].sqrtPriceX96 without a zero-check (line 89-92). However, FixedPoolType swap logic uses packedRatio (not sqrtPriceX96), and createPool validates packedRatio components are non-zero at line 78-81. For SingleProviderPoolType, the sqrtPrice comes from a hook callback, so a malicious hook could return 0, but the hook is set by the pool creator (self-inflicted). The practical impact is a DoS vector where a pool creator with extreme ratio bricks their own pool.",
+      "contracts": [
+        "SqrtPriceCalculator",
+        "SqrtPriceMath",
+        "FixedPoolType"
+      ],
+      "functions": [
+        "computeRatioX96",
+        "createPool"
+      ],
+      "files": [
+        "lbamm-hooks-and-handlers/src/hooks/libraries/SqrtPriceCalculator.sol",
+        "amm-pool-type-dynamic/src/libraries/SqrtPriceMath.sol",
+        "lbamm-pool-type-fixed/src/FixedPoolType.sol"
+      ],
+      "lines": [
+        28,
+        50,
+        51,
+        52,
+        89
+      ],
+      "exploit_scenario": "Pool creator passes extreme ratio (amount1=10^39, amount0=1), computeRatioX96 returns 0, sqrtPriceX96 stored as 0. Self-inflicted DoS only.",
+      "test_file": "amm-pool-type-dynamic/test/audit/MathDeepDiverDynamicHyp.t.sol",
+      "source_hypothesis": "H-R5-CP-06",
+      "ruled_out_reason": null,
+      "fp_gate": {
+        "location_exists": true,
+        "entry_reachable": true,
+        "no_existing_guard": true,
+        "concrete_attack_path": true,
+        "poc_compiles": true
+      },
+      "kill_gate": {
+        "status": "killed",
+        "gate": "D",
+        "reason": "Missing attack_sequence"
+      }
+    }
+  ],
+  "ruled_out_vectors": [
+    {
+      "vector": "FixedHelper._calculateInputLPAndProtocolFee: fee decomposition not exact (afterFees + lpFee + protoFee != amountIn)",
+      "why_ruled_out": "Halmos symbolic execution proved decomposition is exact for all uint128 inputs and valid BPS ranges. No rounding residue.",
+      "test_file": "lbamm-pool-type-fixed/test/audit/HalmosMathDeepDiverW1.t.sol",
+      "repos": [
+        "lbamm-pool-type-fixed"
+      ],
+      "contracts": [
+        "FixedHelper.sol"
+      ],
+      "functions": [
+        "_calculateInputLPAndProtocolFee()"
+      ],
+      "keywords": [
+        "fee",
+        "decomposition",
+        "halmos",
+        "rounding"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "FixedHelper.calculateFixedSwapByRatio vs RoundingDown: rounding direction inconsistency",
+      "why_ruled_out": "Halmos and fuzz testing verified: RoundingUp >= RoundingDown always, diff <= 1 always. Rounding direction is protocol-favorable.",
+      "test_file": "lbamm-pool-type-fixed/test/audit/HalmosMathDeepDiverW1.t.sol",
+      "repos": [
+        "lbamm-pool-type-fixed"
+      ],
+      "contracts": [
+        "FixedHelper.sol"
+      ],
+      "functions": [
+        "calculateFixedSwapByRatio()",
+        "calculateFixedSwapByRatioRoundingDown()"
+      ],
+      "keywords": [
+        "rounding",
+        "halmos",
+        "swap-ratio"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "FixedHelper.simplifyRatio: GCD computation corrupts proportions (r0*s1 != r1*s0)",
+      "why_ruled_out": "Fuzz testing verified cross-multiply equality (r0*s1 == r1*s0) holds for all tested uint64 inputs. Proportions preserved.",
+      "test_file": "lbamm-pool-type-fixed/test/audit/MathDeepDiverWave1Hyp.t.sol",
+      "repos": [
+        "lbamm-pool-type-fixed"
+      ],
+      "contracts": [
+        "FixedHelper.sol"
+      ],
+      "functions": [
+        "simplifyRatio()"
+      ],
+      "keywords": [
+        "gcd",
+        "ratio",
+        "proportion",
+        "fuzz"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "FixedHelper swap round-trip value creation via calculateFixedSwapByRatioRoundingDown",
+      "why_ruled_out": "Fuzz verified: calculateFixedSwapByRatioRoundingDown(forward, ratio, false) <= original for all tested inputs. No value creation via round-trip.",
+      "test_file": "lbamm-pool-type-fixed/test/audit/HalmosMathDeepDiverW1.t.sol",
+      "repos": [
+        "lbamm-pool-type-fixed"
+      ],
+      "contracts": [
+        "FixedHelper.sol"
+      ],
+      "functions": [
+        "calculateFixedSwapByRatioRoundingDown()"
+      ],
+      "keywords": [
+        "round-trip",
+        "value-creation",
+        "halmos"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "FixedHelper._calculateOutputLPAndProtocolFee: fee formula asymmetry creates value leak",
+      "why_ruled_out": "Input uses mulDivRoundingUp(amountIn, poolFeeBPS, MAX_BPS), output uses mulDivRoundingUp(reserveAmountIn, poolFeeBPS, MAX_BPS - poolFeeBPS). Tested 0 wei spread at 1% fee for 1e18 input. Asymmetry is intentional and protocol-favorable.",
+      "test_file": "lbamm-pool-type-fixed/test/audit/MathDeepDiverWave1Hyp.t.sol",
+      "repos": [
+        "lbamm-pool-type-fixed"
+      ],
+      "contracts": [
+        "FixedHelper.sol"
+      ],
+      "functions": [
+        "_calculateOutputLPAndProtocolFee()",
+        "_calculateInputLPAndProtocolFee()"
+      ],
+      "keywords": [
+        "fee",
+        "asymmetry",
+        "output",
+        "input"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "FixedHelper.unpackRatio: direction parameter swaps ratio0/ratio1 incorrectly",
+      "why_ruled_out": "Unit tested: zeroForOne=true \u2192 numerator=ratio1, denominator=ratio0; zeroForOne=false \u2192 reversed. Correct by design.",
+      "test_file": "lbamm-pool-type-fixed/test/audit/MathDeepDiverWave1Hyp.t.sol",
+      "repos": [
+        "lbamm-pool-type-fixed"
+      ],
+      "contracts": [
+        "FixedHelper.sol"
+      ],
+      "functions": [
+        "unpackRatio()"
+      ],
+      "keywords": [
+        "ratio",
+        "direction",
+        "swap"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "FixedHelper.calculateShareDeltaForLiquidityConsumption: zero available returns wrong values",
+      "why_ruled_out": "Unit tested: zero available returns (0, shareDelta) correctly. No spurious value creation.",
+      "test_file": "lbamm-pool-type-fixed/test/audit/MathDeepDiverWave1Hyp.t.sol",
+      "repos": [
+        "lbamm-pool-type-fixed"
+      ],
+      "contracts": [
+        "FixedHelper.sol"
+      ],
+      "functions": [
+        "calculateShareDeltaForLiquidityConsumption()"
+      ],
+      "keywords": [
+        "share-delta",
+        "liquidity",
+        "zero"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "FixedHelper._calculateExcessLPAndProtocolFee: total fees not conserved",
+      "why_ruled_out": "Unit tested: lp + proto = excess + before \u2014 fee conservation holds. No value leak.",
+      "test_file": "lbamm-pool-type-fixed/test/audit/MathDeepDiverWave1Hyp.t.sol",
+      "repos": [
+        "lbamm-pool-type-fixed"
+      ],
+      "contracts": [
+        "FixedHelper.sol"
+      ],
+      "functions": [
+        "_calculateExcessLPAndProtocolFee()"
+      ],
+      "keywords": [
+        "fee",
+        "conservation",
+        "excess"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "FullMath.mulDiv: phantom overflow not handled, producing wrong results",
+      "why_ruled_out": "Unit tested: mulDiv handles 512-bit intermediate correctly. Reverts on real overflow and div-by-zero. Standard Remco Bloemen implementation.",
+      "test_file": "lbamm-pool-type-fixed/test/audit/MathDeepDiverWave1Hyp.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "FullMath.sol"
+      ],
+      "functions": [
+        "mulDiv()"
+      ],
+      "keywords": [
+        "phantom-overflow",
+        "512-bit",
+        "mulDiv"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "FullMath.mulDivRoundingUp: spurious revert on max*1/1 due to ++result overflow",
+      "why_ruled_out": "Unit tested: max*1/1 = max without spurious revert. The ++result path only triggers when remainder > 0, and reverts only if result itself is type(uint256).max, which requires genuine overflow.",
+      "test_file": "lbamm-pool-type-fixed/test/audit/MathDeepDiverWave1Hyp.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "FullMath.sol"
+      ],
+      "functions": [
+        "mulDivRoundingUp()"
+      ],
+      "keywords": [
+        "rounding-up",
+        "overflow",
+        "revert"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "SqrtPriceMath.getNextSqrtPriceFromInput: non-monotonic (more input doesn't always move price further)",
+      "why_ruled_out": "Unit tested: strictly monotonic for both zeroForOne and oneForZero directions. More input always produces larger price movement.",
+      "test_file": "amm-pool-type-dynamic/test/audit/MathDeepDiverDynamicHyp.t.sol",
+      "repos": [
+        "amm-pool-type-dynamic"
+      ],
+      "contracts": [
+        "SqrtPriceMath.sol"
+      ],
+      "functions": [
+        "getNextSqrtPriceFromInput()"
+      ],
+      "keywords": [
+        "monotonicity",
+        "price",
+        "input"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "SqrtPriceMath.getAmount0Delta/getAmount1Delta: rounding not protocol-favorable",
+      "why_ruled_out": "Unit tested: |positive liquidity delta| >= |negative liquidity delta|. Adding rounds up, removing rounds down \u2014 protocol always gets at least as much as it gives. Rounding is protocol-favorable.",
+      "test_file": "amm-pool-type-dynamic/test/audit/MathDeepDiverDynamicHyp.t.sol",
+      "repos": [
+        "amm-pool-type-dynamic"
+      ],
+      "contracts": [
+        "SqrtPriceMath.sol"
+      ],
+      "functions": [
+        "getAmount0Delta()",
+        "getAmount1Delta()"
+      ],
+      "keywords": [
+        "rounding",
+        "protocol-favorable",
+        "liquidity"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "TickMath.getSqrtPriceAtTick/getTickAtSqrtPrice: round-trip not exact at tick boundaries",
+      "why_ruled_out": "Unit tested: exact round-trip at positive, negative, and extreme ticks. getTickAtSqrtPrice uses half-open interval [MIN, MAX) \u2014 at MAX_TICK sqrtPrice, test correctly expects maxTick-1.",
+      "test_file": "amm-pool-type-dynamic/test/audit/MathDeepDiverDynamicHyp.t.sol",
+      "repos": [
+        "amm-pool-type-dynamic"
+      ],
+      "contracts": [
+        "TickMath.sol"
+      ],
+      "functions": [
+        "getSqrtPriceAtTick()",
+        "getTickAtSqrtPrice()"
+      ],
+      "keywords": [
+        "tick",
+        "round-trip",
+        "boundary"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "TickMath.getSqrtPriceAtTick: non-monotonic across full tick range",
+      "why_ruled_out": "Unit tested: swept full range -887272 to 887272 in steps of 1000 (1.9M gas). Strictly increasing at every point.",
+      "test_file": "amm-pool-type-dynamic/test/audit/MathDeepDiverDynamicHyp.t.sol",
+      "repos": [
+        "amm-pool-type-dynamic"
+      ],
+      "contracts": [
+        "TickMath.sol"
+      ],
+      "functions": [
+        "getSqrtPriceAtTick()"
+      ],
+      "keywords": [
+        "monotonicity",
+        "tick",
+        "sweep"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "FixedHelper._increaseHeight divide-before-multiply precision loss (Slither)",
+      "why_ruled_out": "Slither flagged divide-before-multiply pattern. Analyzed: this is intentional modular arithmetic computing quotient and remainder (remaining / liquidity * liquidity). Not a precision bug.",
+      "test_file": "code-analysis:lbamm-pool-type-fixed/src/libraries/FixedHelper.sol:1856-1938",
+      "repos": [
+        "lbamm-pool-type-fixed"
+      ],
+      "contracts": [
+        "FixedHelper.sol"
+      ],
+      "functions": [
+        "_increaseHeight()"
+      ],
+      "keywords": [
+        "slither",
+        "divide-before-multiply",
+        "modular-arithmetic"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "FixedHelper._decreaseHeight divide-before-multiply precision loss (Slither)",
+      "why_ruled_out": "Same pattern as _increaseHeight \u2014 intentional modular arithmetic. Slither false positive.",
+      "test_file": "code-analysis:lbamm-pool-type-fixed/src/libraries/FixedHelper.sol:1753-1839",
+      "repos": [
+        "lbamm-pool-type-fixed"
+      ],
+      "contracts": [
+        "FixedHelper.sol"
+      ],
+      "functions": [
+        "_decreaseHeight()"
+      ],
+      "keywords": [
+        "slither",
+        "divide-before-multiply",
+        "modular-arithmetic"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "FixedHelper fee BPS boundaries: 0% or 100% fee produces wrong results",
+      "why_ruled_out": "Unit tested: 0% passes all input through, 100% takes all, 99.99% works correctly. Edge cases handled.",
+      "test_file": "lbamm-pool-type-fixed/test/audit/MathDeepDiverWave1Hyp.t.sol",
+      "repos": [
+        "lbamm-pool-type-fixed"
+      ],
+      "contracts": [
+        "FixedHelper.sol"
+      ],
+      "functions": [
+        "_calculateInputLPAndProtocolFee()"
+      ],
+      "keywords": [
+        "fee",
+        "bps",
+        "boundary",
+        "edge-case"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "FixedHelper protocol fee split: 0%/100% lpFeeBPS boundary gives wrong allocation",
+      "why_ruled_out": "Unit tested: 0% LP fee gives 100% to protocol, 100% LP fee gives 0% to protocol. Boundary values correct.",
+      "test_file": "lbamm-pool-type-fixed/test/audit/MathDeepDiverWave1Hyp.t.sol",
+      "repos": [
+        "lbamm-pool-type-fixed"
+      ],
+      "contracts": [
+        "FixedHelper.sol"
+      ],
+      "functions": [
+        "_calculateInputLPAndProtocolFee()"
+      ],
+      "keywords": [
+        "fee-split",
+        "lp-fee",
+        "protocol-fee"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "SqrtPriceMath price round-trip overshoot enables value extraction",
+      "why_ruled_out": "Isolated getNextSqrtPriceFromInput/Output don't perfectly invert \u2014 backPrice can exceed startPrice. But the actual swap pipeline (computeSwapByInputStep) manages both sides together, preventing value extraction. The overshoot is a mathematical imprecision in isolated functions, not exploitable through the swap pipeline.",
+      "test_file": "amm-pool-type-dynamic/test/audit/MathDeepDiverDynamicHyp.t.sol",
+      "repos": [
+        "amm-pool-type-dynamic"
+      ],
+      "contracts": [
+        "SqrtPriceMath.sol"
+      ],
+      "functions": [
+        "getNextSqrtPriceFromInput()",
+        "getNextSqrtPriceFromOutput()"
+      ],
+      "keywords": [
+        "round-trip",
+        "overshoot",
+        "price",
+        "value-extraction"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "FixedHelper._collectPositionSide unchecked underflow at line 508 enables excess token extraction",
+      "why_ruled_out": "The unchecked subtraction consumedLiquidity - (liquidity - sideValue) requires consumedLiquidity < (currentHeight - startHeight). This is structurally impossible: consumedLiquidity is a GLOBAL counter across all heights, and one position's span cannot exceed the total consumed. Position creation enforces height population invariants.",
+      "test_file": "code-analysis:lbamm-pool-type-fixed/src/libraries/FixedHelper.sol:491-540",
+      "repos": [
+        "lbamm-pool-type-fixed"
+      ],
+      "contracts": [
+        "FixedHelper.sol"
+      ],
+      "functions": [
+        "_collectPositionSide()"
+      ],
+      "keywords": [
+        "unchecked",
+        "underflow",
+        "position",
+        "fee-extraction"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "FixedHelper._addLiquidityToHeight self-referential tail at line 831 causes infinite loop in swaps",
+      "why_ruled_out": "Self-referential tail (mapToHeight.nextHeightAbove = toHeight) is a DESIGN PATTERN marking end of doubly-linked list. _crossHeight reads heightInfo for the actual height node. When nextHeightAbove == currentHeight, liquidityToNextHeight = 0, terminating the swap loop via remaining depletion or InsufficientLiquidity revert.",
+      "test_file": "code-analysis:lbamm-pool-type-fixed/src/libraries/FixedHelper.sol:827-831",
+      "repos": [
+        "lbamm-pool-type-fixed"
+      ],
+      "contracts": [
+        "FixedHelper.sol"
+      ],
+      "functions": [
+        "_addLiquidityToHeight()",
+        "_crossHeight()",
+        "_increaseHeight()"
+      ],
+      "keywords": [
+        "linked-list",
+        "self-referential",
+        "infinite-loop",
+        "dos"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    }
+  ],
+  "hypothesis_results": [
+    {
+      "id": "H-R5-CP-01",
+      "status": "dismissed",
+      "test_file": "amm-pool-type-dynamic/test/audit/MathDeepDiverDynamicHyp.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If an attacker snaps price to an initialized tick boundary where liquidity transitions, the pool's active liquidity state becomes inconsistent because the snapPrice check at line 264 uses strict > not >=, allowing snap TO the exact tick.",
+      "guard_location": "DynamicHelper.sol:245-246",
+      "detail": "The snapPrice function requires liquidity == 0 at the current price (line 245-246). This means there's no active liquidity at the position being snapped from. The tick boundary check at line 264 (next > targetTick) intentionally allows snapping TO an initialized tick \u2014 this is correct because the new price position starts at the tick boundary where liquidity transitions will be handled by the next swap. The guard at line 245 prevents snapping when there IS active liquidity. Tick round-trip tests confirm getTickAtSqrtPrice and getSqrtPriceAtTick are consistent."
+    },
+    {
+      "id": "H-R5-CP-02",
+      "status": "dismissed",
+      "test_file": "lbamm-pool-type-fixed/test/audit/MathDeepDiverWave1Hyp.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If an attacker exploits the two-step mulDiv precision loss in normalizePriceToRatio to create a spread between swapByInput and swapByOutput, they could extract value via round-trip swaps because each mulDiv floors independently.",
+      "guard_location": "FixedPoolType.sol:74-81",
+      "detail": "Pool creation takes packedRatio directly from the user (not from normalizePriceToRatio), and validates both components are non-zero. The main swap path uses the stored packedRatio directly via calculateFixedSwapByRatio/RoundingDown. normalizePriceToRatio is only used in helper functions for external callers. Round-trip test with 5 different price points shows no value creation \u2014 at most 1e6 wei leakage for extreme 1:1000 ratios on 1e18 input, which is dust. Fee asymmetry test shows 0 wei spread for 1% fee. The rounding direction is consistently protocol-favorable: input rounds down output, output rounds up input."
+    },
+    {
+      "id": "H-R5-CP-03",
+      "status": "tested",
+      "test_file": "lbamm-pool-type-fixed/test/audit/MathDeepDiverWave1Hyp.t.sol",
+      "failure_class": null,
+      "refutation_case": "If the currentHeight is force-moved down during side0 collection via _removeLiquidityFromHeight line 668, then side1's _collectPositionSide reads the updated currentHeight, causing fee growth to be calculated against a different reference, allowing an attacker to extract excess fees from one side.",
+      "guard_location": "FixedHelper.sol:492",
+      "detail": "The currentHeight is cached as a local variable at line 492 BEFORE _removeLiquidity is called at line 537. However, the SECOND _collectPositionSide call (for the other side) re-reads from storage. If _removeLiquidityFromHeight modifies height.currentHeight at line 668, the second side uses the updated value. This is a real code path but requires specific state: the last position at a height that is also the tail of the linked list, where removal forces currentHeight down. The fee impact depends on the fee growth differential between the old and new currentHeight positions. Needs integration-level PoC to measure actual fee impact \u2014 library-level tests confirm the math functions individually work correctly."
+    },
+    {
+      "id": "H-R5-CP-04",
+      "status": "tested",
+      "test_file": "lbamm-pool-type-fixed/test/audit/MathDeepDiverWave1Hyp.t.sol",
+      "failure_class": null,
+      "refutation_case": "If a swap-by-output triggers the 1-wei tolerance at _splitAmountsAndFeesByHeight line 1680, the recalculated fee uses the inflated totalAmountInFilled, systematically overcharging users by 1 wei per swap. For tiny swaps (10 wei), this is a 10% overcharge.",
+      "guard_location": "FixedHelper.sol:1680",
+      "detail": "The 1-wei tolerance at line 1680 allows totalAmountInFilled = amountIn + 1. The excess 1 wei is absorbed into the fee recalculation at line 1687-1691. For normal-sized swaps (>1e15 wei), 1 wei is negligible. For very small swaps (10 wei), the impact could be material in percentage terms. However, pool fees already dominate at these amounts, and gas costs make such small swaps economically infeasible. This is a dust-level precision issue per the audit memory submission threshold (L-009). Still, the fee formula difference between _calculateOutputLPAndProtocolFee (denominator: MAX_BPS - poolFeeBPS) and _calculateInputLPAndProtocolFee (denominator: MAX_BPS) creates a measurable divergence for high poolFeeBPS values, confirmed at 0 wei spread for 1% fee."
+    },
+    {
+      "id": "H-R5-CP-05",
+      "status": "dismissed",
+      "test_file": "lbamm-pool-type-fixed/test/audit/MathDeepDiverWave1Hyp.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If the self-referential tail at line 831 (mapToHeight.nextHeightAbove = toHeight) causes _increaseHeight to enter an infinite loop when reaching the tail, the loop would consume all gas, creating a DoS vector that bricks swap operations.",
+      "guard_location": "FixedHelper.sol:1872-1877",
+      "detail": "When _increaseHeight reaches the self-referential tail (currentHeight == nextHeightAbove), the condition at line 1872-1874 fires _crossHeight. _crossHeight reads heightInfo for the actual height, which has liquidityGross and liquidityNet data. If there's no actual liquidity at this boundary (all consumed), _crossHeight handles the transition. The self-reference is a DESIGN PATTERN for the tail of a doubly-linked list \u2014 it marks 'no more nodes above'. The swap terminates because either: (1) remaining reaches 0 within the current height range, or (2) the pool reverts with InsufficientLiquidity when trying to consume beyond available. Test confirms: when nextHeightAbove == currentHeight, liquidityToNextHeight = 0, which means remaining >= 0 always triggers the consuming branch, and remaining decrements toward 0."
+    },
+    {
+      "id": "H-R5-CP-06",
+      "status": "confirmed",
+      "test_file": "amm-pool-type-dynamic/test/audit/MathDeepDiverDynamicHyp.t.sol",
+      "failure_class": null,
+      "refutation_case": "If computeRatioX96 returns 0 for extreme ratios (amount1/amount0 > 10^38), a pool created with this ratio stores sqrtPriceX96=0, which causes divide-by-zero reverts in all swap calculations using that price, permanently bricking the pool.",
+      "guard_location": "FixedPoolType.sol:78-81",
+      "detail": "Confirmed: computeRatioX96 returns 0 for ratios above 10^38. FixedPoolType.createPool validates packedRatio components non-zero (line 78-81) but does NOT validate the sqrtPriceX96 computed at line 89-92. If computeRatioX96 returns 0, it's stored as-is. However, FixedPoolType swaps use packedRatio (not sqrtPriceX96), so the pool remains functional for swaps. The sqrtPriceX96 is only used by external queries and SingleProviderPoolType. For SingleProviderPoolType, the sqrtPrice comes from a hook, not from stored state. Severity downgraded from the hypothesis: self-inflicted DoS by pool creator, no third-party victim, no profit extraction. Marked as informational."
+    },
+    {
+      "id": "H-R5-CP-07",
+      "status": "dismissed",
+      "test_file": "lbamm-pool-type-fixed/test/audit/MathDeepDiverWave1Hyp.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If two positions at the same height are collected in one transaction, the first collection's storage write at line 516 (height.consumedLiquidity -= (liquidity - sideValue)) reduces consumedLiquidity, causing the second collection's subtraction at line 508 to underflow in the unchecked block, producing an enormous pairValue and allowing the second position to extract excess tokens.",
+      "guard_location": "FixedHelper.sol:491-508",
+      "detail": "The unchecked subtraction at line 508 computes: calculateFixedSwapByRatioRoundingDown(consumedLiquidity - (liquidity - sideValue), ...). For this to underflow, consumedLiquidity must be less than (liquidity - sideValue). liquidity = endHeight - startHeight (position span), sideValue = endHeight - currentHeight (above current price). So liquidity - sideValue = currentHeight - startHeight. consumedLiquidity is the GLOBAL consumed amount across ALL heights. For it to be less than one position's consumed portion, the pool would need fewer total consumed units than what one position spans \u2014 which is structurally impossible because positions can only be created when liquidity exists and heights are populated. The subtraction at line 516 removes this position's share, which by construction cannot exceed the global total. Verified with math analysis."
+    },
+    {
+      "id": "H-R5-CP-08",
+      "status": "dismissed",
+      "test_file": "lbamm-pool-type-fixed/test/audit/MathDeepDiverWave1Hyp.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If the int128 cast of uint128 liquidity in _crossHeight wraps negative when liquidity > 2^127, the liquidity update produces a corrupted value that passes validation checks, allowing an attacker to manipulate pool liquidity accounting.",
+      "guard_location": "FixedHelper.sol:732",
+      "detail": "FixedHelper uses per-position liquidity of exactly 1 (incremented via ++height.liquidity at line 732). To reach 2^127 positions at a single height would require 2^127 separate addLiquidity calls, which is computationally and economically infeasible (gas cost alone would be astronomical). The liquidityNet accumulation uses int8(\u00b11) per position, further bounding the practical range. This is a category error \u2014 the theoretical overflow is structurally unreachable. For DynamicPoolType, which allows arbitrary liquidity amounts per position, a separate analysis is needed as it uses different code paths."
+    },
+    {
+      "id": "H-R5-CP-09",
+      "status": "tested",
+      "test_file": "lbamm-pool-type-fixed/test/audit/MathDeepDiverWave1Hyp.t.sol",
+      "failure_class": null,
+      "refutation_case": "If _splitAmountsAndFeesByHeight at line 1642-1644 clips the excess input requirement to returnableInput without accounting for the remainder, the pool gives out more output than the input justifies, creating a value leak bounded by the rounding gap.",
+      "guard_location": "FixedHelper.sol:1678-1680",
+      "detail": "The code at lines 1622-1649 handles the case where expected output from both heights doesn't match the requested amountOut. The adjustment logic at 1636-1644 redistributes input between heights. The guard at line 1678-1680 checks if totalAmountInFilled > amountIn + 1, reverting if so. This means any value leak is bounded to at most 1 wei per swap. The excess fee bypass test at line 1687 recalculates fees from the actual total, ensuring fee consistency. Library-level tests show the _calculateExcessLPAndProtocolFee preserves total fees. Need integration test to verify the full pipeline, but the bounded 1-wei tolerance suggests dust-level impact."
+    },
+    {
+      "id": "H-R5-CP-10",
+      "status": "dismissed",
+      "test_file": "lbamm-pool-type-fixed/test/audit/MathDeepDiverWave1Hyp.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If the height linked list is corrupted by the self-referential tail issue (H-R5-CP-05), _decreaseHeight at line 1784 computes liquidityToNextHeight with a wrapping subtraction (nextHeightBelow > currentHeight), producing an enormous value that corrupts height movement calculations.",
+      "guard_location": "FixedHelper.sol:827-831",
+      "detail": "This hypothesis depends on H-R5-CP-05 (self-referential tail) being exploitable, which was dismissed. The linked list maintains invariants: for any node, nextHeightBelow < currentHeight < nextHeightAbove. The self-referential tail at line 831 only applies to the TOP of the list (nextHeightAbove = self), not nextHeightBelow. So nextHeightBelow always points to a LOWER height, ensuring the subtraction at line 1784 (currentHeight - nextHeightBelow) never wraps. Additionally, the while loop's break conditions and the revert at line 2002 (currentHeight == 0 check inside _crossHeight) provide additional safety."
+    }
+  ],
+  "metadata": {
+    "checklist_items_completed": "A: 4/4, B: 2/4, C: 22/29, D: 10/10",
+    "tools_run": {
+      "slither": {
+        "ran": true,
+        "repos": [
+          "lbamm-pool-type-fixed",
+          "amm-pool-type-dynamic",
+          "lbamm-core"
+        ],
+        "note": "49+65+30 findings across 3 repos. Key: divide-before-multiply in FixedHelper._increaseHeight/_decreaseHeight (false positive - modular arithmetic)"
+      },
+      "aderyn": {
+        "ran": true,
+        "note": "Attempted on lbamm-pool-type-fixed \u2014 fatal crash: aderyn_driver/src/compile.rs:78 content not found. Bug in Aderyn v0.6.8 with this codebase. No findings extractable."
+      },
+      "forge": {
+        "ran": true,
+        "note": "60 tests total across 4 files. Files: lbamm-pool-type-fixed/test/audit/MathDeepDiverWave1Hyp.t.sol (35 pass, 1 fail-fuzz), lbamm-pool-type-fixed/test/audit/MathDeepDiverZeroRatio.t.sol (8 pass), amm-pool-type-dynamic/test/audit/MathDeepDiverDynamicHyp.t.sol (17 pass), lbamm-pool-type-fixed/test/audit/HalmosMathDeepDiverW1.t.sol (4 symbolic checks)"
+      },
+      "halmos": {
+        "ran": true,
+        "note": "4 checks, 2 pass (fee decomposition, rounding direction), 2 timeout (round-trip, simplifyRatio). File: lbamm-pool-type-fixed/test/audit/HalmosMathDeepDiverW1.t.sol"
+      },
+      "medusa": {
+        "ran": true,
+        "note": "318461 calls, 14 tests passed, 0 failed. 3 property tests (noRoundTripProfit, feeNeverExceedsInput, roundingDownLeUp) all passed. File: lbamm-pool-type-fixed/src/audit/MedusaMathDeepDiver.sol"
+      },
+      "audit-context-building": {
+        "ran": true,
+        "note": "Deep context built for FixedHelper.sol math subsystems: fee calculation, ratio math, height system, price normalization. 5 core invariants established, trust boundaries mapped."
+      },
+      "entry-point-analyzer": {
+        "ran": true,
+        "note": "Identified 5 state-changing entry points in FixedPoolType (createPool, addLiquidity, removeLiquidity, swapByInput, swapByOutput) \u2014 all contract-only via diamond proxy delegatecall."
+      }
+    },
+    "num_turns": 80,
+    "tool_uses": 45,
+    "files_read": 15,
+    "theses_tested": 10,
+    "theses_confirmed": 1,
+    "theses_ruled_out": 6,
+    "triage_log": {
+      "skip": 7,
+      "borderline": 3,
+      "survive": 2
+    },
+    "gate_passed": true,
+    "_total_hypotheses": 10
+  },
+  "_verified_tests": {
+    "H-R5-CP-01": {
+      "compiled": true,
+      "executed": true,
+      "tests_passed": 0,
+      "tests_failed": 0,
+      "raw_output": "{\"test/audit/MathDeepDiverDynamicHyp.t.sol:MathDeepDiverDynamicHypTest\":{\"duration\":\"2ms 917\u00b5s\",\"test_results\":{\"testFuzz_C27_priceAlwaysPositive(uint160,uint128,uint128)\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Fuzz\":{\"first_case\":{\"calldata\":\"0x6de113e300000000000000000000000000752d2d5f30991dcb5f3f38da3ec16a280a81da00000000000000000000000000000000035a25d4a3806fbe859efc14abe899fc000000000000000000000000000000000000000000000000001ba66885186bef\",\"gas\":27846,\"stipend\":21952},\"runs\":25,\"mean_gas\":5786,\"median_gas\":5894,\"failed_corpus_replays\":0}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"1ms 85\u00b5s 500ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"testFuzz_C29_priceInverse(uint160,uint128,uint128)\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Fuzz\":{\"first_case\":{\"calldata\":\"0xbf729f61000000000000000000000000000000000000001c683fa3c1ccc8b55fd7a208fd000000000000000000000000000000000000000000000000006dbbb41f84dd1b000000000000000000000000000000000000000000000000000000000000217e\",\"gas\":33436,\"stipend\":21712},\"runs\":26,\"mean_gas\":7537,\"median_gas\":6848,\"failed_corpus_replays\":0}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"2ms 209\u00b5s 667ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_C23_getNextSqrtPriceFromInput_monotonic()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":2686}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"41\u00b5s 792ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_C23_getNextSqrtPriceFromInput_oneForZero_monotonic()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":1527}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"25\u00b5s 292ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_C24_amountDelta_roundingDirection()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":3673}},\"traces\":[],\"labeled_addresse",
+      "quality": {
+        "quality": "real",
+        "has_real_assertion": true,
+        "size": 14670
+      }
+    },
+    "H-R5-CP-02": {
+      "compiled": true,
+      "executed": true,
+      "tests_passed": 0,
+      "tests_failed": 0,
+      "raw_output": "{\"test/audit/MathDeepDiverWave1Hyp.t.sol:MathDeepDiverWave1HypTest\":{\"duration\":\"1ms 411\u00b5s 750ns\",\"test_results\":{\"testFuzz_inputFee_neverExceedsInput(uint128,uint16,uint16)\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Fuzz\":{\"first_case\":{\"calldata\":\"0x2dd3138300000000000000000000000000000000000000000000000000b1a2bc2ec5000000000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000008\",\"gas\":26780,\"stipend\":21532},\"runs\":25,\"mean_gas\":5228,\"median_gas\":5283,\"failed_corpus_replays\":0}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"908\u00b5s 959ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"testFuzz_normalizePriceToRatio_nonZero(uint160)\":{\"status\":\"Failure\",\"reason\":\"ratio1 must be non-zero\",\"counterexample\":{\"Single\":{\"sender\":null,\"addr\":null,\"calldata\":\"0x2f1d886a00000000000000000000000000000000000000000000000000000000000031f1\",\"contract_name\":null,\"func_name\":null,\"signature\":null,\"args\":\"12785 [1.278e4]\",\"raw_args\":\"12785\"}},\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Fuzz\":{\"first_case\":{\"calldata\":\"0x2f1d886a0000000000000000000000000000000001e1b05e2b44bdd3a8febe567b6f76ce\",\"gas\":30599,\"stipend\":21384},\"runs\":2,\"mean_gas\":8632,\"median_gas\":8632,\"failed_corpus_replays\":0}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"1ms 87\u00b5s 708ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"testFuzz_roundingUpGteDown(uint128,uint128,uint128)\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Fuzz\":{\"first_case\":{\"calldata\":\"0x49c8cb1e00000000000000000000000000000000682831991943f6fb219433c4f84731f500000000000000000000000000000000000000000000000b1476306339a09ffe00000000000000000000000000000000fffffffffffffffffffffffffffffffe\",\"gas\":27283,\"stipend\":21940},\"runs\":25,\"mean_gas\":5341,\"median_gas\":5343,\"failed_corpus_replays\":0}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"755\u00b5s 333ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"testFuzz_simplifyRat",
+      "quality": {
+        "quality": "real",
+        "has_real_assertion": true,
+        "size": 33906
+      }
+    },
+    "H-R5-CP-03": {
+      "compiled": true,
+      "executed": true,
+      "tests_passed": 0,
+      "tests_failed": 0,
+      "raw_output": "{\"test/audit/MathDeepDiverWave1Hyp.t.sol:MathDeepDiverWave1HypTest\":{\"duration\":\"1ms 411\u00b5s 750ns\",\"test_results\":{\"testFuzz_inputFee_neverExceedsInput(uint128,uint16,uint16)\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Fuzz\":{\"first_case\":{\"calldata\":\"0x2dd3138300000000000000000000000000000000000000000000000000b1a2bc2ec5000000000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000008\",\"gas\":26780,\"stipend\":21532},\"runs\":25,\"mean_gas\":5228,\"median_gas\":5283,\"failed_corpus_replays\":0}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"908\u00b5s 959ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"testFuzz_normalizePriceToRatio_nonZero(uint160)\":{\"status\":\"Failure\",\"reason\":\"ratio1 must be non-zero\",\"counterexample\":{\"Single\":{\"sender\":null,\"addr\":null,\"calldata\":\"0x2f1d886a00000000000000000000000000000000000000000000000000000000000031f1\",\"contract_name\":null,\"func_name\":null,\"signature\":null,\"args\":\"12785 [1.278e4]\",\"raw_args\":\"12785\"}},\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Fuzz\":{\"first_case\":{\"calldata\":\"0x2f1d886a0000000000000000000000000000000001e1b05e2b44bdd3a8febe567b6f76ce\",\"gas\":30599,\"stipend\":21384},\"runs\":2,\"mean_gas\":8632,\"median_gas\":8632,\"failed_corpus_replays\":0}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"1ms 87\u00b5s 708ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"testFuzz_roundingUpGteDown(uint128,uint128,uint128)\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Fuzz\":{\"first_case\":{\"calldata\":\"0x49c8cb1e00000000000000000000000000000000682831991943f6fb219433c4f84731f500000000000000000000000000000000000000000000000b1476306339a09ffe00000000000000000000000000000000fffffffffffffffffffffffffffffffe\",\"gas\":27283,\"stipend\":21940},\"runs\":25,\"mean_gas\":5341,\"median_gas\":5343,\"failed_corpus_replays\":0}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"755\u00b5s 333ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"testFuzz_simplifyRat",
+      "quality": {
+        "quality": "real",
+        "has_real_assertion": true,
+        "size": 33906
+      }
+    },
+    "H-R5-CP-04": {
+      "compiled": true,
+      "executed": true,
+      "tests_passed": 0,
+      "tests_failed": 0,
+      "raw_output": "{\"test/audit/MathDeepDiverWave1Hyp.t.sol:MathDeepDiverWave1HypTest\":{\"duration\":\"1ms 411\u00b5s 750ns\",\"test_results\":{\"testFuzz_inputFee_neverExceedsInput(uint128,uint16,uint16)\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Fuzz\":{\"first_case\":{\"calldata\":\"0x2dd3138300000000000000000000000000000000000000000000000000b1a2bc2ec5000000000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000008\",\"gas\":26780,\"stipend\":21532},\"runs\":25,\"mean_gas\":5228,\"median_gas\":5283,\"failed_corpus_replays\":0}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"908\u00b5s 959ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"testFuzz_normalizePriceToRatio_nonZero(uint160)\":{\"status\":\"Failure\",\"reason\":\"ratio1 must be non-zero\",\"counterexample\":{\"Single\":{\"sender\":null,\"addr\":null,\"calldata\":\"0x2f1d886a00000000000000000000000000000000000000000000000000000000000031f1\",\"contract_name\":null,\"func_name\":null,\"signature\":null,\"args\":\"12785 [1.278e4]\",\"raw_args\":\"12785\"}},\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Fuzz\":{\"first_case\":{\"calldata\":\"0x2f1d886a0000000000000000000000000000000001e1b05e2b44bdd3a8febe567b6f76ce\",\"gas\":30599,\"stipend\":21384},\"runs\":2,\"mean_gas\":8632,\"median_gas\":8632,\"failed_corpus_replays\":0}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"1ms 87\u00b5s 708ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"testFuzz_roundingUpGteDown(uint128,uint128,uint128)\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Fuzz\":{\"first_case\":{\"calldata\":\"0x49c8cb1e00000000000000000000000000000000682831991943f6fb219433c4f84731f500000000000000000000000000000000000000000000000b1476306339a09ffe00000000000000000000000000000000fffffffffffffffffffffffffffffffe\",\"gas\":27283,\"stipend\":21940},\"runs\":25,\"mean_gas\":5341,\"median_gas\":5343,\"failed_corpus_replays\":0}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"755\u00b5s 333ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"testFuzz_simplifyRat",
+      "quality": {
+        "quality": "real",
+        "has_real_assertion": true,
+        "size": 33906
+      }
+    },
+    "H-R5-CP-05": {
+      "compiled": true,
+      "executed": true,
+      "tests_passed": 0,
+      "tests_failed": 0,
+      "raw_output": "{\"test/audit/MathDeepDiverWave1Hyp.t.sol:MathDeepDiverWave1HypTest\":{\"duration\":\"1ms 411\u00b5s 750ns\",\"test_results\":{\"testFuzz_inputFee_neverExceedsInput(uint128,uint16,uint16)\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Fuzz\":{\"first_case\":{\"calldata\":\"0x2dd3138300000000000000000000000000000000000000000000000000b1a2bc2ec5000000000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000008\",\"gas\":26780,\"stipend\":21532},\"runs\":25,\"mean_gas\":5228,\"median_gas\":5283,\"failed_corpus_replays\":0}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"908\u00b5s 959ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"testFuzz_normalizePriceToRatio_nonZero(uint160)\":{\"status\":\"Failure\",\"reason\":\"ratio1 must be non-zero\",\"counterexample\":{\"Single\":{\"sender\":null,\"addr\":null,\"calldata\":\"0x2f1d886a00000000000000000000000000000000000000000000000000000000000031f1\",\"contract_name\":null,\"func_name\":null,\"signature\":null,\"args\":\"12785 [1.278e4]\",\"raw_args\":\"12785\"}},\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Fuzz\":{\"first_case\":{\"calldata\":\"0x2f1d886a0000000000000000000000000000000001e1b05e2b44bdd3a8febe567b6f76ce\",\"gas\":30599,\"stipend\":21384},\"runs\":2,\"mean_gas\":8632,\"median_gas\":8632,\"failed_corpus_replays\":0}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"1ms 87\u00b5s 708ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"testFuzz_roundingUpGteDown(uint128,uint128,uint128)\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Fuzz\":{\"first_case\":{\"calldata\":\"0x49c8cb1e00000000000000000000000000000000682831991943f6fb219433c4f84731f500000000000000000000000000000000000000000000000b1476306339a09ffe00000000000000000000000000000000fffffffffffffffffffffffffffffffe\",\"gas\":27283,\"stipend\":21940},\"runs\":25,\"mean_gas\":5341,\"median_gas\":5343,\"failed_corpus_replays\":0}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"755\u00b5s 333ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"testFuzz_simplifyRat",
+      "quality": {
+        "quality": "real",
+        "has_real_assertion": true,
+        "size": 33906
+      }
+    },
+    "H-R5-CP-06": {
+      "compiled": true,
+      "executed": true,
+      "tests_passed": 0,
+      "tests_failed": 0,
+      "raw_output": "{\"test/audit/MathDeepDiverDynamicHyp.t.sol:MathDeepDiverDynamicHypTest\":{\"duration\":\"2ms 917\u00b5s\",\"test_results\":{\"testFuzz_C27_priceAlwaysPositive(uint160,uint128,uint128)\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Fuzz\":{\"first_case\":{\"calldata\":\"0x6de113e300000000000000000000000000752d2d5f30991dcb5f3f38da3ec16a280a81da00000000000000000000000000000000035a25d4a3806fbe859efc14abe899fc000000000000000000000000000000000000000000000000001ba66885186bef\",\"gas\":27846,\"stipend\":21952},\"runs\":25,\"mean_gas\":5786,\"median_gas\":5894,\"failed_corpus_replays\":0}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"1ms 85\u00b5s 500ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"testFuzz_C29_priceInverse(uint160,uint128,uint128)\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Fuzz\":{\"first_case\":{\"calldata\":\"0xbf729f61000000000000000000000000000000000000001c683fa3c1ccc8b55fd7a208fd000000000000000000000000000000000000000000000000006dbbb41f84dd1b000000000000000000000000000000000000000000000000000000000000217e\",\"gas\":33436,\"stipend\":21712},\"runs\":26,\"mean_gas\":7537,\"median_gas\":6848,\"failed_corpus_replays\":0}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"2ms 209\u00b5s 667ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_C23_getNextSqrtPriceFromInput_monotonic()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":2686}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"41\u00b5s 792ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_C23_getNextSqrtPriceFromInput_oneForZero_monotonic()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":1527}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"25\u00b5s 292ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_C24_amountDelta_roundingDirection()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":3673}},\"traces\":[],\"labeled_addresse",
+      "quality": {
+        "quality": "real",
+        "has_real_assertion": true,
+        "size": 14670
+      }
+    },
+    "H-R5-CP-07": {
+      "compiled": true,
+      "executed": true,
+      "tests_passed": 0,
+      "tests_failed": 0,
+      "raw_output": "{\"test/audit/MathDeepDiverWave1Hyp.t.sol:MathDeepDiverWave1HypTest\":{\"duration\":\"1ms 411\u00b5s 750ns\",\"test_results\":{\"testFuzz_inputFee_neverExceedsInput(uint128,uint16,uint16)\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Fuzz\":{\"first_case\":{\"calldata\":\"0x2dd3138300000000000000000000000000000000000000000000000000b1a2bc2ec5000000000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000008\",\"gas\":26780,\"stipend\":21532},\"runs\":25,\"mean_gas\":5228,\"median_gas\":5283,\"failed_corpus_replays\":0}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"908\u00b5s 959ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"testFuzz_normalizePriceToRatio_nonZero(uint160)\":{\"status\":\"Failure\",\"reason\":\"ratio1 must be non-zero\",\"counterexample\":{\"Single\":{\"sender\":null,\"addr\":null,\"calldata\":\"0x2f1d886a00000000000000000000000000000000000000000000000000000000000031f1\",\"contract_name\":null,\"func_name\":null,\"signature\":null,\"args\":\"12785 [1.278e4]\",\"raw_args\":\"12785\"}},\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Fuzz\":{\"first_case\":{\"calldata\":\"0x2f1d886a0000000000000000000000000000000001e1b05e2b44bdd3a8febe567b6f76ce\",\"gas\":30599,\"stipend\":21384},\"runs\":2,\"mean_gas\":8632,\"median_gas\":8632,\"failed_corpus_replays\":0}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"1ms 87\u00b5s 708ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"testFuzz_roundingUpGteDown(uint128,uint128,uint128)\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Fuzz\":{\"first_case\":{\"calldata\":\"0x49c8cb1e00000000000000000000000000000000682831991943f6fb219433c4f84731f500000000000000000000000000000000000000000000000b1476306339a09ffe00000000000000000000000000000000fffffffffffffffffffffffffffffffe\",\"gas\":27283,\"stipend\":21940},\"runs\":25,\"mean_gas\":5341,\"median_gas\":5343,\"failed_corpus_replays\":0}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"755\u00b5s 333ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"testFuzz_simplifyRat",
+      "quality": {
+        "quality": "real",
+        "has_real_assertion": true,
+        "size": 33906
+      }
+    },
+    "H-R5-CP-08": {
+      "compiled": true,
+      "executed": true,
+      "tests_passed": 0,
+      "tests_failed": 0,
+      "raw_output": "{\"test/audit/MathDeepDiverWave1Hyp.t.sol:MathDeepDiverWave1HypTest\":{\"duration\":\"1ms 411\u00b5s 750ns\",\"test_results\":{\"testFuzz_inputFee_neverExceedsInput(uint128,uint16,uint16)\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Fuzz\":{\"first_case\":{\"calldata\":\"0x2dd3138300000000000000000000000000000000000000000000000000b1a2bc2ec5000000000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000008\",\"gas\":26780,\"stipend\":21532},\"runs\":25,\"mean_gas\":5228,\"median_gas\":5283,\"failed_corpus_replays\":0}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"908\u00b5s 959ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"testFuzz_normalizePriceToRatio_nonZero(uint160)\":{\"status\":\"Failure\",\"reason\":\"ratio1 must be non-zero\",\"counterexample\":{\"Single\":{\"sender\":null,\"addr\":null,\"calldata\":\"0x2f1d886a00000000000000000000000000000000000000000000000000000000000031f1\",\"contract_name\":null,\"func_name\":null,\"signature\":null,\"args\":\"12785 [1.278e4]\",\"raw_args\":\"12785\"}},\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Fuzz\":{\"first_case\":{\"calldata\":\"0x2f1d886a0000000000000000000000000000000001e1b05e2b44bdd3a8febe567b6f76ce\",\"gas\":30599,\"stipend\":21384},\"runs\":2,\"mean_gas\":8632,\"median_gas\":8632,\"failed_corpus_replays\":0}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"1ms 87\u00b5s 708ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"testFuzz_roundingUpGteDown(uint128,uint128,uint128)\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Fuzz\":{\"first_case\":{\"calldata\":\"0x49c8cb1e00000000000000000000000000000000682831991943f6fb219433c4f84731f500000000000000000000000000000000000000000000000b1476306339a09ffe00000000000000000000000000000000fffffffffffffffffffffffffffffffe\",\"gas\":27283,\"stipend\":21940},\"runs\":25,\"mean_gas\":5341,\"median_gas\":5343,\"failed_corpus_replays\":0}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"755\u00b5s 333ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"testFuzz_simplifyRat",
+      "quality": {
+        "quality": "real",
+        "has_real_assertion": true,
+        "size": 33906
+      }
+    },
+    "H-R5-CP-09": {
+      "compiled": true,
+      "executed": true,
+      "tests_passed": 0,
+      "tests_failed": 0,
+      "raw_output": "{\"test/audit/MathDeepDiverWave1Hyp.t.sol:MathDeepDiverWave1HypTest\":{\"duration\":\"1ms 411\u00b5s 750ns\",\"test_results\":{\"testFuzz_inputFee_neverExceedsInput(uint128,uint16,uint16)\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Fuzz\":{\"first_case\":{\"calldata\":\"0x2dd3138300000000000000000000000000000000000000000000000000b1a2bc2ec5000000000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000008\",\"gas\":26780,\"stipend\":21532},\"runs\":25,\"mean_gas\":5228,\"median_gas\":5283,\"failed_corpus_replays\":0}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"908\u00b5s 959ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"testFuzz_normalizePriceToRatio_nonZero(uint160)\":{\"status\":\"Failure\",\"reason\":\"ratio1 must be non-zero\",\"counterexample\":{\"Single\":{\"sender\":null,\"addr\":null,\"calldata\":\"0x2f1d886a00000000000000000000000000000000000000000000000000000000000031f1\",\"contract_name\":null,\"func_name\":null,\"signature\":null,\"args\":\"12785 [1.278e4]\",\"raw_args\":\"12785\"}},\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Fuzz\":{\"first_case\":{\"calldata\":\"0x2f1d886a0000000000000000000000000000000001e1b05e2b44bdd3a8febe567b6f76ce\",\"gas\":30599,\"stipend\":21384},\"runs\":2,\"mean_gas\":8632,\"median_gas\":8632,\"failed_corpus_replays\":0}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"1ms 87\u00b5s 708ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"testFuzz_roundingUpGteDown(uint128,uint128,uint128)\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Fuzz\":{\"first_case\":{\"calldata\":\"0x49c8cb1e00000000000000000000000000000000682831991943f6fb219433c4f84731f500000000000000000000000000000000000000000000000b1476306339a09ffe00000000000000000000000000000000fffffffffffffffffffffffffffffffe\",\"gas\":27283,\"stipend\":21940},\"runs\":25,\"mean_gas\":5341,\"median_gas\":5343,\"failed_corpus_replays\":0}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"755\u00b5s 333ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"testFuzz_simplifyRat",
+      "quality": {
+        "quality": "real",
+        "has_real_assertion": true,
+        "size": 33906
+      }
+    },
+    "H-R5-CP-10": {
+      "compiled": true,
+      "executed": true,
+      "tests_passed": 0,
+      "tests_failed": 0,
+      "raw_output": "{\"test/audit/MathDeepDiverWave1Hyp.t.sol:MathDeepDiverWave1HypTest\":{\"duration\":\"1ms 411\u00b5s 750ns\",\"test_results\":{\"testFuzz_inputFee_neverExceedsInput(uint128,uint16,uint16)\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Fuzz\":{\"first_case\":{\"calldata\":\"0x2dd3138300000000000000000000000000000000000000000000000000b1a2bc2ec5000000000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000008\",\"gas\":26780,\"stipend\":21532},\"runs\":25,\"mean_gas\":5228,\"median_gas\":5283,\"failed_corpus_replays\":0}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"908\u00b5s 959ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"testFuzz_normalizePriceToRatio_nonZero(uint160)\":{\"status\":\"Failure\",\"reason\":\"ratio1 must be non-zero\",\"counterexample\":{\"Single\":{\"sender\":null,\"addr\":null,\"calldata\":\"0x2f1d886a00000000000000000000000000000000000000000000000000000000000031f1\",\"contract_name\":null,\"func_name\":null,\"signature\":null,\"args\":\"12785 [1.278e4]\",\"raw_args\":\"12785\"}},\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Fuzz\":{\"first_case\":{\"calldata\":\"0x2f1d886a0000000000000000000000000000000001e1b05e2b44bdd3a8febe567b6f76ce\",\"gas\":30599,\"stipend\":21384},\"runs\":2,\"mean_gas\":8632,\"median_gas\":8632,\"failed_corpus_replays\":0}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"1ms 87\u00b5s 708ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"testFuzz_roundingUpGteDown(uint128,uint128,uint128)\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Fuzz\":{\"first_case\":{\"calldata\":\"0x49c8cb1e00000000000000000000000000000000682831991943f6fb219433c4f84731f500000000000000000000000000000000000000000000000b1476306339a09ffe00000000000000000000000000000000fffffffffffffffffffffffffffffffe\",\"gas\":27283,\"stipend\":21940},\"runs\":25,\"mean_gas\":5341,\"median_gas\":5343,\"failed_corpus_replays\":0}},\"traces\":[],\"labeled_addresses\":{},\"duration\":\"755\u00b5s 333ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"testFuzz_simplifyRat",
+      "quality": {
+        "quality": "real",
+        "has_real_assertion": true,
+        "size": 33906
+      }
+    }
+  }
+}

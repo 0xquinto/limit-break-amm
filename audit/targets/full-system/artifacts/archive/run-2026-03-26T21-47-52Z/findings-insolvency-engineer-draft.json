@@ -1,0 +1,437 @@
+{
+  "agent_name": "insolvency-engineer",
+  "agent_role": "black-hat",
+  "wave": 1,
+  "findings": [
+    {
+      "id": "INSOL-001",
+      "title": "Hook fee key API footgun: _storeNonTokenHookFees uses hash(tokenFor,tokenFor) while API suggests hash(tokenFor,tokenFee)",
+      "severity": "low",
+      "confidence_score": 65,
+      "confidence_deductions": [
+        {"reason": "Only affects custom hook developers, not existing contracts", "amount": -15},
+        {"reason": "AMMStandardHook never generates non-token hook fees (NO_HOOK_FEE)", "amount": -10},
+        {"reason": "Requires custom hook developer misunderstanding API", "amount": -10}
+      ],
+      "status": "lead",
+      "category": "api-footgun",
+      "description": "Non-token hook fees stored via _storeNonTokenHookFees use key hash(hook, hash(tokenFor, tokenFor)) but the NatSpec for collectHookFeesByHook describes tokenFee as a separate parameter. Custom hook developers calling collectHookFeesByHook(tokenFor, differentTokenFee, ...) will look up an empty key and fail to collect their fees.",
+      "impact": "Custom hook developers lose hook fees permanently if they call collectHookFeesByHook with tokenFor != tokenFee for non-token hooks. AMMStandardHook unaffected.",
+      "proof_sketch": "test_HR6_CH01_non_token_hook_fee_key_matches_when_same_token in AuditInsolvencyKLR6.t.sol demonstrates the key mismatch",
+      "victim": "Custom hook developers deploying liquidity/pool hooks",
+      "extractable_value": "Depends on hook fee amounts — all fees at mismatched keys are permanently locked",
+      "attack_sequence": [
+        "Deploy custom liquidity hook returning non-zero hookFee0",
+        "AMM stores fees at hash(hook, hash(tokenFor, tokenFor))",
+        "Hook calls collectHookFeesByHook(tokenFor, differentToken, ...) per API docs",
+        "Lookup uses hash(hook, hash(tokenFor, differentToken)) — empty slot",
+        "Fees permanently locked"
+      ],
+      "test_file": "lbamm-core/test/AuditInsolvencyKLR6.t.sol",
+      "test_passes": true,
+      "prerequisites": ["Custom hook deployment", "Non-zero hook fees"],
+      "repos": ["lbamm-core"],
+      "contracts": ["AMMModule.sol", "ModuleFeeCollection.sol"],
+      "functions": ["_storeNonTokenHookFees()", "_transferHookFeesByHook()", "collectHookFeesByHook()"],
+      "lines": {"AMMModule.sol": [3011, 3018, 3116, 3125], "ModuleFeeCollection.sol": [72, 76, 171]},
+      "keywords": ["hook-fees", "storage-key-mismatch", "api-footgun"],
+      "source_hypothesis": "H-R6-CH-01",
+      "fp_gate": {
+        "location_exists": true,
+        "entry_reachable": true,
+        "no_existing_guard": true,
+        "concrete_attack_path": false,
+        "poc_compiles": true
+      }
+    }
+  ],
+  "ruled_out_vectors": [
+    {
+      "vector": "H-R6-DP-02: Reentrancy during queued hook fee transfer — _setReentrancyFlags(NO_FLAGS) clears all flags allowing re-entry",
+      "why_ruled_out": "_setReentrancyFlags preserves ENTERED bit (1<<1). Verified: flags = flags & ~(ENTERED|NOT_ENTERED) then currentGuard = state & ENTERED preserves guard. Re-entry blocked.",
+      "test_file": "lbamm-core/test/AuditInsolvencyKLR6.t.sol",
+      "repos": ["lbamm-core"],
+      "contracts": ["AMMModule.sol", "TstorishReentrancyGuardWithFlags.sol"],
+      "functions": ["_setReentrancyFlags()", "_executeQueuedHookFeesByHookTransfers()"],
+      "keywords": ["reentrancy", "transient-storage", "hook-fees"]
+    },
+    {
+      "vector": "H-R6-CH-04: Nested operation during fee distribution drops fees — same root as DP-02",
+      "why_ruled_out": "ENTERED bit preserved by _setReentrancyFlags(NO_FLAGS). No nested operations possible during fee distribution. Queued fee loss scenario unreachable.",
+      "test_file": "lbamm-core/test/AuditInsolvencyKLR6.t.sol",
+      "repos": ["lbamm-core"],
+      "contracts": ["AMMModule.sol"],
+      "functions": ["_executeQueuedHookFeesByHookTransfers()", "_setReentrancyFlags()"],
+      "keywords": ["reentrancy", "nested-operation", "fee-loss"]
+    },
+    {
+      "vector": "H-R6-CH-06: Output swap partial fill hook fee overcharge",
+      "why_ruled_out": "Hook fees computed before pool type call, but adjustedAmountSpecified reduction at line 1576 includes the full amountOutAdjustment which covers hook fee inflation. User's total cost is proportionally reduced. Fee path consistent by design.",
+      "test_file": "lbamm-core/test/AuditInsolvencyKLR6.t.sol",
+      "repos": ["lbamm-core"],
+      "contracts": ["AMMModule.sol"],
+      "functions": ["_poolSwapByOutput()", "_applySwapByOutputOutputFees()"],
+      "keywords": ["partial-fill", "hook-fees", "overcharge"]
+    },
+    {
+      "vector": "H-R6-CP-02: SingleProviderHelper swapByInput partial fill DoS",
+      "why_ruled_out": "Revert at line 49 is intentional slippage protection. DoS band is 1-2 wei wide. User retries with slightly different params. Not exploitable for profit.",
+      "test_file": "lbamm-core/test/AuditInsolvencyKLR6.t.sol",
+      "repos": ["lbamm-pool-type-single-provider"],
+      "contracts": ["SingleProviderHelper.sol"],
+      "functions": ["swapByInput()"],
+      "keywords": ["partial-fill", "dos", "slippage-protection"]
+    },
+    {
+      "vector": "H-R6-CP-03: FixedHelper dust accumulation unbounded",
+      "why_ruled_out": "Dust comes from output rounding gaps but input rounding favors pool (mulDivRoundingUp). Pool receives slightly more input per swap than mathematical minimum. Input surplus covers output dust. Net: pool solvent.",
+      "test_file": "lbamm-core/test/AuditInsolvencyKLR6.t.sol",
+      "repos": ["lbamm-pool-type-fixed"],
+      "contracts": ["FixedHelper.sol"],
+      "functions": ["_splitAmountsAndFeesByHeight()"],
+      "keywords": ["dust-accumulation", "rounding", "solvency"]
+    },
+    {
+      "vector": "H-R6-CP-04: FixedHelper fee path divergence on partial fill (0.01% per swap)",
+      "why_ruled_out": "Fee difference between input path (feeBPS/MAX_BPS) and output path (feeBPS/(MAX_BPS-feeBPS)) is at most 0.02% at 1% fee. Goes to LPs not attacker. User protected by limitAmount.",
+      "test_file": "lbamm-core/test/AuditInsolvencyKLR6.t.sol",
+      "repos": ["lbamm-pool-type-fixed"],
+      "contracts": ["FixedHelper.sol"],
+      "functions": ["swapByInput()", "swapByOutput()"],
+      "keywords": ["fee-divergence", "partial-fill", "rounding"]
+    },
+    {
+      "vector": "H-R6-CP-05: FixedHelper addLiquidity with both addInRange flags — conservative check",
+      "why_ruled_out": "Check at line 349 uses originalAdd0 (pre-increase) which is MORE conservative. Reverts when it shouldn't (over-rejects), not under-rejects. No insolvency path.",
+      "test_file": "lbamm-core/test/AuditInsolvencyKLR6.t.sol",
+      "repos": ["lbamm-pool-type-fixed"],
+      "contracts": ["FixedHelper.sol"],
+      "functions": ["_calculateLiquidityStartAndEndHeights()"],
+      "keywords": ["liquidity-accounting", "conservative-check"]
+    },
+    {
+      "vector": "H-R6-CP-06: Protocol fee validation DoS on partial fill",
+      "why_ruled_out": "Fee validation at line 1667 uses pre-calculated expectedProtocolLPFee when totalFees < expectedLPFee. Rounding difference is at most 1 wei. Impact is transient DoS (failed swap), not insolvency.",
+      "test_file": "lbamm-core/test/AuditInsolvencyKLR6.t.sol",
+      "repos": ["lbamm-core"],
+      "contracts": ["AMMModule.sol"],
+      "functions": ["_validateProtocolFees()"],
+      "keywords": ["protocol-fee", "validation", "dos"]
+    },
+    {
+      "vector": "H-R6-CP-10: FixedHelper withdrawal precision truncation over-withdrawal",
+      "why_ruled_out": "Over-withdrawal is from user's OWN position. withdraw0 = value0 - redeposited0 where redeposited0 < intended due to precision truncation. User gets back their own liquidity. Pool reserves decrease by same amount as position. No net insolvency.",
+      "test_file": "lbamm-core/test/AuditInsolvencyKLR6.t.sol",
+      "repos": ["lbamm-pool-type-fixed"],
+      "contracts": ["FixedHelper.sol"],
+      "functions": ["withdrawLiquidity()"],
+      "keywords": ["precision-truncation", "over-withdrawal"]
+    },
+    {
+      "vector": "H-R6-CH-09: Fill-or-kill permit with fees — amountIn mismatch",
+      "why_ruled_out": "amountIn passed to handler is adjustedAmountSpecified = uint256(amountSpecified) for input swaps (line 2096). Fee deduction happens within AMM core, handler receives full original amount. Fill-or-kill check passes for non-partial-fill input swaps.",
+      "test_file": "lbamm-core/test/AuditInsolvencyKLR6.t.sol",
+      "repos": ["lbamm-hooks-and-handlers"],
+      "contracts": ["PermitTransferHandler.sol", "AMMModule.sol"],
+      "functions": ["_executeFillOrKillPermit()", "_initializeSwap()"],
+      "keywords": ["fill-or-kill", "permit", "fee-deduction"]
+    },
+    {
+      "vector": "H-R6-HH-02: CLOB fillOrder storage slot 0 collision",
+      "why_ruled_out": "CLOBTransferHandler uses EIP-7201 namespaced storage. _orderIdToOrder(bytes32(0)) computes keccak256(0, mappingSlot) which is a deterministic but random slot far from nextOrderNonce. Sentinel check at line 220 catches orderInputRemaining == 0.",
+      "test_file": "lbamm-core/test/AuditInsolvencyKLR6.t.sol",
+      "repos": ["lbamm-hooks-and-handlers"],
+      "contracts": ["CLOBHelper.sol", "CLOBTransferHandler.sol"],
+      "functions": ["fillOrder()", "traverseCLOB()"],
+      "keywords": ["storage-collision", "sentinel", "clob"]
+    },
+    {
+      "vector": "H-R6-HH-05: Direct swap pricing bounds pre-fee discrepancy",
+      "why_ruled_out": "Price check uses (executor-output / user-input) which IS the user's effective exchange rate. Pre-fee denominator is correct because fee goes to protocol, not executor. Bounds protect user rate, not executor rate. Under-enforcement by ~fee% is acceptable because it makes bounds MORE permissive (safer for user).",
+      "test_file": "lbamm-core/test/AuditInsolvencyKLR6.t.sol",
+      "repos": ["lbamm-hooks-and-handlers"],
+      "contracts": ["AMMStandardHook.sol"],
+      "functions": ["_validatePricingBounds()"],
+      "keywords": ["pricing-bounds", "direct-swap", "fee-discrepancy"]
+    },
+    {
+      "vector": "INV-S01: Token balance solvency after sequence of operations",
+      "why_ruled_out": "balance >= reserve + feeBalance holds after swap+addLiq+removeLiq+swap sequences. Tested with 20 random swaps.",
+      "test_file": "lbamm-core/test/AuditInsolvencyKLR6.t.sol",
+      "repos": ["lbamm-core"],
+      "contracts": ["AMMModule.sol"],
+      "functions": ["singleSwap()", "addLiquidity()", "removeLiquidity()"],
+      "keywords": ["solvency", "invariant"]
+    },
+    {
+      "vector": "INV-S02: No value creation via round-trip swaps",
+      "why_ruled_out": "endBalance0 + endBalance1 <= startBalance0 + startBalance1 across multi-step swaps. Fees consumed on each step.",
+      "test_file": "lbamm-core/test/AuditInsolvencyKLR6.t.sol",
+      "repos": ["lbamm-core"],
+      "contracts": ["AMMModule.sol"],
+      "functions": ["singleSwap()"],
+      "keywords": ["value-creation", "round-trip", "invariant"]
+    },
+    {
+      "vector": "INV-E02: No flash loan profit via addLiq+swap+removeLiq",
+      "why_ruled_out": "Attacker balance after repaying flash loan <= initial balance. Fuzz-tested with amounts [1000, 50e18].",
+      "test_file": "lbamm-core/test/AuditInsolvencyKLR6.t.sol",
+      "repos": ["lbamm-core"],
+      "contracts": ["AMMModule.sol"],
+      "functions": ["singleSwap()", "addLiquidity()", "removeLiquidity()"],
+      "keywords": ["flash-loan", "profit", "invariant"]
+    },
+    {
+      "vector": "C21: Callback state corruption (Bunni/Curve pattern)",
+      "why_ruled_out": "Pool state (reserves + fees backed by balances) is consistent after every swap. Reentrancy guard blocks mid-finalization re-entry.",
+      "test_file": "lbamm-core/test/InsolvencyC13C25.t.sol",
+      "repos": ["lbamm-core"],
+      "contracts": ["AMMModule.sol"],
+      "functions": ["_finalizeSwapCollectFundsAndDisburse()"],
+      "keywords": ["callback", "state-corruption", "bunni"]
+    },
+    {
+      "vector": "C22: Read-only reentrancy — stale view during swap",
+      "why_ruled_out": "After every swap, getPoolState returns consistent values (balance >= reserve + feeBalance). Reentrancy guard prevents state reads during partial update.",
+      "test_file": "lbamm-core/test/InsolvencyC13C25.t.sol",
+      "repos": ["lbamm-core"],
+      "contracts": ["AMMModule.sol"],
+      "functions": ["getPoolState()"],
+      "keywords": ["read-only-reentrancy", "stale-view"]
+    },
+    {
+      "vector": "C23: Transient storage SIR pattern — stale slot between swaps",
+      "why_ruled_out": "Two swaps in same tx produce independent results. Second swap output correctly reflects price impact from first. Pool remains solvent.",
+      "test_file": "lbamm-core/test/InsolvencyC13C25.t.sol",
+      "repos": ["lbamm-core"],
+      "contracts": ["AMMModule.sol"],
+      "functions": ["singleSwap()"],
+      "keywords": ["transient-storage", "sir-pattern", "stale-slot"]
+    },
+    {
+      "vector": "C24: Cross-component composition (Cork pattern) — state change creates exploitable precondition",
+      "why_ruled_out": "Large swap changes pool state, subsequent operations use fresh state. No stale preconditions observable. Pool remains solvent.",
+      "test_file": "lbamm-core/test/InsolvencyC13C25.t.sol",
+      "repos": ["lbamm-core"],
+      "contracts": ["AMMModule.sol"],
+      "functions": ["singleSwap()", "getPoolState()"],
+      "keywords": ["cross-component", "cork-pattern", "stale-precondition"]
+    },
+    {
+      "vector": "C25: Fee-on-transfer token (PancakeSwap pattern) — phantom liquidity",
+      "why_ruled_out": "Protocol uses strict balance checking in _collectToken. Fee-on-transfer tokens cause balance mismatch that reverts the transaction. No phantom liquidity possible.",
+      "test_file": "lbamm-core/test/InsolvencyC13C25.t.sol",
+      "repos": ["lbamm-core"],
+      "contracts": ["AMMModule.sol"],
+      "functions": ["_collectToken()"],
+      "keywords": ["fee-on-transfer", "phantom-liquidity", "pancakeswap"]
+    }
+  ],
+  "hypothesis_results": [
+    {
+      "id": "H-R6-DP-02",
+      "status": "dismissed",
+      "test_file": "lbamm-core/test/AuditInsolvencyKLR6.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If an attacker receives hook fees via safeTransfer during _executeQueuedHookFeesByHookTransfers after _setReentrancyFlags(NO_FLAGS), they could re-enter singleSwap because all flags are cleared. However, _setReentrancyFlags preserves the ENTERED bit via currentGuard = _getTstorish(slot) & ENTERED at TstorishReentrancyGuardWithFlags.sol:70.",
+      "guard_location": "TstorishReentrancyGuardWithFlags.sol:70",
+      "detail": "ENTERED bit (1<<1) is always preserved by _setReentrancyFlags. The function masks out ENTERED and NOT_ENTERED from the input flags, then ORs with the current ENTERED state. Re-entry into any nonReentrant function is blocked."
+    },
+    {
+      "id": "H-R6-CP-01",
+      "status": "not_tested",
+      "test_file": "lbamm-core/test/AuditInsolvencyKLR6.t.sol",
+      "failure_class": "tactical",
+      "refutation_case": "If an LP removes their active liquidity leaving pool.liquidity=0, then calls snapPrice to an initialized tick boundary where another LP's range starts, the next swap activates that liquidity at the manipulated price. The snapPrice check at line 264 uses strict > which allows landing on the initialized tick.",
+      "guard_location": "DynamicHelper.sol:264",
+      "detail": "LEAD: Requires DynamicPoolType deployment for testing. The off-by-one at snapPrice line 264 (next > targetTick when lte=true) needs dedicated test in amm-pool-type-dynamic repo. Placeholder test written in AuditInsolvencyKLR6.t.sol."
+    },
+    {
+      "id": "H-R6-CP-02",
+      "status": "dismissed",
+      "test_file": "lbamm-core/test/AuditInsolvencyKLR6.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If the hook price causes amountOut to exceed reserveOut by 1 wei, swapByInput falls back to swapByOutput which computes higher amountIn due to output-path fee formula, causing revert at line 49. This creates a narrow DoS band for swapByInput.",
+      "guard_location": "SingleProviderHelper.sol:49",
+      "detail": "The revert is intentional slippage protection. The DoS band is 1-2 wei wide. User retries with slightly different parameters. Not exploitable for profit — victim loses nothing, just has a failed tx."
+    },
+    {
+      "id": "H-R6-CP-03",
+      "status": "dismissed",
+      "test_file": "lbamm-core/test/AuditInsolvencyKLR6.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If every swap-by-output produces 1 unit of dust, after N swaps total dust = N units. When LP withdraws, they receive position value + accumulated dust. If dust exceeds rounding surplus from input-side, pool becomes insolvent.",
+      "guard_location": "FixedHelper.sol:1699",
+      "detail": "Dust per swap is bounded by potentialDustForOneInput check at line 1699. Input rounding (mulDivRoundingUp) ensures pool receives slightly more input per swap than mathematical minimum. This surplus covers the dust accumulation. Net: pool solvent."
+    },
+    {
+      "id": "H-R6-CP-04",
+      "status": "dismissed",
+      "test_file": "lbamm-core/test/AuditInsolvencyKLR6.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If partial fill triggers output-path fee formula, user pays 0.01% more per swap than input-path. Over many swaps this accumulates. An attacker could force partial fills by manipulating reserves to the boundary.",
+      "guard_location": "AMMModule.sol:1417",
+      "detail": "Fee difference is at most 0.02% per swap at 1% fee. Goes to LPs, not attacker. User's limitAmount protects them. The partial fill boundary is naturally occurring, not attacker-controllable in a profitable way."
+    },
+    {
+      "id": "H-R6-CP-05",
+      "status": "dismissed",
+      "test_file": "lbamm-core/test/AuditInsolvencyKLR6.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If both addInRange0 and addInRange1 are true, the check at line 349 using originalAdd0 might reject valid deposits. If it accepts invalid ones (originalAdd0 >= depth1ValueOf0 but originalAdd0 + depth0 < needed), pool gets less tokens.",
+      "guard_location": "FixedHelper.sol:349",
+      "detail": "The check uses originalAdd0 (pre-depth0 increase) which is MORE conservative. It over-rejects, not under-rejects. No insolvency path — the check is too strict, not too lenient."
+    },
+    {
+      "id": "H-R6-CP-06",
+      "status": "dismissed",
+      "test_file": "lbamm-core/test/AuditInsolvencyKLR6.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If partial fill causes pool type's actual protocol fees to be 1 wei less than expectedProtocolLPFee (computed with rounding up), _validateProtocolFees reverts the swap. This is a DoS vector for legitimate swaps.",
+      "guard_location": "AMMModule.sol:1667",
+      "detail": "Fee validation fallback at line 1668 uses pre-calculated expectedProtocolLPFee. Rounding difference is at most 1 wei. Impact is transient DoS only, not insolvency. User retries successfully."
+    },
+    {
+      "id": "H-R6-CP-10",
+      "status": "dismissed",
+      "test_file": "lbamm-core/test/AuditInsolvencyKLR6.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If precision truncation causes redeposited0 to be less than intended (4999 -> 4000 due to precision=1000), withdraw0 = 5000 - 4000 = 1000 instead of requested 1. User withdraws 1000 of their own tokens.",
+      "guard_location": "FixedHelper.sol:74",
+      "detail": "Over-withdrawal is from user's own position. Pool reserves decrease by the exact withdrawal amount. Position value decreases by same. No net insolvency — user got back their own liquidity, just more than they asked for."
+    },
+    {
+      "id": "H-R6-CH-01",
+      "status": "tested",
+      "test_file": "lbamm-core/test/AuditInsolvencyKLR6.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If a custom hook calls collectHookFeesByHook(tokenFor, differentToken, ...) the key hash(hook, hash(tokenFor, differentToken)) won't match the storage key hash(hook, hash(tokenFor, tokenFor)). Fees permanently locked.",
+      "guard_location": "AMMModule.sol:3018",
+      "detail": "LEAD: API footgun confirmed via test. Keys match ONLY when tokenFee == tokenFor. AMMStandardHook unaffected (returns NO_HOOK_FEE). Impact limited to custom hook developers who misunderstand the API. Reported as lead finding INSOL-001."
+    },
+    {
+      "id": "H-R6-CH-04",
+      "status": "dismissed",
+      "test_file": "lbamm-core/test/AuditInsolvencyKLR6.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If a malicious token callback during _executeQueuedHookFeesByHookTransfers re-enters singleSwap after _setReentrancyFlags(NO_FLAGS), nested hook fees would be queued but never processed because queueLength was already read.",
+      "guard_location": "TstorishReentrancyGuardWithFlags.sol:70",
+      "detail": "Same root cause as DP-02. ENTERED bit preserved prevents re-entry entirely. Nested operation scenario unreachable."
+    },
+    {
+      "id": "H-R6-CH-06",
+      "status": "dismissed",
+      "test_file": "lbamm-core/test/AuditInsolvencyKLR6.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If hook fees are computed on original amountOut before partial fill, and partial fill reduces actual output, hook fees are overcharged by hookFeeBPS * (originalAmountOut - actualAmountOut) / MAX_BPS.",
+      "guard_location": "AMMModule.sol:1576",
+      "detail": "The adjustedAmountSpecified reduction at line 1576 includes the full amountOutAdjustment which covers hook fee inflation. User's total cost is proportionally reduced. Fee accounting consistent by design."
+    },
+    {
+      "id": "H-R6-CH-09",
+      "status": "dismissed",
+      "test_file": "lbamm-core/test/AuditInsolvencyKLR6.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If fill-or-kill permits check amountSpecified == amountIn but amountIn is post-fee, any exchange fee causes mismatch and revert. Users can't use fill-or-kill with fees.",
+      "guard_location": "AMMModule.sol:2096",
+      "detail": "amountIn passed to handler at line 2160 is adjustedAmountSpecified = uint256(amountSpecified) (line 2096). Fee deduction happens within AMM core at a later step. Handler receives full original amount. Fill-or-kill check passes."
+    },
+    {
+      "id": "H-R6-HH-01",
+      "status": "not_tested",
+      "test_file": "lbamm-core/test/AuditInsolvencyKLR6.t.sol",
+      "failure_class": "tactical",
+      "refutation_case": "If orders at P0 < P1 < P2 are closed in non-lowest-first order, currentPrice may skip over price levels. Closing P1 first removes it from linked list, then closing P0 updates currentPrice to P2 (skipping any new order between P0 and P2).",
+      "guard_location": "CLOBHelper.sol:284",
+      "detail": "LEAD: Requires CLOBTransferHandler deployment for testing. The traverseCLOB currentPrice update at line 284 only fires when currentPrice == sqrtPriceX96. Non-current-price closes don't update cursor. Needs dedicated CLOB test."
+    },
+    {
+      "id": "H-R6-HH-02",
+      "status": "dismissed",
+      "test_file": "lbamm-core/test/AuditInsolvencyKLR6.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If traverseCLOB reaches bytes32(0) as nextOrderId, _orderIdToOrder(bytes32(0)) reads storage slot 0 which may contain nextOrderNonce. A large nextOrderNonce could be misread as orderInputRemaining, causing underflow.",
+      "guard_location": "CLOBHelper.sol:220",
+      "detail": "CLOBTransferHandler uses EIP-7201 namespaced storage. _orderIdToOrder(bytes32(0)) computes keccak256(0, mappingSlot) — a random slot far from nextOrderNonce. Sentinel check at line 220 catches orderInputRemaining == 0."
+    },
+    {
+      "id": "H-R6-HH-05",
+      "status": "dismissed",
+      "test_file": "lbamm-core/test/AuditInsolvencyKLR6.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If direct swap bounds check uses pre-fee input in denominator, computed price = sqrt(output/preFeeinput) is lower than actual rate sqrt(output/postFeeInput). With 50% fee, bounds are under-enforced by ~50%.",
+      "guard_location": "AMMStandardHook.sol:842",
+      "detail": "Price check uses (executor-output / user-input) which IS the user's effective exchange rate. Pre-fee denominator is correct because fee goes to protocol. Under-enforcement by ~fee% makes bounds MORE permissive (safer for user, not exploitable for attacker)."
+    }
+  ],
+  "theft_theses": [
+    {
+      "thesis": "Flash loan → add liquidity → swap → remove liquidity with inflated position",
+      "victim": "LPs and pool reserves",
+      "asset": "Pool tokens",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Zero-liquidity pool fee accumulation overflow",
+      "victim": "Protocol reserves",
+      "asset": "Fee tokens",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "tokensOwed desync between position and pool accounting",
+      "victim": "Other LPs",
+      "asset": "Position tokens",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Rounding asymmetry in add vs remove paths",
+      "victim": "LPs",
+      "asset": "Liquidity tokens",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Force token.balanceOf to diverge from cached balance (fee-on-transfer)",
+      "victim": "Protocol",
+      "asset": "Pool tokens",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Prime pool to low liquidity → run 100+ tiny swaps harvesting truncation → compound into material profit",
+      "victim": "LPs",
+      "asset": "Rounding surplus",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Flash loan → inflate fee accumulators → collect inflated fees → leave pool undercollateralized",
+      "victim": "Protocol/LPs",
+      "asset": "Fee tokens",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    }
+  ],
+  "metadata": {
+    "checklist_items_completed": "A: 4/5, B: 0/3, C: 20/20, D: 15/15",
+    "tools_run": {
+      "slither": {"ran": true, "repos": ["lbamm-core", "amm-pool-type-dynamic", "lbamm-pool-type-fixed", "lbamm-pool-type-single-provider", "lbamm-hooks-and-handlers"], "note": "1 High (arbitrary-send-erc20), 4 High (incorrect-return delegatecall), reentrancy-balance findings"},
+      "aderyn": {"ran": true, "repos": ["lbamm-core", "lbamm-pool-type-fixed", "lbamm-pool-type-single-provider"], "note": "Crashed on amm-pool-type-dynamic and lbamm-hooks-and-handlers (Aderyn bug compile.rs:78)"},
+      "forge": {"ran": true, "note": "147 tests total across 4 test files. Files: AuditInsolvency.t.sol, AuditInsolvencyKL.t.sol, AuditInsolvencyKLR6.t.sol, InsolvencyC1C12.t.sol, InsolvencyC13C25.t.sol"},
+      "halmos": {"ran": true, "note": "1 check passed (C2 reentrancy guard). C4 failed with HalmosException: Unsupported cheat code readCallers(). Tool limitation."},
+      "medusa": {"ran": false, "reason": "Constructor arguments for AMMModule not auto-detected. InsolvencyC1C12Test found no assertion/property/optimization tests. Tool limitation."},
+      "audit-context-building": {"ran": false, "reason": "Context exhaustion before Phase B skills could be invoked"},
+      "entry-point-analyzer": {"ran": false, "reason": "Context exhaustion before Phase B skills could be invoked"}
+    },
+    "num_turns": 120,
+    "tool_uses": 250,
+    "files_read": 40,
+    "theses_tested": 15,
+    "theses_confirmed": 0,
+    "theses_ruled_out": 13,
+    "triage_log": {"skip": 3, "borderline": 5, "survive": 7}
+  }
+}

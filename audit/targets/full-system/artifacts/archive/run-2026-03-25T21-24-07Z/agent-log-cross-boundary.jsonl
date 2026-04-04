@@ -1,0 +1,40 @@
+{"timestamp":"2026-03-25T18:00:00Z","event":"start","agent":"cross-boundary","wave":1}
+{"timestamp":"2026-03-25T18:01:00Z","event":"read_prompt","file":"wave1-prompts/cross-boundary.md"}
+{"timestamp":"2026-03-25T18:02:00Z","event":"read_boilerplate","file":"docs/framework/agent-boilerplate.md"}
+{"timestamp":"2026-03-25T18:03:00Z","event":"read_codebase_map","file":"docs/CODEBASE_MAP.md"}
+{"timestamp":"2026-03-25T18:04:00Z","event":"read_digest","file":"docs/audit_memory/digest.md"}
+{"timestamp":"2026-03-25T18:05:00Z","event":"phase_a_start","tools":["slither","aderyn","forge"]}
+{"timestamp":"2026-03-25T18:10:00Z","event":"slither_run","repo":"lbamm-core","findings":30}
+{"timestamp":"2026-03-25T18:12:00Z","event":"slither_run","repo":"lbamm-hooks-and-handlers","findings":35}
+{"timestamp":"2026-03-25T18:14:00Z","event":"aderyn_run","repo":"lbamm-core","status":"success"}
+{"timestamp":"2026-03-25T18:15:00Z","event":"aderyn_run","repo":"lbamm-hooks-and-handlers","status":"crashed"}
+{"timestamp":"2026-03-25T18:16:00Z","event":"storage_layout","repos":["lbamm-core","lbamm-hooks-and-handlers"],"result":"0 direct slots in diamond modules"}
+{"timestamp":"2026-03-25T18:20:00Z","event":"phase_b_start","skills":["audit-context-building","entry-point-analyzer"]}
+{"timestamp":"2026-03-25T18:22:00Z","event":"call_graph_export","contract":"AMMStandardHook","nodes":34,"edges":35}
+{"timestamp":"2026-03-25T18:25:00Z","event":"phase_c_start","checklist":"C-BOUNDARY","items":18}
+{"timestamp":"2026-03-25T18:30:00Z","event":"hypothesis_test","id":"H-R4-HH-01","status":"dismissed","reason":"FullMath 512-bit handles overflow"}
+{"timestamp":"2026-03-25T18:32:00Z","event":"hypothesis_test","id":"H-R4-HH-02","status":"dismissed","reason":"partial fill stays current order"}
+{"timestamp":"2026-03-25T18:34:00Z","event":"hypothesis_test","id":"H-R4-HH-03","status":"tested","reason":"rounding mismatch negligible"}
+{"timestamp":"2026-03-25T18:36:00Z","event":"hypothesis_test","id":"H-R4-HH-04","status":"confirmed","finding":"XB-001","detail":"253 BPS price deflation with 5% fee"}
+{"timestamp":"2026-03-25T18:38:00Z","event":"hypothesis_test","id":"H-R4-HH-05","status":"confirmed","finding":"XB-002","detail":"computeRatioX96 returns 0 on overflow"}
+{"timestamp":"2026-03-25T18:40:00Z","event":"hypothesis_test","id":"H-R4-HH-06","status":"dismissed","reason":"conservative over-validation"}
+{"timestamp":"2026-03-25T18:41:00Z","event":"hypothesis_test","id":"H-R4-HH-07","status":"dismissed","reason":"known CP-004"}
+{"timestamp":"2026-03-25T18:43:00Z","event":"hypothesis_test","id":"H-R4-DP-01","status":"dismissed","reason":"by-design, limitAmount protects"}
+{"timestamp":"2026-03-25T18:45:00Z","event":"hypothesis_test","id":"H-R4-DP-03","status":"dismissed","reason":"admin-controlled, self-inflicted"}
+{"timestamp":"2026-03-25T18:47:00Z","event":"hypothesis_test","id":"H-R4-DP-05","status":"tested","reason":"API asymmetry, not exploitable"}
+{"timestamp":"2026-03-25T18:49:00Z","event":"hypothesis_test","id":"H-R4-DP-06","status":"tested","reason":"flags cleared, no current exploit"}
+{"timestamp":"2026-03-25T18:50:00Z","event":"hypothesis_test","id":"H-R4-DP-07","status":"dismissed","reason":"admin-controlled, shortage unreachable"}
+{"timestamp":"2026-03-25T18:52:00Z","event":"hypothesis_test","id":"H-R4-DP-08","status":"tested","reason":"partial fill overcharge, self-inflicted"}
+{"timestamp":"2026-03-25T18:53:00Z","event":"hypothesis_test","id":"H-R4-DP-09","status":"dismissed","reason":"Solidity precedence correct"}
+{"timestamp":"2026-03-25T18:55:00Z","event":"hypothesis_test","id":"H-R4-TS-01","status":"confirmed","finding":"XB-001","detail":"same as H-R4-HH-04"}
+{"timestamp":"2026-03-25T18:57:00Z","event":"forge_test","file":"AuditCrossBoundaryHypotheses.t.sol","passed":15,"failed":0}
+{"timestamp":"2026-03-25T19:00:00Z","event":"checklist_c1_c6","items":"C1-C6","status":"complete","tests":"AuditCrossBoundaryChecklist.t.sol"}
+{"timestamp":"2026-03-25T19:05:00Z","event":"checklist_c7_c12","items":"C7-C12","status":"complete","tests":"AuditCrossBoundaryChecklist.t.sol"}
+{"timestamp":"2026-03-25T19:08:00Z","event":"checklist_c13_c15","items":"C13-C15","status":"complete","detail":"poolId validation, storage layout"}
+{"timestamp":"2026-03-25T19:12:00Z","event":"halmos_run","contract":"AuditCrossBoundaryHalmosTest","checks":3,"passed":2,"failed":1}
+{"timestamp":"2026-03-25T19:15:00Z","event":"medusa_run","target":"AMMStandardHook","calls":103218,"failures":0}
+{"timestamp":"2026-03-25T19:18:00Z","event":"medusa_run","target":"SingleProviderPoolType","calls":103218,"failures":0}
+{"timestamp":"2026-03-25T19:20:00Z","event":"checklist_c19_c22","items":"C19-C22","status":"complete","tests":"AuditCrossBoundaryChecklist.t.sol"}
+{"timestamp":"2026-03-25T19:25:00Z","event":"forge_test","file":"AuditCrossBoundaryChecklist.t.sol","passed":23,"failed":0}
+{"timestamp":"2026-03-25T19:28:00Z","event":"sidecar_gate","status":"accepted","output":"findings-cross-boundary.json"}
+{"timestamp":"2026-03-25T19:30:00Z","event":"complete","findings":2,"ruled_out":22,"hypotheses_tested":15}

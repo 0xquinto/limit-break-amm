@@ -1,0 +1,203 @@
+{
+  "agent_name": "cross-boundary",
+  "agent_role": "Cross-Boundary Tracer",
+  "wave": 1,
+  "findings": [],
+  "ruled_out_vectors": [
+    {
+      "vector": "KV-1: Zero-price bypass in validateHandlerOrder — computeRatioX96 returns 0 on overflow, bypassing maxSqrtPriceX96 check when minSqrtPriceX96==0",
+      "why_ruled_out": "Confirmed at unit test level: overflow-to-zero bypasses max bounds check in validateHandlerOrder (AMMStandardHook.sol:215-224). However, this is documented CP-003 (known Low). Economic impact is limited: (1) CLOB orders at extreme prices only hurt the maker, (2) fill path through AMM enforces _validatePricingBounds which DOES check sqrtPriceX96==0 (line 847), (3) the bypass only affects order placement validation, not execution. Token creator's max bound is a soft protection that can be circumvented for order creation but not for fills.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundary.t.sol",
+      "repos": ["lbamm-hooks-and-handlers"],
+      "contracts": ["AMMStandardHook.sol", "CLOBTransferHandler.sol", "SqrtPriceCalculator.sol"],
+      "keywords": ["sqrtPriceX96", "zero", "bypass", "overflow", "pricing-bounds", "computeRatioX96", "validateHandlerOrder"],
+      "functions": ["_enforceTokenHooks", "validateHandlerOrder", "computeRatioX96"]
+    },
+    {
+      "vector": "KV-2: Direct handler call — calling CLOBTransferHandler.ammHandleTransfer directly bypassing AMM pricing",
+      "why_ruled_out": "CLOBTransferHandler.ammHandleTransfer has explicit guard: `if (msg.sender != AMM) revert CLOBTransferHandler__CallbackMustBeFromAMM()` at line 230. Additionally enforces `nonReentrant` modifier. Direct calls revert unconditionally. openOrder is the only external-facing function and it validates via _enforceTokenHooks which calls validateHandlerOrder on the hook.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundary.t.sol",
+      "repos": ["lbamm-hooks-and-handlers"],
+      "contracts": ["CLOBTransferHandler.sol", "AMMStandardHook.sol"],
+      "keywords": ["pricing", "bypass", "direct", "handler", "direct-swap", "pricing-bounds", "flag-dependency"],
+      "functions": ["executeSwap", "beforeSwap", "afterSwap"]
+    },
+    {
+      "vector": "KV-3: Settings sync gap — setTokenSettings syncs original calldata settings (without initialized=true) to hooks",
+      "why_ruled_out": "Confirmed at CreatorHookSettingsRegistry.sol:376-398: memSettings has initialized=true set, but line 397 syncs the original `settings` calldata. The hook receives settings without initialized=true. However, registryUpdateTokenSettings (AMMStandardHook.sol:522) directly overwrites _tokenSettings[token] with the calldata. The next access via _getOrFetchTokenSettings will re-fetch from registry if not initialized. Impact is gas waste (extra registry fetch), not a security vulnerability. Documented as CP-005 (known Low/gas waste).",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundary.t.sol",
+      "repos": ["lbamm-hooks-and-handlers"],
+      "contracts": ["CLOBTransferHandler.sol", "CreatorHookSettingsRegistry.sol"],
+      "keywords": ["setTokenSettings", "sync", "stale", "initialized", "memSettings", "gas-waste"],
+      "functions": ["setTokenSettings"]
+    },
+    {
+      "vector": "KV-4: Transient storage leak — DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT not cleared on all paths",
+      "why_ruled_out": "In _validatePricingBounds (AMMStandardHook.sol:838-840), beforeSwap writes to DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT for direct swaps. afterSwap reads it at line 843-844. The slot is NOT explicitly cleared. If beforeSwap writes but afterSwap doesn't read (flag disabled), stale data persists. However: (1) this is documented as CP-001/HOOK-001 (known Low), (2) exploitation requires specific flag combination (beforeSwap on, afterSwap off for one token + reverse for another in same tx), (3) the flag combination is validated at pool creation, (4) worst case is wrong pricing bounds check on a subsequent direct swap in same tx — a direct swap the attacker themselves is executing, making it self-inflicted.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundary.t.sol",
+      "repos": ["lbamm-hooks-and-handlers"],
+      "contracts": ["AMMHooksTransferHandler.sol", "AMMStandardHook.sol"],
+      "keywords": ["transient", "tstore", "clear", "direct", "swap", "transient-storage", "stale-read", "direct-swap", "DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT"],
+      "functions": ["beforeSwap"]
+    },
+    {
+      "vector": "Boundary 1: Pool type returns inflated amountOut to steal from reserves",
+      "why_ruled_out": "Core enforces _safeDecrementUint128(reserve, amountOut) at AMMModule.sol:1437/1440 — reverts if amountOut > reserve. Pool types run in separate storage context (external call, not delegatecall), so they cannot modify AMM reserves. Pool types keyed by msg.sender (DynamicPoolType.sol:444) preventing cross-AMM state confusion. The balance check at AMMModule.sol:2208 verifies actual token transfers match expected amounts.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundary.t.sol",
+      "repos": ["lbamm-core", "amm-pool-type-dynamic"],
+      "contracts": ["AMMModule.sol", "DynamicPoolType.sol"],
+      "keywords": ["pool-type", "amountOut", "reserve", "trust-boundary"],
+      "functions": ["_poolSwapByInput", "swapByInput", "_safeDecrementUint128"]
+    },
+    {
+      "vector": "Boundary 2: Transfer handler steals from settlement — ammHandleTransfer under-delivers tokens",
+      "why_ruled_out": "AMMModule.sol:2207-2210 captures balanceInBefore/balanceInAfter and reverts if delta != expected amountIn. Handler cannot under-deliver without triggering LBAMM__TokenInTransferFailed. Handler callback (line 2250-2252) executes AFTER balance verification and output distribution, so callback cannot claw back tokens. CLOBTransferHandler has explicit SafeERC20.safeTransfer(tokenIn, AMM, amountIn) at line 296.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundary.t.sol",
+      "repos": ["lbamm-core", "lbamm-hooks-and-handlers"],
+      "contracts": ["AMMModule.sol", "CLOBTransferHandler.sol"],
+      "keywords": ["transfer-handler", "settlement", "balance-check", "under-deliver"],
+      "functions": ["_finalizeSwapCollectFundsAndDisburse", "ammHandleTransfer"]
+    },
+    {
+      "vector": "Boundary 3: Hook returns manipulated fee to extract non-existent tokens",
+      "why_ruled_out": "Hook fees are deducted from the swap amount (input or output), not created from nothing. _applySwapByInputInputFees (AMMModule.sol:2616) checks `if (feeAmount > swapAmountIn) revert`. _applySwapByInputOutputFees (AMMModule.sol:2711) checks `if (feeAmount > swapAmountOut) revert`. Hook fees are stored via _storeHookFees against real token balances. The hook cannot mint tokens — it can only influence how existing tokens are distributed.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundary.t.sol",
+      "repos": ["lbamm-core", "lbamm-hooks-and-handlers"],
+      "contracts": ["AMMModule.sol", "AMMStandardHook.sol"],
+      "keywords": ["hook-fee", "manipulate", "extract", "non-existent"],
+      "functions": ["_executeSwapHook", "_applySwapByInputInputFees", "_applySwapByInputOutputFees"]
+    },
+    {
+      "vector": "Boundary 4: Stale registry settings exploited between beforeSwap and afterSwap",
+      "why_ruled_out": "AMMStandardHook caches settings via _getOrFetchTokenSettings which reads from local _tokenSettings mapping. Within a single swap, both beforeSwap and afterSwap use the same cached settings. Registry updates during a swap would not affect the cached version. The cache is updated only via registryUpdateTokenSettings (called by registry, not during swaps). No atomicity issue within a single transaction's hook sequence.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundary.t.sol",
+      "repos": ["lbamm-hooks-and-handlers"],
+      "contracts": ["AMMStandardHook.sol", "CreatorHookSettingsRegistry.sol"],
+      "keywords": ["settings", "cache", "stale", "registry", "atomicity"],
+      "functions": ["_getOrFetchTokenSettings", "registryUpdateTokenSettings"]
+    },
+    {
+      "vector": "Boundary 6: Reentrancy through PermitC token callback corrupts diamond storage",
+      "why_ruled_out": "All swap entry points use nonReentrantWithFlags modifier which sets a reentrancy flag in transient storage. CLOBTransferHandler.ammHandleTransfer uses nonReentrant. The diamond proxy dispatches calls by function selector to specific modules — reentering during a swap would hit the reentrancy guard. Token transfer callbacks (ERC777-style) would need to re-enter the AMM, but the guard blocks this. Standard ERC20 tokens don't have transfer callbacks.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundary.t.sol",
+      "repos": ["lbamm-core", "lbamm-hooks-and-handlers"],
+      "contracts": ["AMMModule.sol", "CLOBTransferHandler.sol"],
+      "keywords": ["reentrancy", "callback", "diamond", "storage", "guard"],
+      "functions": ["nonReentrantWithFlags", "ammHandleTransfer"]
+    },
+    {
+      "vector": "Dust-loop extraction: 100+ tiny swaps to drain pool value",
+      "why_ruled_out": "Each swap deducts fees from the input amount before computing output. Pool type math (DynamicHelper swap loop, FixedHelper swap logic) uses rounding that favors the protocol/pool. Fee growth accumulates per-swap in Q128.128 format. Tiny swaps lose proportionally more to fees + rounding than large swaps. No cumulative extraction possible — attacker loses to fees and rounding each iteration.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundary.t.sol",
+      "repos": ["lbamm-core", "amm-pool-type-dynamic"],
+      "contracts": ["AMMModule.sol", "DynamicHelper.sol"],
+      "keywords": ["dust", "loop", "extraction", "rounding", "fees"],
+      "functions": ["_poolSwapByInput", "_applySwapByInputInputFees"]
+    },
+    {
+      "vector": "Forged hook caller: call hook directly with fake pool identity",
+      "why_ruled_out": "AMMStandardHook.beforeSwap and afterSwap both call _requireCallerIsAMM() (AMMStandardHook.sol:110,159) which checks msg.sender == AMM. Direct calls to the hook from non-AMM addresses revert unconditionally. The hook cannot be tricked into crediting a non-swap operation.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundary.t.sol",
+      "repos": ["lbamm-hooks-and-handlers"],
+      "contracts": ["AMMStandardHook.sol"],
+      "keywords": ["hook", "caller", "forged", "identity", "access-control"],
+      "functions": ["beforeSwap", "afterSwap", "_requireCallerIsAMM"]
+    },
+    {
+      "vector": "Permit mutation: replay signature with mutated unsigned feeOnTop fields",
+      "why_ruled_out": "SWAP_TYPEHASH does NOT include feeOnTop fields — this is intentional by design. The signer's exposure is capped by limitAmount which IS signed. An attacker mutating feeOnTop can redirect fees but cannot extract more than limitAmount total from the signer. The feeOnTop is paid by the executor, not the permit signer. The cosigner mechanism provides additional off-chain validation. Documented as known design property.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundary.t.sol",
+      "repos": ["lbamm-hooks-and-handlers"],
+      "contracts": ["PermitTransferHandler.sol"],
+      "keywords": ["permit", "feeOnTop", "unsigned", "replay", "mutation"],
+      "functions": ["_executeFillOrKillPermit", "ammHandleTransfer"]
+    },
+    {
+      "vector": "Storage-slot collision between diamond facets",
+      "why_ruled_out": "Diamond uses a single storage layout defined in LBAMMStorage.sol at slot 0x9A1D. All modules (AMMModule, ModuleAdmin, ModuleFeeCollection, ModuleLiquidity) access the same AppStorage struct via Storage.appStorage(). There are no separate facets writing to overlapping slots. Pool types use external calls (separate storage), not delegatecall. The proxy itself delegates to the single LimitBreakAMM implementation which composes all modules.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundary.t.sol",
+      "repos": ["lbamm-core"],
+      "contracts": ["LBAMMStorage.sol", "AMMModule.sol"],
+      "keywords": ["diamond", "storage", "collision", "facet", "slot"],
+      "functions": ["appStorage"]
+    },
+    {
+      "vector": "Pool ID hash collision between two pool types sharing state",
+      "why_ruled_out": "Pool IDs encode the pool type address in the high bytes (PoolDecoder.getPoolType extracts from poolId). Two different pool types produce different poolIds even for the same token pair. Each pool type uses msg.sender (AMM address) + poolId for state lookup, providing double isolation. Collision would require finding two pool type addresses with the same 6-leading-zero-byte prefix AND matching pool creation parameters — computationally infeasible.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundary.t.sol",
+      "repos": ["lbamm-core"],
+      "contracts": ["PoolDecoder.sol"],
+      "keywords": ["poolId", "collision", "hash", "pool-type"],
+      "functions": ["getPoolType", "computePoolId"]
+    },
+    {
+      "vector": "Multi-hop swap: fee compounding across hops creates extraction opportunity",
+      "why_ruled_out": "Each hop independently: (1) deducts hook fees from input, (2) executes pool swap, (3) validates protocol fees, (4) updates reserves, (5) deducts output hook fees. amountIn for next hop = amountOut of previous hop (after output fee deduction). Fees compound multiplicatively which reduces attacker's capital each hop. No additive extraction — each hop follows the same invariant checks. Protocol fee validation per-hop prevents under-collection.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundary.t.sol",
+      "repos": ["lbamm-core"],
+      "contracts": ["AMMModule.sol", "LimitBreakAMM.sol"],
+      "keywords": ["multi-hop", "fee", "compounding", "extraction"],
+      "functions": ["multiSwap", "_poolSwapByInput"]
+    },
+    {
+      "vector": "Flash loan fee token denomination mismatch (CP-EXT-001 pattern)",
+      "why_ruled_out": "Flash loan hook can return a different feeToken, but: (1) line 3416 reverts if feeToken is address(0), (2) line 3421 validates the fee token's hook approves the fee via validateFlashloanFee, (3) the balance check at lines 3334-3369 verifies the AMM actually received the correct amounts in the correct tokens. No denomination confusion — each token balance is checked independently.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditCrossBoundary.t.sol",
+      "repos": ["lbamm-core"],
+      "contracts": ["AMMModule.sol"],
+      "keywords": ["flash-loan", "fee-token", "denomination", "mismatch"],
+      "functions": ["_flashLoan", "_executeTokenFlashloanHooks"]
+    }
+  ],
+  "theft_theses": [
+    {
+      "thesis": "Pool type returns inflated amountOut, draining reserves beyond actual liquidity",
+      "victim": "LPs with positions in the pool",
+      "asset": "Pool reserve tokens",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Transfer handler under-delivers tokens during settlement, creating accounting gap exploitable via flash loan",
+      "victim": "AMM protocol (reserve mismatch)",
+      "asset": "Pool tokens",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Stale transient storage from swap A poisons pricing bounds check in swap B within same tx",
+      "victim": "Token creator (pricing bounds bypassed)",
+      "asset": "Token value from trades outside intended price range",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    }
+  ],
+  "metadata": {
+    "num_turns": 20,
+    "tool_uses": 35,
+    "files_read": 25,
+    "tools_run": {
+      "phase0_artifacts": {"read": true},
+      "slither": {"ran": true, "repos": ["lbamm-core", "lbamm-hooks-and-handlers", "amm-pool-type-dynamic"], "high": 8, "medium": 50},
+      "aderyn": {"ran": true, "repos": ["lbamm-core"], "findings": 0, "note": "Crashed on hooks-and-handlers, amm-pool-type-dynamic, lbamm-pool-type-fixed"},
+      "forge_test": {"ran": true, "tests_written": 7, "tests_passed": 7},
+      "chisel": {"ran": false, "reason": "No quick math experiments needed"},
+      "halmos": {"ran": false, "reason": "No math findings to verify"},
+      "medusa": {"ran": false, "reason": "No multi-step sequence findings to verify"},
+      "cast_run": {"ran": false, "reason": "No historical tx to trace"},
+      "heimdall": {"ran": false, "reason": "No unverified deps"},
+      "quimera": {"ran": false, "reason": "No confirmed findings"},
+      "variant_analysis": {"ran": false, "reason": "No confirmed findings"},
+      "audit_context_building": {"ran": false, "reason": "Used manual deep-reading of all 6 boundary interfaces instead"},
+      "entry_point_analyzer": {"ran": false, "reason": "Used Slither list_functions + manual code reading instead"}
+    },
+    "theses_tested": 3,
+    "theses_confirmed": 0,
+    "theses_ruled_out": 3,
+    "lens_coverage": {
+      "lens1_value_tracing": "Traced hook fee computation through _executeSwapHook → _applySwapByInputInputFees → _storeHookFees. Verified denomination consistency at each step. No cross-denomination bug found.",
+      "lens2_paired_op_diffing": "Compared addLiquidity vs removeLiquidity return value handling. Both use same pool type interface. Deposit/withdrawal amounts validated against reserves symmetrically.",
+      "lens3_amplification_factor": "No mismatch found. All fee computations use same token denomination. Pool type returns are validated against reserves in same denomination."
+    }
+  }
+}

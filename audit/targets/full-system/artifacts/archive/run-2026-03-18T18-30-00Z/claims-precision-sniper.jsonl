@@ -1,0 +1,13 @@
+{"agent": "precision-sniper", "type": "ruled_out", "vector": "KV-1: zero-price bypass in validateHandlerOrder", "evidence": "AMMStandardHook.sol:198-226 — self-inflicted, no victim profit path"}
+{"agent": "precision-sniper", "type": "ruled_out", "vector": "KV-2: direct handler call bypass", "evidence": "CLOBTransferHandler.sol:230 — msg.sender == AMM check enforced"}
+{"agent": "precision-sniper", "type": "ruled_out", "vector": "KV-3: settings sync gap", "evidence": "AMMStandardHook.sol:519-525 — push-based cache update via registryUpdateTokenSettings"}
+{"agent": "precision-sniper", "type": "ruled_out", "vector": "KV-4: transient storage leak", "evidence": "AMMStandardHook.sol:839,843 — overwritten each beforeSwap, known FP pattern #1"}
+{"agent": "precision-sniper", "type": "ruled_out", "vector": "H1: tick crossing boundary liquidity mismatch", "evidence": "DynamicHelper.sol:502-511 — wrapping arithmetic correct, Forge test confirms"}
+{"agent": "precision-sniper", "type": "ruled_out", "vector": "H2: fixed height split rounds to zero", "evidence": "FixedHelper.sol:1652-1710 — comprehensive validation guards"}
+{"agent": "precision-sniper", "type": "ruled_out", "vector": "H3: 100% fee asymmetry extraction", "evidence": "SwapMath.sol — intentional: input allows 100%, output caps at 99.99%"}
+{"agent": "precision-sniper", "type": "ruled_out", "vector": "H5: uint128 truncation in _getTokensOwed", "evidence": "DynamicHelper.sol:568-581 — intentional Uniswap V3 design"}
+{"agent": "precision-sniper", "type": "ruled_out", "vector": "H6: division before multiplication in TickMath", "evidence": "Forge fuzz: round-trip within 1 tick for all tested values"}
+{"agent": "precision-sniper", "type": "ruled_out", "vector": "H11: dust-loop extraction via tiny swaps", "evidence": "Forge test C24: 100 1-wei swaps yield 0 output, rounding favors protocol"}
+{"agent": "precision-sniper", "type": "invariant_held", "vector": "INV-SW02: no profitable round-trip", "evidence": "Forge fuzz C23: 25 runs, all confirmed"}
+{"agent": "precision-sniper", "type": "invariant_held", "vector": "INV-SW03: rounding favors protocol", "evidence": "Forge test C24: 100 sequential 1-wei swaps, pool balance stable"}
+{"agent": "precision-sniper", "type": "invariant_held", "vector": "INV-E01: fee monotonicity", "evidence": "Forge fuzz C25: higher feeBPS always yields >= fee amount"}

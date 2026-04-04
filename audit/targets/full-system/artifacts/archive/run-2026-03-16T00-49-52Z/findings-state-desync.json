@@ -1,0 +1,125 @@
+{
+  "agent_name": "state-desync",
+  "wave": 1,
+  "timestamp": "2026-03-15T23:30:00Z",
+  "findings": [],
+  "ruled_out_vectors": [
+    {
+      "id": "KV-1",
+      "title": "SqrtPriceCalculator overflow → zero sqrtPrice bypass",
+      "status": "ruled_out",
+      "hypothesis": "Overflow in computeRatioX96 returns 0, bypassing pricing bounds in validateHandlerOrder",
+      "evidence": "SqrtPriceCalculator.computeRatioX96 returns 0 on uint160 overflow (line 51-52). However, validateHandlerOrder checks minSqrtPriceX96 which catches zero. Even if min=0 were set, CLOB fill price is computed independently of hook validation price — no economic impact.",
+      "contracts": ["AMMStandardHook.sol", "SqrtPriceCalculator.sol"],
+      "tool_used": "manual_review"
+    },
+    {
+      "id": "KV-2",
+      "title": "Transient storage stale read across operations in same tx",
+      "status": "ruled_out",
+      "hypothesis": "DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT persists across swaps, corrupting pricing validation",
+      "evidence": "AMMStandardHook._validatePricingBounds writes to DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT in beforeSwap and reads+clears in afterSwap. The reentrancy guard (SWAP_GUARD_FLAG via nonReentrant) prevents a second swap from entering while the first is active, so stale reads cannot occur within a single tx.",
+      "contracts": ["AMMStandardHook.sol", "AMMModule.sol"],
+      "tool_used": "manual_review"
+    },
+    {
+      "id": "KV-3",
+      "title": "Hook settings cache desync from registry",
+      "status": "ruled_out",
+      "hypothesis": "CreatorHookSettingsRegistry cache becomes stale, allowing bypassed hook enforcement",
+      "evidence": "The registry intentionally allows cache staleness — documented in code comments. Hook settings are always validated at execution time via _enforceTokenHooks in the transfer handler, which reads current settings from AMM storage, not the registry cache. Cache is optimization only.",
+      "contracts": ["CreatorHookSettingsRegistry.sol", "CLOBTransferHandler.sol"],
+      "tool_used": "manual_review"
+    },
+    {
+      "id": "KV-4",
+      "title": "Reentrancy during hook fee distribution via _setReentrancyFlags(NO_FLAGS)",
+      "status": "ruled_out",
+      "hypothesis": "_executeQueuedHookFeesByHookTransfers calls _setReentrancyFlags(NO_FLAGS) which might clear reentrancy protection, allowing reentry during SafeERC20.safeTransfer",
+      "evidence": "TstorishReentrancyGuardWithFlags._setReentrancyFlags strips bits 0-1 from input flags, then preserves the current ENTERED bit (bit 1) via bitwise AND. NO_FLAGS=0 only clears custom flags (bits 2+), ENTERED bit remains set. Verified in source: `uint256 currentGuard = _getTstorish(REENTRANCY_GUARD_STORAGE) & ENTERED; _setTstorish(REENTRANCY_GUARD_STORAGE, currentGuard | flags);`",
+      "contracts": ["AMMModule.sol", "TstorishReentrancyGuardWithFlags.sol"],
+      "tool_used": "manual_review"
+    },
+    {
+      "id": "TM-1",
+      "title": "Re-entry via transfer handler callback during swap",
+      "status": "ruled_out",
+      "hypothesis": "Transfer handler ammHandleTransfer could be called directly to manipulate state mid-swap",
+      "evidence": "CLOBTransferHandler.ammHandleTransfer checks `msg.sender != AMM` and reverts. afterSwapRefund also requires msg.sender == AMM. No external caller can invoke handler callbacks.",
+      "contracts": ["CLOBTransferHandler.sol"],
+      "tool_used": "slither"
+    },
+    {
+      "id": "TM-2",
+      "title": "Multi-swap transient storage overwrite in same tx",
+      "status": "ruled_out",
+      "hypothesis": "Second swap in same tx overwrites transient storage from first swap",
+      "evidence": "nonReentrant modifier with SWAP_GUARD_FLAG prevents concurrent swaps. Each swap fully completes (including afterSwap hook and fee distribution) before the guard is released.",
+      "contracts": ["AMMModule.sol"],
+      "tool_used": "manual_review"
+    },
+    {
+      "id": "TM-3",
+      "title": "Native ETH refund manipulation via depositWrappedNativeAndRefundExcess",
+      "status": "ruled_out",
+      "hypothesis": "Low-level call for ETH refund could be exploited for reentrancy or value extraction",
+      "evidence": "_depositWrappedNativeAndRefundExcess is called within nonReentrant context (ENTERED bit set). The low-level call sends excess ETH back to msg.sender, but reentrancy guard prevents any state manipulation. Amount is strictly `msg.value - requiredAmount`.",
+      "contracts": ["AMMModule.sol"],
+      "tool_used": "manual_review"
+    },
+    {
+      "id": "TM-4",
+      "title": "CLOB settlement reads stale reserves after swap",
+      "status": "ruled_out",
+      "hypothesis": "CLOB handler reads reserves before they are updated by swap, causing incorrect settlement",
+      "evidence": "In _poolSwapByInput, reserves are updated (lines 1443-1451) before _finalizeSwapCollectFundsAndDisburse. The handler's ammHandleTransfer is called during finalization, after reserve update. _collectToken uses strict balance validation (before+amount == after).",
+      "contracts": ["AMMModule.sol", "CLOBTransferHandler.sol"],
+      "tool_used": "manual_review"
+    }
+  ],
+  "theft_theses": [
+    {
+      "id": "TT-1",
+      "title": "Drain pool via reentrancy during hook fee distribution",
+      "status": "ruled_out",
+      "reason": "ENTERED bit preserved by _setReentrancyFlags — KV-4 proves protection holds"
+    },
+    {
+      "id": "TT-2",
+      "title": "Extract value via zero-price CLOB fill",
+      "status": "ruled_out",
+      "reason": "Price validation catches zero — KV-1 proves no bypass path"
+    },
+    {
+      "id": "TT-3",
+      "title": "Steal via direct handler callback invocation",
+      "status": "ruled_out",
+      "reason": "msg.sender == AMM check on all handler entry points — TM-1 proves access control holds"
+    },
+    {
+      "id": "TT-4",
+      "title": "Manipulate settlement via transient storage corruption",
+      "status": "ruled_out",
+      "reason": "Reentrancy guard prevents concurrent operations — TM-2/KV-2 prove isolation"
+    },
+    {
+      "id": "TT-5",
+      "title": "Extract ETH via refund manipulation",
+      "status": "ruled_out",
+      "reason": "Refund amount is strict (msg.value - required), reentrancy blocked — TM-3 proves safety"
+    }
+  ],
+  "metadata": {
+    "tools_used": {
+      "slither": true,
+      "aderyn": "attempted_crashed",
+      "forge_test": true,
+      "halmos": false,
+      "medusa": false
+    },
+    "checklist_items_completed": "A: 4/5, B: 0/3, C: 0/20, D: 4/4, E: 8/8",
+    "total_files_reviewed": 12,
+    "total_hypotheses_investigated": 8,
+    "conclusion": "Codebase is well-hardened against state desync attacks. Reentrancy guards correctly preserve ENTERED bit during flag manipulation. Transient storage isolation enforced by operation-level guards. Handler access control consistently applied. No exploitable findings."
+  }
+}

@@ -1,0 +1,27 @@
+{"phase": "A", "action": "slither", "target": "lbamm-pool-type-fixed", "result": "49 findings, key FP: divide-before-multiply in _increaseHeight/_decreaseHeight"}
+{"phase": "A", "action": "slither", "target": "amm-pool-type-dynamic", "result": "65 findings, standard patterns"}
+{"phase": "A", "action": "slither", "target": "lbamm-core", "result": "30 findings, standard patterns"}
+{"phase": "A", "action": "aderyn", "target": "lbamm-pool-type-fixed", "result": "fatal crash: aderyn_driver/src/compile.rs:78"}
+{"phase": "A", "action": "code_read", "target": "FixedHelper.sol", "result": "19K tokens, identified key subsystems: fee calc, ratio math, height system, price normalization"}
+{"phase": "A", "action": "code_read", "target": "FullMath.sol", "result": "Standard Remco Bloemen mulDiv with 512-bit intermediate"}
+{"phase": "A", "action": "code_read", "target": "Constants.sol", "result": "RATIO_BASE=10^38, Q96=2^96, Q128=2^128, MAX_BPS=10000"}
+{"phase": "A", "action": "code_read", "target": "DataTypes.sol", "result": "All data structures: FixedPoolState, FixedHeightState, FixedHeightInfo, etc."}
+{"phase": "A", "action": "code_read", "target": "FixedPoolType.sol", "result": "Pool creation validates ratio non-zero at line 78-81, stores sqrtPriceX96 at 89-92"}
+{"phase": "B", "action": "audit-context-building", "target": "FixedHelper.sol", "result": "5 core invariants established, trust boundaries mapped"}
+{"phase": "B", "action": "entry-point-analyzer", "target": "FixedPoolType.sol", "result": "5 state-changing entry points identified, all contract-only via diamond proxy"}
+{"phase": "C", "action": "forge_test", "target": "MathDeepDiverWave1Hyp.t.sol", "result": "35 pass, 1 fail-fuzz (normalizePriceToRatio zero ratio)"}
+{"phase": "C", "action": "forge_test", "target": "MathDeepDiverZeroRatio.t.sol", "result": "8 pass, zero ratio boundary at sqrtPrice=7922816251"}
+{"phase": "C", "action": "forge_test", "target": "MathDeepDiverDynamicHyp.t.sol", "result": "17 pass, computeRatioX96 overflow at 10^39, tick monotonicity verified"}
+{"phase": "C", "action": "halmos", "target": "HalmosMathDeepDiverW1.t.sol", "result": "2 pass (fee decomposition, rounding), 2 timeout (round-trip, simplifyRatio)"}
+{"phase": "C", "action": "medusa", "target": "MedusaMathDeepDiver.sol", "result": "318461 calls, 14 tests, 0 failures, 3 property tests passed"}
+{"phase": "D", "action": "hypothesis_test", "target": "H-R5-CP-01", "result": "dismissed (strategic) — snapPrice guard at DynamicHelper.sol:245-246 prevents attack"}
+{"phase": "D", "action": "hypothesis_test", "target": "H-R5-CP-02", "result": "dismissed (strategic) — pool creation takes packedRatio directly, not from normalizePriceToRatio"}
+{"phase": "D", "action": "hypothesis_test", "target": "H-R5-CP-03", "result": "tested — currentHeight cached at line 492 before _removeLiquidity, but second side re-reads. Needs integration PoC."}
+{"phase": "D", "action": "hypothesis_test", "target": "H-R5-CP-04", "result": "tested — 1-wei tolerance at line 1680 bounded, dust-level impact"}
+{"phase": "D", "action": "hypothesis_test", "target": "H-R5-CP-05", "result": "dismissed (strategic) — self-referential tail is design pattern, swap terminates correctly"}
+{"phase": "D", "action": "hypothesis_test", "target": "H-R5-CP-06", "result": "confirmed — computeRatioX96 returns 0 for extreme ratios, stored without validation. Info severity (self-inflicted DoS)."}
+{"phase": "D", "action": "hypothesis_test", "target": "H-R5-CP-07", "result": "dismissed (strategic) — unchecked underflow structurally impossible"}
+{"phase": "D", "action": "hypothesis_test", "target": "H-R5-CP-08", "result": "dismissed (strategic) — uint128 overflow requires 2^127 addLiquidity calls, infeasible"}
+{"phase": "D", "action": "hypothesis_test", "target": "H-R5-CP-09", "result": "tested — excess clipping bounded to 1 wei per swap, fee recalculation preserves totals"}
+{"phase": "D", "action": "hypothesis_test", "target": "H-R5-CP-10", "result": "dismissed (strategic) — depends on H-R5-CP-05 which was dismissed"}
+{"phase": "complete", "action": "sidecar_gate", "result": "ACCEPTED — findings-math-deep-diver.json promoted"}

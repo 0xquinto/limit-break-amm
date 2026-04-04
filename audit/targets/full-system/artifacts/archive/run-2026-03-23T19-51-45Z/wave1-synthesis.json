@@ -1,0 +1,695 @@
+{
+  "wave": 1,
+  "name": "black-hat-offense",
+  "timestamp": "2026-03-23T20:29:31Z",
+  "run_id": "run-2026-03-23T19-51-45Z",
+  "hot_spots": [],
+  "findings": [
+    {
+      "id": "EH-001",
+      "title": "validateHandlerOrder overflow bypass allows handler orders to exceed max pricing bounds",
+      "severity": "medium",
+      "confidence_score": 80,
+      "confidence_deductions": [
+        "-10: requires specific token/pool configuration (max-only bounds, no min bound)",
+        "-10: requires handler integration (CLOB or Permit handler must be active)"
+      ],
+      "status": "confirmed",
+      "category": "price-manipulation",
+      "description": "In AMMStandardHook.validateHandlerOrder (lines 198-226), when computeRatioX96 returns 0 due to uint160 overflow, neither the min nor max pricing bound check triggers. With max-only bounds (minSqrtPriceX96=0, maxSqrtPriceX96>0), an order with an extreme token ratio (amount1 >> amount0 causing overflow) is accepted despite the effective price far exceeding the configured maximum. The function _validatePricingBounds (line 847-849) correctly checks for sqrtPriceX96==0 and reverts, but validateHandlerOrder lacks this check entirely.",
+      "impact": "Token creator who sets max-only pricing bounds to prevent their token from trading at extreme prices gets no protection for handler orders. An attacker can fill handler orders at prices above the intended ceiling. Impact depends on the specific token and max bound \u2014 could range from negligible to significant price manipulation for tokens that rely on max bounds as their primary price safety mechanism.",
+      "proof_sketch": "Integration test at lbamm-hooks-and-handlers/test/AuditExtHijackerOverflow.t.sol:test_validateHandlerOrder_overflowBypassesMaxBound confirms that an order with amountOut=type(uint160).max passes validateHandlerOrder despite max bound set at 1e30. The computeRatioX96 returns 0, and 0 > maxBound evaluates to false.",
+      "victim": "Token creators who rely on max-only pricing bounds for handler orders",
+      "extractable_value": "Variable \u2014 depends on token value and configured max bound. For high-value tokens, could enable significant price ceiling bypass. No direct fund extraction but enables unfavorable fills.",
+      "attack_sequence": [
+        "1. Identify token with max-only pricing bounds (minSqrtPriceX96=0, maxSqrtPriceX96=X) on AMMStandardHook",
+        "2. Create handler order (via CLOB or Permit handler) with amountIn=1 wei and amountOut >= type(uint160).max",
+        "3. computeRatioX96(amountOut, amountIn) overflows uint160, returns 0",
+        "4. validateHandlerOrder checks: min != 0 && 0 < min -> false (skip), max != 0 && 0 > max -> false (pass)",
+        "5. Order is validated and accepted at an effective price far above the configured maximum"
+      ],
+      "test_file": "lbamm-hooks-and-handlers/test/AuditExtHijackerOverflow.t.sol",
+      "test_passes": true,
+      "prerequisites": [
+        "Token must have max-only pricing bounds set (no min bound)",
+        "Token must use a transfer handler (CLOB or Permit) that calls validateHandlerOrder",
+        "Attacker must be able to submit handler orders"
+      ],
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol",
+        "SqrtPriceCalculator.sol"
+      ],
+      "functions": [
+        "computeRatioX96()",
+        "validateHandlerOrder()"
+      ],
+      "lines": {
+        "AMMStandardHook.sol": [
+          198,
+          207,
+          210,
+          211,
+          215,
+          217,
+          218,
+          221,
+          222
+        ],
+        "SqrtPriceCalculator.sol": [
+          28,
+          49,
+          50,
+          51,
+          52,
+          53
+        ]
+      },
+      "keywords": [
+        "overflow",
+        "price-manipulation",
+        "bounds-bypass",
+        "handler-order",
+        "sqrt-price"
+      ],
+      "source_hypothesis": "H-R2-HR-02",
+      "fp_gate": {
+        "location_exists": true,
+        "entry_reachable": true,
+        "no_existing_guard": true,
+        "concrete_attack_path": true,
+        "poc_compiles": true
+      },
+      "kill_gate": {
+        "status": "killed",
+        "gate": "F",
+        "reason": "Dust-level impact: 'negligible'"
+      },
+      "_source_agent": "extension-hijacker",
+      "consensus_count": 2,
+      "contributing_agents": [
+        "extension-hijacker",
+        "state-desync"
+      ],
+      "canonical_id": "HOOK-001"
+    },
+    {
+      "id": "HOOK-004",
+      "title": "Non-token hook fees stored with hash(tokenFor,tokenFor) but withdrawn with hash(tokenFor,tokenFee) - key mismatch locks fees when tokens differ",
+      "severity": "low",
+      "confidence_score": 85,
+      "confidence_deductions": [
+        "Requires hook developer to call collectHookFeesByHook with tokenFor != tokenFee (-15 for self-inflicted)"
+      ],
+      "status": "confirmed",
+      "category": "state-desync",
+      "description": "In AMMModule._storeNonTokenHookFees (line 3018), the storage key uses efficientHash(tokenFor, tokenFor) - the same address appears twice. But _transferHookFeesByHook (line 3125) uses efficientHash(tokenFor, tokenFee). When a hook developer calls collectHookFeesByHook with tokenFor != tokenFee, the withdrawal key doesn't match the storage key, and the fees are permanently locked. The API signature of collectHookFeesByHook(tokenFor, tokenFee, recipient, amount) suggests tokenFor and tokenFee can differ, but for non-token hooks (liquidity/pool hooks) they cannot.",
+      "impact": "Liquidity hook or pool hook fees become permanently non-withdrawable if the hook developer calls collectHookFeesByHook with different tokenFor and tokenFee parameters. The hook must use tokenFor=tokenFee to match the storage key. This is an API design footgun with potential for permanent fund lock.",
+      "proof_sketch": "1. Pool swap generates fees for liquidityHook. 2. _storeNonTokenHookFees(hook, token0, feeAmount) stores at key=hash(hook, hash(token0, token0)). 3. Hook calls collectHookFeesByHook(token0, token1, recipient, amount). 4. _transferHookFeesByHook computes key=hash(hook, hash(token0, token1)) - DIFFERENT key. 5. Lookup returns 0, underflow revert. Fees locked.",
+      "victim": "Hook developer whose fees are permanently locked due to API misuse",
+      "extractable_value": "No direct extraction - permanent fund lock for the hook",
+      "attack_sequence": [
+        "_storeNonTokenHookFees(hook, token0, 100e18) stores fees at hash(hook, hash(token0, token0))",
+        "Hook calls collectHookFeesByHook(token0, token1, recipient, 100e18)",
+        "_transferHookFeesByHook computes key = hash(hook, hash(token0, token1))",
+        "Key mismatch: lookup returns 0, subtraction underflows, revert",
+        "Fees permanently locked - no code path can recover them"
+      ],
+      "test_file": "lbamm-hooks-and-handlers/test/AuditStateDesyncWave1.t.sol",
+      "test_passes": true,
+      "prerequisites": [
+        "Liquidity or pool hook that accumulates fees",
+        "Hook developer calls collectHookFeesByHook with tokenFor != tokenFee"
+      ],
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_storeNonTokenHookFees()",
+        "_transferHookFeesByHook()",
+        "collectHookFeesByHook()"
+      ],
+      "lines": {
+        "AMMModule.sol": [
+          3011,
+          3016,
+          3017,
+          3018,
+          3116,
+          3123,
+          3124,
+          3125
+        ]
+      },
+      "keywords": [
+        "hash-key-mismatch",
+        "fund-lock",
+        "hook-fees",
+        "non-token-hook"
+      ],
+      "source_hypothesis": "H-R2-CH-11",
+      "fp_gate": {
+        "location_exists": true,
+        "entry_reachable": true,
+        "no_existing_guard": true,
+        "concrete_attack_path": true,
+        "poc_compiles": true
+      },
+      "kill_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      },
+      "_source_agent": "state-desync",
+      "consensus_count": 1,
+      "contributing_agents": [
+        "state-desync"
+      ],
+      "canonical_id": "CORE-002"
+    }
+  ],
+  "contradictions": [
+    {
+      "finding_id": "EH-001",
+      "finding_agent": "extension-hijacker",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "auth-forger",
+      "shared_contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "match_reason": "functions: ['validateHandlerOrder()']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "EH-001",
+      "finding_agent": "extension-hijacker",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "auth-forger",
+      "shared_contracts": [
+        "AMMStandardHook.sol",
+        "SqrtPriceCalculator.sol"
+      ],
+      "match_reason": "functions: ['computeRatioX96()', 'validateHandlerOrder()']; keywords: ['overflow']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "EH-001",
+      "finding_agent": "extension-hijacker",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "auth-forger",
+      "shared_contracts": [
+        "SqrtPriceCalculator.sol"
+      ],
+      "match_reason": "functions: ['computeRatioX96()']; keywords: ['overflow']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "EH-001",
+      "finding_agent": "extension-hijacker",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "math-deep-diver",
+      "shared_contracts": [
+        "SqrtPriceCalculator.sol"
+      ],
+      "match_reason": "functions: ['computeRatioX96()']; keywords: ['overflow']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "EH-001",
+      "finding_agent": "extension-hijacker",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "math-deep-diver",
+      "shared_contracts": [
+        "SqrtPriceCalculator.sol"
+      ],
+      "match_reason": "functions: ['computeRatioX96()']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "EH-001",
+      "finding_agent": "extension-hijacker",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "composability-exploiter",
+      "shared_contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "match_reason": "functions: ['validateHandlerOrder()']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "EH-001",
+      "finding_agent": "extension-hijacker",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "price-distorter",
+      "shared_contracts": [
+        "SqrtPriceCalculator.sol"
+      ],
+      "match_reason": "keywords: ['overflow', 'sqrt-price']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "EH-001",
+      "finding_agent": "extension-hijacker",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "price-distorter",
+      "shared_contracts": [
+        "SqrtPriceCalculator.sol"
+      ],
+      "match_reason": "keywords: ['overflow']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "EH-001",
+      "finding_agent": "extension-hijacker",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "insolvency-engineer",
+      "shared_contracts": [
+        "AMMStandardHook.sol",
+        "SqrtPriceCalculator.sol"
+      ],
+      "match_reason": "functions: ['computeRatioX96()', 'validateHandlerOrder()']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "EH-001",
+      "finding_agent": "extension-hijacker",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "insolvency-engineer",
+      "shared_contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "match_reason": "functions: ['validateHandlerOrder()']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "EH-001",
+      "finding_agent": "extension-hijacker",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "extension-hijacker",
+      "shared_contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "match_reason": "functions: ['validateHandlerOrder()']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "EH-001",
+      "finding_agent": "extension-hijacker",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "extension-hijacker",
+      "shared_contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "match_reason": "keywords: ['overflow']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "EH-001",
+      "finding_agent": "extension-hijacker",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "extension-hijacker",
+      "shared_contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "match_reason": "functions: ['validateHandlerOrder()']; keywords: ['price-manipulation']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "HOOK-004",
+      "finding_agent": "state-desync",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "state-desync",
+      "shared_contracts": [
+        "AMMModule.sol"
+      ],
+      "match_reason": "functions: ['collectHookFeesByHook()']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "HOOK-004",
+      "finding_agent": "state-desync",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "cross-boundary",
+      "shared_contracts": [
+        "AMMModule.sol"
+      ],
+      "match_reason": "functions: ['_storeNonTokenHookFees()', '_transferHookFeesByHook()']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "HOOK-004",
+      "finding_agent": "state-desync",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "cross-boundary",
+      "shared_contracts": [
+        "AMMModule.sol"
+      ],
+      "match_reason": "functions: ['collectHookFeesByHook()']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "HOOK-004",
+      "finding_agent": "state-desync",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "composability-exploiter",
+      "shared_contracts": [
+        "AMMModule.sol"
+      ],
+      "match_reason": "functions: ['collectHookFeesByHook()']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "HOOK-004",
+      "finding_agent": "state-desync",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "composability-exploiter",
+      "shared_contracts": [
+        "AMMModule.sol"
+      ],
+      "match_reason": "functions: ['_storeNonTokenHookFees()', '_transferHookFeesByHook()']; keywords: ['hook-fees']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "HOOK-004",
+      "finding_agent": "state-desync",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "composability-exploiter",
+      "shared_contracts": [
+        "AMMModule.sol"
+      ],
+      "match_reason": "keywords: ['hook-fees']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "HOOK-004",
+      "finding_agent": "state-desync",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "composability-exploiter",
+      "shared_contracts": [
+        "AMMModule.sol"
+      ],
+      "match_reason": "functions: ['collectHookFeesByHook()']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "HOOK-004",
+      "finding_agent": "state-desync",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "insolvency-engineer",
+      "shared_contracts": [
+        "AMMModule.sol"
+      ],
+      "match_reason": "functions: ['_transferHookFeesByHook()', 'collectHookFeesByHook()']; keywords: ['hook-fees']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "HOOK-004",
+      "finding_agent": "state-desync",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "insolvency-engineer",
+      "shared_contracts": [
+        "AMMModule.sol"
+      ],
+      "match_reason": "functions: ['_storeNonTokenHookFees()', '_transferHookFeesByHook()']; keywords: ['hook-fees']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "HOOK-004",
+      "finding_agent": "state-desync",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "insolvency-engineer",
+      "shared_contracts": [
+        "AMMModule.sol"
+      ],
+      "match_reason": "keywords: ['hook-fees']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "HOOK-004",
+      "finding_agent": "state-desync",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "extension-hijacker",
+      "shared_contracts": [
+        "AMMModule.sol"
+      ],
+      "match_reason": "functions: ['collectHookFeesByHook()']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    },
+    {
+      "finding_id": "HOOK-004",
+      "finding_agent": "state-desync",
+      "ruled_out_id": "?",
+      "ruled_out_agent": "extension-hijacker",
+      "shared_contracts": [
+        "AMMModule.sol"
+      ],
+      "match_reason": "keywords: ['hook-fees']",
+      "note": "REVIEW REQUIRED: one agent found a vulnerability where another ruled it out"
+    }
+  ],
+  "ruled_out_count": 212,
+  "invariants_formalized": [],
+  "tool_coverage_warnings": [
+    "TOOL_COVERAGE: precision-sniper (precision-math-sniper) did NOT run audit_context_building \u2014 reason: no reason given",
+    "TOOL_COVERAGE: precision-sniper (precision-math-sniper) did NOT run entry_point_analyzer \u2014 reason: no reason given",
+    "TOOL_COVERAGE: precision-sniper (precision-math-sniper) did not report on conditional tool sharp_edges \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: precision-sniper (precision-math-sniper) did not report on conditional tool token_integration_analyzer \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: state-desync (State Desync Operator) did NOT run audit_context_building \u2014 reason: no reason given",
+    "TOOL_COVERAGE: state-desync (State Desync Operator) did NOT run entry_point_analyzer \u2014 reason: no reason given",
+    "TOOL_COVERAGE: state-desync (State Desync Operator) did not report on conditional tool sharp_edges \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: state-desync (State Desync Operator) did not report on conditional tool token_integration_analyzer \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: auth-forger (Authorization & Settlement Forger) did NOT run audit_context_building \u2014 reason: no reason given",
+    "TOOL_COVERAGE: auth-forger (Authorization & Settlement Forger) did NOT run entry_point_analyzer \u2014 reason: no reason given",
+    "TOOL_COVERAGE: auth-forger (Authorization & Settlement Forger) did not report on conditional tool sharp_edges \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: auth-forger (Authorization & Settlement Forger) did not report on conditional tool token_integration_analyzer \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: math-deep-diver (Math Deep-Diver) did NOT run audit_context_building \u2014 reason: no reason given",
+    "TOOL_COVERAGE: math-deep-diver (Math Deep-Diver) did NOT run entry_point_analyzer \u2014 reason: no reason given",
+    "TOOL_COVERAGE: math-deep-diver (Math Deep-Diver) did not report on conditional tool sharp_edges \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: math-deep-diver (Math Deep-Diver) did not report on conditional tool token_integration_analyzer \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: cross-boundary (cross-boundary) did NOT run audit_context_building \u2014 reason: no reason given",
+    "TOOL_COVERAGE: cross-boundary (cross-boundary) did NOT run entry_point_analyzer \u2014 reason: no reason given",
+    "TOOL_COVERAGE: cross-boundary (cross-boundary) did not report on conditional tool sharp_edges \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: cross-boundary (cross-boundary) did not report on conditional tool token_integration_analyzer \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: composability-exploiter (composability-exploiter) did NOT run audit_context_building \u2014 reason: no reason given",
+    "TOOL_COVERAGE: composability-exploiter (composability-exploiter) did NOT run entry_point_analyzer \u2014 reason: no reason given",
+    "TOOL_COVERAGE: composability-exploiter (composability-exploiter) did not report on conditional tool sharp_edges \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: composability-exploiter (composability-exploiter) did not report on conditional tool token_integration_analyzer \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: price-distorter (Cross-Venue Price Distorter) did NOT run audit_context_building \u2014 reason: no reason given",
+    "TOOL_COVERAGE: price-distorter (Cross-Venue Price Distorter) did NOT run entry_point_analyzer \u2014 reason: no reason given",
+    "TOOL_COVERAGE: price-distorter (Cross-Venue Price Distorter) did not report on conditional tool sharp_edges \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: price-distorter (Cross-Venue Price Distorter) did not report on conditional tool token_integration_analyzer \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: insolvency-engineer (Insolvency Engineer \u2014 find ways to leave the protocol with bad debt while extracting good assets) did NOT run audit_context_building \u2014 reason: no reason given",
+    "TOOL_COVERAGE: insolvency-engineer (Insolvency Engineer \u2014 find ways to leave the protocol with bad debt while extracting good assets) did NOT run entry_point_analyzer \u2014 reason: no reason given",
+    "TOOL_COVERAGE: insolvency-engineer (Insolvency Engineer \u2014 find ways to leave the protocol with bad debt while extracting good assets) did not report on conditional tool sharp_edges \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: insolvency-engineer (Insolvency Engineer \u2014 find ways to leave the protocol with bad debt while extracting good assets) did not report on conditional tool token_integration_analyzer \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: extension-hijacker (Extension Hijacker \u2014 boundary crossing, proxy/diamond, hook trust model) did NOT run audit_context_building \u2014 reason: no reason given",
+    "TOOL_COVERAGE: extension-hijacker (Extension Hijacker \u2014 boundary crossing, proxy/diamond, hook trust model) did NOT run entry_point_analyzer \u2014 reason: no reason given",
+    "TOOL_COVERAGE: extension-hijacker (Extension Hijacker \u2014 boundary crossing, proxy/diamond, hook trust model) did not report on conditional tool sharp_edges \u2014 add to tools_run with ran=false and reason if not applicable",
+    "TOOL_COVERAGE: extension-hijacker (Extension Hijacker \u2014 boundary crossing, proxy/diamond, hook trust model) did not report on conditional tool token_integration_analyzer \u2014 add to tools_run with ran=false and reason if not applicable",
+    "LENS_COVERAGE: precision-sniper (precision-math-sniper) has no lens_coverage in metadata \u2014 likely did NOT apply value lifecycle lenses",
+    "LENS_COVERAGE: state-desync (State Desync Operator) has no lens_coverage in metadata \u2014 likely did NOT apply value lifecycle lenses",
+    "LENS_COVERAGE: auth-forger (Authorization & Settlement Forger) has no lens_coverage in metadata \u2014 likely did NOT apply value lifecycle lenses",
+    "LENS_COVERAGE: math-deep-diver (Math Deep-Diver) has no lens_coverage in metadata \u2014 likely did NOT apply value lifecycle lenses",
+    "LENS_COVERAGE: cross-boundary (cross-boundary) has no lens_coverage in metadata \u2014 likely did NOT apply value lifecycle lenses",
+    "LENS_COVERAGE: composability-exploiter (composability-exploiter) has no lens_coverage in metadata \u2014 likely did NOT apply value lifecycle lenses",
+    "LENS_COVERAGE: price-distorter (Cross-Venue Price Distorter) has no lens_coverage in metadata \u2014 likely did NOT apply value lifecycle lenses",
+    "LENS_COVERAGE: insolvency-engineer (Insolvency Engineer \u2014 find ways to leave the protocol with bad debt while extracting good assets) has no lens_coverage in metadata \u2014 likely did NOT apply value lifecycle lenses",
+    "LENS_COVERAGE: extension-hijacker (Extension Hijacker \u2014 boundary crossing, proxy/diamond, hook trust model) has no lens_coverage in metadata \u2014 likely did NOT apply value lifecycle lenses"
+  ],
+  "exploit_clusters": [
+    {
+      "primitive": "callback_exploitation",
+      "boundary": "cross_contract:AMMStandardHook.sol+SqrtPriceCalculator.sol",
+      "asset": "Token creators who rely on max-only pricing bounds for handler orders",
+      "findings": [
+        {
+          "id": "EH-001",
+          "title": "validateHandlerOrder overflow bypass allows handler orders to exceed max pricing bounds",
+          "severity": "medium",
+          "confidence_score": 80,
+          "confidence_deductions": [
+            "-10: requires specific token/pool configuration (max-only bounds, no min bound)",
+            "-10: requires handler integration (CLOB or Permit handler must be active)"
+          ],
+          "status": "confirmed",
+          "category": "price-manipulation",
+          "description": "In AMMStandardHook.validateHandlerOrder (lines 198-226), when computeRatioX96 returns 0 due to uint160 overflow, neither the min nor max pricing bound check triggers. With max-only bounds (minSqrtPriceX96=0, maxSqrtPriceX96>0), an order with an extreme token ratio (amount1 >> amount0 causing overflow) is accepted despite the effective price far exceeding the configured maximum. The function _validatePricingBounds (line 847-849) correctly checks for sqrtPriceX96==0 and reverts, but validateHandlerOrder lacks this check entirely.",
+          "impact": "Token creator who sets max-only pricing bounds to prevent their token from trading at extreme prices gets no protection for handler orders. An attacker can fill handler orders at prices above the intended ceiling. Impact depends on the specific token and max bound \u2014 could range from negligible to significant price manipulation for tokens that rely on max bounds as their primary price safety mechanism.",
+          "proof_sketch": "Integration test at lbamm-hooks-and-handlers/test/AuditExtHijackerOverflow.t.sol:test_validateHandlerOrder_overflowBypassesMaxBound confirms that an order with amountOut=type(uint160).max passes validateHandlerOrder despite max bound set at 1e30. The computeRatioX96 returns 0, and 0 > maxBound evaluates to false.",
+          "victim": "Token creators who rely on max-only pricing bounds for handler orders",
+          "extractable_value": "Variable \u2014 depends on token value and configured max bound. For high-value tokens, could enable significant price ceiling bypass. No direct fund extraction but enables unfavorable fills.",
+          "attack_sequence": [
+            "1. Identify token with max-only pricing bounds (minSqrtPriceX96=0, maxSqrtPriceX96=X) on AMMStandardHook",
+            "2. Create handler order (via CLOB or Permit handler) with amountIn=1 wei and amountOut >= type(uint160).max",
+            "3. computeRatioX96(amountOut, amountIn) overflows uint160, returns 0",
+            "4. validateHandlerOrder checks: min != 0 && 0 < min -> false (skip), max != 0 && 0 > max -> false (pass)",
+            "5. Order is validated and accepted at an effective price far above the configured maximum"
+          ],
+          "test_file": "lbamm-hooks-and-handlers/test/AuditExtHijackerOverflow.t.sol",
+          "test_passes": true,
+          "prerequisites": [
+            "Token must have max-only pricing bounds set (no min bound)",
+            "Token must use a transfer handler (CLOB or Permit) that calls validateHandlerOrder",
+            "Attacker must be able to submit handler orders"
+          ],
+          "repos": [
+            "lbamm-hooks-and-handlers"
+          ],
+          "contracts": [
+            "AMMStandardHook.sol",
+            "SqrtPriceCalculator.sol"
+          ],
+          "functions": [
+            "computeRatioX96()",
+            "validateHandlerOrder()"
+          ],
+          "lines": {
+            "AMMStandardHook.sol": [
+              198,
+              207,
+              210,
+              211,
+              215,
+              217,
+              218,
+              221,
+              222
+            ],
+            "SqrtPriceCalculator.sol": [
+              28,
+              49,
+              50,
+              51,
+              52,
+              53
+            ]
+          },
+          "keywords": [
+            "overflow",
+            "price-manipulation",
+            "bounds-bypass",
+            "handler-order",
+            "sqrt-price"
+          ],
+          "source_hypothesis": "H-R2-HR-02",
+          "fp_gate": {
+            "location_exists": true,
+            "entry_reachable": true,
+            "no_existing_guard": true,
+            "concrete_attack_path": true,
+            "poc_compiles": true
+          },
+          "kill_gate": {
+            "status": "killed",
+            "gate": "F",
+            "reason": "Dust-level impact: 'negligible'"
+          },
+          "_source_agent": "extension-hijacker",
+          "consensus_count": 2,
+          "contributing_agents": [
+            "extension-hijacker",
+            "state-desync"
+          ],
+          "canonical_id": "HOOK-001"
+        }
+      ],
+      "agent_count": 1,
+      "max_confidence": 30,
+      "has_test": true
+    },
+    {
+      "primitive": "callback_exploitation",
+      "boundary": "single_contract",
+      "asset": "Hook developer whose fees are permanently locked due to API misuse",
+      "findings": [
+        {
+          "id": "HOOK-004",
+          "title": "Non-token hook fees stored with hash(tokenFor,tokenFor) but withdrawn with hash(tokenFor,tokenFee) - key mismatch locks fees when tokens differ",
+          "severity": "low",
+          "confidence_score": 85,
+          "confidence_deductions": [
+            "Requires hook developer to call collectHookFeesByHook with tokenFor != tokenFee (-15 for self-inflicted)"
+          ],
+          "status": "confirmed",
+          "category": "state-desync",
+          "description": "In AMMModule._storeNonTokenHookFees (line 3018), the storage key uses efficientHash(tokenFor, tokenFor) - the same address appears twice. But _transferHookFeesByHook (line 3125) uses efficientHash(tokenFor, tokenFee). When a hook developer calls collectHookFeesByHook with tokenFor != tokenFee, the withdrawal key doesn't match the storage key, and the fees are permanently locked. The API signature of collectHookFeesByHook(tokenFor, tokenFee, recipient, amount) suggests tokenFor and tokenFee can differ, but for non-token hooks (liquidity/pool hooks) they cannot.",
+          "impact": "Liquidity hook or pool hook fees become permanently non-withdrawable if the hook developer calls collectHookFeesByHook with different tokenFor and tokenFee parameters. The hook must use tokenFor=tokenFee to match the storage key. This is an API design footgun with potential for permanent fund lock.",
+          "proof_sketch": "1. Pool swap generates fees for liquidityHook. 2. _storeNonTokenHookFees(hook, token0, feeAmount) stores at key=hash(hook, hash(token0, token0)). 3. Hook calls collectHookFeesByHook(token0, token1, recipient, amount). 4. _transferHookFeesByHook computes key=hash(hook, hash(token0, token1)) - DIFFERENT key. 5. Lookup returns 0, underflow revert. Fees locked.",
+          "victim": "Hook developer whose fees are permanently locked due to API misuse",
+          "extractable_value": "No direct extraction - permanent fund lock for the hook",
+          "attack_sequence": [
+            "_storeNonTokenHookFees(hook, token0, 100e18) stores fees at hash(hook, hash(token0, token0))",
+            "Hook calls collectHookFeesByHook(token0, token1, recipient, 100e18)",
+            "_transferHookFeesByHook computes key = hash(hook, hash(token0, token1))",
+            "Key mismatch: lookup returns 0, subtraction underflows, revert",
+            "Fees permanently locked - no code path can recover them"
+          ],
+          "test_file": "lbamm-hooks-and-handlers/test/AuditStateDesyncWave1.t.sol",
+          "test_passes": true,
+          "prerequisites": [
+            "Liquidity or pool hook that accumulates fees",
+            "Hook developer calls collectHookFeesByHook with tokenFor != tokenFee"
+          ],
+          "repos": [
+            "lbamm-core"
+          ],
+          "contracts": [
+            "AMMModule.sol"
+          ],
+          "functions": [
+            "_storeNonTokenHookFees()",
+            "_transferHookFeesByHook()",
+            "collectHookFeesByHook()"
+          ],
+          "lines": {
+            "AMMModule.sol": [
+              3011,
+              3016,
+              3017,
+              3018,
+              3116,
+              3123,
+              3124,
+              3125
+            ]
+          },
+          "keywords": [
+            "hash-key-mismatch",
+            "fund-lock",
+            "hook-fees",
+            "non-token-hook"
+          ],
+          "source_hypothesis": "H-R2-CH-11",
+          "fp_gate": {
+            "location_exists": true,
+            "entry_reachable": true,
+            "no_existing_guard": true,
+            "concrete_attack_path": true,
+            "poc_compiles": true
+          },
+          "kill_gate": {
+            "status": "passed",
+            "gate": null,
+            "reason": null
+          },
+          "_source_agent": "state-desync",
+          "consensus_count": 1,
+          "contributing_agents": [
+            "state-desync"
+          ],
+          "canonical_id": "CORE-002"
+        }
+      ],
+      "agent_count": 1,
+      "max_confidence": 30,
+      "has_test": true
+    }
+  ],
+  "claims": [],
+  "corroborated_theses": []
+}

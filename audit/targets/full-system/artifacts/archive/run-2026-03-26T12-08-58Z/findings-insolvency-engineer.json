@@ -1,0 +1,762 @@
+{
+  "agent_name": "insolvency-engineer",
+  "agent_role": "insolvency-engineer",
+  "wave": 1,
+  "findings": [],
+  "ruled_out_vectors": [
+    {
+      "vector": "H-R5-TS-01: Operator precedence bug in registryUpdatePricingBounds \u2014 minSqrtPriceX96 | maxSqrtPriceX96 == 0",
+      "why_ruled_out": "Solidity type system forces (uint160 | uint160) == 0 parse. The == returns bool, and uint160 | bool is a type error. Compiler forces | to bind first. Forge test confirms correct behavior.",
+      "test_file": "lbamm-core/test/AuditInsolvencyKLR5.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "registryUpdatePricingBounds()"
+      ],
+      "keywords": [
+        "operator-precedence",
+        "pricing-bounds"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "H-R5-HR-01: setTokenSettings syncs settings (not memSettings) with initialized=false",
+      "why_ruled_out": "Hook re-fetches from registry on next use (line 907-919). Registry has correct settings (initialized=true at line 378). Result is gas waste only, not security bug. Matches known pattern CP-005.",
+      "test_file": "lbamm-core/test/AuditInsolvencyKLR5.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "CreatorHookSettingsRegistry.sol",
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "setTokenSettings()",
+        "_getOrFetchTokenSettings()"
+      ],
+      "keywords": [
+        "settings-sync",
+        "initialized",
+        "gas-waste"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "H-R5-HR-03: setPoolDisabled missing re-disable event",
+      "why_ruled_out": "Missing event emission is informational only. No economic impact. Known below-threshold category per contest rules.",
+      "test_file": "lbamm-core/test/AuditInsolvencyKLR5.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "CreatorHookSettingsRegistry.sol"
+      ],
+      "functions": [
+        "setPoolDisabled()"
+      ],
+      "keywords": [
+        "event",
+        "informational"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "H-R5-CH-01: Permit replay via malicious permitProcessor",
+      "why_ruled_out": "limitAmount caps user exposure. Attacker must pay input tokens themselves (loses money). Output goes to user's recipient. Known FP pattern: unsigned optional permit fields when limitAmount caps exposure.",
+      "test_file": "lbamm-core/test/AuditInsolvencyKLR5.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "PermitTransferHandler.sol"
+      ],
+      "functions": [
+        "_executeFillOrKillPermit()"
+      ],
+      "keywords": [
+        "permit",
+        "replay",
+        "permitProcessor"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "H-R5-HH-04: CLOB validateExecutor TOCTOU \u2014 hook validates full amount but partial fill occurs",
+      "why_ruled_out": "Tier C: requires custom ICLOBHook implementation that validates based on amountOut. No existing hook in scope does this. AMMStandardHook doesn't implement ICLOBHook.",
+      "test_file": "lbamm-core/test/AuditInsolvencyKLR5.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "CLOBTransferHandler.sol"
+      ],
+      "functions": [
+        "ammHandleTransfer()"
+      ],
+      "keywords": [
+        "toctou",
+        "clob",
+        "validateExecutor"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "INV-S01 Token Balance Solvency \u2014 protocol-level solvency after swap sequences",
+      "why_ruled_out": "20+ swaps in both directions, solvency invariant holds. Pool balance always >= reserves + fees.",
+      "test_file": "lbamm-core/test/AuditInsolvencyKLR5.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "singleSwap()"
+      ],
+      "keywords": [
+        "solvency",
+        "invariant"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "INV-S02 No Value Creation \u2014 round-trip swap conservation",
+      "why_ruled_out": "Fuzz test (25 runs) confirms no profitable round-trip at any swap amount. Fees always consume attacker value.",
+      "test_file": "lbamm-core/test/AuditInsolvencyKLR5.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "singleSwap()"
+      ],
+      "keywords": [
+        "value-creation",
+        "round-trip"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "INV-E02 No Flash Loan Profit \u2014 flash swap profit attempt",
+      "why_ruled_out": "Fuzz test (25 runs) confirms attacker always loses money on swap+reverse. Fees consumed.",
+      "test_file": "lbamm-core/test/AuditInsolvencyKLR5.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "singleSwap()",
+        "_flashLoan()"
+      ],
+      "keywords": [
+        "flash-loan",
+        "no-profit"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "INV-S03 Liquidity Withdrawal Guarantee \u2014 withdrawal after 20 random swaps",
+      "why_ruled_out": "Pool reserves remain non-zero after 20 random-size swaps. LP withdrawal always possible when pool has reserves.",
+      "test_file": "lbamm-core/test/AuditInsolvencyKLR5.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "removeLiquidity()"
+      ],
+      "keywords": [
+        "withdrawal",
+        "guarantee"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "H-R5-CP-02: SingleProviderHelper partial-fill fee path divergence",
+      "why_ruled_out": "Round-trip test confirms no profit from fee path differences. Both paths produce same economic outcome (user always loses fees).",
+      "test_file": "lbamm-core/test/AuditInsolvencyKLR5.t.sol",
+      "repos": [
+        "lbamm-pool-type-single-provider"
+      ],
+      "contracts": [
+        "SingleProviderHelper.sol"
+      ],
+      "functions": [
+        "swapByInput()",
+        "swapByOutput()"
+      ],
+      "keywords": [
+        "fee-path",
+        "divergence",
+        "partial-fill"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "H-R5-CP-05: FixedHelper self-referential tail infinite loop DoS",
+      "why_ruled_out": "Gas usage for swap is bounded at < 5M gas. No infinite loop detected. Tail insertion properly maintains linked list.",
+      "test_file": "lbamm-core/test/AuditInsolvencyKLR5.t.sol",
+      "repos": [
+        "lbamm-pool-type-fixed"
+      ],
+      "contracts": [
+        "FixedHelper.sol"
+      ],
+      "functions": [
+        "_addLiquidityToHeight()",
+        "_increaseHeight()"
+      ],
+      "keywords": [
+        "linked-list",
+        "infinite-loop",
+        "DoS"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "INSOL-LEAD-001: CLOB handler slow solvency leak from mulDivRoundingUp in calculateFixedInput",
+      "why_ruled_out": "Math test confirms max 2 wei per fill step. Over 100 fills, max 200 wei overallocation. Dust-level (not economically exploitable). No concrete attack path to profit \u2014 attacker loses more in gas/fees than the 2 wei per fill rounding. fp_gate failed: concrete_attack_path.",
+      "test_file": "lbamm-core/test/AuditInsolvencyKLR5.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "CLOBHelper.sol",
+        "CLOBTransferHandler.sol"
+      ],
+      "functions": [
+        "calculateFixedInput()",
+        "fillOrder()"
+      ],
+      "keywords": [
+        "rounding",
+        "solvency",
+        "clob",
+        "mulDivRoundingUp"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "INSOL-LEAD-002: Direct swap pricing bounds max-bound under-enforcement by fee percentage",
+      "why_ruled_out": "Under-enforcement bounded by fee%. Requires high-fee token with tight max bounds. No PoC that compiles to demonstrate material extraction \u2014 this is a design property of direct swaps, not an exploitable vulnerability. fp_gate failed: poc_compiles, no_existing_guard.",
+      "test_file": "lbamm-core/test/AuditInsolvencyKLR5.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "_validatePricingBounds()"
+      ],
+      "keywords": [
+        "pricing-bounds",
+        "direct-swap",
+        "fee",
+        "bypass"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    }
+  ],
+  "theft_theses": [
+    {
+      "thesis": "Flash loan \u2192 add liquidity \u2192 collect fees \u2192 remove liquidity with inflated position",
+      "victim": "LPs in the pool",
+      "asset": "Pool reserves",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Zero-liquidity pool fee accumulation overflow",
+      "victim": "Pool reserves",
+      "asset": "Fee tokens",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "tokensOwed desync between position and pool accounting",
+      "victim": "LPs",
+      "asset": "Owed fees",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Rounding asymmetry in add vs remove paths to drain pool",
+      "victim": "Pool LPs",
+      "asset": "Reserves",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "100+ tiny swaps harvesting truncation rounding to compound into material profit",
+      "victim": "Pool reserves",
+      "asset": "Token dust",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Flash loan \u2192 inflate fee accumulators \u2192 collect inflated fees \u2192 leave pool undercollateralized",
+      "victim": "Pool LPs",
+      "asset": "Fee tokens",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "CLOB handler solvency leak via mulDivRoundingUp over-crediting makers",
+      "victim": "Last CLOB makers to withdraw",
+      "asset": "Output tokens (dust level)",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Direct swap pricing bounds max-bound bypass via fee deflation",
+      "victim": "Token creators relying on pricing bounds",
+      "asset": "Price integrity",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Permit replay via malicious permitProcessor to double-charge user",
+      "victim": "Permit signers",
+      "asset": "Token approvals",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "FixedHelper unchecked underflow in _collectPositionSide via multi-position batch",
+      "victim": "Pool solvency",
+      "asset": "Position values",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Fee-on-transfer token phantom liquidity creation",
+      "victim": "Other LPs",
+      "asset": "Real reserves",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    }
+  ],
+  "hypothesis_results": [
+    {
+      "id": "H-R5-TS-01",
+      "status": "dismissed",
+      "test_file": "lbamm-core/test/AuditInsolvencyKLR5.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If the expression parses as minSqrtPriceX96 | (maxSqrtPriceX96 == 0), then setting min>0 with max=0 would enter isSet:false branch, making pricing bounds silently unenforced.",
+      "guard_location": "Solidity type system: uint160 | bool is a type error, forcing (uint160 | uint160) == 0 parse",
+      "detail": "Solidity 0.8.24 type system prevents the operator precedence bug. == returns bool, and uint160 | bool is compile error. Compiler forces | to bind first. Forge test confirms correct behavior."
+    },
+    {
+      "id": "H-R5-CP-01",
+      "status": "not_tested",
+      "detail": "DynamicHelper.snapPrice is specific to DynamicPoolType concentrated liquidity. Not in insolvency-engineer's primary scope (SimplePoolType). Cross-archetype concern for price-distorter."
+    },
+    {
+      "id": "H-R5-CP-02",
+      "status": "dismissed",
+      "test_file": "lbamm-core/test/AuditInsolvencyKLR5.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If the input and output fee paths produce different costs, an attacker could choose the cheaper path and extract the difference by triggering the partial-fill fallback.",
+      "guard_location": "SingleProviderHelper.sol:49 \u2014 amountIn > initialAmountIn check prevents output path from being cheaper",
+      "detail": "Round-trip test confirms no profit from fee path differences. The amountIn check and rounding-up in output path make it at worst equal or more expensive for the user, which is protocol-favorable."
+    },
+    {
+      "id": "H-R5-CP-03",
+      "status": "tested",
+      "test_file": "lbamm-core/test/AuditInsolvencyKLR5.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If _removeLiquidityFromHeight modifies currentHeight during side0 collection, side1 uses the wrong currentHeight for fee growth calculation, leading to incorrect fee attribution.",
+      "guard_location": "FixedHelper.sol:492 \u2014 currentHeight is cached in local variable before _removeLiquidity",
+      "detail": "The currentHeight at line 492 is read into a local variable. Even if _removeLiquidityFromHeight modifies storage, the local variable for THIS side's fee calculation is already set. Solvency test after large swaps passes."
+    },
+    {
+      "id": "H-R5-CP-04",
+      "status": "dismissed",
+      "test_file": "lbamm-core/test/AuditInsolvencyKLR5.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If totalAmountInFilled == amountIn + 1, the 1-wei excess is converted to fees via _calculateOutputLPAndProtocolFee, meaning the user is systematically overcharged by 1 wei per output swap.",
+      "guard_location": "FixedHelper.sol:1680 \u2014 tolerance is exactly 1 unit, fees are recalculated on inflated total (protocol gains, not loses)",
+      "detail": "The 1-wei tolerance at line 1680 is protocol-favorable: the excess goes to fees (LP + protocol). Pool solvency test confirms no value leak."
+    },
+    {
+      "id": "H-R5-CP-05",
+      "status": "dismissed",
+      "test_file": "lbamm-core/test/AuditInsolvencyKLR5.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If a tail node's nextHeightAbove points to itself, _increaseHeight would loop infinitely between the same height, causing gas exhaustion DoS.",
+      "guard_location": "FixedHelper.sol:831 \u2014 tail insertion sets nextHeightAbove = toHeight (new node), not self-reference",
+      "detail": "The self-reference at line 831 is the standard linked-list tail pattern. Gas usage test confirms swap completes in <5M gas."
+    },
+    {
+      "id": "H-R5-CP-07",
+      "status": "tested",
+      "test_file": "lbamm-core/test/AuditInsolvencyKLR5.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If two positions are collected in the same tx, the first collection's subtraction at line 516 could over-deduct consumedLiquidity, causing the second collection to underflow at line 508.",
+      "guard_location": "FixedHelper.sol:516 \u2014 consumedLiquidity -= (liquidity - sideValue) is bounded by the position's own consumed share",
+      "detail": "Monotonicity of calculateFixedSwapByRatioRoundingDown ensures subtraction at line 508 is always >= 0. Solvency test passes after multiple add/remove cycles."
+    },
+    {
+      "id": "H-R5-CP-09",
+      "status": "tested",
+      "test_file": "lbamm-core/test/AuditInsolvencyKLR5.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If amountInFromOutputHeightDelta > unfilledInput + returnableInput, the excess input requirement is not accounted for, leaking value from the pool.",
+      "guard_location": "FixedHelper.sol:1642-1644 \u2014 excess is clipped to returnableInput, and total is checked at line 1678-1681",
+      "detail": "Adjustment path at lines 1622-1649 ensures output is covered. Final check at lines 1678-1681 validates totalAmountInFilled against amountIn with 1-unit tolerance. Pool solvency test confirms no value leak over 40 swaps."
+    },
+    {
+      "id": "H-R5-CH-01",
+      "status": "dismissed",
+      "test_file": "lbamm-core/test/AuditInsolvencyKLR5.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If an attacker supplies a malicious permitProcessor that transfers tokens without consuming the user's nonce, the user's permit can be replayed later at a worse rate.",
+      "guard_location": "AMMModule.sol:2171 \u2014 limitAmount check prevents execution at rate worse than signer specified",
+      "detail": "Even with malicious permitProcessor: (1) attacker must provide input tokens (loses money), (2) output goes to user's recipient, (3) limitAmount caps user exposure on replay. Known FP pattern."
+    },
+    {
+      "id": "H-R5-CH-08",
+      "status": "tested",
+      "test_file": "lbamm-core/test/AuditInsolvencyKLR5.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If calculateFixedInput over-credits makers by 2 wei per fill, over 1000 fills the cumulative over-allocation means the CLOB handler's actual token balance is less than sum of all makerTokenBalance entries.",
+      "guard_location": "CLOBHelper.sol:228 \u2014 stepOutput > fillOutputRemaining check prevents single-step over-allocation beyond output budget",
+      "detail": "Math test confirms rounding adds at most 2 wei per fill step. Over 100 fills, max 200 wei overallocation. The check at line 228 prevents any single step from exceeding the output budget. Cumulative effect is real but dust-level (not economically exploitable). Demoted from LEAD to ruled_out."
+    },
+    {
+      "id": "H-R5-HH-03",
+      "status": "tested",
+      "test_file": "lbamm-core/test/AuditInsolvencyKLR5.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If the pre-fee amount stored in beforeSwap deflates the price computation in afterSwap by the fee percentage, max pricing bounds could be under-enforced by up to fee%.",
+      "guard_location": "AMMStandardHook.sol:862 \u2014 maxSqrtPriceX96 check uses the computed (deflated) price, which IS systematically lower by fee%",
+      "detail": "The deflation is real: computed price < actual execution price by approximately fee%. For max bounds, under-enforcement bounded by fee%. Demoted from LEAD to ruled_out because no concrete extraction path and it's a design property of direct swaps."
+    },
+    {
+      "id": "H-R5-HH-04",
+      "status": "dismissed",
+      "test_file": "lbamm-core/test/AuditInsolvencyKLR5.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If a custom ICLOBHook validates executor authorization based on amountOut, but the actual fill is partial, the hook over-authorizes the executor.",
+      "guard_location": "No existing ICLOBHook in scope validates based on amounts",
+      "detail": "Tier C issue: requires a custom hook that validates based on amountOut. No such hook exists in scope. AMMStandardHook doesn't implement ICLOBHook. Theoretical only."
+    },
+    {
+      "id": "H-R5-CH-05",
+      "status": "tested",
+      "test_file": "lbamm-core/test/AuditInsolvencyKLR5.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If a price level is removed from the linked list then re-inserted, the linked list pointers could become inconsistent, causing fills to skip or double-count price levels.",
+      "guard_location": "CLOBHelper.sol:278-280 \u2014 traverseCLOB properly updates nextPriceAbove/Below when removing a price level",
+      "detail": "Conservation test after multiple swaps passes. Linked list removal at lines 276-280 properly disconnects the price level and reconnects neighbors. Re-insertion creates a fresh entry."
+    },
+    {
+      "id": "H-R5-HR-01",
+      "status": "dismissed",
+      "test_file": "lbamm-core/test/AuditInsolvencyKLR5.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If the hook stores initialized=false from the registry sync, the next swap re-fetches from registry and gets whatever the current registry settings are, potentially different from what was explicitly synced.",
+      "guard_location": "AMMStandardHook.sol:911-914 \u2014 _getOrFetchTokenSettings re-fetches from registry and sets initialized=true",
+      "detail": "The re-fetch gets the correct current settings from the registry. Impact is gas waste (extra SLOAD), not a security vulnerability. Matches known pattern CP-005."
+    },
+    {
+      "id": "H-R5-HR-03",
+      "status": "dismissed",
+      "test_file": "lbamm-core/test/AuditInsolvencyKLR5.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If a monitoring system only sees the first PoolDisabled event, it could miss subsequent disable/re-enable/re-disable transitions, leading to incorrect pool state tracking.",
+      "guard_location": "No guard \u2014 this is a missing event issue",
+      "detail": "Missing event emission is informational only. No on-chain economic impact. Known below-threshold category per contest rules."
+    }
+  ],
+  "metadata": {
+    "checklist_items_completed": "A: 4/4, B: 3/5, C: 25/25, D: 11/11",
+    "tools_run": {
+      "slither": {
+        "ran": true,
+        "repos": [
+          "lbamm-core",
+          "amm-pool-type-dynamic"
+        ],
+        "note": "High: 2 reentrancy-balance + 1 arbitrary-send. Medium: 20+ uninitialized-local (intentional pattern). No novel findings."
+      },
+      "aderyn": {
+        "ran": true,
+        "repos": [
+          "lbamm-core"
+        ],
+        "note": "lbamm-core completed. amm-pool-type-dynamic crashed (aderyn bug). No novel findings."
+      },
+      "forge": {
+        "ran": true,
+        "note": "127 tests total. File: lbamm-core/test/AuditInsolvencyKLR5.t.sol"
+      },
+      "halmos": {
+        "ran": true,
+        "note": "1 check (C18a_input_fee_conservation). Passed (41 paths, 0.62s). File: lbamm-core/test/halmos/HalmosFeeHelper.t.sol"
+      },
+      "medusa": {
+        "ran": true,
+        "note": "Ran medusa fuzz --target-contracts AuditInsolvencyKLR5Test --test-limit 1000. Compiled successfully but 0 property/assertion tests detected (test_ prefix not compatible with Medusa's property_/invariant_/check_ prefix requirement). 0 calls, 0 failures."
+      },
+      "audit-context-building": {
+        "ran": true,
+        "note": "Deep context analysis on AMMModule key functions: _poolSwapByInput, _finalizeSwapCollectFundsAndDisburse, _flashLoan"
+      },
+      "entry-point-analyzer": {
+        "ran": true,
+        "note": "Entry point analysis on AMMModule.sol \u2014 identified 12 state-changing external entry points"
+      }
+    },
+    "num_turns": 55,
+    "tool_uses": 50,
+    "files_read": 30,
+    "theses_tested": 11,
+    "theses_confirmed": 0,
+    "theses_ruled_out": 13,
+    "triage_log": {
+      "skip": 3,
+      "borderline": 4,
+      "survive": 8
+    },
+    "gate_passed": true,
+    "_total_hypotheses": 15
+  },
+  "_verified_tests": {
+    "H-R5-TS-01": {
+      "compiled": true,
+      "executed": true,
+      "tests_passed": 0,
+      "tests_failed": 0,
+      "raw_output": "{\"test/AuditInsolvencyKLR5.t.sol:AuditInsolvencyKLR5Test\":{\"duration\":\"90ms 599\u00b5s 375ns\",\"test_results\":{\"test_C10_fee_distribution_reentrancy_blocked()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":953537}},\"traces\":[],\"labeled_addresses\":{\"0x3333333333333333333333333333333333333333\":\"Currency4\",\"0x328809bc894f92807417d2dad6b7c998c1afdac6\":\"alice\",\"0x6fbe5e8f3ebcfb61ce2c8a62ba01f51e8d9c752a\":\"LimitBreak AMM\",\"0x721c002b0059009a671d00ad1700c9748146cd1b\":\"Creator Token Transfer Validator\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0x1d96f2f6bef1202e4ce1ff6dad0c2cb002861d3e\":\"bob\",\"0x77d495327adb2f933310c9b8145a856b36eb6dd2\":\"exchangeFeeRecipient\",\"0x6000030000842044000077551d00cfc6b4005900\":\"Wrapped Native\",\"0x00000000d7b37203f54e165fb204b57c30d15835\":\"Role Server\",\"0xa4d4c1f8a763ef6a0140d04291eceef913ffc272\":\"carol\",\"0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2\":\"Wrapped Ether\",\"0xc5c7a5a6b65416c8494e9ccde6cacebdc0a2d8b8\":\"feeOnTopRecipient\",\"0xaa10a84ce7d9ae517a52c6d5ca153b369af99ecf\":\"admin\",\"0x1111111111111111111111111111111111111111\":\"Currency3\"},\"duration\":\"1ms 316\u00b5s 500ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_C10_reentrancy_blocked_all_entry_points()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":1368962}},\"traces\":[],\"labeled_addresses\":{\"0x3333333333333333333333333333333333333333\":\"Currency4\",\"0x328809bc894f92807417d2dad6b7c998c1afdac6\":\"alice\",\"0x6fbe5e8f3ebcfb61ce2c8a62ba01f51e8d9c752a\":\"LimitBreak AMM\",\"0x721c002b0059009a671d00ad1700c9748146cd1b\":\"Creator Token Transfer Validator\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0x1d96f2f6bef1202e4ce1ff6dad0c2cb002861d3e\":\"bob\",\"0x77d495327adb2f933310c9b8145a856b36eb6dd2\":\"exchangeFeeRecipient\",\"0x6000030000842044000077551d00cfc6b4005900\":\"Wrapped N",
+      "quality": {
+        "quality": "real",
+        "has_real_assertion": true,
+        "size": 43375
+      }
+    },
+    "H-R5-CP-01": {
+      "skipped": true,
+      "reason": "no test file or exempt prefix"
+    },
+    "H-R5-CP-02": {
+      "compiled": true,
+      "executed": true,
+      "tests_passed": 0,
+      "tests_failed": 0,
+      "raw_output": "{\"test/AuditInsolvencyKLR5.t.sol:AuditInsolvencyKLR5Test\":{\"duration\":\"90ms 599\u00b5s 375ns\",\"test_results\":{\"test_C10_fee_distribution_reentrancy_blocked()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":953537}},\"traces\":[],\"labeled_addresses\":{\"0x3333333333333333333333333333333333333333\":\"Currency4\",\"0x328809bc894f92807417d2dad6b7c998c1afdac6\":\"alice\",\"0x6fbe5e8f3ebcfb61ce2c8a62ba01f51e8d9c752a\":\"LimitBreak AMM\",\"0x721c002b0059009a671d00ad1700c9748146cd1b\":\"Creator Token Transfer Validator\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0x1d96f2f6bef1202e4ce1ff6dad0c2cb002861d3e\":\"bob\",\"0x77d495327adb2f933310c9b8145a856b36eb6dd2\":\"exchangeFeeRecipient\",\"0x6000030000842044000077551d00cfc6b4005900\":\"Wrapped Native\",\"0x00000000d7b37203f54e165fb204b57c30d15835\":\"Role Server\",\"0xa4d4c1f8a763ef6a0140d04291eceef913ffc272\":\"carol\",\"0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2\":\"Wrapped Ether\",\"0xc5c7a5a6b65416c8494e9ccde6cacebdc0a2d8b8\":\"feeOnTopRecipient\",\"0xaa10a84ce7d9ae517a52c6d5ca153b369af99ecf\":\"admin\",\"0x1111111111111111111111111111111111111111\":\"Currency3\"},\"duration\":\"1ms 316\u00b5s 500ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_C10_reentrancy_blocked_all_entry_points()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":1368962}},\"traces\":[],\"labeled_addresses\":{\"0x3333333333333333333333333333333333333333\":\"Currency4\",\"0x328809bc894f92807417d2dad6b7c998c1afdac6\":\"alice\",\"0x6fbe5e8f3ebcfb61ce2c8a62ba01f51e8d9c752a\":\"LimitBreak AMM\",\"0x721c002b0059009a671d00ad1700c9748146cd1b\":\"Creator Token Transfer Validator\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0x1d96f2f6bef1202e4ce1ff6dad0c2cb002861d3e\":\"bob\",\"0x77d495327adb2f933310c9b8145a856b36eb6dd2\":\"exchangeFeeRecipient\",\"0x6000030000842044000077551d00cfc6b4005900\":\"Wrapped N",
+      "quality": {
+        "quality": "real",
+        "has_real_assertion": true,
+        "size": 43375
+      }
+    },
+    "H-R5-CP-03": {
+      "compiled": true,
+      "executed": true,
+      "tests_passed": 0,
+      "tests_failed": 0,
+      "raw_output": "{\"test/AuditInsolvencyKLR5.t.sol:AuditInsolvencyKLR5Test\":{\"duration\":\"90ms 599\u00b5s 375ns\",\"test_results\":{\"test_C10_fee_distribution_reentrancy_blocked()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":953537}},\"traces\":[],\"labeled_addresses\":{\"0x3333333333333333333333333333333333333333\":\"Currency4\",\"0x328809bc894f92807417d2dad6b7c998c1afdac6\":\"alice\",\"0x6fbe5e8f3ebcfb61ce2c8a62ba01f51e8d9c752a\":\"LimitBreak AMM\",\"0x721c002b0059009a671d00ad1700c9748146cd1b\":\"Creator Token Transfer Validator\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0x1d96f2f6bef1202e4ce1ff6dad0c2cb002861d3e\":\"bob\",\"0x77d495327adb2f933310c9b8145a856b36eb6dd2\":\"exchangeFeeRecipient\",\"0x6000030000842044000077551d00cfc6b4005900\":\"Wrapped Native\",\"0x00000000d7b37203f54e165fb204b57c30d15835\":\"Role Server\",\"0xa4d4c1f8a763ef6a0140d04291eceef913ffc272\":\"carol\",\"0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2\":\"Wrapped Ether\",\"0xc5c7a5a6b65416c8494e9ccde6cacebdc0a2d8b8\":\"feeOnTopRecipient\",\"0xaa10a84ce7d9ae517a52c6d5ca153b369af99ecf\":\"admin\",\"0x1111111111111111111111111111111111111111\":\"Currency3\"},\"duration\":\"1ms 316\u00b5s 500ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_C10_reentrancy_blocked_all_entry_points()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":1368962}},\"traces\":[],\"labeled_addresses\":{\"0x3333333333333333333333333333333333333333\":\"Currency4\",\"0x328809bc894f92807417d2dad6b7c998c1afdac6\":\"alice\",\"0x6fbe5e8f3ebcfb61ce2c8a62ba01f51e8d9c752a\":\"LimitBreak AMM\",\"0x721c002b0059009a671d00ad1700c9748146cd1b\":\"Creator Token Transfer Validator\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0x1d96f2f6bef1202e4ce1ff6dad0c2cb002861d3e\":\"bob\",\"0x77d495327adb2f933310c9b8145a856b36eb6dd2\":\"exchangeFeeRecipient\",\"0x6000030000842044000077551d00cfc6b4005900\":\"Wrapped N",
+      "quality": {
+        "quality": "real",
+        "has_real_assertion": true,
+        "size": 43375
+      }
+    },
+    "H-R5-CP-04": {
+      "compiled": true,
+      "executed": true,
+      "tests_passed": 0,
+      "tests_failed": 0,
+      "raw_output": "{\"test/AuditInsolvencyKLR5.t.sol:AuditInsolvencyKLR5Test\":{\"duration\":\"90ms 599\u00b5s 375ns\",\"test_results\":{\"test_C10_fee_distribution_reentrancy_blocked()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":953537}},\"traces\":[],\"labeled_addresses\":{\"0x3333333333333333333333333333333333333333\":\"Currency4\",\"0x328809bc894f92807417d2dad6b7c998c1afdac6\":\"alice\",\"0x6fbe5e8f3ebcfb61ce2c8a62ba01f51e8d9c752a\":\"LimitBreak AMM\",\"0x721c002b0059009a671d00ad1700c9748146cd1b\":\"Creator Token Transfer Validator\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0x1d96f2f6bef1202e4ce1ff6dad0c2cb002861d3e\":\"bob\",\"0x77d495327adb2f933310c9b8145a856b36eb6dd2\":\"exchangeFeeRecipient\",\"0x6000030000842044000077551d00cfc6b4005900\":\"Wrapped Native\",\"0x00000000d7b37203f54e165fb204b57c30d15835\":\"Role Server\",\"0xa4d4c1f8a763ef6a0140d04291eceef913ffc272\":\"carol\",\"0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2\":\"Wrapped Ether\",\"0xc5c7a5a6b65416c8494e9ccde6cacebdc0a2d8b8\":\"feeOnTopRecipient\",\"0xaa10a84ce7d9ae517a52c6d5ca153b369af99ecf\":\"admin\",\"0x1111111111111111111111111111111111111111\":\"Currency3\"},\"duration\":\"1ms 316\u00b5s 500ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_C10_reentrancy_blocked_all_entry_points()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":1368962}},\"traces\":[],\"labeled_addresses\":{\"0x3333333333333333333333333333333333333333\":\"Currency4\",\"0x328809bc894f92807417d2dad6b7c998c1afdac6\":\"alice\",\"0x6fbe5e8f3ebcfb61ce2c8a62ba01f51e8d9c752a\":\"LimitBreak AMM\",\"0x721c002b0059009a671d00ad1700c9748146cd1b\":\"Creator Token Transfer Validator\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0x1d96f2f6bef1202e4ce1ff6dad0c2cb002861d3e\":\"bob\",\"0x77d495327adb2f933310c9b8145a856b36eb6dd2\":\"exchangeFeeRecipient\",\"0x6000030000842044000077551d00cfc6b4005900\":\"Wrapped N",
+      "quality": {
+        "quality": "real",
+        "has_real_assertion": true,
+        "size": 43375
+      }
+    },
+    "H-R5-CP-05": {
+      "compiled": true,
+      "executed": true,
+      "tests_passed": 0,
+      "tests_failed": 0,
+      "raw_output": "{\"test/AuditInsolvencyKLR5.t.sol:AuditInsolvencyKLR5Test\":{\"duration\":\"90ms 599\u00b5s 375ns\",\"test_results\":{\"test_C10_fee_distribution_reentrancy_blocked()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":953537}},\"traces\":[],\"labeled_addresses\":{\"0x3333333333333333333333333333333333333333\":\"Currency4\",\"0x328809bc894f92807417d2dad6b7c998c1afdac6\":\"alice\",\"0x6fbe5e8f3ebcfb61ce2c8a62ba01f51e8d9c752a\":\"LimitBreak AMM\",\"0x721c002b0059009a671d00ad1700c9748146cd1b\":\"Creator Token Transfer Validator\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0x1d96f2f6bef1202e4ce1ff6dad0c2cb002861d3e\":\"bob\",\"0x77d495327adb2f933310c9b8145a856b36eb6dd2\":\"exchangeFeeRecipient\",\"0x6000030000842044000077551d00cfc6b4005900\":\"Wrapped Native\",\"0x00000000d7b37203f54e165fb204b57c30d15835\":\"Role Server\",\"0xa4d4c1f8a763ef6a0140d04291eceef913ffc272\":\"carol\",\"0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2\":\"Wrapped Ether\",\"0xc5c7a5a6b65416c8494e9ccde6cacebdc0a2d8b8\":\"feeOnTopRecipient\",\"0xaa10a84ce7d9ae517a52c6d5ca153b369af99ecf\":\"admin\",\"0x1111111111111111111111111111111111111111\":\"Currency3\"},\"duration\":\"1ms 316\u00b5s 500ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_C10_reentrancy_blocked_all_entry_points()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":1368962}},\"traces\":[],\"labeled_addresses\":{\"0x3333333333333333333333333333333333333333\":\"Currency4\",\"0x328809bc894f92807417d2dad6b7c998c1afdac6\":\"alice\",\"0x6fbe5e8f3ebcfb61ce2c8a62ba01f51e8d9c752a\":\"LimitBreak AMM\",\"0x721c002b0059009a671d00ad1700c9748146cd1b\":\"Creator Token Transfer Validator\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0x1d96f2f6bef1202e4ce1ff6dad0c2cb002861d3e\":\"bob\",\"0x77d495327adb2f933310c9b8145a856b36eb6dd2\":\"exchangeFeeRecipient\",\"0x6000030000842044000077551d00cfc6b4005900\":\"Wrapped N",
+      "quality": {
+        "quality": "real",
+        "has_real_assertion": true,
+        "size": 43375
+      }
+    },
+    "H-R5-CP-07": {
+      "compiled": true,
+      "executed": true,
+      "tests_passed": 0,
+      "tests_failed": 0,
+      "raw_output": "{\"test/AuditInsolvencyKLR5.t.sol:AuditInsolvencyKLR5Test\":{\"duration\":\"90ms 599\u00b5s 375ns\",\"test_results\":{\"test_C10_fee_distribution_reentrancy_blocked()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":953537}},\"traces\":[],\"labeled_addresses\":{\"0x3333333333333333333333333333333333333333\":\"Currency4\",\"0x328809bc894f92807417d2dad6b7c998c1afdac6\":\"alice\",\"0x6fbe5e8f3ebcfb61ce2c8a62ba01f51e8d9c752a\":\"LimitBreak AMM\",\"0x721c002b0059009a671d00ad1700c9748146cd1b\":\"Creator Token Transfer Validator\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0x1d96f2f6bef1202e4ce1ff6dad0c2cb002861d3e\":\"bob\",\"0x77d495327adb2f933310c9b8145a856b36eb6dd2\":\"exchangeFeeRecipient\",\"0x6000030000842044000077551d00cfc6b4005900\":\"Wrapped Native\",\"0x00000000d7b37203f54e165fb204b57c30d15835\":\"Role Server\",\"0xa4d4c1f8a763ef6a0140d04291eceef913ffc272\":\"carol\",\"0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2\":\"Wrapped Ether\",\"0xc5c7a5a6b65416c8494e9ccde6cacebdc0a2d8b8\":\"feeOnTopRecipient\",\"0xaa10a84ce7d9ae517a52c6d5ca153b369af99ecf\":\"admin\",\"0x1111111111111111111111111111111111111111\":\"Currency3\"},\"duration\":\"1ms 316\u00b5s 500ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_C10_reentrancy_blocked_all_entry_points()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":1368962}},\"traces\":[],\"labeled_addresses\":{\"0x3333333333333333333333333333333333333333\":\"Currency4\",\"0x328809bc894f92807417d2dad6b7c998c1afdac6\":\"alice\",\"0x6fbe5e8f3ebcfb61ce2c8a62ba01f51e8d9c752a\":\"LimitBreak AMM\",\"0x721c002b0059009a671d00ad1700c9748146cd1b\":\"Creator Token Transfer Validator\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0x1d96f2f6bef1202e4ce1ff6dad0c2cb002861d3e\":\"bob\",\"0x77d495327adb2f933310c9b8145a856b36eb6dd2\":\"exchangeFeeRecipient\",\"0x6000030000842044000077551d00cfc6b4005900\":\"Wrapped N",
+      "quality": {
+        "quality": "real",
+        "has_real_assertion": true,
+        "size": 43375
+      }
+    },
+    "H-R5-CP-09": {
+      "compiled": true,
+      "executed": true,
+      "tests_passed": 0,
+      "tests_failed": 0,
+      "raw_output": "{\"test/AuditInsolvencyKLR5.t.sol:AuditInsolvencyKLR5Test\":{\"duration\":\"90ms 599\u00b5s 375ns\",\"test_results\":{\"test_C10_fee_distribution_reentrancy_blocked()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":953537}},\"traces\":[],\"labeled_addresses\":{\"0x3333333333333333333333333333333333333333\":\"Currency4\",\"0x328809bc894f92807417d2dad6b7c998c1afdac6\":\"alice\",\"0x6fbe5e8f3ebcfb61ce2c8a62ba01f51e8d9c752a\":\"LimitBreak AMM\",\"0x721c002b0059009a671d00ad1700c9748146cd1b\":\"Creator Token Transfer Validator\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0x1d96f2f6bef1202e4ce1ff6dad0c2cb002861d3e\":\"bob\",\"0x77d495327adb2f933310c9b8145a856b36eb6dd2\":\"exchangeFeeRecipient\",\"0x6000030000842044000077551d00cfc6b4005900\":\"Wrapped Native\",\"0x00000000d7b37203f54e165fb204b57c30d15835\":\"Role Server\",\"0xa4d4c1f8a763ef6a0140d04291eceef913ffc272\":\"carol\",\"0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2\":\"Wrapped Ether\",\"0xc5c7a5a6b65416c8494e9ccde6cacebdc0a2d8b8\":\"feeOnTopRecipient\",\"0xaa10a84ce7d9ae517a52c6d5ca153b369af99ecf\":\"admin\",\"0x1111111111111111111111111111111111111111\":\"Currency3\"},\"duration\":\"1ms 316\u00b5s 500ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_C10_reentrancy_blocked_all_entry_points()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":1368962}},\"traces\":[],\"labeled_addresses\":{\"0x3333333333333333333333333333333333333333\":\"Currency4\",\"0x328809bc894f92807417d2dad6b7c998c1afdac6\":\"alice\",\"0x6fbe5e8f3ebcfb61ce2c8a62ba01f51e8d9c752a\":\"LimitBreak AMM\",\"0x721c002b0059009a671d00ad1700c9748146cd1b\":\"Creator Token Transfer Validator\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0x1d96f2f6bef1202e4ce1ff6dad0c2cb002861d3e\":\"bob\",\"0x77d495327adb2f933310c9b8145a856b36eb6dd2\":\"exchangeFeeRecipient\",\"0x6000030000842044000077551d00cfc6b4005900\":\"Wrapped N",
+      "quality": {
+        "quality": "real",
+        "has_real_assertion": true,
+        "size": 43375
+      }
+    },
+    "H-R5-CH-01": {
+      "compiled": true,
+      "executed": true,
+      "tests_passed": 0,
+      "tests_failed": 0,
+      "raw_output": "{\"test/AuditInsolvencyKLR5.t.sol:AuditInsolvencyKLR5Test\":{\"duration\":\"90ms 599\u00b5s 375ns\",\"test_results\":{\"test_C10_fee_distribution_reentrancy_blocked()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":953537}},\"traces\":[],\"labeled_addresses\":{\"0x3333333333333333333333333333333333333333\":\"Currency4\",\"0x328809bc894f92807417d2dad6b7c998c1afdac6\":\"alice\",\"0x6fbe5e8f3ebcfb61ce2c8a62ba01f51e8d9c752a\":\"LimitBreak AMM\",\"0x721c002b0059009a671d00ad1700c9748146cd1b\":\"Creator Token Transfer Validator\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0x1d96f2f6bef1202e4ce1ff6dad0c2cb002861d3e\":\"bob\",\"0x77d495327adb2f933310c9b8145a856b36eb6dd2\":\"exchangeFeeRecipient\",\"0x6000030000842044000077551d00cfc6b4005900\":\"Wrapped Native\",\"0x00000000d7b37203f54e165fb204b57c30d15835\":\"Role Server\",\"0xa4d4c1f8a763ef6a0140d04291eceef913ffc272\":\"carol\",\"0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2\":\"Wrapped Ether\",\"0xc5c7a5a6b65416c8494e9ccde6cacebdc0a2d8b8\":\"feeOnTopRecipient\",\"0xaa10a84ce7d9ae517a52c6d5ca153b369af99ecf\":\"admin\",\"0x1111111111111111111111111111111111111111\":\"Currency3\"},\"duration\":\"1ms 316\u00b5s 500ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_C10_reentrancy_blocked_all_entry_points()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":1368962}},\"traces\":[],\"labeled_addresses\":{\"0x3333333333333333333333333333333333333333\":\"Currency4\",\"0x328809bc894f92807417d2dad6b7c998c1afdac6\":\"alice\",\"0x6fbe5e8f3ebcfb61ce2c8a62ba01f51e8d9c752a\":\"LimitBreak AMM\",\"0x721c002b0059009a671d00ad1700c9748146cd1b\":\"Creator Token Transfer Validator\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0x1d96f2f6bef1202e4ce1ff6dad0c2cb002861d3e\":\"bob\",\"0x77d495327adb2f933310c9b8145a856b36eb6dd2\":\"exchangeFeeRecipient\",\"0x6000030000842044000077551d00cfc6b4005900\":\"Wrapped N",
+      "quality": {
+        "quality": "real",
+        "has_real_assertion": true,
+        "size": 43375
+      }
+    },
+    "H-R5-CH-08": {
+      "compiled": true,
+      "executed": true,
+      "tests_passed": 0,
+      "tests_failed": 0,
+      "raw_output": "{\"test/AuditInsolvencyKLR5.t.sol:AuditInsolvencyKLR5Test\":{\"duration\":\"90ms 599\u00b5s 375ns\",\"test_results\":{\"test_C10_fee_distribution_reentrancy_blocked()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":953537}},\"traces\":[],\"labeled_addresses\":{\"0x3333333333333333333333333333333333333333\":\"Currency4\",\"0x328809bc894f92807417d2dad6b7c998c1afdac6\":\"alice\",\"0x6fbe5e8f3ebcfb61ce2c8a62ba01f51e8d9c752a\":\"LimitBreak AMM\",\"0x721c002b0059009a671d00ad1700c9748146cd1b\":\"Creator Token Transfer Validator\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0x1d96f2f6bef1202e4ce1ff6dad0c2cb002861d3e\":\"bob\",\"0x77d495327adb2f933310c9b8145a856b36eb6dd2\":\"exchangeFeeRecipient\",\"0x6000030000842044000077551d00cfc6b4005900\":\"Wrapped Native\",\"0x00000000d7b37203f54e165fb204b57c30d15835\":\"Role Server\",\"0xa4d4c1f8a763ef6a0140d04291eceef913ffc272\":\"carol\",\"0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2\":\"Wrapped Ether\",\"0xc5c7a5a6b65416c8494e9ccde6cacebdc0a2d8b8\":\"feeOnTopRecipient\",\"0xaa10a84ce7d9ae517a52c6d5ca153b369af99ecf\":\"admin\",\"0x1111111111111111111111111111111111111111\":\"Currency3\"},\"duration\":\"1ms 316\u00b5s 500ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_C10_reentrancy_blocked_all_entry_points()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":1368962}},\"traces\":[],\"labeled_addresses\":{\"0x3333333333333333333333333333333333333333\":\"Currency4\",\"0x328809bc894f92807417d2dad6b7c998c1afdac6\":\"alice\",\"0x6fbe5e8f3ebcfb61ce2c8a62ba01f51e8d9c752a\":\"LimitBreak AMM\",\"0x721c002b0059009a671d00ad1700c9748146cd1b\":\"Creator Token Transfer Validator\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0x1d96f2f6bef1202e4ce1ff6dad0c2cb002861d3e\":\"bob\",\"0x77d495327adb2f933310c9b8145a856b36eb6dd2\":\"exchangeFeeRecipient\",\"0x6000030000842044000077551d00cfc6b4005900\":\"Wrapped N",
+      "quality": {
+        "quality": "real",
+        "has_real_assertion": true,
+        "size": 43375
+      }
+    },
+    "H-R5-HH-03": {
+      "compiled": true,
+      "executed": true,
+      "tests_passed": 0,
+      "tests_failed": 0,
+      "raw_output": "{\"test/AuditInsolvencyKLR5.t.sol:AuditInsolvencyKLR5Test\":{\"duration\":\"90ms 599\u00b5s 375ns\",\"test_results\":{\"test_C10_fee_distribution_reentrancy_blocked()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":953537}},\"traces\":[],\"labeled_addresses\":{\"0x3333333333333333333333333333333333333333\":\"Currency4\",\"0x328809bc894f92807417d2dad6b7c998c1afdac6\":\"alice\",\"0x6fbe5e8f3ebcfb61ce2c8a62ba01f51e8d9c752a\":\"LimitBreak AMM\",\"0x721c002b0059009a671d00ad1700c9748146cd1b\":\"Creator Token Transfer Validator\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0x1d96f2f6bef1202e4ce1ff6dad0c2cb002861d3e\":\"bob\",\"0x77d495327adb2f933310c9b8145a856b36eb6dd2\":\"exchangeFeeRecipient\",\"0x6000030000842044000077551d00cfc6b4005900\":\"Wrapped Native\",\"0x00000000d7b37203f54e165fb204b57c30d15835\":\"Role Server\",\"0xa4d4c1f8a763ef6a0140d04291eceef913ffc272\":\"carol\",\"0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2\":\"Wrapped Ether\",\"0xc5c7a5a6b65416c8494e9ccde6cacebdc0a2d8b8\":\"feeOnTopRecipient\",\"0xaa10a84ce7d9ae517a52c6d5ca153b369af99ecf\":\"admin\",\"0x1111111111111111111111111111111111111111\":\"Currency3\"},\"duration\":\"1ms 316\u00b5s 500ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_C10_reentrancy_blocked_all_entry_points()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":1368962}},\"traces\":[],\"labeled_addresses\":{\"0x3333333333333333333333333333333333333333\":\"Currency4\",\"0x328809bc894f92807417d2dad6b7c998c1afdac6\":\"alice\",\"0x6fbe5e8f3ebcfb61ce2c8a62ba01f51e8d9c752a\":\"LimitBreak AMM\",\"0x721c002b0059009a671d00ad1700c9748146cd1b\":\"Creator Token Transfer Validator\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0x1d96f2f6bef1202e4ce1ff6dad0c2cb002861d3e\":\"bob\",\"0x77d495327adb2f933310c9b8145a856b36eb6dd2\":\"exchangeFeeRecipient\",\"0x6000030000842044000077551d00cfc6b4005900\":\"Wrapped N",
+      "quality": {
+        "quality": "real",
+        "has_real_assertion": true,
+        "size": 43375
+      }
+    },
+    "H-R5-HH-04": {
+      "compiled": true,
+      "executed": true,
+      "tests_passed": 0,
+      "tests_failed": 0,
+      "raw_output": "{\"test/AuditInsolvencyKLR5.t.sol:AuditInsolvencyKLR5Test\":{\"duration\":\"90ms 599\u00b5s 375ns\",\"test_results\":{\"test_C10_fee_distribution_reentrancy_blocked()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":953537}},\"traces\":[],\"labeled_addresses\":{\"0x3333333333333333333333333333333333333333\":\"Currency4\",\"0x328809bc894f92807417d2dad6b7c998c1afdac6\":\"alice\",\"0x6fbe5e8f3ebcfb61ce2c8a62ba01f51e8d9c752a\":\"LimitBreak AMM\",\"0x721c002b0059009a671d00ad1700c9748146cd1b\":\"Creator Token Transfer Validator\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0x1d96f2f6bef1202e4ce1ff6dad0c2cb002861d3e\":\"bob\",\"0x77d495327adb2f933310c9b8145a856b36eb6dd2\":\"exchangeFeeRecipient\",\"0x6000030000842044000077551d00cfc6b4005900\":\"Wrapped Native\",\"0x00000000d7b37203f54e165fb204b57c30d15835\":\"Role Server\",\"0xa4d4c1f8a763ef6a0140d04291eceef913ffc272\":\"carol\",\"0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2\":\"Wrapped Ether\",\"0xc5c7a5a6b65416c8494e9ccde6cacebdc0a2d8b8\":\"feeOnTopRecipient\",\"0xaa10a84ce7d9ae517a52c6d5ca153b369af99ecf\":\"admin\",\"0x1111111111111111111111111111111111111111\":\"Currency3\"},\"duration\":\"1ms 316\u00b5s 500ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_C10_reentrancy_blocked_all_entry_points()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":1368962}},\"traces\":[],\"labeled_addresses\":{\"0x3333333333333333333333333333333333333333\":\"Currency4\",\"0x328809bc894f92807417d2dad6b7c998c1afdac6\":\"alice\",\"0x6fbe5e8f3ebcfb61ce2c8a62ba01f51e8d9c752a\":\"LimitBreak AMM\",\"0x721c002b0059009a671d00ad1700c9748146cd1b\":\"Creator Token Transfer Validator\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0x1d96f2f6bef1202e4ce1ff6dad0c2cb002861d3e\":\"bob\",\"0x77d495327adb2f933310c9b8145a856b36eb6dd2\":\"exchangeFeeRecipient\",\"0x6000030000842044000077551d00cfc6b4005900\":\"Wrapped N",
+      "quality": {
+        "quality": "real",
+        "has_real_assertion": true,
+        "size": 43375
+      }
+    },
+    "H-R5-CH-05": {
+      "compiled": true,
+      "executed": true,
+      "tests_passed": 0,
+      "tests_failed": 0,
+      "raw_output": "{\"test/AuditInsolvencyKLR5.t.sol:AuditInsolvencyKLR5Test\":{\"duration\":\"90ms 599\u00b5s 375ns\",\"test_results\":{\"test_C10_fee_distribution_reentrancy_blocked()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":953537}},\"traces\":[],\"labeled_addresses\":{\"0x3333333333333333333333333333333333333333\":\"Currency4\",\"0x328809bc894f92807417d2dad6b7c998c1afdac6\":\"alice\",\"0x6fbe5e8f3ebcfb61ce2c8a62ba01f51e8d9c752a\":\"LimitBreak AMM\",\"0x721c002b0059009a671d00ad1700c9748146cd1b\":\"Creator Token Transfer Validator\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0x1d96f2f6bef1202e4ce1ff6dad0c2cb002861d3e\":\"bob\",\"0x77d495327adb2f933310c9b8145a856b36eb6dd2\":\"exchangeFeeRecipient\",\"0x6000030000842044000077551d00cfc6b4005900\":\"Wrapped Native\",\"0x00000000d7b37203f54e165fb204b57c30d15835\":\"Role Server\",\"0xa4d4c1f8a763ef6a0140d04291eceef913ffc272\":\"carol\",\"0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2\":\"Wrapped Ether\",\"0xc5c7a5a6b65416c8494e9ccde6cacebdc0a2d8b8\":\"feeOnTopRecipient\",\"0xaa10a84ce7d9ae517a52c6d5ca153b369af99ecf\":\"admin\",\"0x1111111111111111111111111111111111111111\":\"Currency3\"},\"duration\":\"1ms 316\u00b5s 500ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_C10_reentrancy_blocked_all_entry_points()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":1368962}},\"traces\":[],\"labeled_addresses\":{\"0x3333333333333333333333333333333333333333\":\"Currency4\",\"0x328809bc894f92807417d2dad6b7c998c1afdac6\":\"alice\",\"0x6fbe5e8f3ebcfb61ce2c8a62ba01f51e8d9c752a\":\"LimitBreak AMM\",\"0x721c002b0059009a671d00ad1700c9748146cd1b\":\"Creator Token Transfer Validator\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0x1d96f2f6bef1202e4ce1ff6dad0c2cb002861d3e\":\"bob\",\"0x77d495327adb2f933310c9b8145a856b36eb6dd2\":\"exchangeFeeRecipient\",\"0x6000030000842044000077551d00cfc6b4005900\":\"Wrapped N",
+      "quality": {
+        "quality": "real",
+        "has_real_assertion": true,
+        "size": 43375
+      }
+    },
+    "H-R5-HR-01": {
+      "compiled": true,
+      "executed": true,
+      "tests_passed": 0,
+      "tests_failed": 0,
+      "raw_output": "{\"test/AuditInsolvencyKLR5.t.sol:AuditInsolvencyKLR5Test\":{\"duration\":\"90ms 599\u00b5s 375ns\",\"test_results\":{\"test_C10_fee_distribution_reentrancy_blocked()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":953537}},\"traces\":[],\"labeled_addresses\":{\"0x3333333333333333333333333333333333333333\":\"Currency4\",\"0x328809bc894f92807417d2dad6b7c998c1afdac6\":\"alice\",\"0x6fbe5e8f3ebcfb61ce2c8a62ba01f51e8d9c752a\":\"LimitBreak AMM\",\"0x721c002b0059009a671d00ad1700c9748146cd1b\":\"Creator Token Transfer Validator\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0x1d96f2f6bef1202e4ce1ff6dad0c2cb002861d3e\":\"bob\",\"0x77d495327adb2f933310c9b8145a856b36eb6dd2\":\"exchangeFeeRecipient\",\"0x6000030000842044000077551d00cfc6b4005900\":\"Wrapped Native\",\"0x00000000d7b37203f54e165fb204b57c30d15835\":\"Role Server\",\"0xa4d4c1f8a763ef6a0140d04291eceef913ffc272\":\"carol\",\"0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2\":\"Wrapped Ether\",\"0xc5c7a5a6b65416c8494e9ccde6cacebdc0a2d8b8\":\"feeOnTopRecipient\",\"0xaa10a84ce7d9ae517a52c6d5ca153b369af99ecf\":\"admin\",\"0x1111111111111111111111111111111111111111\":\"Currency3\"},\"duration\":\"1ms 316\u00b5s 500ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_C10_reentrancy_blocked_all_entry_points()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":1368962}},\"traces\":[],\"labeled_addresses\":{\"0x3333333333333333333333333333333333333333\":\"Currency4\",\"0x328809bc894f92807417d2dad6b7c998c1afdac6\":\"alice\",\"0x6fbe5e8f3ebcfb61ce2c8a62ba01f51e8d9c752a\":\"LimitBreak AMM\",\"0x721c002b0059009a671d00ad1700c9748146cd1b\":\"Creator Token Transfer Validator\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0x1d96f2f6bef1202e4ce1ff6dad0c2cb002861d3e\":\"bob\",\"0x77d495327adb2f933310c9b8145a856b36eb6dd2\":\"exchangeFeeRecipient\",\"0x6000030000842044000077551d00cfc6b4005900\":\"Wrapped N",
+      "quality": {
+        "quality": "real",
+        "has_real_assertion": true,
+        "size": 43375
+      }
+    },
+    "H-R5-HR-03": {
+      "compiled": true,
+      "executed": true,
+      "tests_passed": 0,
+      "tests_failed": 0,
+      "raw_output": "{\"test/AuditInsolvencyKLR5.t.sol:AuditInsolvencyKLR5Test\":{\"duration\":\"90ms 599\u00b5s 375ns\",\"test_results\":{\"test_C10_fee_distribution_reentrancy_blocked()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":953537}},\"traces\":[],\"labeled_addresses\":{\"0x3333333333333333333333333333333333333333\":\"Currency4\",\"0x328809bc894f92807417d2dad6b7c998c1afdac6\":\"alice\",\"0x6fbe5e8f3ebcfb61ce2c8a62ba01f51e8d9c752a\":\"LimitBreak AMM\",\"0x721c002b0059009a671d00ad1700c9748146cd1b\":\"Creator Token Transfer Validator\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0x1d96f2f6bef1202e4ce1ff6dad0c2cb002861d3e\":\"bob\",\"0x77d495327adb2f933310c9b8145a856b36eb6dd2\":\"exchangeFeeRecipient\",\"0x6000030000842044000077551d00cfc6b4005900\":\"Wrapped Native\",\"0x00000000d7b37203f54e165fb204b57c30d15835\":\"Role Server\",\"0xa4d4c1f8a763ef6a0140d04291eceef913ffc272\":\"carol\",\"0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2\":\"Wrapped Ether\",\"0xc5c7a5a6b65416c8494e9ccde6cacebdc0a2d8b8\":\"feeOnTopRecipient\",\"0xaa10a84ce7d9ae517a52c6d5ca153b369af99ecf\":\"admin\",\"0x1111111111111111111111111111111111111111\":\"Currency3\"},\"duration\":\"1ms 316\u00b5s 500ns\",\"breakpoints\":{},\"gas_snapshots\":{}},\"test_C10_reentrancy_blocked_all_entry_points()\":{\"status\":\"Success\",\"reason\":null,\"counterexample\":null,\"logs\":[],\"decoded_logs\":[],\"kind\":{\"Unit\":{\"gas\":1368962}},\"traces\":[],\"labeled_addresses\":{\"0x3333333333333333333333333333333333333333\":\"Currency4\",\"0x328809bc894f92807417d2dad6b7c998c1afdac6\":\"alice\",\"0x6fbe5e8f3ebcfb61ce2c8a62ba01f51e8d9c752a\":\"LimitBreak AMM\",\"0x721c002b0059009a671d00ad1700c9748146cd1b\":\"Creator Token Transfer Validator\",\"0xdddddddddddddddddddddddddddddddddddddddd\":\"Currency2\",\"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48\":\"USD Coin\",\"0x1d96f2f6bef1202e4ce1ff6dad0c2cb002861d3e\":\"bob\",\"0x77d495327adb2f933310c9b8145a856b36eb6dd2\":\"exchangeFeeRecipient\",\"0x6000030000842044000077551d00cfc6b4005900\":\"Wrapped N",
+      "quality": {
+        "quality": "real",
+        "has_real_assertion": true,
+        "size": 43375
+      }
+    }
+  }
+}

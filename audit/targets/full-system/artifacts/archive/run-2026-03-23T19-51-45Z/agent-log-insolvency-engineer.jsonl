@@ -1,0 +1,22 @@
+{"event":"SESSION_START","ts":"2026-03-19T00:00:00Z","session_id":"wave1-insolvency","agent_id":"insolvency-engineer","model":"claude-opus-4-6","scope":"lbamm-core, amm-pool-type-dynamic (all repos read access)","max_turns":200}
+{"event":"PHASE_A_COMPLETE","ts":"2026-03-19T01:00:00Z","tools":["slither","aderyn"],"findings_static":"H:1 reentrancy(FP), 4 incorrect-return(FP), 2 incorrect-shift(FP); M:1 incorrect-equality, 22 divide-before-multiply(FP)"}
+{"event":"PHASE_B_COMPLETE","ts":"2026-03-19T02:00:00Z","entry_points_analyzed":true,"call_graph":"AMMModule->PoolType delegation; diamond proxy routing; CEI pattern throughout"}
+{"event":"PHASE_C_COMPLETE","ts":"2026-03-19T03:00:00Z","checklist":"C-STATE","items_completed":25,"items_total":25,"test_file":"lbamm-core/test/AuditInsolvency.t.sol","tests_passed":75}
+{"event":"VECTOR_RULED_OUT","ts":"2026-03-19T03:10:00Z","vector":"fee-on-transfer phantom liquidity","reason":"_collectToken strict balance check rejects FOT tokens (C25 test confirms)"}
+{"event":"VECTOR_RULED_OUT","ts":"2026-03-19T03:10:01Z","vector":"reentrancy during hook fee transfer","reason":"CEI pattern in _transferHookFeesByHook: storage decremented before safeTransfer (C10/C21 test confirms)"}
+{"event":"VECTOR_RULED_OUT","ts":"2026-03-19T03:10:02Z","vector":"read-only reentrancy stale state","reason":"_poolSwapByInput updates reserves before token transfers; VIEW calls see committed state (C22)"}
+{"event":"VECTOR_RULED_OUT","ts":"2026-03-19T03:10:03Z","vector":"transient storage stale read (SIR)","reason":"beforeSwap always overwrites DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT; C23 test confirms"}
+{"event":"VECTOR_RULED_OUT","ts":"2026-03-19T03:10:04Z","vector":"cross-component settings desync (Cork)","reason":"setTokenSettings requires nonReentrant; hooks read fresh settings per-call (C24)"}
+{"event":"VECTOR_RULED_OUT","ts":"2026-03-19T03:10:05Z","vector":"callback state corruption (Bunni/Curve)","reason":"reentrancy guard blocks all state-changing reentry during swap; C21 test confirms"}
+{"event":"VECTOR_RULED_OUT","ts":"2026-03-19T03:10:06Z","vector":"round-trip swap profit","reason":"constant-product x*y=k + fee deduction prevents round-trip extraction (INV-S02 fuzz test)"}
+{"event":"VECTOR_RULED_OUT","ts":"2026-03-19T03:10:07Z","vector":"flash loan profit extraction","reason":"flash loan balance check + swap fee prevent profit; INV-E02 + C9 fuzz tests"}
+{"event":"VECTOR_RULED_OUT","ts":"2026-03-19T03:10:08Z","vector":"dust swap accumulation","reason":"rounding always favors protocol (roundUp for input, roundDown for output); INV-SW03 100-swap test"}
+{"event":"VECTOR_RULED_OUT","ts":"2026-03-19T03:10:09Z","vector":"tokensOwed double-collect","reason":"CEI pattern + underflow check prevent double-spending; hash-isolated per (owner,token)"}
+{"event":"VECTOR_RULED_OUT","ts":"2026-03-19T03:10:10Z","vector":"balanceOf divergence extraction","reason":"direct transfers create surplus not deficit; swap uses cached reserve state, not balanceOf"}
+{"event":"VECTOR_RULED_OUT","ts":"2026-03-19T03:10:11Z","vector":"cross-pool arbitrage value leak","reason":"fees prevent profitable round-trips; each pool independently solvent (C15 test)"}
+{"event":"VECTOR_RULED_OUT","ts":"2026-03-19T03:10:12Z","vector":"protocol fee toggle extraction","reason":"setProtocolFees affects future swaps only; no pending state manipulation possible"}
+{"event":"VECTOR_RULED_OUT","ts":"2026-03-19T03:10:13Z","vector":"addLiquidity+swap atomic extraction","reason":"reserves updated atomically; balance check in _collectToken prevents phantom liquidity"}
+{"event":"VECTOR_RULED_OUT","ts":"2026-03-19T03:10:14Z","vector":"_storeNonTokenHookFees key mismatch","reason":"self-consistent: tokenFor==tokenFee in all callers; at worst fund-lock for misusing hooks"}
+{"event":"VECTOR_RULED_OUT","ts":"2026-03-19T03:10:15Z","vector":"fee accumulator overflow","reason":"uint128 fee balances with _safeIncrementUint128 overflow check; 30-swap test confirms"}
+{"event":"VECTOR_RULED_OUT","ts":"2026-03-19T03:10:16Z","vector":"rounding asymmetry add vs remove","reason":"addLiquidity rounds UP (user pays more), removeLiquidity rounds DOWN (user receives less); protocol always benefits"}
+{"event":"SESSION_COMPLETE","ts":"2026-03-19T04:00:00Z","findings_claimed":0,"findings_confirmed":0,"vectors_ruled_out":18,"checklist_completed":"25/25","tests_passed":75,"test_file":"lbamm-core/test/AuditInsolvency.t.sol"}

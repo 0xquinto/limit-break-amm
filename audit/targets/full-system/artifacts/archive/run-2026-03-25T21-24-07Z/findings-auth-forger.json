@@ -1,0 +1,907 @@
+{
+  "agent_name": "auth-forger",
+  "agent_role": "Authorization & Settlement Forger",
+  "wave": 1,
+  "findings": [],
+  "ruled_out_vectors": [
+    {
+      "vector": "AF-001: Division by zero in minimumProtocolFee enforcement when poolFeeBPS=MAX_BPS and lpFeeBPS=MAX_BPS with hook fees",
+      "why_ruled_out": "Requires admin-controlled configuration (poolFee=100%, lpFee=100%, hook+hop fees enabled). No concrete external attacker path \u2014 all parameters are admin-set. The denominator at AMMModule.sol:2660 can be zero but the shortage condition requires unusual fee stacking that is unlikely in practice. DoS only, no value extraction.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditAuthForgerKLoop.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_applySwapByInputInputFees()"
+      ],
+      "keywords": [
+        "division-by-zero",
+        "fee-enforcement",
+        "admin-configuration",
+        "DoS"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "H-R4-CH-01: feeOnTop extraction via unsigned permit field",
+      "why_ruled_out": "feeOnTop is intentionally unsigned. The user's signed limitAmount caps total amountIn (including feeOnTop). The ratio check in _executePartialFillPermit includes feeOnTop in amountIn and correctly bounds total cost. CODEBASE_MAP explicitly documents this as intentional design.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditAuthForgerKLoop.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "PermitTransferHandler.sol",
+        "Constants.sol"
+      ],
+      "functions": [
+        "_executePartialFillPermit()",
+        "ammHandleTransfer()"
+      ],
+      "keywords": [
+        "feeOnTop",
+        "unsigned-field",
+        "eip712",
+        "intentional-design"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "H-R4-CH-02: CLOB fill rounding accumulation DoS",
+      "why_ruled_out": "Double mulDivRoundingUp causes rounding accumulation (multi-step > single-shot by ~2 wei per step), but the AMM computes output per-step in the fill loop, matching the CLOB's per-step calculation. The divergence is dust-level (4 wei for 3 orders) and not economically exploitable. InsufficientOutputToFill is unreachable for normal fill amounts.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditAuthForgerKLoop.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "CLOBHelper.sol"
+      ],
+      "functions": [
+        "fillOrder()",
+        "calculateFixedInput()"
+      ],
+      "keywords": [
+        "rounding",
+        "mulDivRoundingUp",
+        "dust",
+        "clob"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "H-R4-CH-03: Reentrancy via hook fee transfer callback",
+      "why_ruled_out": "TstorishReentrancyGuard ENTERED bit is separate from custom flags. _setReentrancyFlags(NO_FLAGS) at AMMModule.sol:3190 only clears custom flags, not the base ENTERED bit. All state-changing functions check ENTERED first, blocking re-entry during safeTransfer callbacks.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditAuthForgerKLoop.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_executeQueuedHookFeesByHookTransfers()"
+      ],
+      "keywords": [
+        "reentrancy",
+        "transient-storage",
+        "hook-fees",
+        "ENTERED-bit"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "H-R4-CH-04: closeOrder non-current order accounting error",
+      "why_ruled_out": "Forge test with 3 orders, 150/300 filled. Non-current unfilled order (C) correctly returns full 100 ether on close. CLOBHelper.closeOrder distinguishes current vs non-current orders: non-current returns full inputAmount, current returns inputAmountRemaining.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditAuthForgerKLoop.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "CLOBHelper.sol",
+        "CLOBTransferHandler.sol"
+      ],
+      "functions": [
+        "closeOrder()"
+      ],
+      "keywords": [
+        "clob",
+        "order-accounting",
+        "partial-fill"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "H-R4-CH-05: Partial fill adjustedAmountSpecified underflow",
+      "why_ruled_out": "Algebraic proof: adjustedAmountSpecified = A (full pre-fee input). Total adjustment = (P - actualAmountIn) + floor(E*adj/P) + floor(PE*adj/P). Since floor rounds down and feeOnTop >= 0, sum < A. Numerical verification with extreme values (49% exchange fee, 4.9% protocol fee, 1 wei actual fill) confirms positive remainder.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditAuthForgerKLoop.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_finalizeSwapCollectFundsAndDisburse()"
+      ],
+      "keywords": [
+        "underflow",
+        "partial-fill",
+        "fee-adjustment"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "H-R4-CH-07: Partial fill ratio check ineffective",
+      "why_ruled_out": "Forge test proves ratio check correctly blocks sandwich attacks. At signed ratio 2:1 (limitAmount=200e18, amountSpecified=-100e18): fair execution passes, sandwich (180 input for 50 output) blocked, tiny partial fill sandwich blocked, exact ratio passes. The ratio scales linearly with output.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditAuthForgerKLoop.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "PermitTransferHandler.sol"
+      ],
+      "functions": [
+        "_executePartialFillPermit()"
+      ],
+      "keywords": [
+        "ratio-check",
+        "sandwich",
+        "partial-fill",
+        "permit"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "H-R4-CH-09: Protocol fees not segregated from reserves",
+      "why_ruled_out": "Pool types use storage-tracked reserves (ptrPoolState.reserve0/reserve1), not balanceOf(). Protocol fees tracked separately in Storage.appStorage().protocolFees[token]. Both are independent storage mappings in the diamond. No path confuses fees for reserves.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditAuthForgerKLoop.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_applySwapByInputInputFees()",
+        "_applySwapByOutputInputFees()"
+      ],
+      "keywords": [
+        "solvency",
+        "reserves",
+        "protocol-fees",
+        "storage-tracking"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "H-R4-CH-10: Maker balance inconsistency during hook validation",
+      "why_ruled_out": "makerTokenBalance set to 0 before validateMaker hook call is a read-only view inconsistency. Hook is for validation only. All CLOB functions are nonReentrant, blocking any callback exploitation. After hook returns, order is created with correct amount.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditAuthForgerKLoop.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "CLOBTransferHandler.sol"
+      ],
+      "functions": [
+        "openOrder()"
+      ],
+      "keywords": [
+        "hook-validation",
+        "balance-inconsistency",
+        "nonReentrant"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "C1: Hook callback access control bypass",
+      "why_ruled_out": "All hook functions check msg.sender == AMM. Forge test confirms beforeSwap reverts with AMMStandardHook__CallerIsNotAMM when called by non-AMM address.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditAuthForgerKLoop.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "beforeSwap()"
+      ],
+      "keywords": [
+        "access-control",
+        "hook",
+        "caller-check"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "C2: Settlement conservation \u2014 handler caller check",
+      "why_ruled_out": "Both CLOBTransferHandler.ammHandleTransfer and PermitTransferHandler.ammHandleTransfer check msg.sender == AMM on first line. Forge tests confirm revert with CallbackMustBeFromAMM for both handlers.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditAuthForgerKLoop.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "CLOBTransferHandler.sol",
+        "PermitTransferHandler.sol"
+      ],
+      "functions": [
+        "ammHandleTransfer()"
+      ],
+      "keywords": [
+        "settlement",
+        "caller-check",
+        "access-control"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "C3: Permit replay protection",
+      "why_ruled_out": "PermitC uses nonce-based replay protection. Nonces consumed atomically during permit transfer (bitmap tracking). Cross-chain replay blocked by EIP-712 domain separator with chainId + verifyingContract. destroyCosigner uses universal domain (no chainId) \u2014 intentional for cross-chain cosigner destruction.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditAuthForgerKLoop.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "PermitTransferHandler.sol"
+      ],
+      "functions": [
+        "_validateCosignature()",
+        "ammHandleTransfer()"
+      ],
+      "keywords": [
+        "replay",
+        "nonce",
+        "eip712",
+        "cross-chain"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "C4: Signed fields completeness \u2014 feeOnTop bounded by limitAmount",
+      "why_ruled_out": "feeOnTop is unsigned but limitAmount IS signed. AMM's limitAmount check (AMMModule.sol:2171) bounds total amountIn including feeOnTop. For input swaps, feeOnTop deducted from amountIn reduces output. For output swaps, feeOnTop added to amountIn is capped by limitAmount.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditAuthForgerKLoop.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers",
+        "lbamm-core"
+      ],
+      "contracts": [
+        "PermitTransferHandler.sol",
+        "FeeHelper.sol",
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "calculateAmountAfterFeesSwapByInput()",
+        "_finalizeSwapCollectFundsAndDisburse()"
+      ],
+      "keywords": [
+        "feeOnTop",
+        "limitAmount",
+        "signed-fields"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "C7: afterSwapRefund partial fill rounding theft",
+      "why_ruled_out": "Forge test: deposit 100 ether, fill 33, close. Refund = 67 ether exactly. No rounding theft \u2014 CLOB tracks inputAmountRemaining precisely per order.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditAuthForgerKLoop.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "CLOBTransferHandler.sol",
+        "CLOBHelper.sol"
+      ],
+      "functions": [
+        "closeOrder()",
+        "fillOrder()"
+      ],
+      "keywords": [
+        "rounding",
+        "partial-fill",
+        "refund"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "C8: CLOB openOrder nonce replay",
+      "why_ruled_out": "Nonces auto-incremented (not user-supplied). Two consecutive openOrder calls return nonce and nonce+1. No path to replay or collide nonces.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditAuthForgerKLoop.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "CLOBTransferHandler.sol"
+      ],
+      "functions": [
+        "openOrder()"
+      ],
+      "keywords": [
+        "nonce",
+        "auto-increment",
+        "replay"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "C9: closeOrder on another maker's order",
+      "why_ruled_out": "closeOrder checks msg.sender == order.maker. Forge test confirms revert with CLOBTransferHandler__InvalidMaker when attacker tries to close maker1's order.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditAuthForgerKLoop.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "CLOBTransferHandler.sol"
+      ],
+      "functions": [
+        "closeOrder()"
+      ],
+      "keywords": [
+        "access-control",
+        "maker-check",
+        "clob"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "C10: withdrawToken exceeding balance",
+      "why_ruled_out": "Forge test confirms CLOBTransferHandler__InsufficientMakerBalance revert when withdrawing 101 ether after depositing 100 ether.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditAuthForgerKLoop.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "CLOBTransferHandler.sol"
+      ],
+      "functions": [
+        "withdrawToken()"
+      ],
+      "keywords": [
+        "balance-check",
+        "withdrawal"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "C11: Direct CLOB call bypass",
+      "why_ruled_out": "CLOBTransferHandler only exposes ammHandleTransfer as fill entry point. No separate executeSwap function. ammHandleTransfer checks msg.sender == AMM. Forge test confirms revert.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditAuthForgerKLoop.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "CLOBTransferHandler.sol"
+      ],
+      "functions": [
+        "ammHandleTransfer()"
+      ],
+      "keywords": [
+        "direct-call",
+        "access-control"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "C12: directSwap vs singleSwap pricing enforcement",
+      "why_ruled_out": "Both paths call _executeBeforeSwapHooks and _executeAfterSwapHooks (AMMModule.sol:1836-1838 and 1844-1846). Token-level hooks run for both. directSwap intentionally skips pool curve (executor IS the counterparty). Pool hook data rejected at LimitBreakAMM.sol:371-373.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditAuthForgerKLoop.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol",
+        "LimitBreakAMM.sol"
+      ],
+      "functions": [
+        "_directSwap()",
+        "directSwap()"
+      ],
+      "keywords": [
+        "directSwap",
+        "singleSwap",
+        "pricing",
+        "hooks"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "C13: Solvency after CLOB direct swap",
+      "why_ruled_out": "Forge test: full deposit-open-fill-withdraw cycle. Handler token0 balance maintained (input consumed by AMM). Handler token1 balance restored (output minted then withdrawn). No value leak.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditAuthForgerKLoop.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "CLOBTransferHandler.sol"
+      ],
+      "functions": [
+        "depositToken()",
+        "openOrder()",
+        "closeOrder()",
+        "withdrawToken()"
+      ],
+      "keywords": [
+        "solvency",
+        "conservation",
+        "lifecycle"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "C14: No value creation across permit+swap+settlement",
+      "why_ruled_out": "Conservation enforced by AMM balance checks at AMMModule.sol:2207-2213. All tokens transferred from existing balances. amountIn = amountOut + all_fees + pool_delta. No path creates tokens.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditAuthForgerKLoop.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_finalizeSwapCollectFundsAndDisburse()"
+      ],
+      "keywords": [
+        "conservation",
+        "value-creation",
+        "balance-check"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "C15: Expansion settings enforcement",
+      "why_ruled_out": "CreatorHookSettingsRegistry access control blocks unauthorized callers. Forge test confirms revert when attacker tries to set pricing bounds. Settings read live during each swap via AMMStandardHook.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditAuthForgerKLoop.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "CreatorHookSettingsRegistry.sol"
+      ],
+      "functions": [
+        "setPricingBounds()"
+      ],
+      "keywords": [
+        "access-control",
+        "expansion-settings",
+        "registry"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "C16: validateHandlerOrder pricing bypass (Halmos)",
+      "why_ruled_out": "Halmos parsing failed (KeyError: 'ast'). Manual code analysis: validateHandlerOrder checks price bounds on all paths. No path returns without enforcing min/max price limits.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditAuthForgerKLoop.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "validateHandlerOrder()"
+      ],
+      "keywords": [
+        "halmos",
+        "pricing-bounds",
+        "symbolic-execution"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "C17: SqrtPriceCalculator zero input (Halmos)",
+      "why_ruled_out": "Halmos parsing failed (KeyError: 'ast'). Manual analysis: computeRatioX96(0, x) returns 0, computeRatioX96(x, 0) reverts with division by zero. No silent zero-price return.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditAuthForgerKLoop.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "SqrtPriceCalculator.sol"
+      ],
+      "functions": [
+        "computeRatioX96()"
+      ],
+      "keywords": [
+        "halmos",
+        "zero-price",
+        "edge-case"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "C18: Medusa fuzz CLOBTransferHandler",
+      "why_ruled_out": "Medusa failed to initialize: constructor arguments not provided for CLOBTransferHandler(address). Medusa requires deployment config for contracts with constructor args. No invariant violations found via Forge tests covering same surface.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditAuthForgerKLoop.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "CLOBTransferHandler.sol"
+      ],
+      "functions": [
+        "ammHandleTransfer()",
+        "openOrder()",
+        "closeOrder()"
+      ],
+      "keywords": [
+        "medusa",
+        "fuzzing",
+        "clob"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "C19: Medusa fuzz PermitTransferHandler",
+      "why_ruled_out": "Medusa failed to initialize: constructor arguments not provided for PermitTransferHandler(address). Same deployment config issue as C18. Forge tests cover the main attack surface.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditAuthForgerKLoop.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "PermitTransferHandler.sol"
+      ],
+      "functions": [
+        "ammHandleTransfer()"
+      ],
+      "keywords": [
+        "medusa",
+        "fuzzing",
+        "permit"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "C20: Unsigned feeOnTop exploitation (EIP-712)",
+      "why_ruled_out": "feeOnTop intentionally excluded from SWAP_TYPEHASH. User's limitAmount caps total cost. Ratio check includes feeOnTop in amountIn. By design per CODEBASE_MAP documentation.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditAuthForgerKLoop.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "PermitTransferHandler.sol",
+        "Constants.sol"
+      ],
+      "functions": [
+        "_executePartialFillPermit()"
+      ],
+      "keywords": [
+        "feeOnTop",
+        "eip712",
+        "unsigned",
+        "intentional"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "C21: Cross-chain permit replay",
+      "why_ruled_out": "PermitC EIP-712 domain includes chainId + verifyingContract. Cosignatures use _hashTypedDataV4 (includes chainId). destroyCosigner uses universal domain (no chainId) \u2014 intentional for cross-chain key destruction.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditAuthForgerKLoop.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "PermitTransferHandler.sol"
+      ],
+      "functions": [
+        "_validateCosignature()",
+        "destroyCosigner()"
+      ],
+      "keywords": [
+        "cross-chain",
+        "replay",
+        "domain-separator",
+        "chainId"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    },
+    {
+      "vector": "C22: Arbitrary swapExtraData exploitation",
+      "why_ruled_out": "swapExtraData decoded as sqrtPriceLimitX96 by pool type. Malformed data uses default limits. Pool type validates decoded price limit internally. No path to redirect output or change behavior.",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditAuthForgerKLoop.t.sol",
+      "repos": [
+        "lbamm-core",
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_initializeSwapCache()"
+      ],
+      "keywords": [
+        "swapExtraData",
+        "calldata",
+        "pool-type"
+      ],
+      "evidence_gate": {
+        "status": "passed",
+        "gate": null,
+        "reason": null
+      }
+    }
+  ],
+  "theft_theses": [
+    {
+      "thesis": "Extract value through unsigned feeOnTop field in permit signatures",
+      "victim": "Permit signers",
+      "asset": "Input tokens (ERC20)",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "DoS CLOB order book via cumulative rounding in calculateFixedInput",
+      "victim": "CLOB traders",
+      "asset": "Trading availability",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Re-enter AMM during hook fee transfer callback",
+      "victim": "AMM/LPs",
+      "asset": "Pool reserves",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Steal unfilled CLOB order funds via closeOrder accounting error",
+      "victim": "CLOB makers",
+      "asset": "Deposited tokens",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Division by zero DoS when poolFeeBPS and lpFeeBPS both equal MAX_BPS",
+      "victim": "Traders in affected pool",
+      "asset": "Trading availability + locked liquidity",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    }
+  ],
+  "hypothesis_results": [
+    {
+      "id": "H-R4-CH-01",
+      "status": "dismissed",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditAuthForgerKLoop.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If an attacker sets feeOnTop to 99% of the swap amount, the user would lose nearly all their input tokens as fees directed to the attacker. The limitAmount check should be the only guard, and if the user set a generous limitAmount, the extraction succeeds.",
+      "guard_location": "AMMModule.sol:2171 (limitAmount check) + PermitTransferHandler.sol:319-324 (ratio check)",
+      "detail": "Dismissed \u2014 feeOnTop is intentionally unsigned per CODEBASE_MAP. The user's signed limitAmount caps total amountIn including feeOnTop. The ratio check in _executePartialFillPermit correctly includes feeOnTop in the input amount, so the signed rate still protects the user."
+    },
+    {
+      "id": "H-R4-CH-02",
+      "status": "dismissed",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditAuthForgerKLoop.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If an attacker places 200 minimum-size orders, the cumulative rounding (200 * 2 wei = 400 wei) could exceed the AMM's single-shot output, causing InsufficientOutputToFill revert on every fill attempt, permanently DoS-ing the order book.",
+      "guard_location": "CLOBHelper.sol:228 (stepOutput <= fillOutputRemaining check)",
+      "detail": "Dismissed \u2014 the rounding difference is bounded at ~2 wei per order step (4 wei for 3 orders at Q96+1 price). The AMM's fill loop computes output per-step matching the CLOB's calculation. The divergence is dust-level and not economically exploitable."
+    },
+    {
+      "id": "H-R4-CH-03",
+      "status": "dismissed",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditAuthForgerKLoop.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If the ERC777/ERC1363 callback during safeTransfer at line 3133 re-enters the diamond proxy after custom flags are cleared at line 3190, the attacker could call a function that checks custom flags but not the ENTERED bit, manipulating state during the hook fee distribution.",
+      "guard_location": "TstorishReentrancyGuard (ENTERED bit separate from custom flags)",
+      "detail": "Dismissed \u2014 the TstorishReentrancyGuard ENTERED bit prevents all state-changing re-entry during safeTransfer callbacks. Custom flags at line 3190 are separate from the base ENTERED check. All sensitive functions check ENTERED first."
+    },
+    {
+      "id": "H-R4-CH-04",
+      "status": "dismissed",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditAuthForgerKLoop.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If a maker closes a non-current order after another order was partially filled, the closeOrder function might return the wrong amount \u2014 either too much (stealing from other makers) or too little (losing maker funds).",
+      "guard_location": "CLOBHelper.sol:28-40 (current vs non-current order distinction in closeOrder)",
+      "detail": "Dismissed \u2014 Forge test with 3 orders (A, B, C), 150/300 filled. Non-current unfilled order C correctly returns full 100 ether. CLOBHelper.closeOrder correctly distinguishes: current order returns inputAmountRemaining, non-current returns full inputAmount."
+    },
+    {
+      "id": "H-R4-CH-06",
+      "status": "tested",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditAuthForgerKLoop.t.sol",
+      "failure_class": "tactical",
+      "refutation_case": "If poolFeeBPS=MAX_BPS and lpFeeBPS=MAX_BPS (both independently valid), then when hook fees reduce swapAmountIn, the minimumProtocolFee (based on original amount) exceeds expectedProtocolLPFee (based on reduced amount), triggering a division by DOUBLE_BPS - MAX_BPS*MAX_BPS = 0.",
+      "guard_location": "AMMModule.sol:2660 (no guard \u2014 denominator can be zero)",
+      "detail": "The arithmetic confirms denominator = 0 when both fees = MAX_BPS. The shortage condition CAN trigger because minimumProtocolFee uses original swapAmountIn while expectedProtocolLPFee uses reduced swapAmountIn (after hook fee deduction). However, this requires admin-controlled configuration (Tier B). Moved to ruled_out \u2014 no external attacker path."
+    },
+    {
+      "id": "H-R4-CH-07",
+      "status": "dismissed",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditAuthForgerKLoop.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If an executor sandwiches a partial fill permit by manipulating the pool price, the ratio check should fail to protect the user because it only checks the input/output ratio against the signed limit, not the absolute price.",
+      "guard_location": "PermitTransferHandler.sol:319-324 (output-based ratio check) and 333-338 (input-based ratio check)",
+      "detail": "Dismissed \u2014 Forge test proves ratio check correctly blocks sandwich attacks. At signed ratio 2:1: fair execution passes, sandwich (180/50) blocked, tiny partial fill sandwich blocked. The ratio scales linearly with output amount, maintaining the signed rate."
+    },
+    {
+      "id": "H-R4-CH-05",
+      "status": "dismissed",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditAuthForgerKLoop.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If actualAmountIn is 1 wei with maximum fees (49% exchange + 4.9% protocol), the sum of fee adjustments could exceed adjustedAmountSpecified, causing an underflow in the unchecked subtraction.",
+      "guard_location": "AMMModule.sol:1423-1424 (adjustedAmountSpecified -= adjustment)",
+      "detail": "Dismissed \u2014 algebraic proof shows no underflow is possible. adjustedAmountSpecified = A (full pre-fee input). Total adjustment < A - feeOnTop because floor-division rounds down each fee component. Numerical verification with extreme values (49% exchange, 4.9% protocol, 1 wei actual) confirms positive remainder."
+    },
+    {
+      "id": "H-R4-CH-09",
+      "status": "dismissed",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditAuthForgerKLoop.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If protocol fees accumulate in the diamond's token balance without being tracked separately, a swap calculation using balanceOf() could include protocol fees as pool reserves, allowing extraction through inflated reserve-based output calculations.",
+      "guard_location": "Storage.appStorage().protocolFees[token] (separate storage mapping from pool reserves)",
+      "detail": "Dismissed \u2014 pool types use storage-tracked reserves (ptrPoolState.reserve0/reserve1), NOT balanceOf(). Protocol fees tracked in separate Storage.appStorage().protocolFees[token] mapping. No path confuses fees for reserves."
+    },
+    {
+      "id": "H-R4-CH-10",
+      "status": "dismissed",
+      "test_file": "lbamm-hooks-and-handlers/test/AuditAuthForgerKLoop.t.sol",
+      "failure_class": "strategic",
+      "refutation_case": "If the validateMaker hook reads makerTokenBalance (which is 0 during validation) and makes decisions based on it, the maker could bypass hook validation \u2014 e.g., a minimum-balance-requirement hook would see 0 and incorrectly reject a valid order.",
+      "guard_location": "CLOBTransferHandler.sol:490 (nonReentrant modifier blocks callback exploitation)",
+      "detail": "Dismissed \u2014 the balance inconsistency is a read-only view issue during validation. The hook is for validation only (approve/deny). All CLOB functions are nonReentrant, blocking any callback exploitation. After hook returns, order is created with correct amount."
+    }
+  ],
+  "metadata": {
+    "checklist_items_completed": "A: 4/5, B: 3/5, C: 22/22, D: 9/9",
+    "tools_run": {
+      "slither": {
+        "ran": true,
+        "repos": [
+          "lbamm-hooks-and-handlers"
+        ],
+        "note": "35 findings (1 high arbitrary-send, 25 medium uninitialized-local, others). High/Medium only, excluding lib/test. Also ran export_call_graph for CLOBTransferHandler."
+      },
+      "aderyn": {
+        "ran": true,
+        "repos": [
+          "lbamm-hooks-and-handlers"
+        ],
+        "note": "fatal crash in aderyn v0.6.8 (aderyn_driver/src/compile.rs:78 content not found). Error logged."
+      },
+      "forge": {
+        "ran": true,
+        "note": "39 tests total (22 C-AUTH items + 9 hypothesis tests + 8 inherited). All passing. File: lbamm-hooks-and-handlers/test/AuditAuthForgerKLoop.t.sol"
+      },
+      "halmos": {
+        "ran": true,
+        "note": "Parsing failure (KeyError: 'ast') on AuditAuthForgerKLoopTest \u2014 complex inherited test contract incompatible with halmos parser. Error logged for C16/C17."
+      },
+      "medusa": {
+        "ran": true,
+        "note": "Failed to initialize for both CLOBTransferHandler and PermitTransferHandler \u2014 constructor arguments not provided. Error logged for C18/C19."
+      },
+      "audit-context-building": {
+        "ran": true,
+        "note": "Applied deep context analysis to CLOBTransferHandler, PermitTransferHandler, AMMStandardHook entry points. Identified state-changing flows and trust boundaries."
+      },
+      "entry-point-analyzer": {
+        "ran": true,
+        "note": "Mapped all state-changing entry points: CLOBTransferHandler (6 public + 2 AMM-only), PermitTransferHandler (2 AMM-only + 1 public), AMMStandardHook (AMM-only), CreatorHookSettingsRegistry (role-restricted)."
+      }
+    },
+    "num_turns": 150,
+    "tool_uses": 90,
+    "files_read": 35,
+    "theses_tested": 9,
+    "theses_confirmed": 0,
+    "theses_ruled_out": 9,
+    "triage_log": {
+      "skip": 2,
+      "borderline": 3,
+      "survive": 17
+    },
+    "gate_passed": true,
+    "_total_hypotheses": 9
+  }
+}

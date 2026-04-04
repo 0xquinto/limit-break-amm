@@ -1,0 +1,458 @@
+{
+  "agent_name": "insolvency-engineer",
+  "agent_role": "Insolvency Engineer",
+  "wave": 1,
+  "findings": [],
+  "ruled_out_vectors": [
+    {
+      "vector": "H1: Flash loan -> add liquidity -> collect fees -> remove liquidity with inflated position",
+      "why_ruled_out": "Flash loan + LP + swap + remove = net loss for attacker. _collectToken strict balance check prevents phantom credits. Pool type returns correct amounts. Forge test confirms attacker loses money on round-trip.",
+      "test_file": "lbamm-core/test/AuditInsolvency.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_flashLoan()",
+        "_positionAddLiquidity()",
+        "_positionRemoveLiquidity()"
+      ],
+      "keywords": [
+        "flash-loan",
+        "liquidity-manipulation",
+        "inflated-position"
+      ]
+    },
+    {
+      "vector": "H2: Zero-liquidity pool fee accumulation overflow",
+      "why_ruled_out": "Fee growth uses unchecked Q128.128 arithmetic (intentional wrapping like Uniswap V3). Delta calculation in _getFeeGrowthInside uses unchecked subtraction which correctly handles wrapping. 20 extreme swaps at near-max amounts confirm no fee overflow exploitation. SimplePoolType doesn't have tick-level fee growth.",
+      "test_file": "lbamm-core/test/AuditInsolvency.t.sol",
+      "repos": [
+        "lbamm-core",
+        "amm-pool-type-dynamic"
+      ],
+      "contracts": [
+        "AMMModule.sol",
+        "DynamicHelper.sol"
+      ],
+      "functions": [
+        "_poolSwapByInput()",
+        "computeSwap()",
+        "_getFeeGrowthInside()"
+      ],
+      "keywords": [
+        "fee-overflow",
+        "zero-liquidity",
+        "Q128-wrapping"
+      ]
+    },
+    {
+      "vector": "H3: tokensOwed desync between position and pool accounting",
+      "why_ruled_out": "_storeTokensOwed increments with overflow check (reverts on overflow). transferTokensOwed zeroes the mapping after transfer. Double-collect test: second collectFees returns 0 after first collects. No desync possible \u2014 mapping is source of truth.",
+      "test_file": "lbamm-core/test/AuditInsolvency.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_storeTokensOwed()",
+        "_transferTokensOwed()",
+        "_positionCollectFees()"
+      ],
+      "keywords": [
+        "tokens-owed",
+        "double-collect",
+        "accounting-desync"
+      ]
+    },
+    {
+      "vector": "H4: Rounding asymmetry in add vs remove paths",
+      "why_ruled_out": "addLiquidity and removeLiquidity both delegate to pool type for amount calculations. Conservation test: add 50e18 + swap + remove all yields <= initial deposit. No rounding asymmetry creates value \u2014 Forge test confirms add/remove/swap conservation holds.",
+      "test_file": "lbamm-core/test/AuditInsolvency.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_positionAddLiquidity()",
+        "_positionRemoveLiquidity()"
+      ],
+      "keywords": [
+        "rounding-asymmetry",
+        "add-remove-path"
+      ]
+    },
+    {
+      "vector": "H5: Liquidate own position -> collect protocol-funded liquidation bonus -> net profit",
+      "why_ruled_out": "No liquidation mechanism exists in the Limit Break AMM. The protocol is a pure AMM without borrowing, lending, or liquidation features. This vector is architecturally impossible.",
+      "test_file": "not-applicable: No liquidation mechanism in AMM architecture",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [],
+      "keywords": [
+        "liquidation",
+        "self-liquidation",
+        "liquidation-bonus"
+      ]
+    },
+    {
+      "vector": "H6: Create many dust-size positions -> each too small to liquidate profitably -> protocol absorbs bad debt",
+      "why_ruled_out": "No liquidation mechanism = no 'too small to liquidate' issue. Dust position variant tested: 1000 dust swaps (1e15 each) don't accumulate truncation profit. Pool remains solvent after all dust operations. Forge test confirms no extraction.",
+      "test_file": "lbamm-core/test/AuditInsolvency.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_poolSwapByInput()"
+      ],
+      "keywords": [
+        "dust-positions",
+        "truncation-harvesting",
+        "bad-debt"
+      ]
+    },
+    {
+      "vector": "H7: Trigger state change before interest accrues -> withdraw with stale debt -> protocol underpaid",
+      "why_ruled_out": "No interest accrual mechanism in AMM. State transitions are atomic within each function call \u2014 no multi-block state staleness possible. Cork-pattern test confirms settings changes are immediately visible to subsequent operations.",
+      "test_file": "lbamm-core/test/AuditInsolvency.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_poolSwapByInput()",
+        "_positionCollectFees()"
+      ],
+      "keywords": [
+        "stale-state",
+        "interest-accrual",
+        "timing-attack"
+      ]
+    },
+    {
+      "vector": "H8: Force token.balanceOf to diverge from cached balance -> withdraw based on cached (higher) value",
+      "why_ruled_out": "_collectToken (L2913-2920) reads balanceOf BEFORE and AFTER transferFrom and requires exact match. _finalizeSwapCollectFundsAndDisburse (L2208) does same strict check. Fee-on-transfer tokens are rejected by these checks. Direct donation to AMM contract creates surplus that is NOT withdrawable (no cached balance used for withdrawal amounts).",
+      "test_file": "lbamm-core/test/AuditInsolvency.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_collectToken()",
+        "_finalizeSwapCollectFundsAndDisburse()"
+      ],
+      "keywords": [
+        "balance-divergence",
+        "cached-balance",
+        "fee-on-transfer"
+      ]
+    },
+    {
+      "vector": "H9: Exploit liquidation incentive math -> extract more bonus than position's risk warrants",
+      "why_ruled_out": "No liquidation mechanism or liquidation incentives exist in the Limit Break AMM. Pure AMM architecture with no borrowing/lending features.",
+      "test_file": "not-applicable: No liquidation mechanism in AMM architecture",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [],
+      "keywords": [
+        "liquidation-incentive",
+        "liquidation-bonus",
+        "risk-extraction"
+      ]
+    },
+    {
+      "vector": "H10: Prime pool to low liquidity -> run 100+ tiny swaps harvesting truncation -> compound into material profit",
+      "why_ruled_out": "1000 dust swaps test confirms: pool remains solvent after all operations, attacker cannot extract more than deposited. FeeHelper uses FullMath.mulDiv (floor) for input fees and mulDivRoundingUp for output fees \u2014 rounding consistently favors the protocol. Truncation per swap is < 1 wei, does not compound to material amount.",
+      "test_file": "lbamm-core/test/AuditInsolvency.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol",
+        "FeeHelper.sol"
+      ],
+      "functions": [
+        "_poolSwapByInput()",
+        "calculateAmountAfterFeesSwapByInput()"
+      ],
+      "keywords": [
+        "truncation-harvesting",
+        "dust-swaps",
+        "rounding-exploit"
+      ]
+    },
+    {
+      "vector": "H11: Flash loan -> inflate fee accumulators -> collect inflated fees -> leave pool undercollateralized",
+      "why_ruled_out": "Fee accumulators (feeBalance0/feeBalance1) are incremented by actual swap fees, proportional to swap amount. Collecting fees via _positionCollectFees decrements feeBalance. Flash loan + large swap generates fees but these are genuine fees from a real swap \u2014 the attacker pays them. Collecting own fees just returns what the attacker paid. Net result: loss equal to flash loan fee. Halmos symbolically verified fee conservation (C18a PASS).",
+      "test_file": "lbamm-core/test/AuditInsolvency.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_flashLoan()",
+        "_poolSwapByInput()",
+        "_positionCollectFees()"
+      ],
+      "keywords": [
+        "flash-loan",
+        "fee-inflation",
+        "undercollateralization"
+      ]
+    },
+    {
+      "vector": "C21: Callback state corruption (Bunni/Curve pattern)",
+      "why_ruled_out": "Post-swap state is consistent: bal0 >= reserve0 + feeBalance0, bal1 >= reserve1 + feeBalance1. Reserve+fee changes match balance changes. Reentrancy guard prevents callback-based state corruption. CEI pattern in _executeQueuedHookFeesByHookTransfers prevents double-spend.",
+      "test_file": "lbamm-core/test/InsolvencyC13C25.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_finalizeSwapCollectFundsAndDisburse()",
+        "_executeQueuedHookFeesByHookTransfers()"
+      ],
+      "keywords": [
+        "callback-corruption",
+        "bunni",
+        "curve",
+        "reentrancy"
+      ]
+    },
+    {
+      "vector": "C22: Read-only reentrancy (stale view during swap)",
+      "why_ruled_out": "After every swap in a 10-swap sequence, pool state is immediately consistent: balances >= reserves + fees. No partially-updated state is observable between operations. Reentrancy guard prevents external calls during state updates.",
+      "test_file": "lbamm-core/test/InsolvencyC13C25.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "getPoolState()",
+        "_poolSwapByInput()"
+      ],
+      "keywords": [
+        "read-only-reentrancy",
+        "stale-view",
+        "partial-update"
+      ]
+    },
+    {
+      "vector": "C23: Transient storage SIR pattern (stale slot between swaps)",
+      "why_ruled_out": "Two consecutive swaps in same TX produce independent results. Second swap correctly shows price impact (less output). Both outputs > 0. Pool solvent after both swaps. Transient storage isolation verified.",
+      "test_file": "lbamm-core/test/InsolvencyC13C25.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_poolSwapByInput()"
+      ],
+      "keywords": [
+        "transient-storage",
+        "SIR-pattern",
+        "stale-slot"
+      ]
+    },
+    {
+      "vector": "C24: Cross-component composition (Cork pattern)",
+      "why_ruled_out": "Large swap significantly changes reserves, reverse swap maintains solvency. State changes don't create exploitable preconditions. No stale state visible to subsequent operations.",
+      "test_file": "lbamm-core/test/InsolvencyC13C25.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_poolSwapByInput()"
+      ],
+      "keywords": [
+        "cross-component",
+        "cork-pattern",
+        "stale-precondition"
+      ]
+    },
+    {
+      "vector": "C25: Fee-on-transfer token (PancakeSwap pattern)",
+      "why_ruled_out": "_collectToken does strict balanceOf equality check (L2913-2920): reads balance before, does transferFrom, reads balance after, reverts if difference != expected amount. Fee-on-transfer tokens cause balance difference < transferred amount, triggering LBAMM__TokenInTransferFailed revert. No phantom liquidity possible.",
+      "test_file": "lbamm-core/test/InsolvencyC13C25.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "AMMModule.sol"
+      ],
+      "functions": [
+        "_collectToken()"
+      ],
+      "keywords": [
+        "fee-on-transfer",
+        "pancakeswap",
+        "phantom-liquidity"
+      ]
+    }
+  ],
+  "theft_theses": [
+    {
+      "thesis": "Flash loan -> add liquidity -> collect fees -> remove liquidity with inflated position",
+      "victim": "LPs in the pool",
+      "asset": "Pool reserves (token0 + token1)",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Zero-liquidity pool fee accumulation overflow to extract unearned fees",
+      "victim": "Pool reserves",
+      "asset": "Accumulated fees",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "tokensOwed desync enables double-collecting deferred fees",
+      "victim": "Protocol fee balance",
+      "asset": "ERC20 tokens owed",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Rounding asymmetry in add vs remove paths creates free tokens",
+      "victim": "Pool reserves",
+      "asset": "Rounding dust accumulated into material amount",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Self-liquidation with protocol-funded bonus",
+      "victim": "Protocol reserve",
+      "asset": "Liquidation bonus",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Dust positions too small to liquidate profitably",
+      "victim": "Protocol",
+      "asset": "Unliquidatable bad debt",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Stale debt withdrawal via state change timing",
+      "victim": "Protocol reserves",
+      "asset": "Interest delta",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Force balanceOf divergence from cached balance for over-withdrawal",
+      "victim": "Pool reserves",
+      "asset": "Cached-vs-actual balance difference",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Exploit liquidation incentive math for excess bonus extraction",
+      "victim": "Protocol",
+      "asset": "Liquidation incentive overpayment",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "100+ tiny swaps harvesting truncation rounding for material profit",
+      "victim": "Pool reserves",
+      "asset": "Accumulated truncation dust",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Flash loan -> inflate fee accumulators -> collect inflated fees -> undercollateralize pool",
+      "victim": "LPs in the pool",
+      "asset": "Inflated fee claims",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    }
+  ],
+  "metadata": {
+    "checklist_items_completed": "A: 4/5, B: 3/5, C: 25/25, D: 11/11",
+    "tools_run": {
+      "slither": {
+        "ran": true,
+        "repos": [
+          "lbamm-core",
+          "amm-pool-type-dynamic"
+        ],
+        "note": "High: 6, Medium: 24 across both repos. No exploitable issues found."
+      },
+      "aderyn": {
+        "ran": true,
+        "repos": [
+          "lbamm-core"
+        ],
+        "note": "10 findings in lbamm-core. amm-pool-type-dynamic crashed (Fatal compiler bug). No exploitable issues."
+      },
+      "forge": {
+        "ran": true,
+        "note": "127 tests total (90 in AuditInsolvency.t.sol + 37 in InsolvencyC13C25.t.sol). All pass. Files: lbamm-core/test/AuditInsolvency.t.sol, lbamm-core/test/InsolvencyC13C25.t.sol"
+      },
+      "halmos": {
+        "ran": true,
+        "note": "3 checks (C18a input fee conservation PASS, C18b output fee rounding TIMEOUT no counterexample, C19 settlement conservation PASS). File: lbamm-core/test/halmos/HalmosFeeHelper.t.sol"
+      },
+      "medusa": {
+        "ran": true,
+        "note": "Medusa config exists with 2 property tests. Direct execution failed (no tests found due to Forge setUp pattern). Forge built-in fuzzer used instead: 1000 runs on INV_S02_no_profitable_round_trip_fuzz, all pass."
+      },
+      "audit-context-building": {
+        "ran": true
+      },
+      "entry-point-analyzer": {
+        "ran": true
+      },
+      "call-graph": {
+        "ran": true,
+        "note": "mcp__slither__export_call_graph for AMMModule: 98 nodes, 189 edges"
+      }
+    },
+    "num_turns": 120,
+    "tool_uses": 85,
+    "files_read": 35,
+    "theses_tested": 11,
+    "theses_confirmed": 0,
+    "theses_ruled_out": 11,
+    "triage_log": {
+      "skip": 2,
+      "borderline": 3,
+      "survive": 6
+    },
+    "gate_passed": true
+  }
+}

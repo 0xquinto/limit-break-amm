@@ -1,0 +1,359 @@
+{
+  "agent_name": "math-deep-diver",
+  "agent_role": "Math Deep-Diver",
+  "wave": 1,
+  "findings": [],
+  "ruled_out_vectors": [
+    {
+      "vector": "KV-1: Zero-price bypass \u2014 computeRatioX96 returns 0 on overflow, validateHandlerOrder may not reject zero price when minSqrtPriceX96 == 0",
+      "why_ruled_out": "validateHandlerOrder at AMMStandardHook.sol:215 calls computeRatioX96 and checks bounds. If sqrtPriceX96 == 0, the min bound check (line 218) catches it when minSqrtPriceX96 > 0. When minSqrtPriceX96 == 0 (not set), zero passes but no profit path exists because CLOB order execution uses the order's actual sqrtPriceX96 parameter (not the computed ratio). The pricing bounds validation is a safety check, not the execution price. Additionally, _enforcePriceBounds in the direct swap path (line 847) explicitly reverts on sqrtPriceX96 == 0.",
+      "test_file": "lbamm-pool-type-fixed/test/AuditMathDeepDiver.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMStandardHook.sol",
+        "CLOBTransferHandler.sol",
+        "SqrtPriceCalculator.sol"
+      ],
+      "functions": [
+        "_enforceTokenHooks",
+        "validateHandlerOrder",
+        "computeRatioX96"
+      ],
+      "keywords": [
+        "sqrtPriceX96",
+        "zero",
+        "bypass",
+        "overflow",
+        "pricing-bounds",
+        "computeRatioX96",
+        "validateHandlerOrder"
+      ]
+    },
+    {
+      "vector": "KV-2: Direct handler call \u2014 calling CLOBTransferHandler fill path directly bypasses AMM hook pricing enforcement",
+      "why_ruled_out": "CLOBTransferHandler.handleTransferCallback (line 230) requires msg.sender == AMM. Direct calls revert with CLOBTransferHandler__CallbackMustBeFromAMM. Similarly, afterSwapRefund (line 316) checks msg.sender == AMM. The only non-AMM-gated functions are openOrder/closeOrder/depositToken/withdrawToken, which manage orders and balances but do not execute swaps. No bypass path exists.",
+      "test_file": "code-analysis: CLOBTransferHandler.sol:229-232,315-318",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "CLOBTransferHandler.sol",
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "executeSwap",
+        "beforeSwap",
+        "afterSwap"
+      ],
+      "keywords": [
+        "pricing",
+        "bypass",
+        "direct",
+        "handler",
+        "direct-swap",
+        "pricing-bounds",
+        "flag-dependency"
+      ]
+    },
+    {
+      "vector": "KV-3: Settings sync gap \u2014 CLOBTransferHandler.setTokenSettings may leave stale memSettings in CreatorHookSettingsRegistry",
+      "why_ruled_out": "CreatorHookSettingsRegistry.setTokenSettings (line 376-378) creates memSettings from input, explicitly sets initialized=true (line 377), stores to _tokenSettings[token] (line 378), and syncs all hooks via registryUpdateTokenSettings (line 396-398). The CLOB reads token settings from the AMM (ILimitBreakAMM.getTokenSettings), not from its own storage. No independent setTokenSettings exists in CLOBTransferHandler. Settings flow is unidirectional: Registry \u2192 AMM \u2192 CLOB reads on demand.",
+      "test_file": "code-analysis: CreatorHookSettingsRegistry.sol:357-401",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "CLOBTransferHandler.sol",
+        "CreatorHookSettingsRegistry.sol"
+      ],
+      "functions": [
+        "setTokenSettings"
+      ],
+      "keywords": [
+        "setTokenSettings",
+        "sync",
+        "stale",
+        "initialized",
+        "memSettings",
+        "gas-waste"
+      ]
+    },
+    {
+      "vector": "KV-4: Transient storage leak \u2014 DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT written in beforeSwap but not cleared after afterSwap read",
+      "why_ruled_out": "Known by-design pattern (audit memory FP #1). Transient storage is automatically cleared at end of each transaction. Within a transaction, beforeSwap writes the slot (line 839) and afterSwap reads it (line 843-844). The AMM calls beforeSwap per-token, so the second call intentionally overwrites the first. No cross-swap staleness possible because the beforeSwap\u2192afterSwap sequence is enforced by the AMM's swap flow. This is documented as HOOK-001 in the audit memory.",
+      "test_file": "code-analysis: AMMStandardHook.sol:838-851",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "AMMHooksTransferHandler.sol",
+        "AMMStandardHook.sol"
+      ],
+      "functions": [
+        "beforeSwap"
+      ],
+      "keywords": [
+        "transient",
+        "tstore",
+        "clear",
+        "direct",
+        "swap",
+        "transient-storage",
+        "stale-read",
+        "direct-swap",
+        "DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT"
+      ]
+    },
+    {
+      "vector": "CLOBHelper.calculateFixedInput rounds UP output (favors maker) \u2014 potential for maker to extract dust via many small fills",
+      "why_ruled_out": "Confirmed: CLOB uses mulDivRoundingUp for output, giving maker up to 4 wei more per fill than exact calculation. Over 100 fills at 1.75:1 price, cumulative overpayment was 207 wei. This is bounded by 4 * numFills wei total. At $3000/ETH, extracting $1 would require >10^14 fills \u2014 economically impossible due to gas costs. Not exploitable.",
+      "test_file": "lbamm-pool-type-fixed/test/AuditMathDeepDiver.t.sol",
+      "repos": [
+        "lbamm-hooks-and-handlers"
+      ],
+      "contracts": [
+        "CLOBHelper.sol"
+      ],
+      "functions": [
+        "calculateFixedInput"
+      ],
+      "keywords": [
+        "rounding",
+        "mulDivRoundingUp",
+        "maker",
+        "overpayment",
+        "dust"
+      ]
+    },
+    {
+      "vector": "FixedHelper.withdrawLiquidity line 69 operator precedence bug \u2014 redeposited0 | redeposited1 == 0 may misparse",
+      "why_ruled_out": "Confirmed NOT a bug via solc bytecode analysis. Solidity's type system forces (uint256 | uint256) == uint256 interpretation because uint256 | bool is a type error. Both expressions compile to identical opcodes: OR then EQ. Verified by compiling with solc 0.8.16 and comparing bytecode.",
+      "test_file": "code-analysis: FixedHelper.sol:69 \u2014 solc bytecode verified identical for both interpretations",
+      "repos": [
+        "lbamm-pool-type-fixed"
+      ],
+      "contracts": [
+        "FixedHelper.sol"
+      ],
+      "functions": [
+        "withdrawLiquidity"
+      ],
+      "keywords": [
+        "operator-precedence",
+        "bitwise-or",
+        "redeposited",
+        "type-system"
+      ]
+    },
+    {
+      "vector": "Dust-loop extraction via 100+ tiny swaps on FixedPoolType",
+      "why_ruled_out": "FixedHelper rounds DOWN output (user gets less). With 1-wei swaps at 3:2 ratio, output rounds to 0 \u2014 pool gains 1 wei per swap. Over 100 iterations, pool balance only increases. Fuzz test C23 confirms no profitable round-trip possible. C24 confirms 1-wei sequential swaps never decrease pool balance.",
+      "test_file": "lbamm-pool-type-fixed/test/AuditMathDeepDiver.t.sol",
+      "repos": [
+        "lbamm-pool-type-fixed"
+      ],
+      "contracts": [
+        "FixedHelper.sol"
+      ],
+      "functions": [
+        "swapByInput",
+        "swapByOutput",
+        "calculateFixedSwapByRatio"
+      ],
+      "keywords": [
+        "dust",
+        "tiny-swap",
+        "rounding",
+        "extraction"
+      ]
+    },
+    {
+      "vector": "Round-trip profit on DynamicPoolType via tick boundary manipulation",
+      "why_ruled_out": "Fuzz test (25 runs) confirms A\u2192B\u2192A always returns A_final <= A_initial. Fee deduction + rounding down output ensures no profit path. SwapMath.computeSwapByInputStep rounds fee UP (user pays more) and amount out DOWN (user gets less). Medusa ran 422,602 calls with 0 failures.",
+      "test_file": "amm-pool-type-dynamic/test/AuditMathDeepDiver.t.sol",
+      "repos": [
+        "amm-pool-type-dynamic"
+      ],
+      "contracts": [
+        "DynamicHelper.sol",
+        "SwapMath.sol"
+      ],
+      "functions": [
+        "computeSwap",
+        "computeSwapByInputStep"
+      ],
+      "keywords": [
+        "round-trip",
+        "profit",
+        "tick-boundary",
+        "INV-SW02"
+      ]
+    },
+    {
+      "vector": "SingleProviderHelper round-trip profit via price precision loss",
+      "why_ruled_out": "Fuzz test C20 confirms: forward (mulDiv roundDown) then reverse (mulDiv roundDown) always returns recoveredInput <= inputAmount. Two rounds of rounding down compound the loss. No profit possible.",
+      "test_file": "lbamm-pool-type-fixed/test/AuditMathDeepDiver.t.sol",
+      "repos": [
+        "lbamm-pool-type-single-provider"
+      ],
+      "contracts": [
+        "SingleProviderHelper.sol"
+      ],
+      "functions": [
+        "calculateFixedInput",
+        "calculateFixedOutput"
+      ],
+      "keywords": [
+        "round-trip",
+        "precision",
+        "single-provider"
+      ]
+    },
+    {
+      "vector": "Fee monotonicity violation \u2014 larger amounts could produce disproportionately small fees",
+      "why_ruled_out": "Fuzz test C25 confirms fee is monotonically non-decreasing with amount for both input and output paths. mulDivRoundingUp(amount, feeBPS, MAX_BPS) is monotonic in amount when feeBPS and MAX_BPS are constant.",
+      "test_file": "lbamm-pool-type-fixed/test/AuditMathDeepDiver.t.sol",
+      "repos": [
+        "lbamm-core"
+      ],
+      "contracts": [
+        "FeeHelper.sol"
+      ],
+      "functions": [
+        "calculateAmountAfterFeesSwapByInput",
+        "calculateAmountAfterFeesSwapByOutput"
+      ],
+      "keywords": [
+        "fee",
+        "monotonicity",
+        "INV-E01"
+      ]
+    },
+    {
+      "vector": "uint128 truncation in DynamicHelper._getTokensOwed could lose accrued fees",
+      "why_ruled_out": "The cast uint128(mulDiv(feeGrowthDelta, liquidity, Q128)) is bounded because feeGrowthDelta is per-unit-of-liquidity and accumulated over actual swap volume. In practice, exceeding uint128 for tokensOwed would require impossibly large accumulated fees. Test C8 verifies the truncation behavior at extreme inputs.",
+      "test_file": "lbamm-pool-type-fixed/test/AuditMathDeepDiver.t.sol",
+      "repos": [
+        "amm-pool-type-dynamic"
+      ],
+      "contracts": [
+        "DynamicHelper.sol"
+      ],
+      "functions": [
+        "_getTokensOwed"
+      ],
+      "keywords": [
+        "truncation",
+        "uint128",
+        "tokensOwed",
+        "fee-growth"
+      ]
+    }
+  ],
+  "theft_theses": [
+    {
+      "thesis": "Extract dust via repeated tiny CLOB fills exploiting mulDivRoundingUp overpayment",
+      "victim": "CLOB maker (order placer)",
+      "asset": "Order fill output tokens",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Profitable round-trip swap on FixedPoolType exploiting rounding direction",
+      "victim": "Pool liquidity providers",
+      "asset": "Pool reserve tokens",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Profitable round-trip swap on DynamicPoolType via tick boundary crossing",
+      "victim": "Pool liquidity providers",
+      "asset": "Pool reserve tokens",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Bypass pricing bounds via computeRatioX96 overflow returning 0",
+      "victim": "Token creator (pricing bounds setter)",
+      "asset": "Pricing enforcement circumvention",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Operator precedence bug in FixedHelper.withdrawLiquidity allows bypassing position-clearing safety check",
+      "victim": "Liquidity provider",
+      "asset": "Position integrity",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "Fee truncation at 1 BPS on small amounts gives free swaps",
+      "victim": "Fee recipients (LP + protocol)",
+      "asset": "Fee revenue",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    },
+    {
+      "thesis": "SingleProvider round-trip profit via accumulated precision loss across two price conversions",
+      "victim": "Single-provider pool owner",
+      "asset": "Pool reserves",
+      "estimated_ev": 0,
+      "status": "ruled_out"
+    }
+  ],
+  "metadata": {
+    "checklist_items_completed": "A: 12/15, B: 4/5, C: 25/25, D: 4/4, E: 7/7",
+    "tools_run": {
+      "slither": {
+        "ran": true,
+        "repos": [
+          "lbamm-pool-type-fixed",
+          "amm-pool-type-dynamic",
+          "lbamm-core"
+        ],
+        "note": "Run on all 3 primary repos. Mostly false positives \u2014 divide-before-multiply in TickMath/FixedHelper by-design, uninitialized-local from delegatecall pattern."
+      },
+      "aderyn": {
+        "ran": true,
+        "repos": [
+          "lbamm-core"
+        ],
+        "note": "Crashed on lbamm-pool-type-fixed and amm-pool-type-dynamic (aderyn_driver panic). Only succeeded on lbamm-core."
+      },
+      "forge": {
+        "ran": true,
+        "note": "42 tests in fixed pool, 111 tests in dynamic pool. Files: lbamm-pool-type-fixed/test/AuditMathDeepDiver.t.sol, amm-pool-type-dynamic/test/AuditMathDeepDiver.t.sol"
+      },
+      "halmos": {
+        "ran": true,
+        "note": "4 symbolic checks. 2 PASS (mulDiv, roundingUp). 2 TIMEOUT at 30s (feeNeverExceedsInput 15 paths, makerNeverOverpaid 102 paths \u2014 no counterexample found). File: lbamm-pool-type-fixed/test/HalmosChecks.t.sol"
+      },
+      "medusa": {
+        "ran": true,
+        "note": "DynamicPoolType: 422602 calls, 0 failures, 14 assertion tests passed. FixedPoolType: failed to deploy (constructor args required)."
+      },
+      "audit-context-building": {
+        "ran": true,
+        "note": "Applied to FixedHelper.swapByInput \u2014 micro-analysis of purpose, inputs, invariants, cross-function deps, trust boundaries"
+      },
+      "entry-point-analyzer": {
+        "ran": true,
+        "note": "Mapped 8 state-changing entry points flowing through math libraries. All library functions are internal, gated by AMM delegatecall or nonReentrant."
+      }
+    },
+    "num_turns": 120,
+    "tool_uses": 85,
+    "files_read": 15,
+    "theses_tested": 7,
+    "theses_confirmed": 0,
+    "theses_ruled_out": 7,
+    "triage_log": {
+      "skip": 3,
+      "borderline": 2,
+      "survive": 7
+    },
+    "gate_passed": true
+  }
+}

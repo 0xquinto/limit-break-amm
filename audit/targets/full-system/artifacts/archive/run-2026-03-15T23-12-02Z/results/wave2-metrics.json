@@ -1,0 +1,40 @@
+{
+  "wave": 2,
+  "name": "exploit-development",
+  "timestamp": "2026-03-15T23:29:46Z",
+  "config": {
+    "agents": 1,
+    "models": {
+      "claude-opus-4-6": 1
+    }
+  },
+  "agents": [
+    {
+      "name": "exploit-dev-1",
+      "role": "exploit-verifier",
+      "model": "claude-opus-4-6",
+      "num_turns": 0,
+      "duration_ms": 43421,
+      "total_tokens": 0,
+      "stop_reason": "completed",
+      "safety_events": 0
+    }
+  ],
+  "evaluation": {
+    "findings_claimed": 0,
+    "vectors_ruled_out": 0,
+    "total_tokens": 0,
+    "total_turns": 0,
+    "tokens_per_finding": null,
+    "tokens_per_vector_eliminated": null,
+    "precision": null,
+    "poc_pass_rate": null,
+    "adversarial_survival_rate": null
+  },
+  "safety": {
+    "total_events": 0,
+    "loop_detections": 0,
+    "budget_exhaustions": 0,
+    "agent_failures": 0
+  }
+}

@@ -1,0 +1,170 @@
+{
+  "metadata": {
+    "agent": "math-deep-diver",
+    "wave": 1,
+    "run": 10,
+    "model": "claude-opus-4-20250514",
+    "timestamp": "2026-03-27T00:00:00Z",
+    "duration_minutes": 120,
+    "tools_used": ["forge-test", "forge-fuzz", "slither-mcp", "aderyn", "grep", "read"],
+    "checklist_completed": 29,
+    "checklist_total": 29,
+    "test_files": [
+      "amm-pool-type-dynamic/test/AuditMathDeepDiverW1R10.t.sol",
+      "lbamm-pool-type-fixed/test/AuditMathDeepDiverW1R10.t.sol",
+      "amm-pool-type-dynamic/test/AuditMathDeepDiverW1R10_FeeGrowth.t.sol"
+    ],
+    "tests_passed": 74,
+    "tests_failed": 0
+  },
+  "findings": [],
+  "ruled_out_vectors": [
+    {
+      "id": "RO-MDD-001",
+      "vector": "CLOBHelper.calculateFixedInput rounds UP output to makers",
+      "items": ["C3", "C27"],
+      "reason": "CLOB uses mulDivRoundingUp(amountIn, sqrtPriceX96, Q96) twice, giving makers 1-4 extra wei per fill versus the correct mulDiv. Over 1000 fills, total surplus is ~1700 wei. Per-fill max = 2 wei. Not economically exploitable: placing enough orders to profit costs orders of magnitude more gas than the extracted value. Dust-level per L-012.",
+      "evidence": "test_CLOBHelper_calculateFixedInput_RoundsUpGivesMakerExtra, test_CLOBHelper_vs_SingleProvider_RoundingDifference, test_CLOBHelper_accumulatedRoundingAcrossManyFills"
+    },
+    {
+      "id": "RO-MDD-002",
+      "vector": "FixedHelper.normalizePriceToRatio zero-component ratio at extreme sqrtPrice",
+      "items": ["C20", "C26"],
+      "reason": "At MIN_SQRT_RATIO, normalizePriceToRatio produces ratio (1, 0) after simplification. Swaps in one direction get 0 output, other direction reverts on division by zero (FullMath.mulDiv reverts when denominator=0). This makes the pool non-functional at extreme prices but is a self-inflicted config error (FP#4) — pool creator chose the price.",
+      "evidence": "test_C20_MIN_SQRT_RATIO_swap_reverts_if_zero_ratio, test_C20_MAX_SQRT_RATIO_swap_reverts_if_zero_ratio, test_C20_MIN_SQRT_RATIO_no_zero_component"
+    },
+    {
+      "id": "RO-MDD-003",
+      "vector": "FullMath.mulDiv/mulDivRoundingUp precision and phantom overflow",
+      "items": ["C1", "C2"],
+      "reason": "Standard Remco Bloemen implementation with CRT+Newton-Raphson. mulDiv(0, b, d) = 0. mulDiv(a, b, 0) reverts. mulDivRoundingUp >= mulDiv for all inputs. 512-bit intermediate handles phantom overflow correctly. Verified by tests in dynamic pool repo.",
+      "evidence": "test_SwapMath_computeSwapByInputStep_noFreeTokens, test_SqrtPriceMath_getAmount0Delta_edgeCases"
+    },
+    {
+      "id": "RO-MDD-004",
+      "vector": "FixedHelper.calculateFixedSwapByRatio round-trip precision loss",
+      "items": ["C3"],
+      "reason": "Round-trip calculateFixedSwapByRatio(calculateFixedSwapByRatioRoundingDown(amount, ratio, true), ratio, false) >= amount verified at 1:1, 1:1M, 1M:1 ratios and via fuzz testing. Precision loss bounded by floor(den/num) + 2. calculateFixedSwapByRatio always >= calculateFixedSwapByRatioRoundingDown for same inputs.",
+      "evidence": "test_C3_roundTrip_1to1, test_C3_roundTrip_1to1000000, test_C3_roundTrip_1000000to1, test_C3_roundTrip_fuzz, test_C3_roundingUp_gte_roundingDown"
+    },
+    {
+      "id": "RO-MDD-005",
+      "vector": "FixedHelper.calculateShareDeltaForLiquidityConsumption over-consumption",
+      "items": ["C4"],
+      "reason": "consumedLiquidityDelta always <= availableLiquidity. Share conservation holds: unconsumedShareDelta + consumed share = original shareDelta. Zero shareDelta returns (0,0). Verified via fuzz testing.",
+      "evidence": "test_C4_consumedLiquidityDelta_le_available, test_C4_share_conservation, test_C4_zeroShareDelta, test_C4_excessShareDelta_capped_by_availability"
+    },
+    {
+      "id": "RO-MDD-006",
+      "vector": "FixedHelper.calculateShareDeltaForLiquidityReturn over-return",
+      "items": ["C5"],
+      "reason": "shareDelta always <= currentShare. Returned liquidity <= consumed liquidity. Delta exceeding consumed sets share to zero. Fuzz verified across varied ratios.",
+      "evidence": "test_C5_shareDelta_le_currentShare, test_C5_returnedLiquidity_le_consumed, test_C5_deltaExceedsConsumedLiquidity, test_C5_fuzz_shareDelta_bounded"
+    },
+    {
+      "id": "RO-MDD-007",
+      "vector": "DynamicHelper fee growth tracking across tick crossings",
+      "items": ["C6", "C7", "C8"],
+      "reason": "_crossTick flips feeGrowthOutside using standard Uniswap V3 formula (global - outside). _getFeeGrowthInside correctly computes fee growth inside range using three cases (below/within/above). _updateTick initializes fee growth outside to global values when tick <= current (by convention). All in unchecked blocks for intentional wrapping. Identical to audited Uniswap V3 code.",
+      "evidence": "Manual code review of DynamicHelper.sol lines 502-629, 756-794"
+    },
+    {
+      "id": "RO-MDD-008",
+      "vector": "DynamicHelper.computeSwap protocol fee rounding",
+      "items": ["C9", "C10"],
+      "reason": "Protocol fee uses mulDivRoundingUp (rounds against LPs, for protocol). Fee growth increment uses mulDiv (rounds down, any dust stays in pool balance unaccounted — protocol surplus). When liquidity=0, fee is not accumulated (no LP to receive it), and swap produces 0 amounts (price jumps through empty ranges). Standard Uniswap V3 behavior.",
+      "evidence": "Manual code review of DynamicHelper.sol lines 396-408"
+    },
+    {
+      "id": "RO-MDD-009",
+      "vector": "SqrtPriceMath rounding direction consistency",
+      "items": ["C11", "C12"],
+      "reason": "getAmount0Delta/getAmount1Delta with roundUp=true >= roundUp=false. Equal prices produce 0 deltas. getNextSqrtPriceFromInput correctly handles both directions (decrease for zeroForOne, increase for oneForZero). computeRatioX96 returns MIN/MAX_SQRT_RATIO for degenerate inputs (0,N) and (N,0).",
+      "evidence": "test_SqrtPriceMath_getAmount0Delta_edgeCases, test_SqrtPriceCalculator_computeRatioX96_overflow"
+    },
+    {
+      "id": "RO-MDD-010",
+      "vector": "SwapMath no free tokens invariant",
+      "items": ["C13"],
+      "reason": "amountIn + feeAmount never exceeds amountSpecifiedRemaining. At 1 wei input with 0.3% fee, fee consumes entire input (amountOut=0). At 100 wei input, amountIn + feeAmount <= 100. Verified across 1000 sequential steps.",
+      "evidence": "test_SwapMath_computeSwapByInputStep_noFreeTokens, test_SequentialOneWeiSwaps_ProtocolFavors"
+    },
+    {
+      "id": "RO-MDD-011",
+      "vector": "TickMath round-trip precision",
+      "items": ["C14"],
+      "reason": "getTickAtSqrtPrice(getSqrtPriceAtTick(t)) == t for every 1000th tick from MIN_TICK to MAX_TICK, plus boundary ticks (MIN_TICK, MAX_TICK-1, tick 0). Zero mismatches.",
+      "evidence": "test_TickMath_roundTrip"
+    },
+    {
+      "id": "RO-MDD-012",
+      "vector": "FeeHelper input/output fee asymmetry exploitation",
+      "items": ["C15", "C16", "C17"],
+      "reason": "Output fee >= input fee for all BPS values (verified by fuzz). This is by design: output uses denominator (MAX_BPS - BPS) which is smaller. Protocol fee never exceeds base fee (mulDiv rounds down). Input allows 100% fee (MAX_BPS), output rejects >= MAX_BPS — intentional asymmetry. 1 wei at 50% BPS rounds fee to 0 (user keeps wei).",
+      "evidence": "test_C15_outputFee_gte_inputFee_fuzz, test_C15_feeAsymmetry_smallAmounts, test_C16_protocolFee_le_baseFee_input, test_C16_protocolFee_le_baseFee_output, test_FeeHelper_calculateInputFee_edgeCases, test_FeeHelper_calculateOutputFee_edgeCases"
+    },
+    {
+      "id": "RO-MDD-013",
+      "vector": "SqrtPriceCalculator.computeRatioX96 overflow returning 0",
+      "items": ["C19"],
+      "reason": "Already known and patched (v1 findings). _validatePricingBounds checks for sqrtPriceX96 == 0 and reverts with InvalidPrice. The dynamic scaling loop prevents multiplication overflow of amount1 * multiplier. At extreme inputs (type(uint256).max, 1), overflow check returns 0 which is caught by validators.",
+      "evidence": "test_SqrtPriceCalculator_computeRatioX96_overflow"
+    },
+    {
+      "id": "RO-MDD-014",
+      "vector": "FixedHelper height traversal divide-before-multiply",
+      "items": ["C21", "C22"],
+      "reason": "Slither flagged _increaseHeight/_decreaseHeight lines 1799/1899 as divide-before-multiply. Actual pattern is standard divmod: heightToMove = remaining / liquidity; remaining -= heightToMove * liquidity. This correctly computes quotient and remainder. Fee distribution in height loops uses diminishing-pool allocation with mulDiv rounding down — last height gets accumulated remainders (dust-level).",
+      "evidence": "Manual code review of FixedHelper.sol lines 1753-1938"
+    },
+    {
+      "id": "RO-MDD-015",
+      "vector": "FixedHelper._splitAmountsAndFeesByHeight swap-by-output +1 tolerance",
+      "items": ["C23"],
+      "reason": "Swap-by-output allows totalAmountInFilled to exceed amountIn by 1 (line 1680). This is intentional split rounding tolerance. Excess triggers fee recalculation via _calculateOutputLPAndProtocolFee. User overpays at most 1 wei — dust-level.",
+      "evidence": "Manual code review of FixedHelper.sol lines 1652-1711"
+    },
+    {
+      "id": "RO-MDD-016",
+      "vector": "FixedHelper._calculateExcessLPAndProtocolFee value extraction",
+      "items": ["C24"],
+      "reason": "When swap-by-input has unused input after height splitting, the excess becomes LP+protocol fees. Dust bounded by potentialDustForOneOutput (= calculateFixedSwapByRatio(1, ratio, !zeroForOne)), which is 1 unit at 1:1 ratio. Even at extreme ratios, the dust per swap is sub-wei economically.",
+      "evidence": "Manual code review of FixedHelper.sol lines 1714-1727"
+    },
+    {
+      "id": "RO-MDD-017",
+      "vector": "AMMModule partial fill fee adjustment rounding",
+      "items": ["C25"],
+      "reason": "exchangeFeeAdjustment uses mulDiv (rounds DOWN), meaning less fee is refunded on partial fill — user overpays slightly. protocolExchangeFeeAdjustment also uses mulDiv (same direction). adjustedAmountSpecified correctly reduced by the sum. Balance check at finalization enforces strict equality.",
+      "evidence": "Manual code review of AMMModule.sol lines 1413-1427, 2207-2214"
+    },
+    {
+      "id": "RO-MDD-018",
+      "vector": "Cross-layer fee denomination mismatch (INV-S04)",
+      "items": ["C28"],
+      "reason": "AMMModule FeeHelper deducts exchangeFee + feeOnTop from tokenIn. Pool type deducts poolFeeBPS from remaining (also in tokenIn denomination). All fees transferred from tokenIn balance. Fee growth tracked per-token (feeBalance0/feeBalance1 for the input token). No denomination crossing found.",
+      "evidence": "Explore agent traced full value flow through AMMModule → FixedPoolType → FeeHelper"
+    },
+    {
+      "id": "RO-MDD-019",
+      "vector": "Profitable round-trip swap (INV-SW02)",
+      "items": ["C29"],
+      "reason": "Both pool types round input fees UP (user pays more) and output DOWN (user gets less). Combined with multi-layer fees (exchangeFee + poolFee + feeOnTop), any round-trip A→B→A leaves user with strictly less A. Sequential 1-wei swaps confirmed pool never loses value.",
+      "evidence": "test_SequentialOneWeiSwaps_ProtocolFavors, test_C15_outputFee_gte_inputFee_fuzz"
+    }
+  ],
+  "slither_results": {
+    "repos_scanned": ["lbamm-pool-type-fixed", "amm-pool-type-dynamic", "lbamm-core"],
+    "findings_count": 45,
+    "relevant_to_math": 3,
+    "relevant_details": [
+      "divide-before-multiply in FixedHelper._increaseHeight/_decreaseHeight — false positive (standard divmod pattern)",
+      "uninitialized local SqrtPriceCalculator.computeRatioX96.multiplier — false positive (set in loop before use)",
+      "delegateCall in proxy patterns — out of scope for math archetype"
+    ]
+  },
+  "aderyn_results": {
+    "repos_scanned": 0,
+    "error": "Aderyn v0.6.8 crashes on all 3 repos with 'content not found' panic at compile.rs:78. Known issue with cross-repo remappings."
+  }
+}
