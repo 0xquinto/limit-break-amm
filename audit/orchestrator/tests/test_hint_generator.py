@@ -40,3 +40,19 @@ class TestSimilarityRejection:
 
     def test_empty_fp_list_not_rejected(self):
         assert _is_similar_to_known_fp("any text", [], threshold=0.4) is False
+
+
+class TestHintSourceDataclass:
+    def test_hint_source_fields(self):
+        from audit.orchestrator.hint_generator import HintSource
+        h = HintSource(id="T-001", text="test", source="manual", priority=1, agent_target="auth-forger")
+        assert h.text == "test"
+        assert h.priority == 1
+        assert h.agent_target == "auth-forger"
+
+
+class TestLoadGuardianTitles:
+    def test_returns_set(self):
+        from audit.orchestrator.hint_generator import _load_guardian_titles
+        titles = _load_guardian_titles()
+        assert isinstance(titles, set)
