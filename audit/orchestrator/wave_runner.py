@@ -41,6 +41,7 @@ from .model_profiles import resolve_profile, AUDIT_SYSTEM_PROMPT
 from .templates.exploit_system_prompts import EXPLOIT_BASE_PROMPTS, build_exploit_system_prompt
 from .templates.compliance_system_prompts import COMPLIANCE_BASE_PROMPTS, build_compliance_system_prompt
 from .templates.boundary_system_prompts import BOUNDARY_BASE_PROMPTS, build_boundary_system_prompt
+from .thresholds import T
 
 # Must unset before SDK spawns CLI subprocess — nested session check
 os.environ.pop("CLAUDECODE", None)
@@ -63,7 +64,7 @@ if _dotenv_path.exists():
             os.environ.setdefault(_key.strip(), _val.strip())
 
 # Stagger delay between agent launches to avoid concurrent TLS handshake issues
-_STAGGER_DELAY_SECONDS = 2.0
+_STAGGER_DELAY_SECONDS = T.stagger_delay_s
 
 # Concurrency limiter — prevents unbounded SDK sessions
 _AGENT_SEMAPHORE = asyncio.Semaphore(MAX_CONCURRENT_AGENTS)
@@ -87,7 +88,7 @@ class WaveAbortError(Exception):
         self.safety_events = safety_events
 
 
-_MIN_SUCCESS_RATIO = 0.5  # abort wave if fewer than 50% agents succeed
+_MIN_SUCCESS_RATIO = T.min_success_ratio
 
 
 import logging as _logging
@@ -196,8 +197,8 @@ class _AgentRunResult:
     wall_time_s: float
 
 
-_MAX_AGENT_RETRIES = 2
-_RETRY_BASE_DELAY = 5.0  # seconds
+_MAX_AGENT_RETRIES = T.max_agent_retries
+_RETRY_BASE_DELAY = T.retry_base_delay_s
 
 async def _run_agent(
     agent: AgentConfig,
@@ -344,8 +345,8 @@ async def run_wave(
     start_time = time.monotonic()
 
     # Circuit breaker: abort wave if 3+ agents crash within 60s of spawning
-    _FAST_FAIL_THRESHOLD = 3
-    _FAST_FAIL_WINDOW_S = 60.0
+    _FAST_FAIL_THRESHOLD = T.fast_fail_threshold
+    _FAST_FAIL_WINDOW_S = T.fast_fail_window_s
     fast_failures: list[float] = []
 
     async def _safe_run(agent, prompt, delay):
