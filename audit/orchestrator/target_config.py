@@ -62,6 +62,7 @@ class TargetConfig:
     boundaries: list[BoundarySpec]
     budget: dict[str, Any]
     custom_detectors: list[str]
+    tool_compat: dict[str, set[str]] = field(default_factory=dict)
     state_coupling_agents: list[str] = field(default_factory=list)
     boundary_agent_defaults: dict = field(default_factory=lambda: {
         "profile": "fast_reasoning",
@@ -206,6 +207,11 @@ def load_target_config(path: Path) -> TargetConfig:
             raise TargetConfigError(f"Boundary missing 'slug' or 'name': {b}")
         boundaries.append(BoundarySpec(**{k: v for k, v in b.items() if k in BoundarySpec.__dataclass_fields__}))
 
+    # Parse tool_compat
+    tool_compat = {
+        k: set(v) for k, v in raw.get("tool_compat", {}).items()
+    }
+
     return TargetConfig(
         name=raw["name"],
         description=raw.get("description", ""),
@@ -214,6 +220,7 @@ def load_target_config(path: Path) -> TargetConfig:
         boundaries=boundaries,
         budget=raw.get("budget", {}),
         custom_detectors=raw.get("custom_detectors", []),
+        tool_compat=tool_compat,
         state_coupling_agents=raw.get("state_coupling_extra_agents", []),
         boundary_agent_defaults=raw.get("boundary_agent_defaults", {
             "profile": "fast_reasoning", "max_turns": 75, "retry_profile": "max_reasoning",

@@ -149,35 +149,6 @@ aderyn . --src src/handlers/clob/
 | lbamm-hooks-and-handlers | `src/handlers/clob/` | CLOB math, linked-list logic, state transitions |
 | lbamm-hooks-and-handlers | `src/hooks/` | Access control, pricing bounds enforcement |
 
-## Quimera (LLM Exploit Generation)
-
-Path: `~/.local/bin/quimera` (v0.1)
-
-Quimera uses LLMs + Foundry to automatically generate exploit PoCs for confirmed vulnerabilities. Built by Gustavo Grieco (creator of Echidna).
-
-### Usage
-
-```bash
-# For a deployed contract (requires RPC + Etherscan API)
-quimera <ContractName> <address> --model <model> --iterations 5
-
-# For local contracts (project directory)
-quimera <ContractName> . --contract <ContractName> --working-dir .
-```
-
-### When to Use
-
-- **After confirming a vulnerability** — to auto-generate a Foundry PoC.
-- **NOT for discovery** — Quimera needs a known flaw description to generate exploits.
-- **exploit-developer agent** (wave 2) is the primary user of Quimera.
-
-### Gotchas
-
-- Requires an LLM model (supports OpenAI, Gemini, Ollama, or manual mode).
-- Manual mode: copy/paste prompts to any LLM — no API key needed.
-- Iterations control how many refinement loops the LLM runs.
-- Works best with clear vulnerability descriptions passed via `--attachment`.
-
 ## Medusa (Corpus-Guided Fuzzer)
 
 Path: `/opt/homebrew/bin/medusa` (v1.5.0)
@@ -396,7 +367,7 @@ These are AI-powered analysis skills installed as Claude Code plugins. They run 
 4. `variant-analysis` — find all pluggable extension points
 
 **exploit-developer (wave 2):**
-1. Quimera CLI for automated PoC generation
+1. Forge compile-test-refine loop for PoC generation
 2. `variant-analysis` — check if the exploit pattern exists elsewhere
 
 ### Skill Invocation

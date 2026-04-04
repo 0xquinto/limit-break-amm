@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lbamm-custom-detectors"
+version = "0.1.0"
+description = "Custom Slither detectors for Limit Break AMM audit"
+requires-python = ">=3.10"
+dependencies = ["slither-analyzer"]
+
+[tool.setuptools]
+packages = ["custom_detectors"]
+
+[tool.setuptools.package-dir]
+custom_detectors = "."
+
+[project.entry-points."slither_analyzer.plugin"]
+lbamm-detectors = "custom_detectors:make_plugin"

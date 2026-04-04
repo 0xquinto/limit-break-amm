@@ -5,12 +5,16 @@ Cached at artifacts/file-inventory.json.
 """
 
 import json
+import logging
+import re
 import subprocess
 from collections import deque
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .config import ARTIFACTS_DIR, PROJECT_ROOT, REPOS
+logger = logging.getLogger(__name__)
+
+from .config import ARTIFACTS_DIR, get_repos
 
 
 # ── File scanning ─────────────────────────────────────────────────────────────
@@ -121,19 +125,56 @@ def _extract_call_graph(repos_or_raw) -> dict:
 
 
 def _run_slither_on_repos(repos: list[str]) -> dict:
-    """Run Slither call-graph on each repo, merge results. Returns raw {caller: [callees]}."""
+    """Run Slither call-graph printer on each repo, merge results.
+
+    Slither's call-graph printer writes .dot files (graphviz) to the repo dir,
+    not JSON to stdout. We parse the .dot edges to build {caller: [callees]}.
+    Requires build_and_fix() to have run first for cross-repo compatibility.
+    """
+    import shutil
+    if not shutil.which("slither"):
+        logger.warning("Slither not found in PATH, skipping call-graph extraction")
+        return {}
+
     merged: dict[str, list[str]] = {}
+    edge_re = re.compile(r'"(\d+_\w+)"\s*->\s*"(\d+_\w+)"')
+
     for repo in repos:
+        repo_path = Path(repo)
         try:
+            # Ensure build-info is fixed for cross-repo compatibility
+            from .artifact_generator import build_and_fix
+            build_and_fix(repo_path.name, repo_path)
+
             result = subprocess.run(
-                ["slither", str(repo), "--print", "call-graph", "--json", "-"],
+                ["slither", str(repo), "--print", "call-graph", "--ignore-compile"],
                 capture_output=True, text=True, timeout=120,
             )
-            if result.returncode == 0:
-                data = json.loads(result.stdout)
-                for caller, callees in data.items():
-                    merged.setdefault(caller, []).extend(callees)
-        except Exception:
+            # Slither exits non-zero on parse warnings (--fail-pedantic default)
+            # but still produces .dot files. Only warn, don't bail.
+            if result.returncode not in (0, 1, 255):
+                logger.warning("Slither call-graph exited %d for %s: %s",
+                               result.returncode, repo, result.stderr[:200])
+
+            # Parse .dot files written to repo directory
+            for dot_file in repo_path.glob("*.call-graph.dot"):
+                content = dot_file.read_text()
+                # Extract contract name from cluster labels
+                current_contract = dot_file.name.replace(".call-graph.dot", "")
+                # Extract edges: "id_func" -> "id_func"
+                for match in edge_re.finditer(content):
+                    caller_raw, callee_raw = match.group(1), match.group(2)
+                    # Convert "3339_swapByInput" -> "SingleProviderPoolType.swapByInput"
+                    caller_func = caller_raw.split("_", 1)[1] if "_" in caller_raw else caller_raw
+                    callee_func = callee_raw.split("_", 1)[1] if "_" in callee_raw else callee_raw
+                    caller_key = f"{current_contract}.{caller_func}"
+                    callee_key = f"{current_contract}.{callee_func}"
+                    merged.setdefault(caller_key, []).append(callee_key)
+                # Clean up .dot file
+                dot_file.unlink()
+
+        except Exception as exc:
+            logger.warning("Slither call-graph failed for %s: %s", repo, exc)
             continue
     return merged
 
@@ -325,7 +366,8 @@ async def generate_inventory(
     # Call graph — try Slither, fall back to empty
     try:
         call_graph = _extract_call_graph(repos)
-    except Exception:
+    except Exception as exc:
+        logger.warning("Call graph extraction failed, using empty fallback: %s", exc)
         call_graph = {"reached_by": {}}
 
     reached = _build_reached_from(call_graph, files)
@@ -342,8 +384,8 @@ async def generate_inventory(
                     if hasattr(block, "text"):
                         output_text += block.text
         classification = _parse_classification_output(output_text)
-    except Exception:
-        # Fallback: classify all as cross-boundary (filled manually or by Sonnet on next run)
+    except Exception as exc:
+        logger.warning("Sonnet classification failed, using empty fallback: %s", exc)
         classification = {}
 
     return generate_inventory_from_classification(files, classification, reached, output_path)

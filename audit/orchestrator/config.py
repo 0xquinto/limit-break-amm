@@ -3,17 +3,17 @@
 from dataclasses import dataclass, field
 from pathlib import Path
 
-# Paths — resolved from this file's location (docs/orchestrator/config.py)
+# Paths — resolved from this file's location (audit/orchestrator/config.py)
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 VENV_PATH = PROJECT_ROOT / ".venv"
-TARGETS_DIR = PROJECT_ROOT / "docs" / "targets" / "full-system"
+TARGETS_DIR = PROJECT_ROOT / "audit" / "targets" / "full-system"
 ARTIFACTS_DIR = TARGETS_DIR / "artifacts"
 PHASE0_DIR = ARTIFACTS_DIR / "phase0"
 SPAWN_PROMPTS_DIR = TARGETS_DIR / "spawn-prompts"
 RESULTS_DIR = TARGETS_DIR / "results"
 ARCHIVE_DIR = ARTIFACTS_DIR / "archive"
-FRAMEWORK_DIR = PROJECT_ROOT / "docs" / "framework"
-MEMORY_DIR = PROJECT_ROOT / "docs" / "audit_memory"  # Default; overridden by get_memory_dir()
+FRAMEWORK_DIR = PROJECT_ROOT / "audit" / "framework"
+MEMORY_DIR = PROJECT_ROOT / "audit" / "audit_memory"  # Default; overridden by get_memory_dir()
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 
 
@@ -22,7 +22,7 @@ def get_memory_dir(target_name: str = "full-system") -> Path:
 
     Checks target-specific dir first, falls back to global.
     """
-    target_memory = PROJECT_ROOT / "docs" / "targets" / target_name / "audit_memory"
+    target_memory = PROJECT_ROOT / "audit" / "targets" / target_name / "audit_memory"
     if target_memory.exists():
         return target_memory
     return MEMORY_DIR
@@ -38,7 +38,7 @@ TOOL_PROFILES: dict[str, list[str]] = {
                   "Bash:forge_test", "Bash:chisel", "Bash:cast", "Skill:slither",
                   "Bash:halmos", "Bash:medusa"],
     "exploit-verifier": ["Read", "Grep", "Glob", "Write:test/", "Bash:forge_build",
-                         "Bash:forge_test", "Bash:chisel", "Bash:quimera",
+                         "Bash:forge_test", "Bash:chisel",
                          "Bash:halmos", "Bash:medusa"],
 }
 
@@ -89,6 +89,71 @@ REPOS = {
         "tokens": 5_000,
     },
 }
+
+
+_resolved_repos: dict | None = None
+_resolved_tool_compat: dict | None = None
+
+
+def get_tool_compat(target_path: Path | None = None) -> dict[str, set[str]]:
+    """Single source of truth for tool compatibility matrix.
+
+    Reads from target.json if available, falls back to hardcoded TOOL_COMPAT.
+    """
+    global _resolved_tool_compat
+    if _resolved_tool_compat is not None:
+        return _resolved_tool_compat
+
+    if target_path is None:
+        target_path = TARGETS_DIR / "target.json"
+
+    if target_path.exists():
+        try:
+            from .target_config import load_target_config
+            tc = load_target_config(target_path)
+            if tc.tool_compat:
+                _resolved_tool_compat = tc.tool_compat
+                return _resolved_tool_compat
+        except Exception:
+            pass
+
+    _resolved_tool_compat = TOOL_COMPAT
+    return _resolved_tool_compat
+
+
+def get_repos(target_path: Path | None = None) -> dict:
+    """Single source of truth for repo definitions.
+
+    Reads from target.json if available, falls back to hardcoded REPOS.
+    Result is cached after first call. Returns same dict shape as REPOS:
+    {name: {"path": Path, "src": str, "tokens": int}}
+    """
+    global _resolved_repos
+    if _resolved_repos is not None:
+        return _resolved_repos
+
+    if target_path is None:
+        target_path = TARGETS_DIR / "target.json"
+
+    if target_path.exists():
+        try:
+            from .target_config import load_target_config
+            tc = load_target_config(target_path)
+            _resolved_repos = {
+                name: {
+                    "path": PROJECT_ROOT / rc.path,
+                    "src": rc.src,
+                    "tokens": rc.tokens,
+                }
+                for name, rc in tc.repos.items()
+                if not rc.read_only
+            }
+        except Exception:
+            _resolved_repos = REPOS
+    else:
+        _resolved_repos = REPOS
+
+    return _resolved_repos
 
 
 @dataclass

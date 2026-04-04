@@ -15,7 +15,7 @@ import sys
 import anyio
 from pathlib import Path
 
-from .config import WAVES, ARTIFACTS_DIR, RESULTS_DIR, ARCHIVE_DIR, MEMORY_DIR, PROJECT_ROOT, REPOS, BOUNDARY_SLUGS
+from .config import WAVES, ARTIFACTS_DIR, RESULTS_DIR, ARCHIVE_DIR, MEMORY_DIR, PROJECT_ROOT, REPOS, BOUNDARY_SLUGS, get_repos
 from .prompt_renderer import render_wave_prompts, get_orchestrator_lessons
 from .synthesizer import generate_synthesis, read_synthesis, collect_json_sidecars
 from .wave_runner import run_wave, collect_artifacts, AgentResult
@@ -795,8 +795,8 @@ async def run_single_wave(
     # ── Step 2: Intra-run staleness check (safety net for long runs) ─────────
     if wave.number == 1 and pass1_result and pass1_result.agent_hypotheses:
         import subprocess
-        for repo_name in REPOS:
-            repo_path = REPOS[repo_name]["path"]
+        for repo_name in get_repos():
+            repo_path = get_repos()[repo_name]["path"]
             head = subprocess.run(
                 ["git", "rev-parse", "HEAD"], cwd=repo_path,
                 capture_output=True, text=True,
@@ -900,7 +900,7 @@ async def run_single_wave(
     evidence_failures: dict[str, list[str]] = {}
     if wave.number == 1 and agents_with_hypotheses:
         from .sidecar_gate import check_evidence_coverage, verify_test_artifacts
-        repo_roots = [r["path"] for r in REPOS.values()]
+        repo_roots = [r["path"] for r in get_repos().values()]
         for agent in wave.agents:
             if agent.name not in agents_with_hypotheses:
                 continue

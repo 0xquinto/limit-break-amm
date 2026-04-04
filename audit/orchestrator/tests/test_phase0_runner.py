@@ -277,7 +277,7 @@ class TestBuildAttackSurfaceIndex:
         """With no repos configured, produces a valid empty index."""
         from audit.orchestrator.phase0_runner import build_attack_surface_index
 
-        with patch("audit.orchestrator.phase0_runner.REPOS", {}):
+        with patch("audit.orchestrator.phase0_runner.get_repos", return_value={}):
             result = build_attack_surface_index(tmp_path)
 
         assert isinstance(result, dict)
@@ -300,7 +300,7 @@ class TestBuildAttackSurfaceIndex:
 
         fake_repos = {"repo-a": {"path": tmp_path / "repo-a"}}
 
-        with patch("audit.orchestrator.phase0_runner.REPOS", fake_repos), \
+        with patch("audit.orchestrator.phase0_runner.get_repos", return_value=fake_repos), \
              patch("audit.orchestrator.phase0_runner.PHASE0_DIR", tmp_path):
             result = build_attack_surface_index(tmp_path)
 
@@ -313,7 +313,7 @@ class TestBuildAttackSurfaceIndex:
 
         fake_repos = {"repo-x": {"path": tmp_path / "repo-x"}}
 
-        with patch("audit.orchestrator.phase0_runner.REPOS", fake_repos), \
+        with patch("audit.orchestrator.phase0_runner.get_repos", return_value=fake_repos), \
              patch("audit.orchestrator.phase0_runner.PHASE0_DIR", tmp_path):
             result = build_attack_surface_index(tmp_path)
 
@@ -330,7 +330,7 @@ class TestBuildAttackSurfaceIndex:
 
         fake_repos = {"repo-y": {"path": tmp_path / "repo-y"}}
 
-        with patch("audit.orchestrator.phase0_runner.REPOS", fake_repos), \
+        with patch("audit.orchestrator.phase0_runner.get_repos", return_value=fake_repos), \
              patch("audit.orchestrator.phase0_runner.PHASE0_DIR", tmp_path):
             result = build_attack_surface_index(tmp_path)
 

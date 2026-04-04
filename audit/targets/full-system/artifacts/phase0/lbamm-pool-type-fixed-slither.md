@@ -9,7 +9,7 @@ Summary
  - [assembly](#assembly) (2 results) (Informational)
  - [pragma](#pragma) (1 results) (Informational)
  - [cyclomatic-complexity](#cyclomatic-complexity) (3 results) (Informational)
- - [naming-convention](#naming-convention) (3 results) (Informational)
+ - [naming-convention](#naming-convention) (17 results) (Informational)
 ## uninitialized-state
 Impact: High
 Confidence: High
@@ -208,6 +208,8 @@ Confidence: High
 		-[0.8.24](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-pool-type-fixed/src/Errors.sol#L2)
 		-[0.8.24](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-pool-type-fixed/src/FixedPoolQuoter.sol#L2)
 		-[0.8.24](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-pool-type-fixed/src/FixedPoolType.sol#L2)
+		-[0.8.24](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-pool-type-fixed/src/audit/MedusaFixedMath.sol#L2)
+		-[0.8.24](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-pool-type-fixed/src/audit/MedusaMathDeepDiver.sol#L2)
 		-[0.8.24](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-pool-type-fixed/src/interfaces/IFixedPoolType.sol#L2)
 		-[0.8.24](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-pool-type-fixed/src/libraries/FixedHelper.sol#L2)
 		-[0.8.24](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-pool-type-fixed/src/libraries/FixedPoolDecoder.sol#L2)
@@ -253,14 +255,98 @@ Variable [FixedPoolQuoter.AMM](/Users/diego/Dev/non-toxic/bug_bounty/limit-break
 
 
  - [ ] ID-28
+Function [MedusaFixedMath.property_inputMonotonicity(uint128,uint128,uint128,uint128)](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-pool-type-fixed/src/audit/MedusaFixedMath.sol#L72-L80) is not in mixedCase
+
+/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-pool-type-fixed/src/audit/MedusaFixedMath.sol#L72-L80
+
+
+ - [ ] ID-29
+Parameter [MedusaMathDeepDiver.setRatio0(uint128)._v](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-pool-type-fixed/src/audit/MedusaMathDeepDiver.sol#L19) is not in mixedCase
+
+/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-pool-type-fixed/src/audit/MedusaMathDeepDiver.sol#L19
+
+
+ - [ ] ID-30
+Function [MedusaFixedMath.property_noMixedRoundingProfit(uint128,uint128,uint128)](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-pool-type-fixed/src/audit/MedusaFixedMath.sol#L48-L56) is not in mixedCase
+
+/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-pool-type-fixed/src/audit/MedusaFixedMath.sol#L48-L56
+
+
+ - [ ] ID-31
+Function [MedusaMathDeepDiver.property_feeNeverExceedsInput()](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-pool-type-fixed/src/audit/MedusaMathDeepDiver.sol#L34-L38) is not in mixedCase
+
+/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-pool-type-fixed/src/audit/MedusaMathDeepDiver.sol#L34-L38
+
+
+ - [ ] ID-32
+Function [MedusaFixedMath.property_feeNeverExceedsInput(uint128,uint16)](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-pool-type-fixed/src/audit/MedusaFixedMath.sol#L20-L24) is not in mixedCase
+
+/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-pool-type-fixed/src/audit/MedusaFixedMath.sol#L20-L24
+
+
+ - [ ] ID-33
+Function [MedusaMathDeepDiver.property_roundingDownLeUp()](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-pool-type-fixed/src/audit/MedusaMathDeepDiver.sol#L41-L47) is not in mixedCase
+
+/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-pool-type-fixed/src/audit/MedusaMathDeepDiver.sol#L41-L47
+
+
+ - [ ] ID-34
+Parameter [MedusaMathDeepDiver.setAmountIn(uint128)._v](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-pool-type-fixed/src/audit/MedusaMathDeepDiver.sol#L18) is not in mixedCase
+
+/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-pool-type-fixed/src/audit/MedusaMathDeepDiver.sol#L18
+
+
+ - [ ] ID-35
+Function [MedusaFixedMath.property_directionSymmetryNoExtract(uint128,uint128,uint128)](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-pool-type-fixed/src/audit/MedusaFixedMath.sol#L59-L69) is not in mixedCase
+
+/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-pool-type-fixed/src/audit/MedusaFixedMath.sol#L59-L69
+
+
+ - [ ] ID-36
 Variable [FixedPoolType.AMM](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-pool-type-fixed/src/FixedPoolType.sol#L27) is not in mixedCase
 
 /Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-pool-type-fixed/src/FixedPoolType.sol#L27
 
 
- - [ ] ID-29
+ - [ ] ID-37
+Function [MedusaFixedMath.property_roundingDownLeRoundingUp(uint128,uint128,uint128)](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-pool-type-fixed/src/audit/MedusaFixedMath.sol#L27-L33) is not in mixedCase
+
+/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-pool-type-fixed/src/audit/MedusaFixedMath.sol#L27-L33
+
+
+ - [ ] ID-38
+Parameter [MedusaMathDeepDiver.setRatio1(uint128)._v](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-pool-type-fixed/src/audit/MedusaMathDeepDiver.sol#L20) is not in mixedCase
+
+/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-pool-type-fixed/src/audit/MedusaMathDeepDiver.sol#L20
+
+
+ - [ ] ID-39
+Function [MedusaMathDeepDiver.property_noRoundTripProfit()](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-pool-type-fixed/src/audit/MedusaMathDeepDiver.sol#L24-L31) is not in mixedCase
+
+/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-pool-type-fixed/src/audit/MedusaMathDeepDiver.sol#L24-L31
+
+
+ - [ ] ID-40
+Function [MedusaFixedMath.property_noRoundTripProfit(uint128,uint128,uint128)](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-pool-type-fixed/src/audit/MedusaFixedMath.sol#L10-L17) is not in mixedCase
+
+/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-pool-type-fixed/src/audit/MedusaFixedMath.sol#L10-L17
+
+
+ - [ ] ID-41
+Parameter [MedusaMathDeepDiver.setFeeBPS(uint16)._v](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-pool-type-fixed/src/audit/MedusaMathDeepDiver.sol#L21) is not in mixedCase
+
+/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-pool-type-fixed/src/audit/MedusaMathDeepDiver.sol#L21
+
+
+ - [ ] ID-42
 Variable [FixedPoolQuoter.FIXED_POOL_TYPE](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-pool-type-fixed/src/FixedPoolQuoter.sol#L26) is not in mixedCase
 
 /Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-pool-type-fixed/src/FixedPoolQuoter.sol#L26
+
+
+ - [ ] ID-43
+Function [MedusaFixedMath.property_noRoundTripProfitRoundingUp(uint128,uint128,uint128)](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-pool-type-fixed/src/audit/MedusaFixedMath.sol#L38-L45) is not in mixedCase
+
+/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-pool-type-fixed/src/audit/MedusaFixedMath.sol#L38-L45
 
 

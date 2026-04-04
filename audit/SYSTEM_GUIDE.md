@@ -483,7 +483,7 @@ Prompt templates currently use markdown headers (~96% lack proper XML tags). Thi
 | Aderyn | `/opt/homebrew/bin/aderyn` v0.6.8 | Static analyzer (patched compile.rs) |
 | Halmos | `~/.local/bin/halmos` v0.3.3 | Symbolic execution |
 | Medusa | `/opt/homebrew/bin/medusa` v1.5.0 | Parallel corpus-guided fuzzer |
-| Quimera | `~/.local/bin/quimera` v0.1 | LLM-driven exploit PoC generation |
+
 
 ### Tool Patches Applied
 

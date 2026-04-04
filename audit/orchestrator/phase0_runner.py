@@ -5,12 +5,13 @@ Run: python3 -m docs.orchestrator.phase0_runner [--repos all|repo1,repo2]
 """
 
 import json
+import shutil
 import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .config import REPOS, PHASE0_DIR, PROJECT_ROOT
+from .config import PHASE0_DIR, PROJECT_ROOT, get_repos
 
 
 def run_slither_detectors(repo_name: str, repo_path: Path, output_dir: Path) -> dict:
@@ -65,7 +66,8 @@ def run_slither_printers(repo_name: str, repo_path: Path, output_dir: Path) -> d
 def run_aderyn(repo_name: str, repo_path: Path, output_dir: Path) -> dict:
     """Run Aderyn on a repo. Writes both JSON and .md summary."""
     out_file = output_dir / f"{repo_name}-aderyn.json"
-    cmd = ["/opt/homebrew/bin/aderyn", str(repo_path), "--output", str(out_file)]
+    from .tool_registry import require_tool
+    cmd = [require_tool("aderyn"), str(repo_path), "--output", str(out_file)]
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
     if out_file.exists():
         data = json.loads(out_file.read_text())
@@ -103,7 +105,7 @@ def build_attack_surface_index(phase0_dir: Path) -> dict:
         "high_value_targets": [],  # functions that move assets
     }
 
-    for repo_name in REPOS:
+    for repo_name in get_repos():
         slither_json = phase0_dir / f"{repo_name}-slither.json"
         aderyn_json = phase0_dir / f"{repo_name}-aderyn.json"
         index["repos"][repo_name] = {
@@ -112,7 +114,7 @@ def build_attack_surface_index(phase0_dir: Path) -> dict:
         }
 
         # Extract entry points
-        entries = extract_entry_points(repo_name, REPOS[repo_name]["path"])
+        entries = extract_entry_points(repo_name, get_repos()[repo_name]["path"])
         index["entry_points"].extend(entries)
 
     # Write index
@@ -124,11 +126,11 @@ def build_attack_surface_index(phase0_dir: Path) -> dict:
 def run_phase0(repo_names: list[str] | None = None) -> dict:
     """Run full Phase 0 automation. Returns summary."""
     PHASE0_DIR.mkdir(parents=True, exist_ok=True)
-    repos = repo_names or list(REPOS.keys())
+    repos = repo_names or list(get_repos().keys())
     summary = {"repos": {}, "start": datetime.now(timezone.utc).isoformat()}
 
     for name in repos:
-        repo_cfg = REPOS.get(name)
+        repo_cfg = get_repos().get(name)
         if not repo_cfg:
             print(f"  SKIP: unknown repo '{name}'")
             continue
@@ -138,9 +140,17 @@ def run_phase0(repo_names: list[str] | None = None) -> dict:
             continue
 
         print(f"  Phase 0: {name}...")
-        det = run_slither_detectors(name, repo_path, PHASE0_DIR)
-        prn = run_slither_printers(name, repo_path, PHASE0_DIR)
-        ady = run_aderyn(name, repo_path, PHASE0_DIR)
+        det, prn, ady = None, None, None
+        if shutil.which("slither"):
+            det = run_slither_detectors(name, repo_path, PHASE0_DIR)
+            prn = run_slither_printers(name, repo_path, PHASE0_DIR)
+        else:
+            print(f"    SKIP: slither not found in PATH")
+        aderyn_bin = shutil.which("aderyn")
+        if aderyn_bin:
+            ady = run_aderyn(name, repo_path, PHASE0_DIR)
+        else:
+            print(f"    SKIP: aderyn not found in PATH")
         summary["repos"][name] = {"slither": det, "printers": prn, "aderyn": ady}
 
     index = build_attack_surface_index(PHASE0_DIR)
@@ -152,7 +162,8 @@ def run_phase0(repo_names: list[str] | None = None) -> dict:
         _build_reached_from, _inventory_stale,
     )
     inventory_path = ARTIFACTS_DIR / "file-inventory.json"
-    repo_paths = [str(REPOS[name]["path"]) for name in repos if name in REPOS and REPOS[name]["path"].exists()]
+    _repos = get_repos()
+    repo_paths = [str(_repos[name]["path"]) for name in repos if name in _repos and _repos[name]["path"].exists()]
     if not inventory_path.exists() or _inventory_stale(inventory_path, repo_paths):
         print("  Generating file inventory...")
         files = _scan_sol_files(repo_paths)

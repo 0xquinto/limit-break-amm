@@ -422,9 +422,9 @@ def run_kill_gate_wave(wave_number: int) -> dict[str, int]:
 
     Returns dict with keys: total, killed, passed, files.
     """
-    from .config import ARTIFACTS_DIR, REPOS
+    from .config import ARTIFACTS_DIR, get_repos
 
-    valid_repos = set(REPOS.keys())
+    valid_repos = set(get_repos().keys())
     known_fps = _load_known_fps()
     known_gotchas = _load_known_gotchas()
 

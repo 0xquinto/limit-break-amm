@@ -123,27 +123,27 @@ Read `docs/orchestrator/templates/_shared/references/` for output schema, FP gat
 
 This is your COMPLETE workload. Execute every numbered item. Log every result. You are NOT done until every item below has an outcome in your sidecar.
 
-**MCP timeout policy**: If an MCP tool call (Slither) hangs for >60 seconds, skip it and fall back to manual analysis (Read + Grep on the code directly). Log `"ran": false, "reason": "timeout"` in tools_run. Do NOT block your entire run waiting for a stuck MCP server.
+**Tool availability policy**: Slither MCP and Aderyn are optional enrichment tools. If any tool is unavailable, times out (>60s), or errors, skip it and fall back to manual analysis (Read + Grep + `forge inspect`). Log `"ran": false, "reason": "<why>"` in tools_run. Do NOT block your entire run waiting for a stuck tool.
 
 **Phase A: Static Analysis (run on EVERY repo in your scope)**
 
 For each repo in your scope, run ALL of:
-- A1. Slither detectors: `ToolSearch "+slither"` then `mcp__slither__run_detectors path=<repo> impact=["High","Medium"] exclude_paths=["lib/","test/"]`
-- A2. Slither function list: `mcp__slither__list_functions` for your target contracts
-- A3. Aderyn: `cd <repo> && /opt/homebrew/bin/aderyn . 2>&1 | tail -40`
-- A4. Custom Slither detectors (run on EVERY scoped repo):
+- A1. Slither detectors (if available): `ToolSearch "+slither"` then `mcp__slither__run_detectors path=<repo> impact=["High","Medium"] exclude_paths=["lib/","test/"]`. **Fallback**: read Phase 0 artifacts in `docs/targets/full-system/phase0/` — they contain pre-computed Slither results.
+- A2. Slither function list (if available): `mcp__slither__list_functions` for your target contracts. **Fallback**: `forge inspect <Contract> methods` or Grep for `function` declarations.
+- A3. Aderyn: `cd <repo> && aderyn . 2>&1 | tail -40` (skip if not installed)
+- A4. Custom Slither detectors (if slither CLI available):
   ```bash
   cd <repo> && slither . --detect diamond-slot-collision,hook-reentrancy,transient-storage-leak,unchecked-delegatecall-return --ignore-compile 2>&1 | tail -30
   ```
-  If slither CLI not available, use MCP: `mcp__slither__run_detectors path=<repo> detectors=["diamond-slot-collision","hook-reentrancy","transient-storage-leak","unchecked-delegatecall-return"]`
-- A5. Storage layout (for cross-boundary and state-desync agents only): `mcp__slither__get_storage_layout` for AMMModule, each pool type, and each handler — look for slot collisions across the diamond proxy.
+  **Fallback**: read Phase 0 custom detector output from `docs/targets/full-system/phase0/<repo>-custom-detectors.md`
+- A5. Storage layout (for cross-boundary and state-desync agents only): `mcp__slither__get_storage_layout` or **fallback**: `forge inspect <Contract> storage-layout --pretty` for AMMModule, each pool type, and each handler — look for slot collisions across the diamond proxy.
 - A6. Semgrep (if available): `Skill("static-analysis:semgrep")` on your primary repos — community Solidity rules for reentrancy, access control, DeFi patterns. Cross-file taint tracking via Semgrep Pro. Log results in `tools_run.semgrep`.
 
 **Phase B: Architectural Analysis**
 
 - B1. `Skill("audit-context-building:audit-context-building")` on your primary modules — produces deep context doc
 - B2. `Skill("entry-point-analyzer:entry-point-analyzer")` on your primary modules — lists all state-changing entry points
-- B3. `mcp__slither__export_call_graph` for your primary contract — visualize cross-contract call flow, identify unexpected external calls
+- B3. `mcp__slither__export_call_graph` for your primary contract (if available) — visualize cross-contract call flow, identify unexpected external calls. **Fallback**: Grep for external calls (`\.call(`, `.delegatecall(`, interface method invocations) and trace manually.
 - B4. (C-MATH agents only) `Skill("property-based-testing:property-based-testing")` — get guidance on writing invariant tests for math functions
 - B5. (If you find ANYTHING suspicious) `Skill("variant-analysis:variant-analysis")` — search for variants of the pattern across the codebase
 - B6. (composability-exploiter, cross-boundary, extension-hijacker) `Skill("building-secure-contracts:token-integration-analyzer")` — check how the AMM handles weird ERC20 tokens (fee-on-transfer, rebasing, low decimals, pausable, blocklists). The handler system (`CLOBTransferHandler`, `PermitTransferHandler`) must handle all 24 patterns safely.

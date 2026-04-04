@@ -19,10 +19,11 @@ overwrite the patched build-info.
 
 import json
 import os
+import shutil
 import subprocess
 from glob import glob
 from pathlib import Path
-from .config import REPOS, PHASE0_DIR
+from .config import PHASE0_DIR, get_repos
 
 
 def fix_build_info(repo_path: Path) -> dict[str, int]:
@@ -230,9 +231,11 @@ def run_aderyn(repo_name: str, repo_path: Path) -> Path | None:
     cross-repo ../  dependencies instead of panicking at compile.rs:78.
     """
     output = PHASE0_DIR / f"{repo_name}-aderyn.md"
-    aderyn_bin = os.path.expanduser("~/.local/bin/aderyn")
-    if not os.path.isfile(aderyn_bin):
-        aderyn_bin = "/opt/homebrew/bin/aderyn"  # fallback to system install
+    from .tool_registry import get_tool_path
+    aderyn_bin = get_tool_path("aderyn")
+    if not aderyn_bin:
+        print(f"  WARNING: aderyn not found, skipping {repo_name}")
+        return None
     result = subprocess.run(
         [aderyn_bin, ".", "--output", str(output)],
         cwd=str(repo_path),
@@ -267,11 +270,15 @@ def run_custom_detectors(repo_name: str, repo_path: Path,
     if not detector_names:
         return None  # No detectors configured for this target
 
-    # Run Slither with custom detector plugins
+    # Run Slither with custom detectors (registered via entry_points plugin).
+    # Use venv slither to pick up the lbamm-custom-detectors package.
+    import sys
+    slither_bin = str(Path(sys.executable).parent / "slither")
+    if not Path(slither_bin).exists():
+        slither_bin = "slither"  # fallback to system PATH
     result = subprocess.run(
-        ["slither", ".", "--ignore-compile", "--exclude-dependencies",
+        [slither_bin, ".", "--ignore-compile", "--exclude-dependencies",
          "--detect", ",".join(detector_names),
-         "--plugin-dir", str(detectors_dir),
          "--checklist", "--markdown-root", str(repo_path) + "/"],
         cwd=str(repo_path),
         capture_output=True,
@@ -294,12 +301,33 @@ def run_custom_detectors(repo_name: str, repo_path: Path,
     return output
 
 
-def run_all() -> dict[str, list[Path]]:
-    """Run all Phase 0 artifact generation."""
+def run_all(custom_detector_names: list[str] | None = None) -> dict[str, list[Path]]:
+    """Run all Phase 0 artifact generation.
+
+    Args:
+        custom_detector_names: Detector slugs (e.g. ["diamond-slot-collision"]).
+            If None, uses built-in defaults. Accepts target.json module paths
+            (e.g. "docs.orchestrator.custom_detectors.diamond_slot_collision")
+            and converts them to slugs automatically.
+    """
+    # Convert module paths to slugs if needed
+    if custom_detector_names is not None:
+        custom_detector_names = [
+            n.rsplit(".", 1)[-1].replace("_", "-") if "." in n else n
+            for n in custom_detector_names
+        ]
+
     PHASE0_DIR.mkdir(parents=True, exist_ok=True)
     results: dict[str, list[Path]] = {"slither": [], "aderyn": [], "custom": []}
 
-    for name, repo in REPOS.items():
+    has_slither = shutil.which("slither") is not None
+    has_aderyn = shutil.which("aderyn") is not None or os.path.isfile(os.path.expanduser("~/.local/bin/aderyn"))
+    if not has_slither:
+        print("WARNING: slither not found in PATH — Slither steps will be skipped")
+    if not has_aderyn:
+        print("WARNING: aderyn not found — Aderyn steps will be skipped")
+
+    for name, repo in get_repos().items():
         print(f"\n{'='*40}")
         print(f"Phase 0: {name}")
         print(f"{'='*40}")
@@ -310,22 +338,31 @@ def run_all() -> dict[str, list[Path]]:
             continue
 
         # Step 2: Slither (all repos, using fixed build-info)
-        print(f"  Running Slither...")
-        slither_out = run_slither_detectors(name, repo["path"])
-        if slither_out:
-            results["slither"].append(slither_out)
+        if has_slither:
+            print(f"  Running Slither...")
+            slither_out = run_slither_detectors(name, repo["path"])
+            if slither_out:
+                results["slither"].append(slither_out)
+        else:
+            print(f"  SKIP: Slither (not installed)")
 
         # Step 3: Aderyn (compatible repos only)
-        print(f"  Running Aderyn...")
-        aderyn_out = run_aderyn(name, repo["path"])
-        if aderyn_out:
-            results["aderyn"].append(aderyn_out)
+        if has_aderyn:
+            print(f"  Running Aderyn...")
+            aderyn_out = run_aderyn(name, repo["path"])
+            if aderyn_out:
+                results["aderyn"].append(aderyn_out)
+        else:
+            print(f"  SKIP: Aderyn (not installed)")
 
-        # Step 4: Custom detectors (project-specific patterns)
-        print(f"  Running custom detectors...")
-        custom_out = run_custom_detectors(name, repo["path"])
-        if custom_out:
-            results["custom"].append(custom_out)
+        # Step 4: Custom detectors (project-specific patterns, requires Slither)
+        if has_slither:
+            print(f"  Running custom detectors...")
+            custom_out = run_custom_detectors(name, repo["path"], detector_names=custom_detector_names)
+            if custom_out:
+                results["custom"].append(custom_out)
+        else:
+            print(f"  SKIP: Custom detectors (requires Slither)")
 
     print(f"\n{'='*40}")
     print(f"Phase 0 complete: {len(results['slither'])} Slither + {len(results['aderyn'])} Aderyn + {len(results['custom'])} custom artifacts")

@@ -16,12 +16,12 @@ import re
 import subprocess
 from pathlib import Path
 
-from .config import REPOS, PROJECT_ROOT
+from .config import PROJECT_ROOT, get_repos
 
 
 def resolve_repo_for_path(test_path: str) -> Path | None:
     """Map a test_file path like 'lbamm-core/test/X.t.sol' to its repo root."""
-    for repo_name, repo_info in REPOS.items():
+    for repo_name, repo_info in get_repos().items():
         if test_path.startswith(repo_name + "/"):
             return repo_info["path"]
     return None

@@ -342,8 +342,8 @@ Reentrancy in [AMMModule._positionRemoveLiquidity(LiquidityModificationParams,Li
 	- [(context.positionId,withdraw0,withdraw1,fees0,fees1) = ILimitBreakAMMPoolType(PoolDecoder.getPoolType(liquidityParams.poolId)).removeLiquidity(liquidityParams.poolId,context.provider,ammBasePositionId,liquidityParams.poolParams)](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-core/src/modules/AMMModule.sol#L540-L551)
 	- [(hookFee0,hookFee1) = _executeRemoveLiquidityHooks(liquidityParams,liquidityHooksExtraData,context,InternalLiquidityModificationCache({amount0:withdraw0,amount1:withdraw1,fees0:fees0,fees1:fees1}),ptrPoolState.poolHook)](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-core/src/modules/AMMModule.sol#L561-L572)
 		- [(success,returnData) = poolHook.call(data)](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-core/src/modules/AMMModule.sol#L1211)
-		- [(success,returnData) = tokenSettings.tokenHook.call(data)](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-core/src/modules/AMMModule.sol#L1060)
 		- [(success,returnData) = liquidityHook.call(data)](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-core/src/modules/AMMModule.sol#L1151)
+		- [(success,returnData) = tokenSettings.tokenHook.call(data)](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-core/src/modules/AMMModule.sol#L1060)
 		- [(success_scope_1,returnData_scope_2) = tokenSettings.tokenHook.call(data_scope_0)](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-core/src/modules/AMMModule.sol#L1090)
 	- [_distributeAndCollectLiquidityTokens(context.provider,context.token0,context.token1,- withdraw0.toInt256() - fees0.toInt256() + hookFee0.toInt256(),- withdraw1.toInt256() - fees1.toInt256() + hookFee1.toInt256())](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-core/src/modules/AMMModule.sol#L592-L598)
 		- [(success,None) = executor.call{value: msg.value - amountIn}()](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-core/src/modules/AMMModule.sol#L3253)
@@ -360,18 +360,6 @@ Reentrancy in [AMMModule._positionRemoveLiquidity(LiquidityModificationParams,Li
 
 
  - [ ] ID-37
-Reentrancy in [AMMModule._poolSwapByOutput(InternalSwapCache,bool,SwapHooksExtraData)](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-core/src/modules/AMMModule.sol#L1506-L1627):
-	External calls:
-	- [(actualAmountOut,swapCache.amountIn,poolFeeOfAmountIn,swapCache.protocolFee) = ILimitBreakAMMPoolType(PoolDecoder.getPoolType(swapCache.poolId)).swapByOutput(swapCache.context,swapCache.poolId,swapCache.zeroForOne,swapCache.amountOut,poolFeeBPS,swapCache.protocolFeeStructure.lpFeeBPS,swapHooksExtraData.poolType)](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-core/src/modules/AMMModule.sol#L1543-L1556)
-	Event emitted after the call(s):
-	- [ProtocolFeeTaken(token,amount)](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-core/src/modules/AMMModule.sol#L3227)
-		- [_storeProtocolFees(swapCache.tokenIn,protocolFee)](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-core/src/modules/AMMModule.sol#L1612)
-	- [Swap(swapCache.poolId,swapCache.context.recipient,swapCache.zeroForOne,swapCache.amountIn,swapCache.amountOut,poolFeeOfAmountIn)](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-core/src/modules/AMMModule.sol#L1617-L1624)
-
-/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-core/src/modules/AMMModule.sol#L1506-L1627
-
-
- - [ ] ID-38
 Reentrancy in [AMMModule._flashLoan(FlashloanRequest)](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-core/src/modules/AMMModule.sol#L3288-L3382):
 	External calls:
 	- [(feeToken,tokenFeeAmount) = _executeTokenFlashloanHooks(flashloanRequest,tokenSettings)](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-core/src/modules/AMMModule.sol#L3296)
@@ -381,11 +369,23 @@ Reentrancy in [AMMModule._flashLoan(FlashloanRequest)](/Users/diego/Dev/non-toxi
 	Event emitted after the call(s):
 	- [Flashloan(msg.sender,flashloanRequest.executor,flashloanRequest.loanToken,flashloanRequest.loanAmount,feeToken,feeAmount)](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-core/src/modules/AMMModule.sol#L3381)
 	- [ProtocolFeeTaken(token,amount)](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-core/src/modules/AMMModule.sol#L3227)
-		- [_storeProtocolFees(feeToken,feeAmount)](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-core/src/modules/AMMModule.sol#L3378)
-	- [ProtocolFeeTaken(token,amount)](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-core/src/modules/AMMModule.sol#L3227)
 		- [_storeProtocolFees(flashloanRequest.loanToken,tokenBalanceAfter_scope_0 - requiredTokenBalanceAfter)](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-core/src/modules/AMMModule.sol#L3351)
+	- [ProtocolFeeTaken(token,amount)](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-core/src/modules/AMMModule.sol#L3227)
+		- [_storeProtocolFees(feeToken,feeAmount)](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-core/src/modules/AMMModule.sol#L3378)
 
 /Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-core/src/modules/AMMModule.sol#L3288-L3382
+
+
+ - [ ] ID-38
+Reentrancy in [AMMModule._poolSwapByOutput(InternalSwapCache,bool,SwapHooksExtraData)](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-core/src/modules/AMMModule.sol#L1506-L1627):
+	External calls:
+	- [(actualAmountOut,swapCache.amountIn,poolFeeOfAmountIn,swapCache.protocolFee) = ILimitBreakAMMPoolType(PoolDecoder.getPoolType(swapCache.poolId)).swapByOutput(swapCache.context,swapCache.poolId,swapCache.zeroForOne,swapCache.amountOut,poolFeeBPS,swapCache.protocolFeeStructure.lpFeeBPS,swapHooksExtraData.poolType)](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-core/src/modules/AMMModule.sol#L1543-L1556)
+	Event emitted after the call(s):
+	- [ProtocolFeeTaken(token,amount)](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-core/src/modules/AMMModule.sol#L3227)
+		- [_storeProtocolFees(swapCache.tokenIn,protocolFee)](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-core/src/modules/AMMModule.sol#L1612)
+	- [Swap(swapCache.poolId,swapCache.context.recipient,swapCache.zeroForOne,swapCache.amountIn,swapCache.amountOut,poolFeeOfAmountIn)](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-core/src/modules/AMMModule.sol#L1617-L1624)
+
+/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-core/src/modules/AMMModule.sol#L1506-L1627
 
 
  - [ ] ID-39
@@ -407,8 +407,8 @@ Reentrancy in [AMMModule._positionAddLiquidity(LiquidityModificationParams,Liqui
 	- [(context.positionId,deposit0,deposit1,fees0,fees1) = ILimitBreakAMMPoolType(PoolDecoder.getPoolType(liquidityParams.poolId)).addLiquidity(liquidityParams.poolId,context.provider,ammBasePositionId,liquidityParams.poolParams)](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-core/src/modules/AMMModule.sol#L416-L427)
 	- [(hookFee0,hookFee1) = _executeAddLiquidityHooks(liquidityParams,liquidityHooksExtraData,context,InternalLiquidityModificationCache({amount0:deposit0,amount1:deposit1,fees0:fees0,fees1:fees1}),ptrPoolState.poolHook)](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-core/src/modules/AMMModule.sol#L437-L448)
 		- [(success,returnData) = poolHook.call(data)](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-core/src/modules/AMMModule.sol#L1211)
-		- [(success,returnData) = tokenSettings.tokenHook.call(data)](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-core/src/modules/AMMModule.sol#L1060)
 		- [(success,returnData) = liquidityHook.call(data)](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-core/src/modules/AMMModule.sol#L1151)
+		- [(success,returnData) = tokenSettings.tokenHook.call(data)](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-core/src/modules/AMMModule.sol#L1060)
 		- [(success_scope_1,returnData_scope_2) = tokenSettings.tokenHook.call(data_scope_0)](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-core/src/modules/AMMModule.sol#L1090)
 	- [_distributeAndCollectLiquidityTokens(context.provider,context.token0,context.token1,deposit0.toInt256() - fees0.toInt256() + hookFee0.toInt256(),deposit1.toInt256() - fees1.toInt256() + hookFee1.toInt256())](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-core/src/modules/AMMModule.sol#L468-L474)
 		- [(success,None) = executor.call{value: msg.value - amountIn}()](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-core/src/modules/AMMModule.sol#L3253)

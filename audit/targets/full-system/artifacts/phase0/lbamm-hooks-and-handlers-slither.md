@@ -14,7 +14,7 @@ Summary
  - [pragma](#pragma) (1 results) (Informational)
  - [cyclomatic-complexity](#cyclomatic-complexity) (1 results) (Informational)
  - [dead-code](#dead-code) (1 results) (Informational)
- - [naming-convention](#naming-convention) (10 results) (Informational)
+ - [naming-convention](#naming-convention) (12 results) (Informational)
  - [unindexed-event-address](#unindexed-event-address) (1 results) (Informational)
  - [unused-state](#unused-state) (7 results) (Informational)
  - [constable-states](#constable-states) (1 results) (Optimization)
@@ -278,6 +278,7 @@ Confidence: High
 		-[^0.8.24](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-hooks-and-handlers/../lbamm-core/src/Constants.sol#L2)
 		-[^0.8.24](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-hooks-and-handlers/../lbamm-core/lib/tm-core-lib/src/utils/misc/StaticDelegateCall.sol#L2)
 		-[^0.8.24](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-hooks-and-handlers/../lbamm-core/lib/tm-core-lib/src/utils/security/TstorishReentrancyGuard.sol#L1)
+		-[^0.8.24](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-hooks-and-handlers/src/MedusaHarness.sol#L2)
 	- Version constraint 0.8.24 is used by:
 		-[0.8.24](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-hooks-and-handlers/../lbamm-core/lib/wrapped-native/src/interfaces/IWrappedNative.sol#L2)
 		-[0.8.24](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-hooks-and-handlers/../lbamm-core/src/DataTypes.sol#L2)
@@ -363,42 +364,54 @@ Variable [CreatorHookSettingsRegistry.AMM](/Users/diego/Dev/non-toxic/bug_bounty
 
 
  - [ ] ID-36
+Function [MedusaHarness.property_calculateFixedInput_monotonic(uint128,uint160)](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-hooks-and-handlers/src/MedusaHarness.sol#L15-L21) is not in mixedCase
+
+/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-hooks-and-handlers/src/MedusaHarness.sol#L15-L21
+
+
+ - [ ] ID-37
 Variable [PermitTransferHandler.AMM](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-hooks-and-handlers/src/handlers/permit/PermitTransferHandler.sol#L34) is not in mixedCase
 
 /Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-hooks-and-handlers/src/handlers/permit/PermitTransferHandler.sol#L34
 
 
- - [ ] ID-37
+ - [ ] ID-38
 Constant [AMMStandardHook._supportedHookFlags](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-hooks-and-handlers/src/hooks/AMMStandardHook.sol#L54-L57) is not in UPPER_CASE_WITH_UNDERSCORES
 
 /Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-hooks-and-handlers/src/hooks/AMMStandardHook.sol#L54-L57
 
 
- - [ ] ID-38
+ - [ ] ID-39
 Variable [PermitTransferHandler.PERMITTED_ORDER_APPROVAL_TYPEHASH](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-hooks-and-handlers/src/handlers/permit/PermitTransferHandler.sol#L40) is not in mixedCase
 
 /Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-hooks-and-handlers/src/handlers/permit/PermitTransferHandler.sol#L40
 
 
- - [ ] ID-39
+ - [ ] ID-40
 Variable [CLOBTransferHandler.AMM](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-hooks-and-handlers/src/handlers/clob/CLOBTransferHandler.sol#L32) is not in mixedCase
 
 /Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-hooks-and-handlers/src/handlers/clob/CLOBTransferHandler.sol#L32
 
 
- - [ ] ID-40
+ - [ ] ID-41
+Function [MedusaHarness.property_computeRatio_nonzero(uint128,uint128)](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-hooks-and-handlers/src/MedusaHarness.sol#L24-L28) is not in mixedCase
+
+/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-hooks-and-handlers/src/MedusaHarness.sol#L24-L28
+
+
+ - [ ] ID-42
 Constant [AMMStandardHook._requiredHookFlags](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-hooks-and-handlers/src/hooks/AMMStandardHook.sol#L60) is not in UPPER_CASE_WITH_UNDERSCORES
 
 /Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-hooks-and-handlers/src/hooks/AMMStandardHook.sol#L60
 
 
- - [ ] ID-41
+ - [ ] ID-43
 Variable [CLOBQuotor.CLOB_HANDLER](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-hooks-and-handlers/src/handlers/clob/CLOBQuotor.sol#L21) is not in mixedCase
 
 /Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-hooks-and-handlers/src/handlers/clob/CLOBQuotor.sol#L21
 
 
- - [ ] ID-42
+ - [ ] ID-44
 Variable [AMMStandardHook.AMM](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-hooks-and-handlers/src/hooks/AMMStandardHook.sol#L35) is not in mixedCase
 
 /Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-hooks-and-handlers/src/hooks/AMMStandardHook.sol#L35
@@ -407,7 +420,7 @@ Variable [AMMStandardHook.AMM](/Users/diego/Dev/non-toxic/bug_bounty/limit-break
 ## unindexed-event-address
 Impact: Informational
 Confidence: High
- - [ ] ID-43
+ - [ ] ID-45
 Event [PermitTransferHandler.DestroyedCosigner(address)](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-hooks-and-handlers/src/handlers/permit/PermitTransferHandler.sol#L49) has address parameters but no indexed parameters
 
 /Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-hooks-and-handlers/src/handlers/permit/PermitTransferHandler.sol#L49
@@ -416,43 +429,43 @@ Event [PermitTransferHandler.DestroyedCosigner(address)](/Users/diego/Dev/non-to
 ## unused-state
 Impact: Informational
 Confidence: High
- - [ ] ID-44
+ - [ ] ID-46
 [CLOBQuotor.nextOrderNonce](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-hooks-and-handlers/src/handlers/clob/CLOBQuotor.sol#L26) is never used in [CLOBQuotor](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-hooks-and-handlers/src/handlers/clob/CLOBQuotor.sol#L19-L111)
 
 /Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-hooks-and-handlers/src/handlers/clob/CLOBQuotor.sol#L26
 
 
- - [ ] ID-45
+ - [ ] ID-47
 [CreatorHookSettingsRegistry.POOL_DISABLED_TOKEN_0_FLAG](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-hooks-and-handlers/src/hooks/CreatorHookSettingsRegistry.sol#L112) is never used in [CreatorHookSettingsRegistry](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-hooks-and-handlers/src/hooks/CreatorHookSettingsRegistry.sol#L55-L1019)
 
 /Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-hooks-and-handlers/src/hooks/CreatorHookSettingsRegistry.sol#L112
 
 
- - [ ] ID-46
+ - [ ] ID-48
 [CLOBQuotor.makerTokenBalance](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-hooks-and-handlers/src/handlers/clob/CLOBQuotor.sol#L32) is never used in [CLOBQuotor](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-hooks-and-handlers/src/handlers/clob/CLOBQuotor.sol#L19-L111)
 
 /Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-hooks-and-handlers/src/handlers/clob/CLOBQuotor.sol#L32
 
 
- - [ ] ID-47
+ - [ ] ID-49
 [CreatorHookSettingsRegistry.POOL_DISABLED_TOKEN_1_FLAG](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-hooks-and-handlers/src/hooks/CreatorHookSettingsRegistry.sol#L114) is never used in [CreatorHookSettingsRegistry](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-hooks-and-handlers/src/hooks/CreatorHookSettingsRegistry.sol#L55-L1019)
 
 /Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-hooks-and-handlers/src/hooks/CreatorHookSettingsRegistry.sol#L114
 
 
- - [ ] ID-48
+ - [ ] ID-50
 [CLOBQuotor.orderBookKeys](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-hooks-and-handlers/src/handlers/clob/CLOBQuotor.sol#L38) is never used in [CLOBQuotor](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-hooks-and-handlers/src/handlers/clob/CLOBQuotor.sol#L19-L111)
 
 /Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-hooks-and-handlers/src/handlers/clob/CLOBQuotor.sol#L38
 
 
- - [ ] ID-49
+ - [ ] ID-51
 [CLOBQuotor.orderBookKeyInitialized](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-hooks-and-handlers/src/handlers/clob/CLOBQuotor.sol#L36) is never used in [CLOBQuotor](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-hooks-and-handlers/src/handlers/clob/CLOBQuotor.sol#L19-L111)
 
 /Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-hooks-and-handlers/src/handlers/clob/CLOBQuotor.sol#L36
 
 
- - [ ] ID-50
+ - [ ] ID-52
 [CLOBQuotor.WRAPPED_NATIVE](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-hooks-and-handlers/src/handlers/clob/CLOBQuotor.sol#L29) is never used in [CLOBQuotor](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-hooks-and-handlers/src/handlers/clob/CLOBQuotor.sol#L19-L111)
 
 /Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-hooks-and-handlers/src/handlers/clob/CLOBQuotor.sol#L29
@@ -461,7 +474,7 @@ Confidence: High
 ## constable-states
 Impact: Optimization
 Confidence: High
- - [ ] ID-51
+ - [ ] ID-53
 [CLOBQuotor.nextOrderNonce](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-hooks-and-handlers/src/handlers/clob/CLOBQuotor.sol#L26) should be constant 
 
 /Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-hooks-and-handlers/src/handlers/clob/CLOBQuotor.sol#L26

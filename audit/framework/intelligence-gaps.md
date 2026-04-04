@@ -28,16 +28,11 @@ Before listing gaps, honest accounting of what was tested:
 
 ## Plumbing Gaps (how agents work)
 
-### P1. Execution-in-the-Loop [PARTIALLY BLOCKED]
+### P1. Execution-in-the-Loop [RESOLVED]
 
 **Problem:** Agents reason about what *might* happen instead of compiling and observing what *does* happen.
 
-**Status:** Quimera blocked by Slither cross-repo parsing (4 patch attempts failed). `QuimeraBaseTest.sol` compiles/runs correctly with `forge test` — the issue is purely Quimera's internal Slither, not our test contracts.
-
-**Remaining options:**
-- Build lightweight execution-in-the-loop script without Slither (~30 min): write test → forge test → read trace → feed to Claude API → repeat
-- PoCo pattern (arXiv Nov 2025): agentic Forge compile-test-refine loop, exactly this approach
-- Or accept agents already have forge access and prompt more aggressively to use it
+**Resolution:** Quimera removed (archived upstream March 2026, never executed in 10+ runs, blocked by Slither cross-repo parsing). Replaced with Forge compile-test-refine loop via improved agent prompts — agents write Foundry tests directly, parse errors, and iterate. This matches the PoCo/SCONE-bench pattern that proved effective without Slither dependency.
 
 ### P2. Call-Graph Injection
 

@@ -10,7 +10,7 @@ import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from .config import AgentConfig, WaveConfig, REPOS, SPAWN_PROMPTS_DIR, ARTIFACTS_DIR, MEMORY_DIR, TEMPLATES_DIR
+from .config import AgentConfig, WaveConfig, SPAWN_PROMPTS_DIR, ARTIFACTS_DIR, MEMORY_DIR, TEMPLATES_DIR, get_repos
 
 
 # --- Memory parsing (scaffold §7a) ---
@@ -408,7 +408,7 @@ def render_prompt(agent: AgentConfig, wave: WaveConfig, prior_synthesis: str | N
     # Build scope description
     scope_lines = []
     for repo_name in agent.scope:
-        repo = REPOS[repo_name]
+        repo = get_repos()[repo_name]
         scope_lines.append(f"- `{repo_name}/` (~{repo['tokens']:,} tokens)")
     scope_text = "\n".join(scope_lines)
 
@@ -458,6 +458,11 @@ def render_prompt(agent: AgentConfig, wave: WaveConfig, prior_synthesis: str | N
     if "{{CALL_GRAPH}}" in prompt:
         cg = build_call_graph_injection(agent.name)
         prompt = prompt.replace("{{CALL_GRAPH}}", f"<call-graph>\n{cg}\n</call-graph>" if cg else "")
+
+    # Inject tool paths table
+    if "{{TOOL_PATHS}}" in prompt:
+        from .tool_registry import format_tool_table
+        prompt = prompt.replace("{{TOOL_PATHS}}", format_tool_table())
 
     # Replace template variables (runs on full prompt including injected blocks)
     prompt = prompt.replace("{{AGENT_NAME}}", agent.name)

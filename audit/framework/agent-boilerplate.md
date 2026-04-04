@@ -33,7 +33,6 @@ When spawned with `isolation: worktree`, your worktree will be at `.claude/workt
 | Halmos | `~/.local/bin/halmos` (v0.3.3) | Symbolic execution. **MUST** run with `env PATH="/Users/diego/.foundry/bin:$PATH" ~/.local/bin/halmos ...` so it can find forge. |
 | Medusa | `/opt/homebrew/bin/medusa` (v1.5.0) | Parallel corpus-guided fuzzer (Trail of Bits) |
 | Aderyn | `/opt/homebrew/bin/aderyn` (v0.6.8) | Rust-based Solidity static analyzer (Cyfrin). Complements Slither. Run: `aderyn .` |
-| Quimera | `~/.local/bin/quimera` (v0.1) | LLM-driven exploit PoC generation (wave 2). For confirmed vulns: `quimera <contract> --model <model> --iterations 5` |
 | Slither MCP | via `ToolSearch "+slither"` | Static analysis, call graphs, storage layout, detectors |
 
 ### Trail of Bits Claude Code Skills
@@ -90,9 +89,10 @@ Run BOTH on every repo in your scope before starting manual analysis.
 
 **Phase 0 artifacts do NOT satisfy this checkpoint.** Phase 0 ran a generic, repo-wide pass before you were spawned. YOUR checkpoint 1 runs are targeted: you query specific contracts, functions, and detectors based on your archetype hypotheses. You WILL find things the generic pass missed. Skipping this is a SAFETY_EVENT.
 
-**Slither** — Load via `ToolSearch "+slither"`, then:
+**Slither** (if available) — Load via `ToolSearch "+slither"`, then:
 - `mcp__slither__run_detectors` with `path=<repo>`, `impact=["High","Medium"]`, `exclude_paths=["lib/","test/"]`
 - `mcp__slither__list_functions` on your target contracts — read the function list, don't guess
+- **Fallback if Slither unavailable**: read Phase 0 artifacts in `docs/targets/full-system/phase0/`, use `forge inspect <Contract> methods` for function lists, Grep for patterns manually.
 
 **Aderyn** — Run on each scoped repo:
 ```bash
@@ -136,18 +136,15 @@ env PATH="/Users/diego/.foundry/bin:$PATH" ~/.local/bin/halmos --function check_
 cd <repo> && /opt/homebrew/bin/medusa fuzz --target-contracts <Contract> --test-limit 50000
 ```
 
-**Confirmed exploitable finding → Quimera** (LLM-driven PoC generation, wave 2):
-```bash
-~/.local/bin/quimera <contract> --model sonnet --iterations 5
-```
-Use Quimera to generate alternative PoC approaches for any confirmed finding. It may find exploit paths you missed.
+**Confirmed exploitable finding → Forge PoC loop** (compile-test-refine, wave 2):
+Write a Foundry test, run `forge test -vvv`, parse errors, fix, repeat (max 5 iterations per hypothesis).
 
-Log: `{"event":"TOOL_CHECKPOINT","ts":"<ISO>","agent_id":"<name>","checkpoint":3,"tool":"halmos|medusa|quimera","target":"<finding_id>","result":"confirmed|unconfirmed"}`
+Log: `{"event":"TOOL_CHECKPOINT","ts":"<ISO>","agent_id":"<name>","checkpoint":3,"tool":"halmos|medusa|forge_poc","target":"<finding_id>","result":"confirmed|unconfirmed"}`
 
 ### Checkpoint 4: Variant + Call Graph Search (after confirming any finding)
 
-1. `mcp__slither__get_function_callers` and `get_function_callees` — trace blast radius
-2. `mcp__slither__search_functions` — find similar patterns in other contracts
+1. `mcp__slither__get_function_callers` and `get_function_callees` (if available) — trace blast radius. **Fallback**: Grep for the function name across all repos.
+2. `mcp__slither__search_functions` (if available) — find similar patterns. **Fallback**: Grep for the pattern signature.
 3. `Skill("variant-analysis:variant-analysis")` — systematic variant search across repos
 
 ### Tool Checkpoint Evidence in Sidecar
@@ -165,7 +162,6 @@ Your JSON sidecar `metadata` MUST include:
   "echidna": {"ran": false, "reason": "used Medusa instead"},
   "cast_run": {"ran": false, "reason": "no historical tx to trace"},
   "heimdall": {"ran": false, "reason": "no unverified deps"},
-  "quimera": {"ran": false, "reason": "no confirmed findings"},
   "variant_analysis": {"ran": false, "reason": "no confirmed findings"}
 }
 ```

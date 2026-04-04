@@ -1,3 +1,10 @@
 {
-  "mcpServers": {}
+  "mcpServers": {
+    "slither": {
+      "type": "stdio",
+      "command": "slither-mcp",
+      "args": ["--disable-metrics"],
+      "notes": "Optional. Install: uv tool install slither-mcp. Cross-repo analysis requires fix_build_info() patch — see audit/orchestrator/artifact_generator.py."
+    }
+  }
 }

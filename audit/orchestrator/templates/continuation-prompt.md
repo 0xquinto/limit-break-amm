@@ -73,7 +73,7 @@ If any required tool shows ran=false without an error logged, you are NOT done.
 
 ## Tools Available
 
-You have access to Forge, Halmos, Medusa, Slither MCP, Aderyn, and all Skills. Use them.
+You have access to Forge, Halmos, Medusa, Aderyn, and all Skills. Slither MCP is available if configured — use it when present, fall back to `forge inspect` and Grep when not.
 </instructions>
 
 </continuation_prompt>

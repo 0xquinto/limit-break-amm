@@ -4,11 +4,12 @@
 Summary
  - [incorrect-shift](#incorrect-shift) (2 results) (High)
  - [divide-before-multiply](#divide-before-multiply) (21 results) (Medium)
+ - [tautology](#tautology) (1 results) (Medium)
  - [uninitialized-local](#uninitialized-local) (4 results) (Medium)
  - [assembly](#assembly) (9 results) (Informational)
  - [pragma](#pragma) (1 results) (Informational)
  - [cyclomatic-complexity](#cyclomatic-complexity) (3 results) (Informational)
- - [naming-convention](#naming-convention) (1 results) (Informational)
+ - [naming-convention](#naming-convention) (5 results) (Informational)
  - [too-many-digits](#too-many-digits) (1 results) (Informational)
 ## incorrect-shift
 Impact: High
@@ -194,28 +195,38 @@ Confidence: Medium
 /Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/amm-pool-type-dynamic/src/libraries/TickMath.sol#L42-L101
 
 
+## tautology
+Impact: Medium
+Confidence: High
+ - [ ] ID-23
+[MedusaDynamicMath.property_msbBounded(uint256)](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/amm-pool-type-dynamic/src/audit/MedusaDynamicMath.sol#L42-L46) contains a tautology or contradiction:
+	- [msb <= 255 && (uint256(1) << msb) <= x && (msb == 255 || (uint256(1) << (msb + 1)) > x)](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/amm-pool-type-dynamic/src/audit/MedusaDynamicMath.sol#L45)
+
+/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/amm-pool-type-dynamic/src/audit/MedusaDynamicMath.sol#L42-L46
+
+
 ## uninitialized-local
 Impact: Medium
 Confidence: Medium
- - [ ] ID-23
+ - [ ] ID-24
 [DynamicPoolType.addLiquidity(bytes32,address,bytes32,bytes).liquidityCache](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/amm-pool-type-dynamic/src/DynamicPoolType.sol#L244) is a local variable never initialized
 
 /Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/amm-pool-type-dynamic/src/DynamicPoolType.sol#L244
 
 
- - [ ] ID-24
+ - [ ] ID-25
 [DynamicPoolType.removeLiquidity(bytes32,address,bytes32,bytes).liquidityCache](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/amm-pool-type-dynamic/src/DynamicPoolType.sol#L333) is a local variable never initialized
 
 /Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/amm-pool-type-dynamic/src/DynamicPoolType.sol#L333
 
 
- - [ ] ID-25
+ - [ ] ID-26
 [DynamicPoolType.collectFees(bytes32,address,bytes32,bytes).liquidityCache](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/amm-pool-type-dynamic/src/DynamicPoolType.sol#L173) is a local variable never initialized
 
 /Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/amm-pool-type-dynamic/src/DynamicPoolType.sol#L173
 
 
- - [ ] ID-26
+ - [ ] ID-27
 [SqrtPriceMath.computeRatioX96(uint256,uint256).multiplier](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/amm-pool-type-dynamic/src/libraries/SqrtPriceMath.sol#L253) is a local variable never initialized
 
 /Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/amm-pool-type-dynamic/src/libraries/SqrtPriceMath.sol#L253
@@ -224,21 +235,21 @@ Confidence: Medium
 ## assembly
 Impact: Informational
 Confidence: High
- - [ ] ID-27
+ - [ ] ID-28
 [BitMath.mostSignificantBit(uint256)](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/amm-pool-type-dynamic/src/libraries/BitMath.sol#L14-L27) uses assembly
 	- [INLINE ASM](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/amm-pool-type-dynamic/src/libraries/BitMath.sol#L17-L26)
 
 /Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/amm-pool-type-dynamic/src/libraries/BitMath.sol#L14-L27
 
 
- - [ ] ID-28
+ - [ ] ID-29
 [SqrtPriceMath.getAmount1Delta(uint160,uint160,uint128,bool)](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/amm-pool-type-dynamic/src/libraries/SqrtPriceMath.sol#L164-L178) uses assembly
 	- [INLINE ASM](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/amm-pool-type-dynamic/src/libraries/SqrtPriceMath.sol#L175-L177)
 
 /Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/amm-pool-type-dynamic/src/libraries/SqrtPriceMath.sol#L164-L178
 
 
- - [ ] ID-29
+ - [ ] ID-30
 [TickMath.getTickAtSqrtPrice(uint160)](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/amm-pool-type-dynamic/src/libraries/TickMath.sol#L120-L236) uses assembly
 	- [INLINE ASM](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/amm-pool-type-dynamic/src/libraries/TickMath.sol#L140-L145)
 	- [INLINE ASM](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/amm-pool-type-dynamic/src/libraries/TickMath.sol#L146-L151)
@@ -258,21 +269,21 @@ Confidence: High
 /Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/amm-pool-type-dynamic/src/libraries/TickMath.sol#L120-L236
 
 
- - [ ] ID-30
+ - [ ] ID-31
 [SqrtPriceMath.absDiff(uint160,uint160)](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/amm-pool-type-dynamic/src/libraries/SqrtPriceMath.sol#L138-L149) uses assembly
 	- [INLINE ASM](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/amm-pool-type-dynamic/src/libraries/SqrtPriceMath.sol#L139-L148)
 
 /Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/amm-pool-type-dynamic/src/libraries/SqrtPriceMath.sol#L138-L149
 
 
- - [ ] ID-31
+ - [ ] ID-32
 [BitMath.leastSignificantBit(uint256)](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/amm-pool-type-dynamic/src/libraries/BitMath.sol#L33-L50) uses assembly
 	- [INLINE ASM](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/amm-pool-type-dynamic/src/libraries/BitMath.sol#L36-L49)
 
 /Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/amm-pool-type-dynamic/src/libraries/BitMath.sol#L33-L50
 
 
- - [ ] ID-32
+ - [ ] ID-33
 [TickMath.getSqrtPriceAtTick(int24)](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/amm-pool-type-dynamic/src/libraries/TickMath.sol#L42-L101) uses assembly
 	- [INLINE ASM](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/amm-pool-type-dynamic/src/libraries/TickMath.sol#L45-L53)
 	- [INLINE ASM](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/amm-pool-type-dynamic/src/libraries/TickMath.sol#L66-L68)
@@ -281,21 +292,21 @@ Confidence: High
 /Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/amm-pool-type-dynamic/src/libraries/TickMath.sol#L42-L101
 
 
- - [ ] ID-33
+ - [ ] ID-34
 [SqrtPriceMath._sqrt(uint256)](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/amm-pool-type-dynamic/src/libraries/SqrtPriceMath.sol#L281-L332) uses assembly
 	- [INLINE ASM](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/amm-pool-type-dynamic/src/libraries/SqrtPriceMath.sol#L283-L331)
 
 /Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/amm-pool-type-dynamic/src/libraries/SqrtPriceMath.sol#L281-L332
 
 
- - [ ] ID-34
+ - [ ] ID-35
 [LiquidityMath.addDelta(uint128,int128)](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/amm-pool-type-dynamic/src/libraries/LiquidityMath.sol#L34-L43) uses assembly
 	- [INLINE ASM](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/amm-pool-type-dynamic/src/libraries/LiquidityMath.sol#L35-L42)
 
 /Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/amm-pool-type-dynamic/src/libraries/LiquidityMath.sol#L34-L43
 
 
- - [ ] ID-35
+ - [ ] ID-36
 [SqrtPriceMath._getNextSqrtPriceFromAmount0RoundingUp(uint160,uint128,uint256,bool)](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/amm-pool-type-dynamic/src/libraries/SqrtPriceMath.sol#L353-L397) uses assembly
 	- [INLINE ASM](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/amm-pool-type-dynamic/src/libraries/SqrtPriceMath.sol#L382-L392)
 
@@ -305,7 +316,7 @@ Confidence: High
 ## pragma
 Impact: Informational
 Confidence: High
- - [ ] ID-36
+ - [ ] ID-37
 5 different versions of Solidity are used:
 	- Version constraint ^0.8.4 is used by:
 		-[^0.8.4](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/amm-pool-type-dynamic/../lbamm-core/lib/tm-core-lib/src/utils/Errors.sol#L1)
@@ -317,6 +328,7 @@ Confidence: High
 		-[0.8.24](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/amm-pool-type-dynamic/src/DataTypes.sol#L2)
 		-[0.8.24](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/amm-pool-type-dynamic/src/DynamicPoolType.sol#L2)
 		-[0.8.24](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/amm-pool-type-dynamic/src/Errors.sol#L2)
+		-[0.8.24](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/amm-pool-type-dynamic/src/audit/MedusaDynamicMath.sol#L2)
 		-[0.8.24](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/amm-pool-type-dynamic/src/interfaces/IDynamicPoolType.sol#L2)
 		-[0.8.24](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/amm-pool-type-dynamic/src/libraries/BitMath.sol#L2)
 		-[0.8.24](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/amm-pool-type-dynamic/src/libraries/DynamicHelper.sol#L2)
@@ -339,19 +351,19 @@ Confidence: High
 ## cyclomatic-complexity
 Impact: Informational
 Confidence: High
- - [ ] ID-37
+ - [ ] ID-38
 [DynamicHelper.snapPrice(DynamicPoolStorage,bytes32,uint160)](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/amm-pool-type-dynamic/src/libraries/DynamicHelper.sol#L237-L291) has a high cyclomatic complexity (12).
 
 /Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/amm-pool-type-dynamic/src/libraries/DynamicHelper.sol#L237-L291
 
 
- - [ ] ID-38
+ - [ ] ID-39
 [DynamicHelper.computeSwap(DynamicPoolStorage,DynamicSwapCache,DynamicPoolState,uint16,function(DynamicSwapCache,StepComputations,uint16))](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/amm-pool-type-dynamic/src/libraries/DynamicHelper.sol#L350-L433) has a high cyclomatic complexity (17).
 
 /Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/amm-pool-type-dynamic/src/libraries/DynamicHelper.sol#L350-L433
 
 
- - [ ] ID-39
+ - [ ] ID-40
 [TickMath.getSqrtPriceAtTick(int24)](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/amm-pool-type-dynamic/src/libraries/TickMath.sol#L42-L101) has a high cyclomatic complexity (22).
 
 /Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/amm-pool-type-dynamic/src/libraries/TickMath.sol#L42-L101
@@ -360,16 +372,40 @@ Confidence: High
 ## naming-convention
 Impact: Informational
 Confidence: High
- - [ ] ID-40
+ - [ ] ID-41
 Parameter [DynamicHelper.computeSwap(DynamicPoolStorage,DynamicSwapCache,DynamicPoolState,uint16,function(DynamicSwapCache,StepComputations,uint16))._swapStep](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/amm-pool-type-dynamic/src/libraries/DynamicHelper.sol#L355) is not in mixedCase
 
 /Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/amm-pool-type-dynamic/src/libraries/DynamicHelper.sol#L355
 
 
+ - [ ] ID-42
+Function [MedusaDynamicMath.property_amount1DeltaRounding(uint160,uint160,uint128)](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/amm-pool-type-dynamic/src/audit/MedusaDynamicMath.sol#L25-L32) is not in mixedCase
+
+/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/amm-pool-type-dynamic/src/audit/MedusaDynamicMath.sol#L25-L32
+
+
+ - [ ] ID-43
+Function [MedusaDynamicMath.property_addDeltaPositiveIncreases(uint128,int128)](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/amm-pool-type-dynamic/src/audit/MedusaDynamicMath.sol#L35-L39) is not in mixedCase
+
+/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/amm-pool-type-dynamic/src/audit/MedusaDynamicMath.sol#L35-L39
+
+
+ - [ ] ID-44
+Function [MedusaDynamicMath.property_msbBounded(uint256)](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/amm-pool-type-dynamic/src/audit/MedusaDynamicMath.sol#L42-L46) is not in mixedCase
+
+/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/amm-pool-type-dynamic/src/audit/MedusaDynamicMath.sol#L42-L46
+
+
+ - [ ] ID-45
+Function [MedusaDynamicMath.property_amount0DeltaRounding(uint160,uint160,uint128)](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/amm-pool-type-dynamic/src/audit/MedusaDynamicMath.sol#L14-L22) is not in mixedCase
+
+/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/amm-pool-type-dynamic/src/audit/MedusaDynamicMath.sol#L14-L22
+
+
 ## too-many-digits
 Impact: Informational
 Confidence: Medium
- - [ ] ID-41
+ - [ ] ID-46
 [BitMath.mostSignificantBit(uint256)](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/amm-pool-type-dynamic/src/libraries/BitMath.sol#L14-L27) uses literals with too many digits:
 	- [r = r | byte(uint256,uint256)(0x1f & 0x8421084210842108cc6318c6db6d54be >> x >> r,0x0706060506020500060203020504000106050205030304010505030400000000)](/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/amm-pool-type-dynamic/src/libraries/BitMath.sol#L24-L25)
 

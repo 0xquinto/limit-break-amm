@@ -38,9 +38,9 @@ def _get_repo_prefixes() -> dict[str, str]:
             return tc.get_repo_prefixes()
     except (ImportError, AttributeError):
         pass
-    # Fallback: derive from REPOS in config.py (single source)
-    from .config import REPOS
-    return {name: name[:4].upper() for name in REPOS}
+    # Fallback: derive from repos via get_repos()
+    from .config import get_repos
+    return {name: name[:4].upper() for name in get_repos()}
 
 
 # --- JSON sidecar collection ---
@@ -291,7 +291,7 @@ MANDATORY_TOOLS_ALL = {"audit_context_building", "entry_point_analyzer", "slithe
 MANDATORY_TOOLS_BY_ROLE = {
     "invariant-generator": {"property_based_testing"},
     "invariant-breaker": {"halmos", "medusa", "certora"},
-    "exploit-verifier": {"quimera", "differential_review", "variant_analysis"},
+    "exploit-verifier": {"differential_review", "variant_analysis"},
     "deep-agent": set(),
 }
 
