@@ -511,7 +511,7 @@ Prompt templates currently use markdown headers (~96% lack proper XML tags). Thi
 1. **Extended thinking budget** (128K tokens/agent) — 57% of agent cost
 2. **Phase 0 artifacts** (240KB Slither+Aderyn output sent to all agents) — 28%
 3. **Agent scope misalignment** (some agents receive all 6 repos but only audit 2-3) — 23%
-4. **Hypothesis verbosity** (100-200 word mechanisms × 15 per agent) — 6%
+4. **Hypothesis verbosity** (100-200 word mechanisms × 10 per agent) — 6%
 5. **Output token budget** (16K max_tokens for all agents) — 17%
 
 ### Model Profiles
