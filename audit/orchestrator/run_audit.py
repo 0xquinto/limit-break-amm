@@ -529,6 +529,22 @@ async def run_exploit_wave(
     uncovered = len(analysis.get("cross_agent", {}).get("uncovered_files", []))
     print(f"  Trace analysis: {covered} files covered, {uncovered} uncovered")
 
+    # 2d. Extract learning insights from decision traces + agent behavior
+    from .learning_extractor import extract_all_insights
+    insights_path = RESULTS_DIR / "learning-insights.json"
+    insights = extract_all_insights(
+        trace_path=analysis_path,
+        playbook_dir=Path(__file__).parent / "playbook",
+        decisions_dir=Path(__file__).parent / "playbook",
+        output_path=insights_path,
+    )
+    if insights:
+        print(f"  Learning extraction: {len(insights)} insights")
+        for ins in insights[:3]:
+            print(f"    [{ins.confidence}] {ins.signal}")
+    else:
+        print(f"  Learning extraction: no insights (insufficient decision data)")
+
     # 3. Collect sidecars (multi-path: flat, subdir, draft fallback)
     import json
     sidecars = []
