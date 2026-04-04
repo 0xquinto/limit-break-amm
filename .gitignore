@@ -18,15 +18,19 @@ __pycache__/
 .pytest_cache/
 *.py[cod]
 *$py.class
+*.egg-info/
 
 # Foundry broadcast (can contain RPC URLs / API keys — see Foundry issue #2190)
 broadcast/
 
 # Run archives (large, generated)
-docs/targets/full-system/artifacts/archive/
+audit/targets/full-system/artifacts/archive/
 
 # Experiment data (generated, large)
-docs/targets/full-system/experiments.tsv
+audit/targets/full-system/experiments.tsv
+
+# Merged analysis super-project (generated)
+.merged-analysis/
 
 # Secrets
 .env
@@ -36,7 +40,7 @@ docs/targets/full-system/experiments.tsv
 .context-sync-log
 
 # Obsidian (per-user workspace state)
-docs/.obsidian/
+**/.obsidian/
 
 # OS
 .DS_Store
