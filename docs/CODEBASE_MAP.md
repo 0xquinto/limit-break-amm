@@ -291,9 +291,11 @@ playbook/
 
 If cartographer helped you, consider starring: https://github.com/kingbootoshi/cartographer - please!
 
-## Recent Changes (auto-synced 2026-04-02)
+## Recent Changes (auto-synced 2026-04-04)
 
-**4 files changed** since last sync.
+**39 files changed** since last sync.
 
+- **config**: 1 files (config.py)
 - **context_files**: 2 files (CLAUDE.md, CODEBASE_MAP.md)
-- **docs**: 3 files (CLAUDE.md, README.md, CODEBASE_MAP.md)
+- **docs**: 39 files (CLAUDE.md, app.json, workspace.json, CODEBASE_MAP.md, INDEX.md...)
+- **tests**: 3 files (test_compliance_e2e.py, test_knowledge_gen.py, test_target_config.py)
