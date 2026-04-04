@@ -355,6 +355,16 @@ def _route_agent(target: str) -> str:
     return "boundary-exploiter"
 
 
+def _infer_boundary(hypothesis_id: str) -> str:
+    """Infer boundary from hypothesis ID convention (e.g., H-R3-CH-06 → core-handler)."""
+    slug_map = {"CP": "core-pooltype", "CH": "core-handler", "HH": "handler-hook",
+                "HR": "hook-registry", "DP": "diamond-proxy", "TS": "transient-storage"}
+    parts = hypothesis_id.split("-")
+    if len(parts) >= 3:
+        return slug_map.get(parts[2], "unknown")
+    return "unknown"
+
+
 def generate_hints(
     max_per_agent: int = 5,
     output_path: Path | None = None,
@@ -406,6 +416,27 @@ def generate_hints(
     filtered = pre_filter - len(all_hints)
     if filtered:
         print(f"  Hint filter: {filtered}/{pre_filter} hints removed (known FPs/rejected/Guardian)")
+
+    # Predictive ranking: re-score hints using hypothesis ranker if data exists
+    try:
+        from .hypothesis_ranker import rank_hypotheses
+        # Build hypothesis dicts from hints for ranking
+        hint_hyps = [{"id": h.id, "boundary": _infer_boundary(h.id), "mechanism": h.source,
+                      "functions": [], "contracts": []} for h in all_hints]
+        if hint_hyps:
+            rankings = rank_hypotheses(hint_hyps)
+            rank_map = {r.hypothesis_id: r.predicted_value for r in rankings}
+            # Adjust priority: higher predicted_value → lower priority number (higher rank)
+            for hint in all_hints:
+                pv = rank_map.get(hint.id, 0.0)
+                if pv > 0.3:
+                    hint.priority = max(1, hint.priority - 1)  # promote
+                elif pv < 0.1:
+                    hint.priority = min(4, hint.priority + 1)  # demote
+            ranked_count = sum(1 for pv in rank_map.values() if pv > 0)
+            print(f"  Predictive ranking: {ranked_count} hints re-scored")
+    except (ImportError, Exception) as e:
+        pass  # ranker not available or no data — use original priorities
 
     # Group by agent
     by_agent: dict[str, list[HintSource]] = {}
