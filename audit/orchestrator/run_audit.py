@@ -192,6 +192,14 @@ def _triage_real(finding_id: str, finding: dict) -> None:
 
     print(f"  Added {reg_id} to regression_cases.json")
     print(f"  Added {cp_id} to confirmed-patterns.md")
+
+    # Record structured decision trace
+    from .decision_recorder import record_confirmation_decision
+    record_confirmation_decision(
+        finding=finding,
+        reasoning=f"Human triage → confirmed ({cp_id}, {reg_id})",
+    )
+
     print(f"  Triage complete: {finding_id} → REAL ('{finding.get('title', '?')}')")
 
 
@@ -216,6 +224,14 @@ def _triage_fp(finding_id: str, finding: dict) -> None:
         fp_path.write_text(f"# False Positives Registry\n\n---\n{fp_entry}")
 
     print(f"  Added {fp_id} to false-positives.md")
+
+    # Record structured decision trace
+    from .decision_recorder import record_fp_decision
+    record_fp_decision(
+        finding=finding,
+        reasoning=f"Human triage → FP ({fp_id}): {title}",
+    )
+
     print(f"  Triage complete: {finding_id} → FP ('{title}')")
 
 
