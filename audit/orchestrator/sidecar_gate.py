@@ -2,7 +2,7 @@
 """Gated sidecar writer — validates compliance minimums before accepting.
 
 Usage:
-    python3 docs/orchestrator/sidecar_gate.py <draft-path>
+    python3 audit/orchestrator/sidecar_gate.py <draft-path>
 
 Reads the draft sidecar, validates tool_breadth / vector count / evidence,
 and promotes it to the final path (dropping '-draft' from the filename).

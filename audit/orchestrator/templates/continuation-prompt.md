@@ -52,7 +52,7 @@ Complete every numbered item below that the previous agent did NOT complete. Ski
 1. Read the previous agent's sidecar from `{{SIDECAR_PATH}}`
 2. For each uncompleted checklist item: you MUST run the specified tool. If the item says "Halmos:", run halmos. If it says "Medusa:", run medusa. Writing a Forge test instead is NOT acceptable — the tool gate from Phase C applies to you. If the tool errors, log the error in your sidecar (that counts as completed). Only "not attempted" is a violation.
 3. Write your results as a DRAFT: `{{OUTPUT_SIDECAR_PATH_DRAFT}}`
-4. Validate: `.venv/bin/python3 docs/orchestrator/sidecar_gate.py {{OUTPUT_SIDECAR_PATH_DRAFT}}`
+4. Validate: `.venv/bin/python3 audit/orchestrator/sidecar_gate.py {{OUTPUT_SIDECAR_PATH_DRAFT}}`
 5. If REJECTED, fix the gaps and retry. If ACCEPTED, the gate promotes it to `{{OUTPUT_SIDECAR_PATH}}`
 6. Use the same sidecar schema as the original agent (findings, ruled_out_vectors, metadata)
 7. In metadata, set `"continuation": true` and `"parent_agent": "{{AGENT_NAME}}"`

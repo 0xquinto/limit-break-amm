@@ -12,7 +12,7 @@ from pathlib import Path
 from .config import TEMPLATES_DIR, RESULTS_DIR
 from .compliance import REQUIRED_TOOLS
 
-SCRIPT_DIR = "docs/orchestrator/templates/_shared/scripts"
+SCRIPT_DIR = "audit/orchestrator/templates/_shared/scripts"
 
 TOOL_SCRIPTS = {
     "halmos": f"bash {SCRIPT_DIR}/run-halmos.sh <repo> <contract>",

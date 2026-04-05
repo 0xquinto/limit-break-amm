@@ -71,10 +71,10 @@ You MUST run these tools at the specified phases. Skipping a mandatory checkpoin
 
 ### Checkpoint 0: Pre-generated Artifacts (turn 1, BEFORE any code reading)
 
-Automated tools run BEFORE agents spawn. Your artifacts are pre-generated at `docs/targets/full-system/artifacts/phase0/`.
+Automated tools run BEFORE agents spawn. Your artifacts are pre-generated at `audit/targets/full-system/artifacts/phase0/`.
 
 1. **Read your pre-generated dossier** — referenced in `{{PHASE0_ARTIFACTS}}` in your template
-2. **Read attack surface index** — `docs/targets/full-system/artifacts/phase0/attack_surface_index.json`
+2. **Read attack surface index** — `audit/targets/full-system/artifacts/phase0/attack_surface_index.json`
 
 Phase 0 artifacts give you static output. The `audit-context-building` and `entry-point-analyzer` skills are MANDATORY for all archetypes (see table above) — they provide interactive analysis that phase 0 cannot replicate. Run them on your primary target modules during checkpoint 0.
 
@@ -92,7 +92,7 @@ Run BOTH on every repo in your scope before starting manual analysis.
 **Slither** (if available) — Load via `ToolSearch "+slither"`, then:
 - `mcp__slither__run_detectors` with `path=<repo>`, `impact=["High","Medium"]`, `exclude_paths=["lib/","test/"]`
 - `mcp__slither__list_functions` on your target contracts — read the function list, don't guess
-- **Fallback if Slither unavailable**: read Phase 0 artifacts in `docs/targets/full-system/phase0/`, use `forge inspect <Contract> methods` for function lists, Grep for patterns manually.
+- **Fallback if Slither unavailable**: read Phase 0 artifacts in `audit/targets/full-system/phase0/`, use `forge inspect <Contract> methods` for function lists, Grep for patterns manually.
 
 **Aderyn** — Run on each scoped repo:
 ```bash
@@ -196,7 +196,7 @@ Your spawn prompt header specifies `max_turns`. Self-monitor:
 
 ### Structured Log Events
 
-Write a JSONL log file at `docs/targets/{target}/artifacts/agent-log-{your-name}.jsonl` (create dir if needed). Append one JSON line per event:
+Write a JSONL log file at `audit/targets/{target}/artifacts/agent-log-{your-name}.jsonl` (create dir if needed). Append one JSON line per event:
 
 **SESSION_START** (first turn):
 ```json
@@ -233,7 +233,7 @@ Do NOT:
 - Spend more than 2 turns on standard reentrancy/overflow/access-control checks that Slither already covers
 - Hold all findings in conversation memory — write to disk incrementally (context compaction loses intermediate work)
 - Use `git` commands that modify the main repo from a worktree
-- Skip reading `docs/framework/agent-boilerplate.md` and `docs/CODEBASE_MAP.md` as your first action
+- Skip reading `audit/framework/agent-boilerplate.md` and `audit/CODEBASE_MAP.md` as your first action
 - Serial-read artifacts one at a time — issue ALL Read calls for your assigned artifacts in parallel on your first turn (compute offsets, batch reads). 15+ sequential reads wastes turns.
 - Submit a finding without checking the "Closest known finding" field — duplicates waste lead time
 - Classify a Tier B finding (requires custom handler) as High/Critical — cap at Medium
@@ -272,13 +272,13 @@ For findings that pass the FP gate AND have a compiling Forge test, SendMessage 
 **PoC sketch:** [Concrete steps: "1. Attacker calls X with param Y, 2. Then calls Z, 3. Assert: attacker balance increased by W"]
 ```
 
-For final contest submission formatting, see `docs/references/pashov-skills/report-formatting.md`. The template above is for internal lead routing; the Pashov format is for polished external reports.
+For final contest submission formatting, see `audit/references/pashov-skills/report-formatting.md`. The template above is for internal lead routing; the Pashov format is for polished external reports.
 
 ## Finding Validation (FP Gate)
 
 Every finding MUST pass this ordered gate pipeline. If ANY gate fails, drop the finding.
 
-0. **Not a known false positive**: `grep` the function name and vector keyword in `docs/audit_memory/false-positives.md`. If a match exists with confidence >= 80, NOOP — skip and note "Known FP: FP-NNN" in your ruled-out list. If partial match (similar but different code path), proceed but note the related FP in your finding.
+0. **Not a known false positive**: `grep` the function name and vector keyword in `audit/audit_memory/false-positives.md`. If a match exists with confidence >= 80, NOOP — skip and note "Known FP: FP-NNN" in your ruled-out list. If partial match (similar but different code path), proceed but note the related FP in your finding.
 1. **Location exists**: `grep` or AST-verify that the referenced function, variable, or line actually exists in the target contract. Catches hallucinated function names.
 2. **Entry point is reachable**: The attacker can actually reach the vulnerable function (check modifiers, `msg.sender` guards, access control, caller restrictions).
 3. **No existing guard prevents it**: No `require`, `if`-revert, reentrancy lock, allowance check, or other guard already blocks the attack path.
@@ -297,7 +297,7 @@ Include `[score]` in the finding deliverable. Findings below `[75]` are informat
 
 **Three orthogonal dimensions:** Severity (how bad), Exploitability Tier (how exploitable now), and Confidence (how sure it's real) are all independent. A finding can be High severity, Tier B exploitability, [75] confidence.
 
-Reference: `docs/references/pashov-skills/judging.md` for full FP gate rationale.
+Reference: `audit/references/pashov-skills/judging.md` for full FP gate rationale.
 
 ## Contest Submission Threshold (MUST CHECK)
 
@@ -338,13 +338,13 @@ Your primary methodology is defined in your **archetype template preamble** (`bl
 
 ### Invariant Catalog (Reference)
 
-The invariant catalog at `docs/framework/amm-invariant-catalog.md` defines what "correct" means.
+The invariant catalog at `audit/framework/amm-invariant-catalog.md` defines what "correct" means.
 Use it as a **reference for what to break**, not as a sequential checklist.
 Your archetype's Target Map already points you to the highest-value invariants for your attack strategy.
 
 ### Value Lifecycle Analysis Lenses (MANDATORY)
 
-Read `docs/framework/value-lifecycle-lenses.md` during checkpoint 0. Apply during your analysis.
+Read `audit/framework/value-lifecycle-lenses.md` during checkpoint 0. Apply during your analysis.
 
 Every agent MUST apply three lenses that catch cross-boundary bugs invisible to per-function analysis:
 
@@ -391,7 +391,7 @@ Class B and C vectors will be re-examined in wave 2 by exploit-developer agents.
 
 ## Required: Write Findings to Disk Incrementally
 
-As you work, write findings and ruled-out vectors to `docs/targets/{target}/artifacts/agent-metrics-{your-name}.md` in your worktree. The directory may not exist — create it first: `mkdir -p docs/targets/{target}/artifacts`. Do NOT hold everything in conversation — context compaction can lose intermediate work.
+As you work, write findings and ruled-out vectors to `audit/targets/{target}/artifacts/agent-metrics-{your-name}.md` in your worktree. The directory may not exist — create it first: `mkdir -p audit/targets/{target}/artifacts`. Do NOT hold everything in conversation — context compaction can lose intermediate work.
 
 Include:
 - Confirmed findings (with severity, location, description)

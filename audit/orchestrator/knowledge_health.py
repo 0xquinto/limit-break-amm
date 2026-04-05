@@ -70,7 +70,7 @@ class HealthReport:
 def check_stale_hypotheses(target_name: str = "full-system") -> list[HealthIssue]:
     """Find hypotheses whose source files have changed."""
     issues = []
-    playbook_dir = Path(f"docs/targets/{target_name}/playbook")
+    playbook_dir = Path(f"audit/targets/{target_name}/playbook")
     hyp_file = playbook_dir / "hypotheses.jsonl"
     if not hyp_file.exists():
         return issues
@@ -97,7 +97,7 @@ def check_fp_validity(target_name: str = "full-system") -> list[HealthIssue]:
         return issues
 
     # Load target config to get valid repo names
-    target_json = Path(f"docs/targets/{target_name}/target.json")
+    target_json = Path(f"audit/targets/{target_name}/target.json")
     valid_repos = set()
     if target_json.exists():
         try:
@@ -162,8 +162,8 @@ def check_invariant_coverage(target_name: str = "full-system") -> list[HealthIss
     issues = []
     # Try target-specific first, then framework
     catalog_paths = [
-        Path(f"docs/targets/{target_name}/knowledge-base/amm-invariant-catalog.md"),
-        Path("docs/framework/amm-invariant-catalog.md"),
+        Path(f"audit/targets/{target_name}/knowledge-base/amm-invariant-catalog.md"),
+        Path("audit/framework/amm-invariant-catalog.md"),
     ]
     catalog = None
     for p in catalog_paths:
@@ -177,7 +177,7 @@ def check_invariant_coverage(target_name: str = "full-system") -> list[HealthIss
     inv_ids = re.findall(r"(INV-[A-Z]+\d+)", catalog)
 
     # Check if hypotheses reference them
-    playbook_dir = Path(f"docs/targets/{target_name}/playbook")
+    playbook_dir = Path(f"audit/targets/{target_name}/playbook")
     hyp_file = playbook_dir / "hypotheses.jsonl"
     covered_invs = set()
     if hyp_file.exists():
@@ -201,7 +201,7 @@ def check_invariant_coverage(target_name: str = "full-system") -> list[HealthIss
 def check_coverage_distribution(target_name: str = "full-system") -> list[HealthIssue]:
     """Flag imbalanced hypothesis distribution across boundaries."""
     issues = []
-    playbook_dir = Path(f"docs/targets/{target_name}/playbook")
+    playbook_dir = Path(f"audit/targets/{target_name}/playbook")
     hyp_file = playbook_dir / "hypotheses.jsonl"
     if not hyp_file.exists():
         return issues
@@ -238,7 +238,7 @@ def run_health_check(target_name: str = "full-system") -> HealthReport:
     report = HealthReport()
 
     # Collect stats
-    playbook_dir = Path(f"docs/targets/{target_name}/playbook")
+    playbook_dir = Path(f"audit/targets/{target_name}/playbook")
     hyp_file = playbook_dir / "hypotheses.jsonl"
     if hyp_file.exists():
         hyp_count = sum(1 for line in hyp_file.read_text().splitlines() if line.strip())

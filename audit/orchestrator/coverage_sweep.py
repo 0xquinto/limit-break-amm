@@ -88,7 +88,7 @@ RULES:
 - Read EVERY uncovered contract listed above
 - For each, generate at least 1 hypothesis with a Forge test
 - If a guard holds, classify as strategic and move to the next
-- Write findings to docs/targets/full-system/artifacts/findings-{agent_name}.json
+- Write findings to audit/targets/full-system/artifacts/findings-{agent_name}.json
 
 OUTPUT FORMAT:
 {{

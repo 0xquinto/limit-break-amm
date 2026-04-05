@@ -11,8 +11,8 @@ Strategy:
   3. Compare fee-related metrics across pool types and flag divergences.
 
 Usage:
-  python3 docs/orchestrator/differential_compare.py          # from parent dir
-  python3 docs/orchestrator/differential_compare.py --json   # machine-readable output
+  python3 audit/orchestrator/differential_compare.py          # from parent dir
+  python3 audit/orchestrator/differential_compare.py --json   # machine-readable output
 """
 
 from __future__ import annotations

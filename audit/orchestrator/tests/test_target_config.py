@@ -8,7 +8,7 @@ from pathlib import Path
 
 def test_load_target_config_valid():
     from docs.orchestrator.target_config import load_target_config
-    config = load_target_config(Path("docs/targets/full-system/target.json"))
+    config = load_target_config(Path("audit/targets/full-system/target.json"))
     assert config.name == "limit-break-amm"
     assert len(config.repos) == 6
     assert "lbamm-core" in config.repos
@@ -41,7 +41,7 @@ def test_load_target_config_missing_required_fields():
 
 def test_get_repo_prefixes():
     from docs.orchestrator.target_config import load_target_config
-    config = load_target_config(Path("docs/targets/full-system/target.json"))
+    config = load_target_config(Path("audit/targets/full-system/target.json"))
     prefixes = config.get_repo_prefixes()
     assert prefixes["lbamm-core"] == "CORE"
     assert prefixes["amm-pool-type-dynamic"] == "DYN"
@@ -50,7 +50,7 @@ def test_get_repo_prefixes():
 
 def test_get_checklist_expected():
     from docs.orchestrator.target_config import load_target_config
-    config = load_target_config(Path("docs/targets/full-system/target.json"))
+    config = load_target_config(Path("audit/targets/full-system/target.json"))
     expected = config.get_checklist_expected()
     assert expected["precision-sniper"] == 39
     assert expected["state-desync"] == 25
@@ -59,7 +59,7 @@ def test_get_checklist_expected():
 
 def test_get_auditable_repos():
     from docs.orchestrator.target_config import load_target_config
-    config = load_target_config(Path("docs/targets/full-system/target.json"))
+    config = load_target_config(Path("audit/targets/full-system/target.json"))
     auditable = config.get_auditable_repos()
     assert "secure-proxy" not in auditable
     assert "lbamm-core" in auditable
@@ -68,7 +68,7 @@ def test_get_auditable_repos():
 
 def test_get_boundary_slugs():
     from docs.orchestrator.target_config import load_target_config
-    config = load_target_config(Path("docs/targets/full-system/target.json"))
+    config = load_target_config(Path("audit/targets/full-system/target.json"))
     slugs = config.get_boundary_slugs()
     assert slugs["Core ↔ Pool Type"] == "core-pooltype"
     assert len(slugs) == 6
@@ -76,7 +76,7 @@ def test_get_boundary_slugs():
 
 def test_get_boundary_contracts():
     from docs.orchestrator.target_config import load_target_config
-    config = load_target_config(Path("docs/targets/full-system/target.json"))
+    config = load_target_config(Path("audit/targets/full-system/target.json"))
     contracts = config.get_boundary_contracts()
     assert "core-pooltype" in contracts
     assert any("AMMModule" in c for c in contracts["core-pooltype"])
@@ -84,12 +84,12 @@ def test_get_boundary_contracts():
 
 def test_budget_defaults():
     from docs.orchestrator.target_config import load_target_config
-    config = load_target_config(Path("docs/targets/full-system/target.json"))
+    config = load_target_config(Path("audit/targets/full-system/target.json"))
     assert config.max_run_cost == 200
     assert config.max_turns_per_agent == 500
 
 
 def test_target_dir():
     from docs.orchestrator.target_config import load_target_config
-    config = load_target_config(Path("docs/targets/full-system/target.json"))
-    assert config.target_dir == Path("docs/targets/full-system")
+    config = load_target_config(Path("audit/targets/full-system/target.json"))
+    assert config.target_dir == Path("audit/targets/full-system")

@@ -108,15 +108,15 @@ Your Phase C checklist includes exploit-grounded probes — attack patterns from
 
 ### Your Output Paths
 
-- Draft sidecar: `docs/targets/full-system/artifacts/findings-{{AGENT_NAME}}-draft.json`
-- Gate command: `.venv/bin/python3 docs/orchestrator/sidecar_gate.py docs/targets/full-system/artifacts/findings-{{AGENT_NAME}}-draft.json`
-- Final sidecar (written by gate on accept): `docs/targets/full-system/artifacts/findings-{{AGENT_NAME}}.json`
+- Draft sidecar: `audit/targets/full-system/artifacts/findings-{{AGENT_NAME}}-draft.json`
+- Gate command: `.venv/bin/python3 audit/orchestrator/sidecar_gate.py audit/targets/full-system/artifacts/findings-{{AGENT_NAME}}-draft.json`
+- Final sidecar (written by gate on accept): `audit/targets/full-system/artifacts/findings-{{AGENT_NAME}}.json`
 
 DO NOT write directly to the final findings JSON — the gate is the only path to the final sidecar. If you skip the gate, your work will not be scored.
 
 ### Reference Files & Tool Scripts
 
-Read `docs/orchestrator/templates/_shared/references/` for output schema, FP gate rubric, and exploit scaffolds — consult at Phase C/D, not now. Tool scripts are in `docs/orchestrator/templates/_shared/scripts/` (slither, halmos, aderyn, medusa, forge-fuzz-template).
+Read `audit/orchestrator/templates/_shared/references/` for output schema, FP gate rubric, and exploit scaffolds — consult at Phase C/D, not now. Tool scripts are in `audit/orchestrator/templates/_shared/scripts/` (slither, halmos, aderyn, medusa, forge-fuzz-template).
 
 <mandatory_tools>
 ### Mandatory Tool Checklist (your sidecar is INVALID until ALL items have a logged result)
@@ -128,14 +128,14 @@ This is your COMPLETE workload. Execute every numbered item. Log every result. Y
 **Phase A: Static Analysis (run on EVERY repo in your scope)**
 
 For each repo in your scope, run ALL of:
-- A1. Slither detectors (if available): `ToolSearch "+slither"` then `mcp__slither__run_detectors path=<repo> impact=["High","Medium"] exclude_paths=["lib/","test/"]`. **Fallback**: read Phase 0 artifacts in `docs/targets/full-system/phase0/` — they contain pre-computed Slither results.
+- A1. Slither detectors (if available): `ToolSearch "+slither"` then `mcp__slither__run_detectors path=<repo> impact=["High","Medium"] exclude_paths=["lib/","test/"]`. **Fallback**: read Phase 0 artifacts in `audit/targets/full-system/phase0/` — they contain pre-computed Slither results.
 - A2. Slither function list (if available): `mcp__slither__list_functions` for your target contracts. **Fallback**: `forge inspect <Contract> methods` or Grep for `function` declarations.
 - A3. Aderyn: `cd <repo> && aderyn . 2>&1 | tail -40` (skip if not installed)
 - A4. Custom Slither detectors (if slither CLI available):
   ```bash
   cd <repo> && slither . --detect diamond-slot-collision,hook-reentrancy,transient-storage-leak,unchecked-delegatecall-return --ignore-compile 2>&1 | tail -30
   ```
-  **Fallback**: read Phase 0 custom detector output from `docs/targets/full-system/phase0/<repo>-custom-detectors.md`
+  **Fallback**: read Phase 0 custom detector output from `audit/targets/full-system/phase0/<repo>-custom-detectors.md`
 - A5. Storage layout (for cross-boundary and state-desync agents only): `mcp__slither__get_storage_layout` or **fallback**: `forge inspect <Contract> storage-layout --pretty` for AMMModule, each pool type, and each handler — look for slot collisions across the diamond proxy.
 - A6. Semgrep (if available): `Skill("static-analysis:semgrep")` on your primary repos — community Solidity rules for reentrancy, access control, DeFi patterns. Cross-file taint tracking via Semgrep Pro. Log results in `tools_run.semgrep`.
 
@@ -151,7 +151,7 @@ For each repo in your scope, run ALL of:
 
 **Phase C: Invariant Testing — THE CORE OF YOUR WORK**
 
-Read `docs/framework/amm-invariant-catalog.md` FIRST. Then execute every item in YOUR section below.
+Read `audit/framework/amm-invariant-catalog.md` FIRST. Then execute every item in YOUR section below.
 
 **CRITICAL**: Your checklist items are the **numbered C1, C2, C3... items** listed below (e.g., C-MATH has C1-C29, C-STATE has C1-C25, C-AUTH has C1-C22, C-BOUNDARY has C1-C22). These are YOUR items. Count ONLY these numbered items for your `checklist_items_completed` C score. Do NOT count your own investigation patterns — count the specific numbered items you completed from the list.
 

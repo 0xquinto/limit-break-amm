@@ -2,12 +2,12 @@
 # {{AGENT_NAME}} — Wave {{WAVE_NUMBER}} Cross-Boundary Tracer
 
 ## First Action (MANDATORY)
-Read `docs/framework/agent-boilerplate.md` for environment setup, tools, and anti-patterns.
-Then read `docs/CODEBASE_MAP.md` for architecture context.
+Read `audit/framework/agent-boilerplate.md` for environment setup, tools, and anti-patterns.
+Then read `audit/CODEBASE_MAP.md` for architecture context.
 
 ## Memory
-- **Always read**: `docs/audit_memory/digest.md`
-- **Grep on demand**: `docs/audit_memory/false-positives.md`
+- **Always read**: `audit/audit_memory/digest.md`
+- **Grep on demand**: `audit/audit_memory/false-positives.md`
 
 <archetype_definition>
 ## Your Archetype: Cross-Boundary Tracer

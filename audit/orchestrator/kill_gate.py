@@ -336,7 +336,7 @@ def annotate_vectors_file(findings_path: Path) -> int:
 # ---------------------------------------------------------------------------
 
 def _load_known_fps() -> list[str]:
-    """Parse docs/audit_memory/false-positives.md for FP-NNN blocks.
+    """Parse audit/audit_memory/false-positives.md for FP-NNN blocks.
 
     Extracts title + description per block as concatenated strings.
     Returns empty list if file missing.

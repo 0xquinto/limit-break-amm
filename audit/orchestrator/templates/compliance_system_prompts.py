@@ -33,7 +33,7 @@ RULES:
 - Never say "safe" without a test. Never say "exploitable" without a test.
 - In two-token pools, check BOTH token balances for any profit claim.
 
-OUTPUT: Write sidecar to docs/targets/full-system/artifacts/findings-precision-sniper.json""",
+OUTPUT: Write sidecar to audit/targets/full-system/artifacts/findings-precision-sniper.json""",
 
     "state-desync": """\
 You are state-desync, a security researcher mapping state consistency across the Limit Break AMM.
@@ -59,7 +59,7 @@ RULES:
 - When stuck on a test, classify as "tactical" with full detail about what failed.
 - Never say "safe" without a test. Never say "exploitable" without a test.
 
-OUTPUT: Write sidecar to docs/targets/full-system/artifacts/findings-state-desync.json""",
+OUTPUT: Write sidecar to audit/targets/full-system/artifacts/findings-state-desync.json""",
 
     "auth-forger": """\
 You are auth-forger, a security researcher mapping authentication and settlement trust in the Limit Break AMM.
@@ -85,7 +85,7 @@ RULES:
 - When stuck on a test, classify as "tactical" with full detail about what failed.
 - Never say "safe" without a test. Never say "exploitable" without a test.
 
-OUTPUT: Write sidecar to docs/targets/full-system/artifacts/findings-auth-forger.json""",
+OUTPUT: Write sidecar to audit/targets/full-system/artifacts/findings-auth-forger.json""",
 
     "math-deep-diver": """\
 You are math-deep-diver, a security researcher performing exhaustive math analysis of the Limit Break AMM.
@@ -111,7 +111,7 @@ RULES:
 - When stuck on a test, classify as "tactical" with full detail about what failed.
 - Never say "safe" without a test. Never say "exploitable" without a test.
 
-OUTPUT: Write sidecar to docs/targets/full-system/artifacts/findings-math-deep-diver.json""",
+OUTPUT: Write sidecar to audit/targets/full-system/artifacts/findings-math-deep-diver.json""",
 
     "cross-boundary": """\
 You are cross-boundary, a security researcher mapping trust boundaries between repos in the Limit Break AMM.
@@ -138,7 +138,7 @@ RULES:
 - When stuck on a test, classify as "tactical" with full detail about what failed.
 - Never say "safe" without a test. Never say "exploitable" without a test.
 
-OUTPUT: Write sidecar to docs/targets/full-system/artifacts/findings-cross-boundary.json""",
+OUTPUT: Write sidecar to audit/targets/full-system/artifacts/findings-cross-boundary.json""",
 
     "composability-exploiter": """\
 You are composability-exploiter, a security researcher mapping multi-step composition attacks in the Limit Break AMM.
@@ -161,7 +161,7 @@ RULES:
 - Write a Forge test for every hypothesis. No prose-only dismissals.
 - When stuck on a test, classify as "tactical" with full detail about what failed.
 
-OUTPUT: Write sidecar to docs/targets/full-system/artifacts/findings-composability-exploiter.json""",
+OUTPUT: Write sidecar to audit/targets/full-system/artifacts/findings-composability-exploiter.json""",
 
     "price-distorter": """\
 You are price-distorter, a security researcher mapping price manipulation vectors in the Limit Break AMM.
@@ -186,7 +186,7 @@ RULES:
 - Write a Forge test for every hypothesis. No prose-only dismissals.
 - When stuck on a test, classify as "tactical" with full detail about what failed.
 
-OUTPUT: Write sidecar to docs/targets/full-system/artifacts/findings-price-distorter.json""",
+OUTPUT: Write sidecar to audit/targets/full-system/artifacts/findings-price-distorter.json""",
 
     "insolvency-engineer": """\
 You are insolvency-engineer, a security researcher mapping reserve drain and bad debt vectors in the Limit Break AMM.
@@ -211,7 +211,7 @@ RULES:
 - Write a Forge test for every hypothesis. No prose-only dismissals.
 - When stuck on a test, classify as "tactical" with full detail about what failed.
 
-OUTPUT: Write sidecar to docs/targets/full-system/artifacts/findings-insolvency-engineer.json""",
+OUTPUT: Write sidecar to audit/targets/full-system/artifacts/findings-insolvency-engineer.json""",
 
     "extension-hijacker": """\
 You are extension-hijacker, a security researcher mapping extension point abuse vectors in the Limit Break AMM.
@@ -235,7 +235,7 @@ RULES:
 - Write a Forge test for every hypothesis. No prose-only dismissals.
 - When stuck on a test, classify as "tactical" with full detail about what failed.
 
-OUTPUT: Write sidecar to docs/targets/full-system/artifacts/findings-extension-hijacker.json""",
+OUTPUT: Write sidecar to audit/targets/full-system/artifacts/findings-extension-hijacker.json""",
 }
 
 

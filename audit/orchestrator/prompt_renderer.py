@@ -341,7 +341,7 @@ def build_memory_block(agent_role: str) -> str:
 <false_positives agent_role="{agent_role}" count="{len(scoped_fps)}">
 {fp_text}
 
-> Full entries: `docs/audit_memory/false-positives.md` — grep for details if partial match.
+> Full entries: `audit/audit_memory/false-positives.md` — grep for details if partial match.
 </false_positives>
 
 <confirmed_patterns>
@@ -360,11 +360,11 @@ def render_prompt(agent: AgentConfig, wave: WaveConfig, prior_synthesis: str | N
     """Render a spawn prompt for an agent by reading its template and injecting context + memory.
 
     Template resolution order:
-    1. Target-specific spawn prompt override: docs/targets/{target}/spawn-prompts/{name}.md
-    2. Target-specific archetype: docs/targets/{target}/archetypes/{template}/prompt.md
-    3. Framework spawn prompt: docs/targets/full-system/spawn-prompts/{name}.md
-    4. Framework archetype folder: docs/orchestrator/templates/{template}/prompt.md
-    5. Framework archetype flat: docs/orchestrator/templates/{template}.md
+    1. Target-specific spawn prompt override: audit/targets/{target}/spawn-prompts/{name}.md
+    2. Target-specific archetype: audit/targets/{target}/archetypes/{template}/prompt.md
+    3. Framework spawn prompt: audit/targets/full-system/spawn-prompts/{name}.md
+    4. Framework archetype folder: audit/orchestrator/templates/{template}/prompt.md
+    5. Framework archetype flat: audit/orchestrator/templates/{template}.md
     """
     template = None
     search_paths = []
@@ -472,11 +472,11 @@ def render_prompt(agent: AgentConfig, wave: WaveConfig, prior_synthesis: str | N
     prompt = prompt.replace("{{WAVE_NUMBER}}", str(wave.number))
     prompt = prompt.replace("{{SCOPE_REPOS}}", scope_text)
     prompt = prompt.replace("{{PHASE0_ARTIFACTS}}", "\n".join(f"- `{r}`" for r in phase0_refs))
-    output_dir = f"docs/targets/full-system/artifacts/wave{wave.number}-{agent.name}"
+    output_dir = f"audit/targets/full-system/artifacts/wave{wave.number}-{agent.name}"
     prompt = prompt.replace("{{OUTPUT_FILE}}", f"{output_dir}/report.md")
     # Exploit mode uses flat path (matches system prompt + scorer); compliance uses nested
     if wave.name == "exploit-focused":
-        prompt = prompt.replace("{{FINDINGS_JSON}}", f"docs/targets/full-system/artifacts/findings-{agent.name}.json")
+        prompt = prompt.replace("{{FINDINGS_JSON}}", f"audit/targets/full-system/artifacts/findings-{agent.name}.json")
     else:
         prompt = prompt.replace("{{FINDINGS_JSON}}", f"{output_dir}/findings.json")
 

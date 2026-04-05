@@ -1336,13 +1336,13 @@ def main():
     parser.add_argument("--hints", type=str, default=None,
                         help="Path to markdown file with human attack hints (one ## section per agent)")
     parser.add_argument("--target", type=str, default="full-system",
-                        help="Target name (directory under docs/targets/)")
+                        help="Target name (directory under audit/targets/)")
     args = parser.parse_args()
 
     # Load target config if target.json exists (graceful: falls back to hardcoded config.py)
     _target_config = None
     _target_dir = None
-    target_json = Path(f"docs/targets/{args.target}/target.json")
+    target_json = Path(f"audit/targets/{args.target}/target.json")
     if target_json.exists():
         from .target_config import load_target_config
         _target_config = load_target_config(target_json)

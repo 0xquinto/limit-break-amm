@@ -823,7 +823,7 @@ def _load_curated_patterns(
 ) -> str:
     """Load relevant sections from the curated exploit context file.
 
-    Reads ``docs/references/2026-03-18-curated-exploit-context.md``, splits by
+    Reads ``audit/references/2026-03-18-curated-exploit-context.md``, splits by
     ``### N.`` headers, and returns sections matching BOUNDARY_PATTERN_MAP entries
     for this boundary.
 

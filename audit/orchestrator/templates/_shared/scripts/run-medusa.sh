@@ -1,6 +1,6 @@
 #!/bin/bash
 # Parallel corpus-guided fuzzer
-# Usage: bash docs/orchestrator/templates/_shared/scripts/run-medusa.sh <repo-path> <contract-name>
+# Usage: bash audit/orchestrator/templates/_shared/scripts/run-medusa.sh <repo-path> <contract-name>
 set -e
 if [ $# -lt 2 ]; then echo "Usage: $0 <repo-path> <contract-name>"; exit 1; fi
 cd "$1"

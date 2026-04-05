@@ -3,7 +3,7 @@
 Write your JSON sidecar as a DRAFT first, then validate it through the gate. Use the agent_name and output paths from your main prompt's "Your Output Paths" section.
 
 1. Write to: your draft sidecar path (see "Your Output Paths" in your main prompt)
-2. Validate: `.venv/bin/python3 docs/orchestrator/sidecar_gate.py <draft-path>`
+2. Validate: `.venv/bin/python3 audit/orchestrator/sidecar_gate.py <draft-path>`
 3. If ACCEPTED — done. The gate promotes it to the final path.
 4. If REJECTED — read the error output, fix the gaps, rewrite the draft, and retry.
 
