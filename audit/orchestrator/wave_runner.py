@@ -66,8 +66,7 @@ if _dotenv_path.exists():
 # Stagger delay between agent launches to avoid concurrent TLS handshake issues
 _STAGGER_DELAY_SECONDS = T.stagger_delay_s
 
-# Concurrency limiter — prevents unbounded SDK sessions
-_AGENT_SEMAPHORE = asyncio.Semaphore(MAX_CONCURRENT_AGENTS)
+# Batching replaces the old semaphore — agents run in groups of MAX_CONCURRENT_AGENTS
 
 
 class StopReason(str, Enum):
@@ -340,8 +339,10 @@ async def run_wave(
         artifact_dir = ARTIFACTS_DIR / f"wave{wave.number}-{agent.name}"
         artifact_dir.mkdir(parents=True, exist_ok=True)
 
-    # 3. Spawn all agents with staggered start
-    _log(f"  Spawning {len(wave.agents)} agents ({_STAGGER_DELAY_SECONDS}s stagger)...")
+    # 3. Spawn agents in batches to avoid API quota exhaustion
+    batch_size = MAX_CONCURRENT_AGENTS
+    num_batches = (len(wave.agents) + batch_size - 1) // batch_size
+    _log(f"  Spawning {len(wave.agents)} agents in {num_batches} batches of {batch_size} ({_STAGGER_DELAY_SECONDS}s stagger within batch)...")
     start_time = time.monotonic()
 
     # Circuit breaker: abort wave if 3+ agents crash within 60s of spawning
@@ -351,9 +352,8 @@ async def run_wave(
 
     async def _safe_run(agent, prompt, delay):
         try:
-            await asyncio.sleep(delay)  # stagger outside semaphore
-            async with _AGENT_SEMAPHORE:
-                return await _run_agent(agent, prompt, wave.number, start_delay=0)
+            await asyncio.sleep(delay)  # stagger within batch
+            return await _run_agent(agent, prompt, wave.number, start_delay=0)
         except Exception as e:
             elapsed = time.monotonic() - start_time - delay
             if elapsed < _FAST_FAIL_WINDOW_S:
@@ -363,13 +363,23 @@ async def run_wave(
                           f"{_FAST_FAIL_WINDOW_S}s — aborting wave")
             return e
 
-    tasks = [
-        asyncio.create_task(
-            _safe_run(agent, prompts[agent.name], i * _STAGGER_DELAY_SECONDS)
-        )
-        for i, agent in enumerate(wave.agents)
-    ]
-    raw_results = await asyncio.gather(*tasks)
+    raw_results = []
+    for batch_idx in range(num_batches):
+        batch_start = batch_idx * batch_size
+        batch_agents = wave.agents[batch_start:batch_start + batch_size]
+        _log(f"  Batch {batch_idx + 1}/{num_batches}: {', '.join(a.name for a in batch_agents)}")
+
+        tasks = [
+            asyncio.create_task(
+                _safe_run(agent, prompts[agent.name], i * _STAGGER_DELAY_SECONDS)
+            )
+            for i, agent in enumerate(batch_agents)
+        ]
+        batch_results = await asyncio.gather(*tasks)
+        raw_results.extend(batch_results)
+
+        if batch_idx < num_batches - 1:
+            _log(f"  Batch {batch_idx + 1} done, starting next batch...")
 
     elapsed_ms = int((time.monotonic() - start_time) * 1000)
 

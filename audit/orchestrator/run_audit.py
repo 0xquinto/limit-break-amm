@@ -1337,7 +1337,15 @@ def main():
                         help="Path to markdown file with human attack hints (one ## section per agent)")
     parser.add_argument("--target", type=str, default="full-system",
                         help="Target name (directory under audit/targets/)")
+    parser.add_argument("--batch-size", type=int, default=None,
+                        help="Max agents per batch (default: MAX_CONCURRENT_AGENTS from config)")
     args = parser.parse_args()
+
+    # Override batch size if provided
+    if args.batch_size:
+        from . import config as _cfg
+        _cfg.MAX_CONCURRENT_AGENTS = args.batch_size
+        print(f"Batch size override: {args.batch_size} agents per batch")
 
     # Load target config if target.json exists (graceful: falls back to hardcoded config.py)
     _target_config = None

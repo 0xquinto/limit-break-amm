@@ -28,7 +28,7 @@ def get_memory_dir(target_name: str = "full-system") -> Path:
     return MEMORY_DIR
 
 # Safety constants
-MAX_CONCURRENT_AGENTS = 9  # backpressure semaphore limit
+MAX_CONCURRENT_AGENTS = 3  # agents per batch — prevents API quota exhaustion
 LOOP_DETECTION_WINDOW = 3  # consecutive identical output hashes to detect loop
 LOOP_HASH_LENGTH = 500  # chars of output to hash for loop detection
 
