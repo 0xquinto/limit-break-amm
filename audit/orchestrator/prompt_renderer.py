@@ -10,7 +10,7 @@ import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from .config import AgentConfig, WaveConfig, SPAWN_PROMPTS_DIR, ARTIFACTS_DIR, MEMORY_DIR, TEMPLATES_DIR, get_repos
+from .config import AgentConfig, WaveConfig, REPOS, SPAWN_PROMPTS_DIR, ARTIFACTS_DIR, MEMORY_DIR, TEMPLATES_DIR, get_repos
 
 
 # --- Memory parsing (scaffold §7a) ---
@@ -408,7 +408,9 @@ def render_prompt(agent: AgentConfig, wave: WaveConfig, prior_synthesis: str | N
     # Build scope description
     scope_lines = []
     for repo_name in agent.scope:
-        repo = get_repos()[repo_name]
+        repo = REPOS.get(repo_name) or get_repos().get(repo_name)
+        if not repo:
+            continue
         scope_lines.append(f"- `{repo_name}/` (~{repo['tokens']:,} tokens)")
     scope_text = "\n".join(scope_lines)
 
