@@ -19,6 +19,7 @@ from .config import AgentConfig, WaveConfig, REPOS, SPAWN_PROMPTS_DIR, ARTIFACTS
 class FalsePositive:
     id: str
     scope: list[str]  # role/domain tags for filtering
+    contracts: list[str]  # contract filenames for repo-based matching
     vector: str
     why_false: str
     confidence: int
@@ -51,11 +52,17 @@ def parse_false_positives(path: Path | None = None) -> list[FalsePositive]:
         scope = [s.strip() for s in scope_match.group(1).split(",")] if scope_match else []
         confidence_match = re.search(r'\*\*Confidence\*\*:\s*(\d+)', block)
         vector_match = re.search(r'\*\*Vector\*\*:\s*(.+)', block)
-        why_match = re.search(r'\*\*Why false\*\*:\s*(.+)', block)
+        why_match = re.search(r'\*\*Why (?:false|rejected)\*\*:\s*(.+)', block)
         lesson_match = re.search(r'\*\*Lesson\*\*:\s*(.+)', block)
+        contracts_match = re.search(r'\*\*Contracts\*\*:\s*(.+)', block)
+        contracts = []
+        if contracts_match:
+            # Parse "Foo.sol, Bar.sol (L123)" → ["Foo.sol", "Bar.sol"]
+            contracts = re.findall(r'(\w+\.sol)', contracts_match.group(1))
         entries.append(FalsePositive(
             id=fp_id,
             scope=scope,
+            contracts=contracts,
             vector=vector_match.group(1) if vector_match else "",
             why_false=why_match.group(1) if why_match else "",
             confidence=int(confidence_match.group(1)) if confidence_match else 0,
@@ -299,12 +306,26 @@ def build_exploit_knowledge(agent_name: str, scope: list[str]) -> str:
 
 # --- Prompt building ---
 
-def build_memory_block(agent_role: str) -> str:
+def _sol_files_in_repos(repos: list[str], project_root: Path | None = None) -> set[str]:
+    """Collect .sol filenames from the agent's scoped repos."""
+    root = project_root or Path(".")
+    names = set()
+    for repo in repos:
+        repo_path = root / repo / "src"
+        if not repo_path.exists():
+            repo_path = root / repo
+        if repo_path.exists():
+            for sol in repo_path.rglob("*.sol"):
+                names.add(sol.name)
+    return names
+
+
+def build_memory_block(agent_role: str, agent_repos: list[str] | None = None) -> str:
     """Build the memory injection block for a specific agent role (scaffold §7a).
 
     Returns markdown to append to the spawn prompt. Includes:
     - Digest (always, ~200 tokens)
-    - Role-scoped FPs (only entries matching this role, confidence >= 80)
+    - Role + contract-scoped FPs (confidence >= 80)
     - Confirmed patterns (always)
     - Agent-relevant lessons (not orchestrator lessons)
     """
@@ -314,13 +335,29 @@ def build_memory_block(agent_role: str) -> str:
     patterns_path = MEMORY_DIR / "confirmed-patterns.md"
     patterns = patterns_path.read_text() if patterns_path.exists() else "_No patterns yet._"
 
-    # Scope-filter FPs by role
+    # Scope-filter FPs by role OR by contract overlap with agent's repos
+    repo_sol_files = _sol_files_in_repos(agent_repos) if agent_repos else set()
     all_fps = parse_false_positives()
-    scoped_fps = [fp for fp in all_fps if agent_role in fp.scope or not fp.scope]
+    scoped_fps = []
+    for fp in all_fps:
+        role_match = agent_role in fp.scope or not fp.scope
+        contract_match = bool(repo_sol_files & set(fp.contracts)) if fp.contracts else False
+        if role_match or contract_match:
+            scoped_fps.append(fp)
+    # Sort by confidence desc, cap at 20 to avoid prompt bloat
+    _MAX_FP_INJECTED = 20
+    high_conf = [fp for fp in scoped_fps if fp.confidence >= 80]
+    high_conf.sort(key=lambda fp: fp.confidence, reverse=True)
     fp_lines = []
-    for fp in scoped_fps:
-        if fp.confidence >= 80:
-            fp_lines.append(f"- **{fp.id}** ({fp.confidence}%): {fp.vector} — {fp.lesson}")
+    for fp in high_conf[:_MAX_FP_INJECTED]:
+        contracts_hint = f" [{', '.join(fp.contracts[:3])}]" if fp.contracts else ""
+        fp_lines.append(
+            f"- **{fp.id}** ({fp.confidence}%){contracts_hint}: "
+            f"{fp.vector} — {fp.lesson}"
+        )
+    overflow = len(high_conf) - _MAX_FP_INJECTED
+    if overflow > 0:
+        fp_lines.append(f"- _...and {overflow} more in `audit/audit_memory/false-positives.md`_")
     fp_text = "\n".join(fp_lines) if fp_lines else "_No high-confidence FPs for this role._"
 
     # Agent-relevant lessons only
@@ -525,7 +562,7 @@ def render_prompt(agent: AgentConfig, wave: WaveConfig, prior_synthesis: str | N
 
     # Append scoped memory block (scaffold §7a) — skip for exploit mode
     if wave.name != "exploit-focused":
-        memory_block = build_memory_block(agent.role)
+        memory_block = build_memory_block(agent.role, agent_repos=agent.scope)
         prompt = prompt + "\n\n" + memory_block
 
     # Validate no unresolved placeholders remain
