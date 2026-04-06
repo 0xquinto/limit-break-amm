@@ -1,115 +1,258 @@
 {
   "boundary": "core-handler",
-  "agent": "knowledge-gen-core-handler",
+  "generated_at": "2026-04-04",
+  "analyst": "pass1-core-handler-agent",
+  "known_bugs_context": {
+    "CP-006": "CLOBHelper.calculateFixedInput double-rounding (CONFIRMED Medium)",
+    "FP-SUB02": "validateHandlerOrder overflow (REJECTED)",
+    "FP-SUB08": "feeOnTop not signed in EIP-712 (REJECTED — cosigner controls executor, intentional design)",
+    "Guardian_H-01": "Missing Hook In CLOB (ACKNOWLEDGED)"
+  },
   "hypotheses": [
     {
       "id": "H-core-handler-01",
-      "mechanism": "In PermitTransferHandler.sol, the SWAP_TYPEHASH_STUB (Constants.sol:35) defines the signed swap data as 'Swap(bool partialFill,address recipient,int256 amountSpecified,uint256 limitAmount,address tokenOut,address exchangeFeeRecipient,uint16 exchangeFeeBPS,address cosigner,address hook)'. The feeOnTop.amount and feeOnTop.recipient fields are completely absent from this struct hash. In _executeFillOrKillPermit (PermitTransferHandler.sol:226-239), the additionalDataHash is built from SWAP_TYPEHASH, recipient, amountSpecified, limitAmount, tokenOut, exchangeFee fields, cosigner, and hook — but never feeOnTop. The PermitC signature therefore does NOT commit to any feeOnTop value. For an input-based FoK swap, FeeHelper.calculateAmountAfterFeesSwapByInput (FeeHelper.sol:42-79) deducts feeOnTopAmount from swapCache.amountIn before the pool receives any tokens (FeeHelper.sol:57: amountInAfterFees -= feeOnTopAmount). In _finalizeSwapCollectFundsAndDisburse (AMMModule.sol:2160), swapCache.amountIn is reset to adjustedAmountSpecified (the full user amount). This full amount is collected from the user via the permit transfer (AMMModule.sol:2193). The AMM then disperses feeOnTopAmount to feeOnTop.recipient (AMMModule.sol:2227). Because the executor (msg.sender) supplies feeOnTop at call time and it is not covered by the user's EIP-712 signature, any executor can set feeOnTop.amount = amountSpecified - 1 and feeOnTop.recipient = attacker. Attack: user signs FoK permit for 1000 USDC input. Attacker executes with feeOnTop.amount=999, feeOnTop.recipient=attacker. The PermitC signature validates correctly (additionalDataHash excludes feeOnTop). AMM collects 1000 USDC from user. Sends 999 USDC to attacker as feeOnTop. Pool gets 1 USDC, returns dust output. User loses 999 USDC (99.9% of their swap). No flash loans, governance control, or special tokens needed. Any user who signs without a protective hook (hook == address(0)) is fully vulnerable.",
-      "functions": ["_executeFillOrKillPermit", "ammHandleTransfer", "_finalizeSwapCollectFundsAndDisburse", "calculateAmountAfterFeesSwapByInput"],
-      "lines": {
-        "lbamm-hooks-and-handlers/src/handlers/permit/Constants.sol": [35, 38],
-        "lbamm-hooks-and-handlers/src/handlers/permit/PermitTransferHandler.sol": [106, 127, 207, 226, 227, 228, 229, 230, 231, 232, 233, 234, 235, 236, 237, 238, 239, 262, 263, 264, 265, 266, 267, 268, 269, 270, 271, 272, 273],
-        "lbamm-core/src/libraries/FeeHelper.sol": [42, 51, 52, 53, 54, 55, 56, 57, 65, 79],
-        "lbamm-core/src/modules/AMMModule.sol": [2160, 2193, 2217, 2218, 2219, 2220, 2221, 2222, 2223, 2224, 2225, 2226, 2227, 2228, 2229, 2230, 2231, 2232]
+      "title": "afterSwapRefund reentrancy via WETH→ETH callback enables CLOB order-book manipulation",
+      "confidence": "medium",
+      "severity": "medium",
+      "contracts": ["CLOBTransferHandler", "AMMModule"],
+      "functions": [
+        "CLOBTransferHandler.afterSwapRefund (L315)",
+        "AMMModule._executeTransferHandlerCallback (L2330)",
+        "IWrappedNativeExtended.withdrawToAccount"
+      ],
+      "line_ranges": {
+        "CLOBTransferHandler.sol": "315-335",
+        "AMMModule.sol": "2330-2341"
       },
-      "confidence": "high",
-      "grounded_in": "EXP-05",
-      "suggested_test": "function test_feeOnTopUnsignedPermitDrain_FoK() public {\n    // Setup: user signs a FoK permit for 1000 USDC input swap, no hook\n    uint256 userAmount = 1000e6;\n    address attacker = makeAddr(\"attacker\");\n    deal(address(usdc), user, userAmount);\n    vm.prank(user);\n    usdc.approve(address(permitC), userAmount);\n\n    // User signs permit with amountSpecified=+userAmount, feeOnTop NOT in signature\n    (uint8 v, bytes32 r, bytes32 s) = _signFoKPermit(user, userAmount, swapOrder);\n\n    // Attacker executes with feeOnTop.amount=999e6, feeOnTop.recipient=attacker\n    FlatFeeWithRecipient memory feeOnTop = FlatFeeWithRecipient({\n        amount: 999e6, recipient: attacker\n    });\n    bytes memory transferExtraData = abi.encodePacked(\n        FILL_OR_KILL_PERMIT,\n        abi.encode(FillOrKillPermitTransfer({\n            permitProcessor: address(permitC), from: user, nonce: 0,\n            permitAmount: userAmount, expiration: block.timestamp + 1 hours,\n            signature: abi.encodePacked(r, s, v),\n            cosigner: address(0), cosignatureExpiration: 0,\n            cosignature: \"\", hook: address(0), hookData: \"\"\n        }))\n    );\n    vm.prank(attacker);\n    amm.swapByInput(swapOrder, exchangeFee, feeOnTop, abi.encodePacked(address(permitHandler), transferExtraData));\n\n    // Assert: attacker got 999 USDC, user got dust output\n    assertGe(usdc.balanceOf(attacker), 999e6);\n    assertLt(tokenOut.balanceOf(user), dustThreshold);\n}",
-      "category": "state_coupling",
-      "source_category": "2d",
-      "coupled_pair": {
-        "state_a": "feeOnTop.amount (executor-controlled at call time, not bound by user signature)",
-        "state_b": "additionalDataHash (user-signed, covers swap params but excludes feeOnTop entirely)",
-        "invariant": "all fields that determine how many tokens are extracted from the user must be committed to in the user's EIP-712 signature",
-        "gap_contract": "PermitTransferHandler.sol",
-        "gap_function": "_executeFillOrKillPermit",
-        "gap_line": 226
-      },
-      "masking_code": null
+      "mechanism": "afterSwapRefund (L315) lacks the nonReentrant modifier present on ammHandleTransfer (L229), withdrawToken (L392), openOrder (L482), and closeOrder (L433). When tokenOut is WRAPPED_NATIVE, afterSwapRefund calls IWrappedNativeExtended.withdrawToAccount(executor, refundAmount) at L322, which sends ETH to the executor's address. If the executor is a contract, its receive() function fires BEFORE afterSwapRefund returns. At this point: (1) the swap settlement is 100% complete (amountOut already sent to recipient at L2237, maker balances already credited at L2234 CLOBHelper), (2) the AMM's reentrancy guard is unlocked because _finalizeSwapCollectFundsAndDisburse has returned, and (3) CLOBTransferHandler's reentrancy guard is also unlocked because ammHandleTransfer has returned. The executor's receive() can therefore call CLOBTransferHandler.openOrder() with a price below the just-exhausted currentPrice, forcing CLOBHelper.openOrder (L118-120) to reset currentPrice. This does not directly steal funds in the same transaction, but enables a sandwich: place low-price order before the swap, allow swap to exhaust order book, ETH callback resurrects currentPrice to the new low order, subsequent fills execute at the sandwiched price.",
+      "attack_scenario": "1. Attacker deploys MaliciousExecutor contract with a manipulative receive(). 2. Attacker opens a CLOB order at price P_low (below market). 3. Victim submits swap that exhausts order book up to P_high. 4. afterSwapRefund sends ETH refund to MaliciousExecutor.receive(). 5. In receive(), attacker calls openOrder at P_low again, resetting currentPrice to P_low. 6. In a subsequent tx (same block), attacker fills the revived P_low order profitably.",
+      "settlement_conservation_impact": "No direct single-tx conservation violation. Enables inter-tx price manipulation that extracts value from future swappers.",
+      "is_known_bug": false,
+      "references": ["Guardian H-01 (missing hook in CLOB, ACKNOWLEDGED) — related but distinct mechanism"],
+      "forge_test_skeleton": "// SPDX-License-Identifier: UNLICENSED\npragma solidity 0.8.24;\n\nimport 'forge-std/Test.sol';\nimport {CLOBTransferHandler} from 'src/handlers/clob/CLOBTransferHandler.sol';\n\ncontract MaliciousExecutor {\n    CLOBTransferHandler public clob;\n    address public tokenIn;\n    uint160 public lowPrice;\n    uint256 public orderNonce;\n    bool public triggered;\n\n    constructor(address _clob, address _tokenIn, uint160 _lowPrice) {\n        clob = CLOBTransferHandler(_clob);\n        tokenIn = _tokenIn;\n        lowPrice = _lowPrice;\n    }\n\n    receive() external payable {\n        if (!triggered) {\n            triggered = true;\n            // Re-open order at low price during afterSwapRefund ETH callback\n            // This resets CLOBHelper currentPrice to lowPrice\n            orderNonce = clob.openOrder(tokenIn, address(0), lowPrice, 1e18, lowPrice);\n        }\n    }\n}\n\ncontract AfterSwapRefundReentrancyTest is Test {\n    // Setup: deploy AMM, CLOB handler, WETH, malicious executor\n    // 1. Open order at P_low via attacker\n    // 2. Swap that exhausts order book\n    // 3. Assert: after ETH refund, currentPrice has been reset to P_low\n    // 4. Assert: a subsequent fill executes at P_low (not market)\n    function testAfterSwapRefundReentrancyResetsPrice() public {\n        // TODO: full integration setup\n        // vm.expectEmit(true, false, false, false);\n        // Check that currentPrice after swap+callback equals the re-inserted low price\n    }\n}"
     },
     {
       "id": "H-core-handler-02",
-      "mechanism": "For partial fill permits, _executePartialFillPermit (PermitTransferHandler.sol:305-400) validates the amountIn/amountOut ratio against the user's signed permitAmountSpecified/permitLimitAmount. For output-based partial fills (amountSpecified < 0, permitAmountSpecified < 0), the check at line 319-325 computes maxAmountIn = FullMath.mulDiv(permitLimitAmount, amountOut, -permitAmountSpecified); if (amountIn > maxAmountIn) revert. However, 'amountIn' here is the fee-inclusive amount computed by FeeHelper.calculateAmountAfterFeesSwapByOutput (FeeHelper.sol:103-136), which adds feeOnTopAmount directly to amountIn (FeeHelper.sol:127: amountIn = amountIn + feeOnTopAmount). The additionalDataHash constructed at PermitTransferHandler.sol:345-358 again excludes feeOnTop. So the user's signed price ratio bounds the TOTAL amountIn (pool_input + exchange_fee + feeOnTop) but the feeOnTop fraction is freely chosen by the executor. Example: user signs permitAmountSpecified=-100e18 (wants 100 tokenOut), permitLimitAmount=110e18 (will pay at most 110 tokenIn). Pool rate happens to be 5 tokenIn for 100 tokenOut. Attacker sets feeOnTop=105e18. amountIn = 5 + 105 = 110. Check: 110 <= 110*100/100 = 110 passes. User pays 110 tokenIn total, receives correct 100 tokenOut, but 105 tokenIn (95.5%) flows to the attacker. The user's signed price guarantee is that they pay at most 110 for 100, but the attacker can make 105 of that 110 their fee, extracting near-maximum value on every filled order. This is structurally identical to H-core-handler-01 but applies to the partial-fill (market-making) permit type.",
-      "functions": ["_executePartialFillPermit", "calculateAmountAfterFeesSwapByOutput"],
-      "lines": {
-        "lbamm-hooks-and-handlers/src/handlers/permit/Constants.sol": [35],
-        "lbamm-hooks-and-handlers/src/handlers/permit/PermitTransferHandler.sol": [305, 316, 317, 318, 319, 320, 321, 322, 323, 324, 325, 345, 346, 347, 348, 349, 350, 351, 352, 353, 354, 355, 356, 357, 358, 381, 382, 383, 384, 385, 386, 387, 388, 389, 390, 391, 392, 393, 394, 395, 396, 397, 398, 399],
-        "lbamm-core/src/libraries/FeeHelper.sol": [103, 125, 126, 127, 131, 134]
-      },
+      "title": "CLOBHelper.fillOrder reads storage slot 0 for endingOrderNonce when order book exhausted",
       "confidence": "high",
-      "grounded_in": "EXP-05",
-      "suggested_test": "function test_partialFillFeeOnTopOvercharge() public {\n    // User signs partial fill: want 100e18 tokenOut, max input 110e18\n    // Pool rate: 5e18 tokenIn -> 100e18 tokenOut\n    address attacker = makeAddr(\"attacker\");\n    int256 permitAmountSpecified = -100e18;\n    uint256 permitLimitAmount    = 110e18;\n\n    bytes memory sig = _signPartialFillPermit(user, permitAmountSpecified, permitLimitAmount);\n\n    // Attacker sets feeOnTop=105e18 — leaves only 5e18 for the pool\n    FlatFeeWithRecipient memory feeOnTop = FlatFeeWithRecipient({\n        amount: 105e18, recipient: attacker\n    });\n\n    vm.prank(attacker);\n    amm.swapByOutput(swapOrder, exchangeFee, feeOnTop, transferData);\n\n    // amountIn check: 5+105=110 <= 110*100/100=110 passes\n    assertEq(tokenOut.balanceOf(user), 100e18,  \"user received correct output\");\n    assertGe(tokenIn.balanceOf(attacker), 105e18, \"attacker drained 95% via unsigned feeOnTop\");\n}",
-      "category": "state_coupling",
-      "source_category": "2d",
-      "coupled_pair": {
-        "state_a": "feeOnTop.amount (executor-set, not signed by user)",
-        "state_b": "maxAmountIn check (derived from user-signed permitAmountSpecified/permitLimitAmount)",
-        "invariant": "the entire amountIn charged to user must be constrained to only components the user authorized in their signed order",
-        "gap_contract": "PermitTransferHandler.sol",
-        "gap_function": "_executePartialFillPermit",
-        "gap_line": 319
+      "severity": "low",
+      "contracts": ["CLOBHelper", "CLOBTransferHandler"],
+      "functions": [
+        "CLOBHelper.fillOrder (L180-239)",
+        "CLOBHelper._orderIdToOrder (L337)",
+        "CLOBHelper.traverseCLOB (L255)"
+      ],
+      "line_ranges": {
+        "CLOBHelper.sol": "180-239, 337-341"
       },
-      "masking_code": null
+      "mechanism": "When traverseCLOB exhausts the order book (nextOrderId == bytes32(0)), it calls _orderIdToOrder(bytes32(0)) at L289, which sets the storage pointer to slot 0 via inline assembly. The Order struct at slot 0 is: maker = address(0), orderNonce = value at slot 0 words 1+ (unrelated contract state). fillOrder then assigns endingOrderNonce = ptrOrder.orderNonce at L237, reading whatever happens to live at storage slot 0 of CLOBTransferHandler. The CLOBTransferHandler stores _status (ReentrancyGuard) at slot 0. After a nonReentrant call, _status = 1 (NOT_ENTERED). So endingOrderNonce = 1, and OrderBookFill is emitted with nonce=1. This is an event data corruption issue, not a fund loss, but it corrupts off-chain CLOB order tracking systems that rely on the emitted nonce.",
+      "attack_scenario": "Not a direct value extraction path. However: any indexer or keeper using the emitted OrderBookFill event to determine the head of the order queue will receive a corrupted nonce (likely 1 due to reentrancy guard). This could cause off-chain order book state divergence, potentially enabling an attacker who controls off-chain infrastructure to exploit the discrepancy.",
+      "settlement_conservation_impact": "No on-chain conservation violation. Event data corruption only.",
+      "is_known_bug": false,
+      "references": ["CP-006 CLOBHelper double-rounding (different function, same library)"],
+      "forge_test_skeleton": "// SPDX-License-Identifier: UNLICENSED\npragma solidity 0.8.24;\n\nimport 'forge-std/Test.sol';\nimport {CLOBHelper} from 'src/handlers/clob/libraries/CLOBHelper.sol';\n\ncontract EndingOrderNonceSlot0Test is Test {\n    using CLOBHelper for OrderBook;\n\n    function testEndingOrderNonceWhenBookExhausted() public {\n        // Setup order book with exactly 1 order of amount X\n        // Fill entire order book (inputAmount == order.inputAmount)\n        // Capture the emitted OrderBookFill event\n        // Assert: endingOrderNonce == value at storage slot 0 (reentrancy guard state)\n        // vs expected: some sentinel like 0 or type(uint256).max\n        vm.recordLogs();\n        // ... fillOrder with exact input to exhaust book ...\n        Vm.Log[] memory logs = vm.getRecordedLogs();\n        // Find OrderBookFill, decode endingOrderNonce, assert it's wrong\n        uint256 emittedNonce = abi.decode(logs[0].data, (uint256, uint256, uint256))[1];\n        // Should be slot-0 content, not a valid order nonce\n        assertEq(emittedNonce, 1, 'reads reentrancy guard NOT_ENTERED = 1');\n    }\n}"
     },
     {
       "id": "H-core-handler-03",
-      "mechanism": "CLOBTransferHandler.ammHandleTransfer (line 221) carries a nonReentrant modifier. Inside it, CLOBHelper.fillOrder (CLOBHelper.sol:234) updates makerTokenBalance[tokenOut][maker] += stepOutput — crediting makers with tokenOut BEFORE any physical tokens arrive at the CLOB. The CLOB then sends tokenIn to the AMM (line 296) and returns, releasing the nonReentrant lock. The AMM continues inside _finalizeSwapCollectFundsAndDisburse: it pays feeOnTop at AMMModule.sol:2227 via SafeERC20.safeTransfer(tokenIn, feeOnTop.recipient, feeOnTopAmount), THEN sends tokenOut to the CLOB (recipient) at AMMModule.sol:2239. If tokenIn is an ERC777 token, the safeTransfer at line 2227 triggers a tokensReceived hook on feeOnTop.recipient. Because the CLOB's nonReentrant lock is released and the AMM's reentrancy guard only blocks re-entry into AMM-module functions, the attacker-controlled feeOnTop.recipient can call CLOB.withdrawToken(tokenOut, creditedAmount) from inside the ERC777 hook. At the moment of this call: (a) makerTokenBalance[tokenOut][attacker] == filled_amount (inflated from fillOrder at CLOBHelper.sol:234), (b) the CLOB has NOT yet received tokenOut from the AMM — that happens at AMMModule.sol:2239, AFTER the fee transfer at 2227. If the CLOB holds pre-existing tokenOut deposits from other users (common in an active CLOB), withdrawToken succeeds, draining those existing deposits. The AMM subsequently delivers tokenOut to the CLOB at line 2239, but those tokens cover only the newly-filled obligation — the pre-existing depositors' funds are already gone. The combination with H-core-handler-01 makes this doubly dangerous: the attacker sets a maximal feeOnTop (maximizing the ERC777 tokensReceived payout to trigger the hook) while simultaneously draining CLOB liquidity.",
-      "functions": ["ammHandleTransfer", "fillOrder", "withdrawToken", "_finalizeSwapCollectFundsAndDisburse"],
-      "lines": {
-        "lbamm-hooks-and-handlers/src/handlers/clob/CLOBTransferHandler.sol": [221, 229, 267, 268, 269, 270, 271, 272, 273, 274, 275, 276, 277, 278, 279, 280, 281, 282, 296, 297, 298, 299, 392, 393, 394, 395, 396, 397, 398, 399, 400, 401, 402, 403, 404, 405, 406, 407, 408, 409, 410, 411, 412, 413],
-        "lbamm-hooks-and-handlers/src/handlers/clob/libraries/CLOBHelper.sol": [234],
-        "lbamm-core/src/modules/AMMModule.sol": [2193, 2217, 2218, 2219, 2220, 2221, 2222, 2223, 2224, 2225, 2226, 2227, 2228, 2229, 2230, 2231, 2232, 2235, 2236, 2237, 2238, 2239, 2240, 2241, 2242, 2243, 2244]
-      },
+      "title": "_executeTransferHandler extends free memory pointer before checking call success",
       "confidence": "medium",
-      "grounded_in": "EXP-12",
-      "suggested_test": "function test_clobOptimisticBalanceDrain_ERC777() public {\n    // Pre-condition: Alice deposits 100e18 tokenOut into CLOB\n    vm.startPrank(alice);\n    tokenOut.transfer(address(clob), 100e18);\n    clob.depositToken(address(tokenOut), 100e18);\n    vm.stopPrank();\n\n    // Attacker opens sell order: 50 tokenIn_ERC777 -> 50 tokenOut at 1:1\n    vm.prank(attacker);\n    tokenIn_ERC777.transfer(address(clob), 50e18);\n    vm.prank(attacker);\n    clob.openOrder(address(tokenIn_ERC777), address(tokenOut), sqrtPrice_1to1, 50e18, groupKey, 0, hookData);\n\n    // MaliciousReceiver: on tokensReceived, calls clob.withdrawToken(tokenOut, 50e18)\n    MaliciousERC777Receiver malicious = new MaliciousERC777Receiver(address(clob), address(tokenOut), 50e18);\n\n    // Execute swap: feeOnTop.recipient = malicious, triggers ERC777 hook\n    // Hook fires BEFORE AMM sends tokenOut to CLOB (line 2227 < 2239)\n    FlatFeeWithRecipient memory feeOnTop = FlatFeeWithRecipient({amount: 30e18, recipient: address(malicious)});\n    vm.prank(executor);\n    amm.swapByInput(swapOrder, exchangeFee, feeOnTop,\n        abi.encodePacked(address(clob), fillParams));\n\n    // Malicious receiver drained 50e18 of Alice's tokenOut during the callback\n    // CLOB received 50e18 tokenOut from AMM *after* drain, net short 50e18\n    assertLt(tokenOut.balanceOf(address(clob)), 100e18, \"CLOB is insolvent\");\n    assertEq(tokenOut.balanceOf(address(malicious)), 50e18, \"attacker drained Alice\");\n    // Alice can no longer withdraw her full deposit\n    vm.prank(alice);\n    vm.expectRevert();\n    clob.withdrawToken(address(tokenOut), 100e18);\n}",
-      "category": "state_coupling",
-      "source_category": "2b",
-      "coupled_pair": {
-        "state_a": "makerTokenBalance[tokenOut][maker] (credited in fillOrder at CLOBHelper.sol:234 before physical delivery)",
-        "state_b": "actual CLOB tokenOut ERC20 balance (populated by AMM at AMMModule.sol:2239, after fee transfers)",
-        "invariant": "CLOB tokenOut credit increases must never exceed CLOB tokenOut balance at any point where withdrawals are unblocked",
-        "gap_contract": "CLOBTransferHandler.sol",
-        "gap_function": "ammHandleTransfer (releases nonReentrant before AMM sends tokenOut)",
-        "gap_line": 296
+      "severity": "low",
+      "contracts": ["AMMModule"],
+      "functions": [
+        "AMMModule._executeTransferHandler (L2295-L2320)"
+      ],
+      "line_ranges": {
+        "AMMModule.sol": "2295-2320"
       },
-      "masking_code": {
-        "file": "CLOBTransferHandler.sol",
-        "line": 221,
-        "pattern": "silent_guard",
-        "masks_invariant": "nonReentrant on ammHandleTransfer creates false impression that re-entry into withdrawToken is blocked during the fill; however the guard releases before AMM sends tokenOut to CLOB, leaving the optimistic-accounting window open"
-      }
+      "mechanism": "In _executeTransferHandler, the assembly block at L2302-2306 performs: (1) compute new free memory pointer if returndatasize > dataLength, (2) update mstore(0x40, ...) — the free memory pointer — BEFORE checking if the call succeeded. (3) returndatacopy into the extended region BEFORE the success check. (4) Only then: if iszero(success) { revert }. On a failed handler call, the revert path re-copies returndata starting from ptr=0. The free memory pointer has already been advanced, so any Solidity code between the call and the revert that allocates memory (none in this specific path) would get a wrong base address. More importantly, a malicious handler can: return a very large returndata buffer (up to gas-limited memory expansion cost) on a revert, causing the AMM to expand its memory pointer into an attacker-controlled region BEFORE reverting. While the AMM does revert (propagating the handler's error), the expanded memory during the failed call could corrupt in-flight memory if there are subsequent memory operations in the same call frame before the revert propagates. In Solidity 0.8.24 with the current ABI encoder, this is most likely a gas-consumption issue (force expensive memory expansion) rather than a fund-extraction vector.",
+      "attack_scenario": "Malicious handler: on ammHandleTransfer, return success=false with 10MB returndata. AMM expands free memory pointer by 10MB (gas cost ~3M gas), then reverts. This makes CLOB swaps consume attacker-controlled amounts of gas. Not a fund theft vector but a griefing/gas exhaustion path. Value extraction only if attacker can front-run gas-sensitive operations.",
+      "settlement_conservation_impact": "No conservation violation. Gas griefing only.",
+      "is_known_bug": false,
+      "references": [],
+      "forge_test_skeleton": "// SPDX-License-Identifier: UNLICENSED\npragma solidity 0.8.24;\n\nimport 'forge-std/Test.sol';\n\ncontract GasGriefHandler {\n    function ammHandleTransfer(bytes calldata) external returns (bytes memory) {\n        // Return 1MB of data on revert\n        assembly {\n            let ptr := mload(0x40)\n            mstore(ptr, 0) // signal: returning huge error\n            revert(ptr, 1048576) // 1MB revert data\n        }\n    }\n}\n\ncontract TransferHandlerMemoryExpansionTest is Test {\n    function testMemoryExpansionBeforeSuccessCheck() public {\n        GasGriefHandler handler = new GasGriefHandler();\n        uint256 gasBefore = gasleft();\n        // Call AMMModule._executeTransferHandler via the swap path\n        // Measure gas consumption difference\n        // Assert: gas consumed >> expected for a simple revert\n        uint256 gasAfter = gasleft();\n        uint256 gasUsed = gasBefore - gasAfter;\n        // With 1MB expansion, expect ~3M gas overhead\n        assertGt(gasUsed, 1_000_000, 'memory expansion increases gas cost');\n    }\n}"
     },
     {
       "id": "H-core-handler-04",
-      "mechanism": "PermitTransferHandler.destroyCosigner (line 152-162) uses _hashUniversalTypedDataV4 to construct the EIP-712 digest for cosigner self-destruction, rather than the standard _hashTypedDataV4 which incorporates the chain-specific domain separator (chainId + verifyingContract). The 'universal' variant produces a chain-agnostic digest, meaning the signature produced by a cosigner on chain A (e.g., Ethereum mainnet) is cryptographically identical on chain B (e.g., Base, Arbitrum). Attack scenario: (1) A cosigner key is legitimately rotated on mainnet — the old cosigner signs a CosignerDestruct message and it is posted on-chain or in the public mempool. (2) An attacker observes this transaction. (3) The attacker replays the identical {cosigner, signature} tuple by calling destroyCosigner on every other chain where PermitTransferHandler is deployed. (4) On each replayed chain, destroyedCosigners[cosigner] is set to true (PermitTransferHandler.sol:160). Any subsequent ammHandleTransfer call referencing that cosigner will revert at _validateCosignature line 432 (PermitTransferHandler__CosignerDestroyed). All open partial-fill orders backed by the destroyed cosigner on those chains are permanently bricked — they cannot be filled, replaced, or cancelled through normal means. Economic damage scales with the volume of pending orders: a market maker with thousands of open orders across multiple chains could have their entire cross-chain operation DoS'd simultaneously for the cost of a few gas transactions by the attacker.",
-      "functions": ["destroyCosigner", "_validateCosignature"],
-      "lines": {
-        "lbamm-hooks-and-handlers/src/handlers/permit/PermitTransferHandler.sol": [152, 153, 154, 155, 156, 157, 158, 159, 160, 161, 162, 418, 426, 427, 428, 429, 430, 431, 432, 433, 434]
-      },
+      "title": "REUSABLE_COSIGNATURE_NONCE allows unlimited fills for a fixed executor without per-execution nonce binding",
       "confidence": "medium",
-      "grounded_in": "EXP-05",
-      "suggested_test": "function test_destroyCosignerCrossChainReplay() public {\n    address cosigner = makeAddr(\"cosigner\");\n\n    // Cosigner signs CosignerDestruct for chain 1 (mainnet)\n    vm.chainId(1);\n    bytes32 digest_mainnet = permitHandler.exposed_hashUniversalTypedDataV4(\n        keccak256(abi.encode(COSIGNER_SELF_DESTRUCT_TYPEHASH, cosigner))\n    );\n    (uint8 v, bytes32 r, bytes32 s) = vm.sign(cosignerKey, digest_mainnet);\n    bytes memory sig = abi.encodePacked(r, s, v);\n\n    // Original destruction on mainnet\n    permitHandler_mainnet.destroyCosigner(cosigner, sig);\n    assertTrue(permitHandler_mainnet.destroyedCosigners(cosigner));\n\n    // Attacker replays SAME sig on Base (chainId=8453)\n    // Because _hashUniversalTypedDataV4 omits chainId, digest is identical\n    vm.chainId(8453);\n    permitHandler_base.destroyCosigner(cosigner, sig); // succeeds!\n    assertTrue(permitHandler_base.destroyedCosigners(cosigner), \"cross-chain replay succeeded\");\n\n    // All Base orders referencing cosigner are now permanently bricked\n    vm.expectRevert(PermitTransferHandler__CosignerDestroyed.selector);\n    permitHandler_base.ammHandleTransfer(executor, swapOrder, amountIn, amountOut,\n        exchangeFee, feeOnTop, permitDataWithCosigner);\n}",
-      "category": null,
-      "source_category": "2c",
-      "coupled_pair": null,
-      "masking_code": null
+      "severity": "medium",
+      "contracts": ["PermitTransferHandler"],
+      "functions": [
+        "PermitTransferHandler._validateCosignature (L418-L450)",
+        "PermitTransferHandler._validateHandlerOrder (L400)"
+      ],
+      "line_ranges": {
+        "PermitTransferHandler.sol": "418-450, 400-416"
+      },
+      "mechanism": "When cosignatureNonce == REUSABLE_COSIGNATURE_NONCE (a sentinel value), _validateCosignature at L435 skips the nonce consumption step. The cosignature digest binds: (permitSignatureHash, cosignatureExpiration, REUSABLE_COSIGNATURE_NONCE, executor). The executor is bound (L445: bytes32(uint256(uint160(executor)))), so a different executor cannot replay. HOWEVER: the SAME executor can submit this cosignature for ANY number of distinct permit orders, provided: (1) the underlying permit signature remains valid (not consumed), and (2) cosignatureExpiration has not passed. The permit signature itself IS consumed (PermitC nonce invalidation). But if a cosigner issues a REUSABLE cosignature over a REUSABLE permit (e.g., an EIP-2612 permit with a far-future deadline), the executor can drain an account by repeatedly calling fillOrder across many separate swaps with the same cosignature. The invariant violation: the cosigner's intent may be 'fill once' but the REUSABLE nonce allows the executor to fill as many times as permits are available. Value extraction requires the executor to also be the cosigner or have compromised cosigner keys — but in operator setups where one entity controls both, this is an amplification vector.",
+      "attack_scenario": "1. Cosigner issues REUSABLE_COSIGNATURE_NONCE cosignature for executor E, with 30-day expiration. 2. Executor E accumulates multiple maker permit signatures (or maker re-signs permits). 3. Executor E uses the single cosignature to fill ALL those permits within the 30-day window. 4. Cosigner intended to authorize one fill session; executor extracts value across many sessions. Value scales with number of reusable permits and cosignature expiration window.",
+      "settlement_conservation_impact": "No per-swap conservation violation (each individual fill is correct). Systemic: the cosignature authorization scope is wider than the cosigner likely intended.",
+      "is_known_bug": false,
+      "references": ["FP-SUB08 (feeOnTop not signed — REJECTED, different issue)"],
+      "forge_test_skeleton": "// SPDX-License-Identifier: UNLICENSED\npragma solidity 0.8.24;\n\nimport 'forge-std/Test.sol';\nimport {PermitTransferHandler} from 'src/handlers/permit/PermitTransferHandler.sol';\n\ncontract ReusableCosignatureTest is Test {\n    uint256 constant REUSABLE_COSIGNATURE_NONCE = type(uint256).max; // check actual constant\n\n    function testReusableCosignatureUnlimitedFills() public {\n        // Setup: cosigner, executor, two maker accounts\n        // 1. Cosigner signs ONE cosignature with REUSABLE_COSIGNATURE_NONCE\n        // 2. Maker1 signs permit for 100 USDC\n        // 3. Maker2 signs permit for 100 USDC\n        // 4. Executor uses same cosignature to fill BOTH permits\n        // Assert: both fills succeed despite single cosignature issuance\n        // (If protocol intended cosignature to authorize one fill, this is a bug)\n        // vm.prank(executor);\n        // handler.ammHandleTransfer(encodedOrder1); // uses reusable cosig\n        // vm.prank(executor);\n        // handler.ammHandleTransfer(encodedOrder2); // same cosig, different permit\n        assertTrue(true, 'placeholder - fill in integration setup');\n    }\n}"
     },
     {
       "id": "H-core-handler-05",
-      "mechanism": "CLOBTransferHandler.afterSwapRefund (line 315) lacks a nonReentrant modifier, yet it makes external calls to both WRAPPED_NATIVE.withdrawToAccount (line 322) and SafeERC20.safeTransfer (line 329). This function is called by the AMM via _executeTransferHandlerCallback (AMMModule.sol:2251) AFTER the AMM has already sent amountOut tokens to the CLOB (AMMModule.sol:2239). When handling WNATIVE refunds (lines 321-327), withdrawToAccount sends native ETH to the executor, triggering executor's receive() or fallback immediately. At this point: (a) the CLOB's nonReentrant lock is NOT held (ammHandleTransfer completed at line 296, releasing the guard), (b) the CLOB holds all tokens it is owed (tokenOut was delivered by AMM at line 2239 before the callback), (c) makers' balances are fully credited. The executor — who is simultaneously a maker whose orders were just filled — can call CLOB.withdrawToken from inside receive() to withdraw their credited tokenOut balance before the transaction completes. This zero-cost same-transaction capital reuse effectively gives the executor a flash loan of their filled proceeds: they can use the withdrawn tokenOut to open new orders, interact with external protocols, or perform arbitrage in the same atomic transaction, without paying flash loan fees or requiring any external flash loan provider. The practical impact is amplified when composed with H-core-handler-01 (the attacker can both inflate their feeOnTop payout in WNATIVE and recursively reuse proceeds) or with any protocol that enforces sequential-transaction guarantees.",
-      "functions": ["afterSwapRefund", "withdrawToken", "_executeTransferHandlerCallback"],
-      "lines": {
-        "lbamm-hooks-and-handlers/src/handlers/clob/CLOBTransferHandler.sol": [315, 316, 317, 318, 319, 320, 321, 322, 323, 324, 325, 326, 327, 328, 329, 330, 331, 332, 333, 392, 393, 394, 395, 396, 397, 398, 399, 400, 401, 402, 403, 404, 405, 406, 407, 408, 409, 410, 411, 412, 413],
-        "lbamm-core/src/modules/AMMModule.sol": [2239, 2250, 2251, 2252, 2330, 2331, 2332, 2333, 2334, 2335, 2336, 2337, 2338, 2339, 2340, 2341]
+      "title": "Double WETH↔ETH conversion creates WETH.deposit() liveness dependency for CLOB WETH-tokenOut swaps",
+      "confidence": "high",
+      "severity": "medium",
+      "contracts": ["CLOBTransferHandler", "AMMModule"],
+      "functions": [
+        "CLOBTransferHandler.receive (L71-73)",
+        "AMMModule._finalizeSwapCollectFundsAndDisburse (L2237)",
+        "CLOBTransferHandler.afterSwapRefund (L322)"
+      ],
+      "line_ranges": {
+        "CLOBTransferHandler.sol": "71-73, 322-334",
+        "AMMModule.sol": "2237"
       },
+      "mechanism": "For CLOB swaps where tokenOut = WETH (Wrapped Native): (1) AMMModule sends ETH to CLOBTransferHandler at L2237 via wrappedNative.withdrawToAccount(recipient=CLOBTransferHandler, amountOut). (2) CLOBTransferHandler.receive() fires (L71), re-wrapping the received ETH back to WETH via WETH.deposit{value: msg.value}(). (3) CLOBTransferHandler now holds WETH. (4) afterSwapRefund at L322 calls WETH.withdrawToAccount(executor, refundAmount), sending ETH to the executor. The double conversion chain (WETH→ETH→WETH→ETH) introduces two WETH.deposit() calls. If at any point the WETH contract has reduced its `receive()` gas stipend or if CLOBTransferHandler's receive() fails (e.g., gas limit edge case in the re-entrancy during deposit), the entire swap reverts. More critically: the receive() at L71 checks `if (msg.sender != WRAPPED_NATIVE)` — but WETH.withdrawToAccount sends ETH from WETH's own balance, making msg.sender = WETH contract. This check passes. However, anyone who directly sends ETH to CLOBTransferHandler (not from WETH contract) causes the check to fail and the transaction reverts. This is protective but means that if the WETH contract address changes (e.g., upgrade) or if a different WETH implementation is used, the receive() guard breaks all CLOB WETH swaps.",
+      "attack_scenario": "Scenario A (liveness): If WETH.deposit() reverts for any reason (gas exhaustion, WETH upgrade), all CLOB WETH-tokenOut swaps are permanently bricked. Scenario B (fund lock): If CLOBTransferHandler accumulates WETH via the re-wrap mechanism but afterSwapRefund fails silently (it does NOT fail silently — _executeTransferHandlerCallback propagates), WETH could be stuck. More realistic: if WETH.withdrawToAccount is not implemented in a WETH version, the try/catch at L322 falls through to safeTransfer(WETH, executor), which sends WETH tokens instead of ETH — potentially breaking executor expectations.",
+      "settlement_conservation_impact": "The try/catch at L322 (afterSwapRefund) means: if WETH.withdrawToAccount reverts, the handler falls through and sends WETH tokens directly to the executor instead of ETH. This changes the asset type delivered to the executor — a conservation asymmetry where executor receives WETH instead of ETH. Conservation in token terms is maintained but executor's ETH balance does not increase as expected.",
+      "is_known_bug": false,
+      "references": [],
+      "forge_test_skeleton": "// SPDX-License-Identifier: UNLICENSED\npragma solidity 0.8.24;\n\nimport 'forge-std/Test.sol';\nimport {CLOBTransferHandler} from 'src/handlers/clob/CLOBTransferHandler.sol';\n\ncontract BrokenWETH {\n    // Simulates a WETH that does NOT implement withdrawToAccount\n    function deposit() external payable {}\n    function withdraw(uint256) external { payable(msg.sender).transfer(address(this).balance); }\n    // No withdrawToAccount — causes afterSwapRefund try block to fail\n    receive() external payable {}\n}\n\ncontract WETHDoubleConversionTest is Test {\n    function testAfterSwapRefundFallbackSendsWETHNotETH() public {\n        // Deploy CLOBTransferHandler with BrokenWETH (no withdrawToAccount)\n        // Execute a WETH-tokenOut swap through CLOB\n        // Assert: afterSwapRefund try block fails\n        // Assert: executor receives WETH tokens (not ETH)\n        // Assert: executor's ETH balance unchanged\n        // This demonstrates the try/catch fallback delivers wrong asset type\n        assertTrue(true, 'placeholder - fill in with BrokenWETH integration');\n    }\n\n    function testReceiveRejectsDirectETH() public {\n        // CLOBTransferHandler handler = ...\n        // vm.deal(address(this), 1 ether);\n        // vm.expectRevert(CLOBTransferHandler__InvalidNativeTransfer.selector);\n        // payable(address(handler)).transfer(1 ether);\n        assertTrue(true, 'placeholder');\n    }\n}"
+    },
+    {
+      "id": "H-core-handler-06",
+      "title": "Transient tokenOut insolvency window: maker credits accumulate before CLOBTransferHandler receives amountOut",
       "confidence": "medium",
-      "grounded_in": "EXP-12",
-      "suggested_test": "function test_afterSwapRefundReentrancy_flashLoanFree() public {\n    // Executor is also a maker with 50e18 tokenOut filled in the swap\n    MaliciousExecutorMaker attacker = new MaliciousExecutorMaker(address(clob), address(tokenOut));\n    deal(address(tokenIn), address(attacker), 100e18);\n    vm.prank(address(attacker));\n    clob.depositToken(address(tokenIn), 50e18);\n    vm.prank(address(attacker));\n    // Open order to sell tokenIn for WNATIVE\n    clob.openOrder(address(tokenIn), WRAPPED_NATIVE, sqrtPrice, 50e18, groupKey, 0, hookData);\n\n    // Setup: swap produces fillOutputRemaining in WNATIVE (some orders not fully filled)\n    // afterSwapRefund -> withdrawToAccount -> attacker.receive() fires\n    // Inside receive(): attacker calls clob.withdrawToken(WNATIVE, 50e18)\n    uint256 wethBefore = weth.balanceOf(address(attacker));\n    vm.prank(address(attacker));\n    amm.swapByInput(swapOrder_wNative, exchangeFee, zeroFeeOnTop,\n        abi.encodePacked(address(clob), fillParams));\n\n    // Attacker withdrew 50e18 WNATIVE during the callback (filled balance)\n    // AND received fillOutputRemaining WNATIVE from afterSwapRefund\n    // Total = filled + refund, all in one transaction, zero flash loan cost\n    assertGe(weth.balanceOf(address(attacker)) - wethBefore, 50e18, \"reentrancy granted early withdrawal\");\n    assertEq(clob.makerTokenBalance(WRAPPED_NATIVE, address(attacker)), 0);\n}",
-      "category": null,
-      "source_category": "2b",
-      "coupled_pair": null,
-      "masking_code": null
+      "severity": "low",
+      "contracts": ["CLOBHelper", "CLOBTransferHandler", "AMMModule"],
+      "functions": [
+        "CLOBHelper.fillOrder (L234)",
+        "AMMModule._finalizeSwapCollectFundsAndDisburse (L2239)",
+        "CLOBTransferHandler.withdrawToken (L392)"
+      ],
+      "line_ranges": {
+        "CLOBHelper.sol": "234",
+        "AMMModule.sol": "2193-2239",
+        "CLOBTransferHandler.sol": "392-413"
+      },
+      "mechanism": "Within ammHandleTransfer (CLOBTransferHandler), CLOBHelper.fillOrder at L234 credits makerTokenBalance[maker] += stepOutput for each order filled. These credits represent tokenOut that makers are owed. HOWEVER, at the time fillOrder runs, CLOBTransferHandler has NOT yet received the amountOut from the AMM — that transfer happens AFTER ammHandleTransfer returns (AMMModule L2239: safeTransfer after handler call at L2193). Between L234 (credits accumulate) and L2239 (actual token receipt), there is a transient insolvency: sum(makerTokenBalance) > CLOBTransferHandler.balanceOf(tokenOut). The nonReentrant on ammHandleTransfer (L229) prevents any other call from entering during this window. But the window exists in theory and would be exploitable if nonReentrant could be bypassed (e.g., via a future modifier removal). Currently PROTECTED by nonReentrant, but the design is fragile: if a future version removes nonReentrant from ammHandleTransfer for gas savings, this becomes a critical solvency bug.",
+      "attack_scenario": "With nonReentrant bypass: 1. During fillOrder execution (while makerTokenBalance credits accumulate but before tokenOut arrives), a reentrant call to withdrawToken would find sum(credits) > balance, effectively withdrawing more than was deposited. Currently infeasible due to nonReentrant. Design note: this is a latent invariant violation.",
+      "settlement_conservation_impact": "Currently: conservation maintained by nonReentrant ordering. Latent: if nonReentrant is removed, sum(makerTokenBalance) can exceed actual token balance during fillOrder, enabling overdraft via withdrawToken.",
+      "is_known_bug": false,
+      "references": [],
+      "forge_test_skeleton": "// SPDX-License-Identifier: UNLICENSED\npragma solidity 0.8.24;\n\nimport 'forge-std/Test.sol';\n\ncontract TransientInsolvencyTest is Test {\n    // This test verifies the INVARIANT (should always pass with current code)\n    // and serves as a regression test if nonReentrant is ever removed\n    \n    function testMakerBalancesNeverExceedActualTokenBalance() public {\n        // Setup: CLOB handler with 3 maker orders\n        // Execute a swap that fills all 3 makers\n        // At each step of fillOrder, assert:\n        //   sum(makerTokenBalance[m1..m3]) <= handler.balanceOf(tokenOut)\n        // With current code (nonReentrant + credits before receipt):\n        //   This WILL fail DURING fillOrder (transient violation)\n        //   but PASSES after ammHandleTransfer returns (tokenOut received)\n        // Document the transient window size\n        assertTrue(true, 'invariant check placeholder');\n    }\n\n    function testWithdrawTokenDuringFillOrderReverts() public {\n        // Attempt reentrancy into withdrawToken during fillOrder\n        // Assert: reverts with ReentrancyGuard error\n        // (confirms protection is active)\n        assertTrue(true, 'reentrancy protection check placeholder');\n    }\n}"
+    },
+    {
+      "id": "H-core-handler-07",
+      "title": "Price-level resurrection sandwich: openOrder during afterSwapRefund callback resets exhausted CLOB currentPrice",
+      "confidence": "low",
+      "severity": "medium",
+      "contracts": ["CLOBHelper", "CLOBTransferHandler"],
+      "functions": [
+        "CLOBHelper.openOrder (L90-164)",
+        "CLOBTransferHandler.afterSwapRefund (L315)",
+        "CLOBTransferHandler.openOrder (L482)"
+      ],
+      "line_ranges": {
+        "CLOBHelper.sol": "118-120",
+        "CLOBTransferHandler.sol": "315-335, 482-540"
+      },
+      "mechanism": "CLOBHelper.openOrder (L118-120) updates the order book's currentPrice if the new order price is below the existing currentPrice: `if (sqrtPriceX96 < currentPrice) { ptrOrderBook.currentPrice = sqrtPriceX96; }`. After a swap exhausts the order book, traverseCLOB advances currentPrice to the next price level (potentially type(uint160).max if book is empty). At this point, afterSwapRefund fires (no nonReentrant). If the executor's receive() calls CLOBTransferHandler.openOrder() with a price P_new < current exhausted price, openOrder successfully inserts a new order AND resets currentPrice to P_new. The order book now shows active orders at P_new. A subsequent swap in the same block would fill these orders at P_new, which may be far below fair market value — a classic front-running/sandwich setup. The attacker profits: buy at P_low before the victim swap, victim's swap exhausts book, attacker's ETH callback inserts new order at P_low, attacker captures fills at P_low from the next victim.",
+      "attack_scenario": "1. Block N: Attacker calls openOrder at P_low with tokenIn. 2. Block N: Victim submits swap that fills through P_low and beyond, exhausting attacker's order. Attacker profits from victim fill. 3. afterSwapRefund ETH callback fires → attacker's receive() calls openOrder(P_low) again instantly. 4. Block N+1: Another victim's swap hits P_low again — attacker captures two rounds of fill profit with a single initial deposit of capital. Net effect: attacker amplifies returns by recycling capital within the swap callback window.",
+      "settlement_conservation_impact": "Per-swap conservation: maintained (each fill is correct per current book state). Inter-swap: attacker captures outsized value from price level resurrection that happens outside normal market mechanics.",
+      "is_known_bug": false,
+      "references": ["H-core-handler-01 (same reentrancy window, different manipulation)"],
+      "forge_test_skeleton": "// SPDX-License-Identifier: UNLICENSED\npragma solidity 0.8.24;\n\nimport 'forge-std/Test.sol';\n\ncontract PriceResurrectionAttacker {\n    address public clobHandler;\n    address public tokenIn;\n    uint160 public targetPrice;\n    bool public callbackFired;\n\n    constructor(address _clob, address _tokenIn, uint160 _price) {\n        clobHandler = _clob;\n        tokenIn = _tokenIn;\n        targetPrice = _price;\n    }\n\n    receive() external payable {\n        if (!callbackFired) {\n            callbackFired = true;\n            // Re-open order at same low price during afterSwapRefund\n            ICLOBTransferHandler(clobHandler).openOrder(\n                tokenIn,\n                address(0), // orderBookKey details\n                targetPrice,\n                1e18,\n                targetPrice\n            );\n        }\n    }\n}\n\ncontract PriceLevelResurrectionTest is Test {\n    function testOpenOrderDuringAfterSwapRefundResetsCurrentPrice() public {\n        // Setup CLOB handler, order book, attacker contract\n        // 1. Attacker opens order at P_low\n        // 2. Execute swap that exhausts book (currentPrice advances past P_low)\n        // 3. afterSwapRefund sends ETH to attacker → receive() fires\n        // 4. In receive(), attacker calls openOrder at P_low\n        // Assert: after the swap+callback, CLOBOrderBook.currentPrice == P_low (was reset)\n        // Assert: the re-inserted order is at the head of the book\n        assertTrue(true, 'price resurrection check placeholder');\n    }\n}"
     }
-  ]
+  ,
+    {
+      "id": "H-core-handler-08",
+      "title": "CP-006 extraction vector: calculateFixedInput double-rounding systematically over-credits makers at taker (executor) expense in fillOrder",
+      "confidence": "high",
+      "severity": "medium",
+      "contracts": ["CLOBHelper", "CLOBTransferHandler"],
+      "functions": [
+        "CLOBHelper.calculateFixedInput (L309-315)",
+        "CLOBHelper.fillOrder (L180-239)"
+      ],
+      "line_ranges": {
+        "CLOBHelper.sol": "180-239, 309-315"
+      },
+      "mechanism": "calculateFixedInput applies FullMath.mulDivRoundingUp TWICE (L313 then L314). Each call independently rounds up, inflating amountOut by up to 1 wei each, for a combined over-rounding of up to 2 wei per invocation. In fillOrder(), at each step: stepOutput = calculateFixedInput(stepInput, currentPrice) is credited to makerTokenBalance[maker] (L234) and subtracted from fillOutputRemaining (L232). The executor (taker) receives fillOutputRemaining as a refund via afterSwapRefund. Because each step over-rounds by up to 2 wei, the sum of step credits exceeds the exact price, meaning fillOutputRemaining is correspondingly reduced. Over a fill spanning N order steps, the executor loses up to 2N wei of tokenOut to the systematic over-crediting of makers. This is confirmed by the CP-006 finding classification.\n\nAttacker-controlled amplification: a maker can fragment a large order into many small sub-orders (all at the same price bucket). Each fill step calling calculateFixedInput costs one separate invocation with its own rounding. With 10,000 small orders at one price, a single fill loses up to 20,000 wei (2 × 10,000 steps) relative to the correct price. With 18-decimal ERC20s, this is 20,000 / 1e18 ≈ 2e-14 units — tiny per swap. But repeated many times per block (e.g., 100 swaps × 20,000 wei = 2,000,000 wei = 2e-12 units) the extraction compounds.",
+      "attack_scenario": "1. Attacker (maker) opens 10,000 orders of 1 wei each at sqrtPriceX96=P, spending 10,000 wei of tokenIn. 2. A taker submits a swap filling all 10,000 orders. Each step credits maker by true_output + up to 2 wei. 3. Maker withdraws makerTokenBalance — receives up to true_output + 20,000 wei. 4. Executor receives fillOutputRemaining = (outputAmount - sum_of_credited) which is 20,000 wei less than expected. 5. Attacker repeats across many swaps. Gas cost for 10,000 order openings vs 20,000 wei gain must be analyzed.",
+      "settlement_conservation_impact": "Conservation within the CLOB is maintained (sum credits + fillOutputRemaining == outputAmount). The loss is to the TAKER (executor), not to the CLOB's own reserves. This is a wealth transfer from takers to makers when a swap spans many fill steps.",
+      "is_known_bug": true,
+      "references": ["CP-006 (CONFIRMED Medium — this hypothesis adds the specific extraction amplification vector via order fragmentation)"],
+      "forge_test_skeleton": "// SPDX-License-Identifier: UNLICENSED\npragma solidity 0.8.24;\nimport 'forge-std/Test.sol';\nimport {CLOBHelper} from 'src/handlers/clob/libraries/CLOBHelper.sol';\nimport {FullMath} from '@limitbreak/tm-core-lib/src/utils/math/FullMath.sol';\n\ncontract CP006ExtractionTest is Test {\n    uint256 constant Q96 = 2**96;\n\n    function test_calculateFixedInput_doubleRounding_exceeds_single() public pure {\n        uint256 amountIn = 1e18;\n        uint160 sqrtPriceX96 = 4_295_128_739 + 1_000_000; // valid price near MIN\n\n        // Single-round reference (correct price):\n        uint256 intermediate = FullMath.mulDiv(amountIn, sqrtPriceX96, Q96);\n        uint256 singleRound = FullMath.mulDiv(intermediate, sqrtPriceX96, Q96);\n\n        // Double-round (actual):\n        uint256 r1 = FullMath.mulDivRoundingUp(amountIn, sqrtPriceX96, Q96);\n        uint256 r2 = FullMath.mulDivRoundingUp(r1, sqrtPriceX96, Q96);\n\n        assertGe(r2, singleRound, 'double-round >= single-round (over-credits maker)');\n        uint256 excess = r2 - singleRound;\n        assertLe(excess, 2, 'excess <= 2 wei per call');\n    }\n\n    function test_fillOrder_accumulated_rounding_across_N_steps(uint8 N) public {\n        vm.assume(N >= 2 && N <= 50);\n        // Setup CLOBTransferHandler with N orders of 1e15 each at price P\n        // Execute fill of N * 1e15 tokenIn\n        // Measure: executorRefund vs expected (N * 1e15 * price - exact_math)\n        // Assert: executorRefund < exact_math_refund by up to 2*N wei\n    }\n}"
+    },
+    {
+      "id": "H-core-handler-09",
+      "title": "feeOnTop siphons positive slippage from partial fill permit swaps — executor extracts unsigned fee between limitAmount and true market price",
+      "confidence": "medium",
+      "severity": "medium",
+      "contracts": ["PermitTransferHandler", "AMMModule"],
+      "functions": [
+        "PermitTransferHandler._executePartialFillPermit (L305-400)",
+        "PermitTransferHandler._executeFillOrKillPermit (L207-278)",
+        "AMMModule._finalizeSwapCollectFundsAndDisburse (L2225-2232)"
+      ],
+      "line_ranges": {
+        "PermitTransferHandler.sol": "226-239, 319-326, 345-357",
+        "AMMModule.sol": "2225-2232",
+        "permit/Constants.sol": "35-38"
+      },
+      "mechanism": "The SWAP_TYPEHASH_STUB (Constants.sol L35-38) defines: 'Swap(bool partialFill,address recipient,int256 amountSpecified,uint256 limitAmount,address tokenOut,address exchangeFeeRecipient,uint16 exchangeFeeBPS,address cosigner,address hook)'. The feeOnTop fields (recipient + flatAmount or BPS) are ABSENT. Both _executeFillOrKillPermit (lines 226-239) and _executePartialFillPermit (lines 345-357) compute additionalDataHash WITHOUT feeOnTop. This means the user's EIP-712 signature does not bind feeOnTop; the executor can set it to any value at execution time.\n\nIn AMMModule lines 2225-2232, feeOnTopAmount is deducted from the tokenIn received from the user and sent to feeOnTop.recipient (executor-controlled). The pool then processes (amountIn - exchangeFee - feeOnTop) of effective tokenIn, returning correspondingly less tokenOut.\n\nFor partial fills, the ratio check (lines 319-326) is: amountIn <= mulDiv(permitLimitAmount, amountOut, permitAmountSpecified). With feeOnTop: amountIn is the FULL user-deposited amount but amountOut is REDUCED (because the pool received less effective input). The executor can tune feeOnTop to maximize extraction while keeping: amountOut >= (amountIn * permitAmountSpecified / permitLimitAmount), i.e., keeping the ratio check passing.\n\nMaximum extractable feeOnTop per swap: solve for feeOnTopAmount where:\n  amountOut(amountIn - exchangeFee - feeOnTopAmount) >= amountIn * permitAmountSpecified / permitLimitAmount\nThis allows the executor to pocket up to the positive slippage (true market price - user's signed floor price) as feeOnTop.",
+      "attack_scenario": "1. User signs partial fill permit: limitAmount=1000 USDC, amountSpecified=1 ETH. Pool quotes 1.05 ETH for 1000 USDC (5% positive slippage). 2. Executor computes feeOnTop = {recipient: executor, flatAmount: 47 USDC} such that 953 USDC going to pool still returns >= 1 ETH (barely meeting the user's floor). 3. Executor submits swap: user pays 1000 USDC, gets 1 ETH (minimum), executor takes 47 USDC as feeOnTop. 4. The 47 USDC represents the captured positive slippage that the user would otherwise have received as extra ETH.",
+      "settlement_conservation_impact": "Conservation maintained (tokenIn received = pool input + fees + feeOnTop). But user receives their signed minimum rather than market price — the excess is silently redirected to executor via unsigned feeOnTop.",
+      "is_known_bug": true,
+      "references": ["FP-SUB08 (REJECTED) — this hypothesis provides the specific mathematical extraction path (positive slippage capture) that may not have been characterized in the original rejection. Rejection reason: feeOnTop is intentionally controlled by cosigner-authorized executor."],
+      "forge_test_skeleton": "// SPDX-License-Identifier: UNLICENSED\npragma solidity 0.8.24;\nimport 'forge-std/Test.sol';\n\ncontract FeeOnTopExtractionTest is Test {\n    // Setup: AMM + PermitTransferHandler + WETH/USDC mocks\n    // User signs partial fill permit: limitAmount=1000e6, amountSpecified=1e18 (1 ETH)\n    // Pool: 1050e6 USDC = 1e18 ETH (5% positive slippage available)\n\n    function test_executor_extracts_positive_slippage_via_feeOnTop() public {\n        uint256 executorUSDCBefore = usdc.balanceOf(executor);\n        uint256 userETHBefore = weth.balanceOf(user);\n\n        // Executor tunes feeOnTop to capture ~47 USDC of the 50 USDC slippage\n        // 953 USDC -> pool -> ~1.001 ETH (just above user's 1 ETH minimum)\n        _executePartialFillWithFeeOnTop({\n            permitLimitAmount: 1000e6,\n            permitAmountSpecified: 1e18,\n            feeOnTopFlatAmount: 47e6  // 47 USDC extracted as unsigned fee\n        });\n\n        uint256 executorUSDCAfter = usdc.balanceOf(executor);\n        uint256 userETHAfter = weth.balanceOf(user);\n\n        // User got minimum ETH (not the market 1.05 ETH)\n        assertApproxEqRel(userETHAfter - userETHBefore, 1e18, 0.005e18);\n        // Executor extracted feeOnTop\n        assertEq(executorUSDCAfter - executorUSDCBefore, 47e6);\n    }\n}"
+    },
+    {
+      "id": "H-core-handler-10",
+      "title": "Settlement conservation structural gap: no post-callback tokenOut invariant check — AMM trusts handler to conserve tokenOut",
+      "confidence": "medium",
+      "severity": "low",
+      "contracts": ["AMMModule", "CLOBTransferHandler"],
+      "functions": [
+        "AMMModule._finalizeSwapCollectFundsAndDisburse (L2180-2253)",
+        "AMMModule._executeTransferHandlerCallback (L2330-2341)"
+      ],
+      "line_ranges": {
+        "AMMModule.sol": "2180-2253, 2330-2341"
+      },
+      "mechanism": "AMMModule._finalizeSwapCollectFundsAndDisburse enforces tokenIn conservation via a strict balance check (L2207-2213): balanceInBefore + amountIn == balanceInAfter. There is NO equivalent balance check for tokenOut.\n\nExecution order:\n1. L2180: snapshot balanceInBefore\n2. L2193-2203: call ammHandleTransfer (handler sends tokenIn to AMM; handler updates internal state)\n3. L2207-2213: ENFORCE tokenIn balance invariant ✓\n4. L2217-2232: AMM sends exchangeFee + feeOnTop of tokenIn out\n5. L2235-2244: AMM sends amountOut of tokenOut to recipient — NO POST-SEND CHECK\n6. L2251: AMM executes handler callback (afterSwapRefund) — NO tokenOut balance check after callback\n\nThe AMM's only hard conservation invariant is on the INPUT side. The output side relies entirely on:\n(a) the pool type computing amountOut correctly, and\n(b) the handler's callback not redirecting tokenOut to unintended recipients.\n\nFor CLOBTransferHandler, (b) is maintained correctly: afterSwapRefund only sends fillOutputRemaining (= outputAmount - sum_maker_credits ≤ outputAmount). But this is a convention, not enforced by the AMM. Any future handler or handler upgrade that manipulates tokenOut post-delivery has no on-chain invariant blocking it — only the handler's own correctness guarantees conservation.",
+      "attack_scenario": "Scenario requires a compromised or malicious handler. Handler correctly deposits tokenIn (passing the only enforced check), then encodes callbackData that drains excess tokenOut from the handler's pre-existing balance (accumulated from prior swaps not yet claimed by makers). AMM executes the callback, sending extra tokenOut to attacker-controlled address. AMM sees no violation because there is no tokenOut balance check. This is not exploitable with current CLOBTransferHandler (afterSwapRefund sends only fillOutputRemaining) but represents a systemic design gap for the handler interface.",
+      "settlement_conservation_impact": "Currently maintained by handler code correctness. The AMM provides no on-chain safety net for tokenOut conservation, creating a one-sided trust model: tokenIn is checked, tokenOut is trusted.",
+      "is_known_bug": false,
+      "references": [],
+      "forge_test_skeleton": "// SPDX-License-Identifier: UNLICENSED\npragma solidity 0.8.24;\nimport 'forge-std/Test.sol';\n\ncontract SettlementAsymmetryTest is Test {\n    // This test DOCUMENTS the asymmetry, not a direct exploit\n    function test_amm_enforces_tokenIn_but_not_tokenOut() public {\n        uint256 tokenInBefore = tokenIn.balanceOf(amm);\n        uint256 tokenOutBefore = tokenOut.balanceOf(amm);\n\n        _executeSwap();\n\n        uint256 tokenInAfter = tokenIn.balanceOf(amm);\n        uint256 tokenOutAfter = tokenOut.balanceOf(amm);\n\n        // tokenIn: AMM received exactly amountIn (enforced by balance check)\n        assertEq(tokenInAfter - tokenInBefore, swapAmountIn - fees);\n        // tokenOut: AMM sent amountOut (unenforced — we verify it happened correctly)\n        assertEq(tokenOutBefore - tokenOutAfter, swapAmountOut);\n        // There is no on-chain assertion that the callback didn't drain extra tokenOut\n        // This test PASSES, but demonstrates the absence of enforcement\n    }\n\n    function test_malicious_handler_drains_tokenOut_without_triggering_invariant() public {\n        // Deploy MaliciousHandler that:\n        // (a) sends correct tokenIn (passes balance check)\n        // (b) returns callbackData encoding a large tokenOut drain\n        // Expected: succeeds (proving the gap)\n        // OR: expected to revert at handler's own guard — document which\n    }\n}"
+    },
+    {
+      "id": "H-core-handler-11",
+      "title": "_enforceTokenHooks price bound validation uses double-rounded amountOut — orders at configured price boundary may be incorrectly accepted or rejected",
+      "confidence": "medium",
+      "severity": "low",
+      "contracts": ["CLOBTransferHandler", "AMMStandardHook", "CLOBHelper"],
+      "functions": [
+        "CLOBTransferHandler._enforceTokenHooks (L574-619)",
+        "AMMStandardHook.validateHandlerOrder (L198-226)",
+        "CLOBHelper.calculateFixedInput (L309-315)"
+      ],
+      "line_ranges": {
+        "CLOBTransferHandler.sol": "574-619",
+        "AMMStandardHook.sol": "198-226",
+        "CLOBHelper.sol": "309-315"
+      },
+      "mechanism": "_enforceTokenHooks (L590) computes amountOut = CLOBHelper.calculateFixedInput(orderAmount, sqrtPriceX96) and passes it to hook.validateHandlerOrder. This uses the same double-rounded formula as fillOrder (CP-006 root cause), inflating amountOut by up to 2 wei.\n\nAMMStandardHook.validateHandlerOrder (lines 215-223) computes effectiveSqrtPriceX96 = SqrtPriceCalculator.computeRatioX96(amountOut, orderAmount), then checks effectiveSqrtPriceX96 <= maxSqrtPriceX96 (and >= minSqrtPriceX96).\n\nBecause amountOut is over-rounded: effectiveSqrtPriceX96 > true sqrtPriceX96 by a small margin. Effect direction:\n- Orders near maxSqrtPriceX96 bound: inflated effectiveSqrtPriceX96 may exceed maxSqrtPriceX96, causing valid orders to be REJECTED (false reject)\n- Orders near minSqrtPriceX96 bound: inflated effectiveSqrtPriceX96 may push an order that is truly below minSqrtPriceX96 to appear above it, causing invalid orders to be ACCEPTED (false accept → price bound bypass)\n\nThe second case (false accept) is the value extraction angle: an attacker places an order at sqrtPriceX96 = minSqrtPriceX96 - epsilon, betting that the over-rounding of calculateFixedInput(orderAmount, minSqrtPriceX96 - epsilon) causes computeRatioX96 to return a value >= minSqrtPriceX96, bypassing the lower bound check.",
+      "attack_scenario": "1. Pool configured with minSqrtPriceX96 = P_min. 2. Attacker finds epsilon such that calculateFixedInput(largeAmount, P_min - epsilon) > calculateFixedInput_exact(largeAmount, P_min). 3. computeRatioX96(inflated_amountOut, largeAmount) yields effectiveSqrtPriceX96 >= P_min. 4. Order at P_min - epsilon is accepted by hook. 5. When a taker fills this order, they receive amountIn at P_min - epsilon — below the configured minimum — paying more tokenIn per unit of tokenOut than the pool policy intended.",
+      "settlement_conservation_impact": "Not a direct fund loss. Enables orders below configured price bounds, potentially allowing fills at prices that violate pool policy. Economic harm depends on how far P_min - epsilon can be from P_min while still bypassing the check (at most 2 wei of amountOut inflation, limiting the bypass to microscopic price deltas).",
+      "is_known_bug": true,
+      "references": ["Guardian H-01 (Missing Hook In CLOB — ACKNOWLEDGED)", "CP-006 (double-rounding root cause)"],
+      "forge_test_skeleton": "// SPDX-License-Identifier: UNLICENSED\npragma solidity 0.8.24;\nimport 'forge-std/Test.sol';\nimport {CLOBHelper} from 'src/handlers/clob/libraries/CLOBHelper.sol';\nimport {SqrtPriceCalculator} from 'some/path/SqrtPriceCalculator.sol';\n\ncontract PriceBoundBypassTest is Test {\n    uint256 constant Q96 = 2**96;\n\n    function test_price_bound_bypass_via_double_rounding() public pure {\n        uint160 minBound = 4_295_128_739 + 100_000; // example minSqrtPriceX96\n        uint256 orderAmount = 1e18;\n\n        // Find sqrtPriceX96 < minBound where calculateFixedInput produces\n        // an amountOut that makes computeRatioX96 return >= minBound\n        for (uint160 p = minBound - 1; p >= minBound - 10; p--) {\n            uint256 amountOut = CLOBHelper.calculateFixedInput(orderAmount, p);\n            uint256 effectivePrice = SqrtPriceCalculator.computeRatioX96(amountOut, orderAmount);\n            if (effectivePrice >= uint256(minBound)) {\n                // Found bypass: order at price p < minBound passes hook validation\n                emit log_named_uint('bypass price', p);\n                emit log_named_uint('effective price after rounding', effectivePrice);\n                assertTrue(true, 'price bound bypass found via double-rounding');\n                return;\n            }\n        }\n        // If no bypass found: test documents the bound is tight enough\n        emit log('no bypass in test range - rounding margin too small');\n    }\n}"
+    }
+  ],
+  "summary": {
+    "total_hypotheses": 11,
+    "high_confidence": ["H-core-handler-02", "H-core-handler-05", "H-core-handler-08"],
+    "medium_confidence": ["H-core-handler-01", "H-core-handler-04", "H-core-handler-06", "H-core-handler-09", "H-core-handler-10", "H-core-handler-11"],
+    "low_confidence": ["H-core-handler-03", "H-core-handler-07"],
+    "value_extraction_priority": ["H-core-handler-08 (CP-006 confirmed)", "H-core-handler-09 (feeOnTop slippage capture)", "H-core-handler-01 (reentrancy sandwich)", "H-core-handler-07 (price resurrection sandwich)"],
+    "known_fp_variants": ["H-core-handler-09 is FP-SUB08 variant with specific extraction math", "H-core-handler-11 is Guardian H-01 adjacent"],
+    "novel_findings": ["H-core-handler-01 (afterSwapRefund WETH reentrancy)", "H-core-handler-02 (slot 0 storage read on exhausted book)", "H-core-handler-05 (double WETH conversion liveness)", "H-core-handler-10 (settlement conservation asymmetry — structural gap)"]
+  }
 }

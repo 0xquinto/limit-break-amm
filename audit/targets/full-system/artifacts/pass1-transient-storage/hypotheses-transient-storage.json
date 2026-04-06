@@ -1,12 +1,13 @@
 {
   "agent": "knowledge-gen-transient-storage",
   "boundary": "transient-storage",
-  "generated_at": "2026-03-28",
+  "generated_at": "2026-04-04",
   "source_files": [
     "lbamm-hooks-and-handlers/src/hooks/AMMStandardHook.sol",
     "lbamm-hooks-and-handlers/src/handlers/clob/CLOBTransferHandler.sol",
     "lbamm-hooks-and-handlers/lib/creator-token-standards/lib/tstorish/src/Tstorish.sol",
     "lbamm-core/src/modules/AMMModule.sol",
+    "lbamm-core/lib/tm-core-lib/src/utils/security/TstorishReentrancyGuardWithFlags.sol",
     "lbamm-hooks-and-handlers/src/hooks/libraries/SqrtPriceCalculator.sol"
   ],
   "hypotheses": [
@@ -136,10 +137,10 @@
       "severity": "MEDIUM",
       "confidence": "MEDIUM",
       "category": "price-bounds-miscalculation",
-      "summary": "For output-based direct swaps, AMMModule._directSwap executes: (1) beforeSwap hook writes amountOut to DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT, (2) _applySwapByOutputOutputFees reduces swapCache.amountOut by fees, (3) afterSwap hook reads slot (original amountOut) but uses current params.amount (also original — hooks see amountIn for inputSwap and amountOut for non-inputSwap). The computed ratio uses the pre-fee amountOut in the slot. The taker actually receives post-fee (smaller) amountOut, so the actual execution price is worse than the ratio computed by the bounds check.",
+      "summary": "For output-based direct swaps, AMMModule._directSwap executes: (1) beforeSwap hook writes swapAmount (amountOut) to DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT, (2) _applySwapByOutputOutputFees reduces swapCache.amountOut by fees, (3) afterSwap hook reads slot (original amountOut) but params.amount also reflects the original value. The computed ratio uses the pre-fee amountOut. The taker actually receives post-fee (smaller) amountOut, so the actual execution price is worse than the ratio computed by the bounds check. Confirmed execution order at AMMModule.sol lines 1844-1846: beforeHooks → _applySwapByOutputOutputFees → afterHooks.",
       "victim": "Swap takers in output-based direct swaps — they receive a worse price than what the price bounds check validates",
       "attacker_profit": "For high-fee configurations, the attacker (as the taker) gets tokens at a validated 'good' price but the actual price received is worse due to fees applied after bounds check. Or a hook owner can set high fees to bypass price protections.",
-      "mechanism": "AMMModule._directSwap line 1844: _executeAfterSwapHooks called AFTER _applySwapByOutputOutputFees (line 1847). But both params.amount in afterSwap AND the tstore slot value reflect the pre-fee amounts (from beforeSwap). The bounds check verifies a price that doesn't reflect the actual execution price post-fees.",
+      "mechanism": "AMMModule._directSwap: line 1844 _executeBeforeSwapHooks (writes pre-fee amountOut to slot), line 1845 _applySwapByOutputOutputFees (reduces amountOut), line 1846 _executeAfterSwapHooks (reads slot: pre-fee amountOut). Both params.amount in afterSwap AND the tstore slot reflect the pre-fee amounts. The bounds check verifies a price that doesn't reflect the actual execution price post-fees.",
       "affected_contracts": [
         "lbamm-core/src/modules/AMMModule.sol",
         "lbamm-hooks-and-handlers/src/hooks/AMMStandardHook.sol"
@@ -151,9 +152,9 @@
       ],
       "key_lines": {
         "AMMModule.sol": [
-          "1839: _executeBeforeSwapHooks(..., amountOut, ...) // writes pre-fee amountOut to slot",
-          "1844: _applySwapByOutputOutputFees(...) // reduces swapCache.amountOut by fees",
-          "1847: _executeAfterSwapHooks(...) // reads slot: still pre-fee value"
+          "1844: _executeBeforeSwapHooks(...) // writes pre-fee amountOut to slot",
+          "1845: _applySwapByOutputOutputFees(...) // reduces swapCache.amountOut by fees",
+          "1846: _executeAfterSwapHooks(...) // reads slot: still pre-fee value"
         ],
         "AMMStandardHook.sol": [
           "839: _setTstorish(DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT, params.amount); // pre-fee",
@@ -169,7 +170,7 @@
       "forge_test_skeleton": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.24;\n\ncontract H04_OutputSwapFeeOrderMismatch is Test {\n    // Setup: token with both hook flags, tight price bounds, 5% fee\n    // Execute output-based directSwap\n    // Measure actual ratio (amountIn / (amountOut - fees)) vs bounds-checked ratio (amountIn / amountOut)\n    // Assert: actual execution price worse than bounds-checked price by fee amount\n    function test_outputSwap_boundsCheck_ignoresFees() public {\n        // feeRate = 500; // 5%\n        // Execute directSwap outputBased with amountOut = 1000\n        // Hook checks ratio using 1000 (passes bounds)\n        // Taker receives 950 (post-5% fee)\n        // Actual ratio = amountIn / 950 > amountIn / 1000 (worse price, outside bounds)\n    }\n}",
       "exploit_scenario": "1. Token has price bounds configured as [P_low, P_high] where P_high = current market price + 0.1%. 2. Attacker executes output-based directSwap where pre-fee price is within bounds. 3. Protocol applies 5% fee, reducing actual amountOut. 4. Actual execution price = amountIn / (amountOut * 0.95) which exceeds P_high. 5. Bounds check passes because it used pre-fee amountOut. 6. Attacker receives tokens at price outside validated bounds.",
       "requires_further_validation": true,
-      "notes": "The magnitude of impact depends on the fee rate. At typical AMM fees (0.3%), the price deviation is small. At maximum allowed fees (up to 100% per Constants.sol), this could be significant. Requires confirming the exact fee application point in _directSwap execution order by reading AMMModule.sol lines 1821-1875."
+      "notes": "The magnitude of impact depends on the fee rate. At typical AMM fees (0.3%), the price deviation is small. At maximum allowed fees (up to 100% per Constants.sol), this could be significant. The execution order (beforeHooks → outputFees → afterHooks at lines 1844-1846) is confirmed; contrast with input swap order (beforeHooks → inputFees → afterHooks at lines 1836-1838) which is the same pattern."
     },
     {
       "id": "H-transient-storage-05",
@@ -177,10 +178,10 @@
       "severity": "MEDIUM",
       "confidence": "MEDIUM",
       "category": "tstore-activation-race",
-      "summary": "AMMStandardHook._onTstoreSupportActivated (line 951-954) copies the SSTORE value at DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT to TSTORE. If __activateTstore is called when the SSTORE slot contains a non-zero value from a prior SSTORE-mode transaction, that stale value is now in TSTORE. The very first afterSwap call after activation will read the stale value instead of the current beforeSwap amount, producing an incorrect price ratio and potentially bypassing or incorrectly triggering bounds check.",
+      "summary": "AMMStandardHook._onTstoreSupportActivated (lines 951-954) copies the SSTORE value at DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT to TSTORE. If __activateTstore is called when the SSTORE slot contains a non-zero value from a prior SSTORE-mode transaction, that stale value is now in TSTORE. The very first afterSwap call after activation will read the stale value instead of the current beforeSwap amount, producing an incorrect price ratio and potentially bypassing or incorrectly triggering bounds check.",
       "victim": "First swap after tstore activation on the affected token — could bypass price bounds or cause spurious revert",
       "attacker_profit": "Attacker can pre-stage a specific SSTORE slot value in one transaction, then call __activateTstore, then execute a directSwap where afterSwap reads the pre-staged value instead of the real amountIn.",
-      "mechanism": "AMMStandardHook line 951-954: `_setTstorish(DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT, _getTstorish(DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT))` in tstore mode reads the non-zero SSTORE slot and writes it to TSTORE. The Tstorish._onTstoreSupportActivated pattern was designed for reentrancy guards (copying NOT_ENTERED state), but for DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT it copies arbitrary operational state.",
+      "mechanism": "AMMStandardHook lines 951-954: assembly copies sload(DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT) to tstore. The Tstorish._onTstoreSupportActivated pattern was designed for reentrancy guards (copying NOT_ENTERED state), but for DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT it copies arbitrary operational state that should be zero at activation time.",
       "affected_contracts": [
         "lbamm-hooks-and-handlers/src/hooks/AMMStandardHook.sol",
         "lbamm-hooks-and-handlers/lib/creator-token-standards/lib/tstorish/src/Tstorish.sol"
@@ -193,11 +194,10 @@
       "key_lines": {
         "AMMStandardHook.sol": [
           "951: function _onTstoreSupportActivated() internal override {",
-          "952-954: _setTstorish(DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT, _getTstorish(DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT))"
+          "952-954: assembly { tstore(DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT, sload(DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT)) }"
         ],
         "Tstorish.sol": [
-          "71-88: __activateTstore() requires tx.origin == msg.sender",
-          "calls _onTstoreSupportActivated after activation"
+          "104-119: __activateTstore() calls _onTstoreSupportActivated after activation"
         ]
       },
       "attack_preconditions": [
@@ -206,19 +206,250 @@
         "Attacker can control the timing of __activateTstore call",
         "DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT has a non-zero value from prior SSTORE-mode operations"
       ],
-      "forge_test_skeleton": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.24;\n\ncontract H05_TstoreActivationRace is Test {\n    // 1. Deploy hook in SSTORE fallback mode\n    // 2. Execute SSTORE-mode directSwap (slot set to amountIn = ATTACKER_AMOUNT)\n    //    afterSwap runs, slot NOT cleared, SSTORE retains ATTACKER_AMOUNT\n    // 3. Activate TSTORE: __activateTstore() copies ATTACKER_AMOUNT to TSTORE slot\n    // 4. Execute next directSwap: afterSwap reads ATTACKER_AMOUNT from TSTORE (stale)\n    //    instead of actual beforeSwap amount (written to TSTORE fresh)\n    // Wait — TSTORE is per-transaction, written fresh by beforeSwap in step 4\n    // So activation poisoning only affects the first tx AFTER activation where\n    // afterSwap is called WITHOUT a corresponding beforeSwap in the SAME tx\n    // (i.e., when only AFTER_SWAP flag is set — combining with H-02)\n    function test_tstoreActivation_staleSlot_firstSwap() public {\n        // Verify the _onTstoreSupportActivated copy behavior\n        // and whether it creates exploitable state in the first post-activation tx\n    }\n}",
-      "exploit_scenario": "1. AMMStandardHook deployed in SSTORE fallback mode. 2. Attacker executes a directSwap, setting slot to value V_attacker. afterSwap runs but does NOT clear the SSTORE slot. 3. Attacker calls __activateTstore() (requires tx.origin == msg.sender). _onTstoreSupportActivated copies V_attacker from SSTORE to TSTORE. 4. In the same transaction as __activateTstore (not possible since TSTORE is tx-scoped), OR in the next transaction if somehow the TSTORE persists (it won't — TSTORE is cleared per tx). Analysis: the attack is partially mitigated because TSTORE clears between transactions. However, if there's a gas optimization path where activation happens mid-transaction with a subsequent hook call, the poisoned TSTORE value could be read.",
+      "forge_test_skeleton": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.24;\n\ncontract H05_TstoreActivationRace is Test {\n    // 1. Deploy hook in SSTORE fallback mode (mock Tstorish without EIP-1153 support)\n    // 2. Execute SSTORE-mode directSwap (slot set to amountIn = ATTACKER_AMOUNT via sstore)\n    //    afterSwap runs, slot NOT cleared, SSTORE retains ATTACKER_AMOUNT\n    // 3. Activate TSTORE: __activateTstore() — _onTstoreSupportActivated copies ATTACKER_AMOUNT to tstore\n    // 4. In same tx: execute directSwap afterSwap hook directly — reads ATTACKER_AMOUNT from tstore\n    //    (tstore is set for this tx via step 3, persists within tx)\n    function test_tstoreActivation_poisonsFirstSwap() public {\n        // Verify: after __activateTstore, tload(DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT) == ATTACKER_AMOUNT\n        // Then: afterSwap in same tx reads stale ATTACKER_AMOUNT not the real beforeSwap amount\n    }\n}",
+      "exploit_scenario": "1. AMMStandardHook deployed in SSTORE fallback mode. 2. Attacker executes directSwap, setting sstore slot to value V_attacker. afterSwap does NOT clear the SSTORE slot. 3. Attacker calls __activateTstore() in the SAME transaction as the next direct swap. _onTstoreSupportActivated copies V_attacker to TSTORE. 4. In that same transaction, afterSwap reads V_attacker from TSTORE instead of the actual beforeSwap amount — bounds check uses stale ratio.",
       "requires_further_validation": true,
-      "notes": "This hypothesis requires deeper investigation of whether __activateTstore can be called in the same transaction as a directSwap, and whether _onTstoreSupportActivated is called in the activation tx or the next tx. The __activateTstore requires tx.origin == msg.sender which prevents contracts from calling it, limiting attack surface. May be lower severity than initially assessed."
+      "notes": "This requires __activateTstore to be called in the same transaction as a directSwap's afterSwap phase. Since __activateTstore requires tx.origin == msg.sender, a contract cannot call it atomically with a swap. The attack window is narrow: it requires either a direct EOA atomicity trick or a chain-upgrade race scenario."
+    },
+    {
+      "id": "H-transient-storage-06",
+      "title": "afterSwapRefund unguarded: reentrancy into CLOBTransferHandler during WNATIVE withdrawal",
+      "severity": "MEDIUM",
+      "confidence": "MEDIUM",
+      "category": "reentrancy-missing-guard",
+      "summary": "CLOBTransferHandler.afterSwapRefund() (line 315) has NO nonReentrant modifier, despite making an external call to IWrappedNativeExtended(WRAPPED_NATIVE).withdrawToAccount(executor, refundAmount) at line 322. If the WRAPPED_NATIVE implementation sends ETH to `executor` and `executor` is a contract, its receive() callback can reenter CLOBTransferHandler. Because afterSwapRefund did NOT acquire the reentrancy guard, all guarded functions (openOrder, depositToken, withdrawToken, closeOrder, ammHandleTransfer) see the guard as NOT_ENTERED and allow execution. An attacker can thus reenter openOrder() during a refund, potentially creating orders with double-counted token balances.",
+      "victim": "CLOBTransferHandler accounting integrity — reentrant calls execute while refund is in-flight",
+      "attacker_profit": "Reentrant openOrder() during afterSwapRefund: attacker creates an order using tokens that haven't yet been fully accounted for in the refund, potentially double-spending the refunded tokens or creating an order without corresponding collateral",
+      "mechanism": "Execution path: AMM.swap() → CLOBTransferHandler.ammHandleTransfer() [nonReentrant: sets ENTERED on CLOBTransferHandler] → CLOBTransferHandler guard released by nonReentrantAfter → [later in same swap] AMM calls CLOBTransferHandler.afterSwapRefund() [NO guard acquisition] → WRAPPED_NATIVE.withdrawToAccount(executor) → executor.receive() → CLOBTransferHandler.openOrder() [nonReentrant: guard is NOT_ENTERED → PASSES]. The CLOBTransferHandler reentrancy guard is scoped to CLOBTransferHandler's tstore namespace, separate from the AMM's guard.",
+      "affected_contracts": [
+        "lbamm-hooks-and-handlers/src/handlers/clob/CLOBTransferHandler.sol"
+      ],
+      "affected_functions": [
+        "CLOBTransferHandler.afterSwapRefund",
+        "CLOBTransferHandler.openOrder",
+        "IWrappedNativeExtended.withdrawToAccount"
+      ],
+      "key_lines": {
+        "CLOBTransferHandler.sol": [
+          "315: function afterSwapRefund(address executor, address token, uint256 refundAmount) external {",
+          "316:     if (msg.sender != AMM) { revert ...; }  // ONLY check — no nonReentrant",
+          "320:     if (token == WRAPPED_NATIVE) {",
+          "322:         try IWrappedNativeExtended(WRAPPED_NATIVE).withdrawToAccount(executor, refundAmount) {",
+          "323:             return;  // ETH sent to executor → executor.receive() called",
+          "324:         } catch { }",
+          "329:     bool isError = SafeERC20.safeTransfer(token, executor, refundAmount);",
+          "490: function openOrder(...) external nonReentrant { ... }  // GUARDED but guard not set"
+        ]
+      },
+      "attack_preconditions": [
+        "Token involved in swap has WRAPPED_NATIVE as refund token",
+        "Executor is an attacker-controlled contract with a malicious receive() function",
+        "afterSwapRefund is called by AMM as part of swap execution (not within ammHandleTransfer's nonReentrant scope)",
+        "CLOBTransferHandler reentrancy guard is NOT_ENTERED when afterSwapRefund is called"
+      ],
+      "forge_test_skeleton": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.24;\n\nimport 'forge-std/Test.sol';\nimport {CLOBTransferHandler} from 'lbamm-hooks-and-handlers/src/handlers/clob/CLOBTransferHandler.sol';\n\ncontract MaliciousExecutor {\n    CLOBTransferHandler handler;\n    bool attacked;\n    \n    receive() external payable {\n        if (!attacked) {\n            attacked = true;\n            // Reenter openOrder while refund is in-flight\n            handler.openOrder(/* order params using same tokens */); \n        }\n    }\n}\n\ncontract H06_AfterSwapRefundReentrancy is Test {\n    function test_afterSwapRefund_reentrancy_openOrder() public {\n        // 1. Deploy MaliciousExecutor, set as executor in CLOB order\n        // 2. Execute swap that triggers afterSwapRefund with WNATIVE refund to MaliciousExecutor\n        // 3. Observe: MaliciousExecutor.receive() fires, calls openOrder()\n        // 4. openOrder executes because CLOBTransferHandler guard is NOT_ENTERED\n        // 5. Assert: double-accounting or order created without collateral\n        // vm.expectCall(address(handler), abi.encodeWithSelector(handler.openOrder.selector));\n    }\n}",
+      "exploit_scenario": "1. Attacker deploys MaliciousExecutor contract that reenters CLOBTransferHandler.openOrder() in its receive(). 2. Attacker places a CLOB order with MaliciousExecutor as executor. 3. Swap executes; AMM triggers afterSwapRefund, sending WNATIVE refund to MaliciousExecutor. 4. WNATIVE calls MaliciousExecutor.receive(), which calls openOrder() with the refunded ETH as collateral. 5. The refund accounting hasn't completed yet; the openOrder call creates an order. 6. The outer afterSwapRefund continues; the ETH is now double-counted.",
+      "requires_further_validation": true,
+      "notes": "Critical verification needed: (1) is afterSwapRefund called by AMM within or outside the ammHandleTransfer nonReentrant scope? If inside, the guard is still set and openOrder would revert. (2) Does WRAPPED_NATIVE.withdrawToAccount send ETH to executor directly (triggering receive()) or through some other mechanism? The WRAPPED_NATIVE address 0x6000030000842044000077551D00cfc6b4005900 suggests a custom deployment — need to verify its transfer semantics. Confidence depends heavily on (1)."
+    },
+    {
+      "id": "H-transient-storage-07",
+      "title": "_setReentrancyFlags(NO_FLAGS) strips DIRECT_SWAP_GUARD_FLAG mid-swap during queued fee execution",
+      "severity": "MEDIUM",
+      "confidence": "MEDIUM",
+      "category": "tstore-flag-manipulation",
+      "summary": "_executeQueuedHookFeesByHookTransfers() at AMMModule.sol line 3190 calls _setReentrancyFlags(NO_FLAGS). This invokes TstorishReentrancyGuardWithFlags._setReentrancyFlags(0), which preserves only the ENTERED bit and zeroes all operation-specific flags (DIRECT_SWAP_GUARD_FLAG=1<<6, SWAP_GUARD_FLAG=1<<2, POOL_SWAP_GUARD_FLAG, etc.). Any hook called via _transferHookFeesByHook during fee collection will see _isReentrancyFlagSet(DIRECT_SWAP_GUARD_FLAG) == false, even though a direct swap is actively in progress. Hooks that use this flag to gate context-sensitive behavior (e.g., 'only perform X if not in a swap') can be triggered in the wrong execution context.",
+      "victim": "Protocol correctness — hooks that guard behavior based on swap context flags execute with incorrect context signals during queued fee collection",
+      "attacker_profit": "A malicious hook contract can be designed to perform expensive or state-mutating operations conditionally on the absence of DIRECT_SWAP_GUARD_FLAG. When called during fee collection (where the flag is stripped), those operations execute during a direct swap they were designed to avoid.",
+      "mechanism": "TstorishReentrancyGuardWithFlags._setReentrancyFlags (line 68-72): `flags = flags & ~(ENTERED | NOT_ENTERED)` → strips base bits. `currentGuard = _getTstorish(REENTRANCY_GUARD_STORAGE) & ENTERED` → preserves only ENTERED. `_setTstorish(REENTRANCY_GUARD_STORAGE, currentGuard | flags)` → writes ENTERED | 0 = ENTERED. Result: all operation flags stripped, only ENTERED bit survives. This happens at AMMModule line 3190 BEFORE iterating the fee queue. Any hook in the queue sees NO swap flags.",
+      "affected_contracts": [
+        "lbamm-core/src/modules/AMMModule.sol",
+        "lbamm-core/lib/tm-core-lib/src/utils/security/TstorishReentrancyGuardWithFlags.sol"
+      ],
+      "affected_functions": [
+        "AMMModule._executeQueuedHookFeesByHookTransfers",
+        "TstorishReentrancyGuardWithFlags._setReentrancyFlags",
+        "TstorishReentrancyGuardWithFlags._isReentrancyFlagSet"
+      ],
+      "key_lines": {
+        "AMMModule.sol": [
+          "3183: function _executeQueuedHookFeesByHookTransfers() internal {",
+          "3186: uint256 queueLength = _getTstorish(queueSlot);",
+          "3189: _setTstorish(queueSlot, 0);",
+          "3190: _setReentrancyFlags(NO_FLAGS);  // STRIPS ALL OPERATION FLAGS",
+          "3192-3202: for loop calling _transferHookFeesByHook()"
+        ],
+        "TstorishReentrancyGuardWithFlags.sol": [
+          "68: function _setReentrancyFlags(uint256 flags) internal {",
+          "69:     flags = flags & ~(ENTERED | NOT_ENTERED);  // strips base bits from input",
+          "70:     uint256 currentGuard = _getTstorish(REENTRANCY_GUARD_STORAGE) & ENTERED;",
+          "71:     _setTstorish(REENTRANCY_GUARD_STORAGE, currentGuard | flags);  // only ENTERED survives",
+          "72: }",
+          "74: function _isReentrancyFlagSet(uint256 flag) internal view returns (bool) {",
+          "75:     return _getTstorish(REENTRANCY_GUARD_STORAGE) & flag > 0;",
+          "76: }"
+        ],
+        "Constants.sol": [
+          "20: SWAP_GUARD_FLAG = 1 << 2",
+          "23: POOL_SWAP_GUARD_FLAG = 1 << 3 | SWAP_GUARD_FLAG",
+          "32: DIRECT_SWAP_GUARD_FLAG = 1 << 6 | SWAP_GUARD_FLAG"
+        ]
+      },
+      "attack_preconditions": [
+        "A token with hook that uses _isReentrancyFlagSet(DIRECT_SWAP_GUARD_FLAG or SWAP_GUARD_FLAG) to gate behavior",
+        "That hook is also registered for fee collection (TOKEN_SETTINGS_HOOK_MANAGES_FEES_FLAG)",
+        "A direct swap triggers the hook, which queues fee collection",
+        "The queued fee execution calls back into the hook — now without DIRECT_SWAP_GUARD_FLAG set"
+      ],
+      "forge_test_skeleton": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.24;\n\nimport 'forge-std/Test.sol';\n\ncontract FlagSniffingHook {\n    ILimitBreakAMM amm;\n    bool public swapFlagSeenDuringFeeCollection;\n    \n    function collectFees(...) external {\n        // This runs during _transferHookFeesByHook\n        // Check if DIRECT_SWAP_GUARD_FLAG is still set\n        bool swapActive = amm.isReentrancyFlagSet(DIRECT_SWAP_GUARD_FLAG);\n        swapFlagSeenDuringFeeCollection = swapActive; // expect true, will be false\n    }\n}\n\ncontract H07_FlagStrippedDuringFeeCollection is Test {\n    function test_directSwapFlag_absent_duringFeeCollection() public {\n        // 1. Deploy FlagSniffingHook, register as hook for a token with fee management\n        // 2. Execute directSwap for that token — triggers queueHookFee → executeQueuedFees\n        // 3. _setReentrancyFlags(NO_FLAGS) at line 3190 strips DIRECT_SWAP_GUARD_FLAG\n        // 4. FlagSniffingHook.collectFees() is called — reads flag as false\n        // 5. Assert: swapFlagSeenDuringFeeCollection == false (should be true)\n        assertFalse(flagHook.swapFlagSeenDuringFeeCollection());\n    }\n}",
+      "exploit_scenario": "1. Attacker deploys a hook contract that behaves differently based on _isReentrancyFlagSet(DIRECT_SWAP_GUARD_FLAG): when flag is false, it executes a privileged action (e.g., unlocks excess fees, modifies pool state, claims extra tokens). 2. Hook also implements fee collection. 3. Attacker triggers a direct swap to enqueue a fee collection. 4. _executeQueuedHookFeesByHookTransfers strips the swap flag (line 3190) then calls the hook's fee collection. 5. Hook detects 'no swap in progress' and executes the privileged action it was meant to gate.",
+      "requires_further_validation": true,
+      "notes": "The severity depends entirely on whether any deployed hook actually uses _isReentrancyFlagSet(DIRECT_SWAP_GUARD_FLAG) to gate behavior. The flag stripping is confirmed at line 3190. AMMStandardHook does NOT appear to check this flag internally — the risk is for custom hook implementations. The pattern is genuinely problematic for the stated hook API contract: if hooks can query operation context flags, those flags must be accurate during fee collection callbacks."
+    },
+    {
+      "id": "H-transient-storage-09",
+      "title": "multiSwap cross-hop DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT stale read: hop N slot bleeds into hop N+1 afterSwap when N+1 lacks BEFORE_SWAP flag",
+      "severity": "MEDIUM",
+      "confidence": "MEDIUM",
+      "category": "cross-operation-slot-leak",
+      "summary": "DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT (0xFFFFFFFFFFFFFFFF) in AMMStandardHook is written in beforeSwap and read in afterSwap but never cleared. In a multiSwap sequence, if hop N writes the slot in its beforeSwap and hop N+1 uses the SAME AMMStandardHook instance but has only TOKEN_SETTINGS_AFTER_SWAP_HOOK_FLAG (no BEFORE_SWAP flag), hop N+1's afterSwap reads the stale value from hop N. The computed sqrtPriceX96 = SqrtPriceCalculator.computeRatioX96(hopN.amount, hopN+1.amount) — mixing amounts from different hops — and is not the real price of hop N+1. This is DISTINCT from CP-001 (which concerns directSwap in sequential same-tx operations) and from H-transient-storage-01/02 (which concern a single direct swap with asymmetric flags on one token). This is a multiSwap multi-hop contamination where two different pools using the same hook instance interleave slot writes.",
+      "victim": "Token owners/LPs whose pricing bounds in AMMStandardHook are expected to prevent sandwiching on hop N+1 of a multi-hop route",
+      "attacker_profit": "Attacker crafts a multiSwap where hop 1 writes a favorable 'before' amount to the shared slot, and hop 2 (which lacks beforeSwap) reads that stale value in afterSwap. The computed price ratio reflects hop1.amount/hop2.amount rather than hop2.amount/hop2.amount, potentially passing bounds that the real hop 2 price violates.",
+      "mechanism": "LimitBreakAMM.multiSwap iterates hops sequentially: for each hop, [beforeSwapHooks → poolSwap → afterSwapHooks] fully completes before the next. Within each hop, _executeBeforeSwapHooks writes DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT when the pool is a direct-swap pool (poolType==0) and the hook has BEFORE_SWAP. The slot is read (and computed into sqrtPriceX96) in _executeAfterSwapHooks when AFTER_SWAP flag is set and poolType==0. The slot is NEVER cleared. If hop N+1's pool has only AFTER_SWAP flag, it skips beforeSwap entirely — the slot still holds hop N's value when hop N+1's afterSwap runs.",
+      "affected_contracts": [
+        "lbamm-hooks-and-handlers/src/hooks/AMMStandardHook.sol",
+        "lbamm-core/src/LimitBreakAMM.sol",
+        "lbamm-core/src/modules/AMMModule.sol"
+      ],
+      "affected_functions": [
+        "AMMStandardHook._validatePricingBounds",
+        "LimitBreakAMM.multiSwap",
+        "AMMModule._executeBeforeSwapHooks",
+        "AMMModule._executeAfterSwapHooks"
+      ],
+      "key_lines": {
+        "AMMStandardHook.sol": [
+          "839: _setTstorish(DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT, params.amount);  // beforeSwap writes, never cleared",
+          "843-846: afterSwap reads slot, computes ratio — assumes slot was written THIS hop"
+        ],
+        "LimitBreakAMM.sol": [
+          "266-320: multiSwap — sequential hop execution, no slot reset between hops"
+        ]
+      },
+      "attack_preconditions": [
+        "multiSwap with at least 2 hops",
+        "Hop N pool: direct-swap (poolType=0), token has both BEFORE_SWAP and AFTER_SWAP flags on AMMStandardHook A",
+        "Hop N+1 pool: direct-swap (poolType=0), token has ONLY AFTER_SWAP flag on the SAME AMMStandardHook A",
+        "Hop N+1 token has pricing bounds configured"
+      ],
+      "forge_test_skeleton": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.24;\n\nimport \"forge-std/Test.sol\";\nimport {LimitBreakAMM} from \"lbamm-core/src/LimitBreakAMM.sol\";\nimport {AMMStandardHook} from \"lbamm-hooks-and-handlers/src/hooks/AMMStandardHook.sol\";\n\ncontract H09_MultiSwapCrossHopStaleSlot is Test {\n    LimitBreakAMM amm;\n    AMMStandardHook hook;  // SHARED by both hops\n\n    function setUp() public {\n        // Pool A (hop 1): tokenIn=A, tokenOut=B, direct-swap, hook=hook\n        //   Token B settings: BEFORE_SWAP_HOOK_FLAG | AFTER_SWAP_HOOK_FLAG\n        // Pool B (hop 2): tokenIn=B, tokenOut=C, direct-swap, hook=hook\n        //   Token C settings: AFTER_SWAP_HOOK_FLAG only (no BEFORE)\n        //   Token C price bounds: tight sqrtPriceMin/sqrtPriceMax\n    }\n\n    function test_staleSlotCrossHop_priceBoundsBypass() public {\n        uint256 hop1Amount = 100e18;   // writes to slot\n        uint256 hop2Amount = 1000e18;  // large out-of-bounds trade for hop2\n\n        // Real hop2 price = amountIn / hop2Amount → violates token C bounds\n        // But afterSwap reads hop1Amount from slot → computes hop1Amount/hop2Amount\n        // If hop1Amount/hop2Amount is within bounds, check passes despite real price violation\n\n        // Build multiSwap params\n        // LimitBreakAMM.MultiSwapParams memory params = buildMultiSwapParams(hop1Amount, hop2Amount);\n        // amm.multiSwap(params);\n        // assert: swap succeeded despite hop2 real price violating bounds\n    }\n\n    function test_correctBehaviorWithBeforeSwapOnBothHops() public {\n        // When token C also has BEFORE_SWAP_HOOK_FLAG:\n        // hop 2 beforeSwap overwrites slot with hop2.amountIn → afterSwap reads correct value\n        // assert: bounds check correctly catches out-of-range price\n    }\n}",
+      "exploit_scenario": "1. Attacker identifies a multi-hop route: Pool A (A→B, hook=AMMStandardHook, both flags) → Pool B (B→C, same hook, AFTER_SWAP only). Token C has tight pricing bounds. 2. Attacker crafts hop1.amount = V such that V/hop2.actualOutput lies within token C's bounds. 3. Actual hop2 price = hop2.actualInput / hop2.actualOutput is outside bounds. 4. multiSwap executes: hop1 writes V to slot; hop2 afterSwap reads V, computes V/output (within bounds); check passes. 5. Attacker completes a large hop2 trade at a price that violates the token owner's stated bounds.",
+      "requires_further_validation": true,
+      "notes": "Requires confirming that multiSwap hops execute in strict sequence (beforeSwap_N → poolSwap_N → afterSwap_N → beforeSwap_N+1 → ...) without any slot reset between hops. Also requires confirming that a single AMMStandardHook instance can be registered as hook for tokens in different pools. The key distinction from CP-001: this involves the multiSwap path, the slot is polluted within the same multi-hop call (not two separate txs), and the slot write source is a different pool's hook invocation — not a prior tx's directSwap."
+    },
+    {
+      "id": "H-transient-storage-10",
+      "title": "collectHookFeesByHook routes to DIRECT (not queue) path mid-swap after SWAP_GUARD_FLAG erasure in executeQueuedHookFeesByHookTransfers — enables out-of-order fee drain",
+      "severity": "MEDIUM",
+      "confidence": "HIGH",
+      "category": "tstore-flag-manipulation",
+      "summary": "ModuleFeeCollection.collectHookFeesByHook() has NO nonReentrant modifier. It uses _isReentrancyFlagSet(SWAP_GUARD_FLAG) to decide between QUEUE and DIRECT transfer. Inside _executeQueuedHookFeesByHookTransfers(), _setReentrancyFlags(NO_FLAGS) is called at AMMModule:3190 BEFORE the transfer loop, clearing SWAP_GUARD_FLAG. Any callback from a transfer inside the loop (ERC777, hook-as-recipient) that calls collectHookFeesByHook() sees SWAP_GUARD_FLAG=false and takes the DIRECT path — not the queue path. This is fundamentally different from H-transient-storage-07, which concerns custom hook contracts checking DIRECT_SWAP_GUARD_FLAG themselves. H-10 concerns the AMM's own collectHookFeesByHook routing logic and allows an attacker-controlled hook to drain additional fee buckets (different tokenFor/tokenFee pairs) via the direct path during the fee collection loop — outside the normal queue ordering, without those amounts ever being queued.",
+      "victim": "Protocol fee accounting integrity — fee buckets not originally queued can be drained via direct path during swap execution",
+      "attacker_profit": "Attacker-controlled hook drains accumulated fees from additional (tokenFor, tokenFee) pairs without queueing them during the original swap, bypassing the queue ordering mechanism. Also enables a DoS variant: if the callback requests amount > available for a second fee pair, the sub-call reverts, propagating back through the outer safeTransfer, reverting the swap.",
+      "mechanism": "Call chain during fee collection: _executeQueuedHookFeesByHookTransfers → _setReentrancyFlags(NO_FLAGS) [AMMModule:3190] → REENTRANCY_GUARD_STORAGE = ENTERED|0 (SWAP_GUARD_FLAG=0) → _transferHookFeesByHook → SafeERC20.safeTransfer(tokenFee, recipient, ...) → callback in recipient/tokenFee contract → collectHookFeesByHook(tokenFor2, tokenFee2, recipient2, amount2) → check: _isReentrancyFlagSet(SWAP_GUARD_FLAG)=false, _isReentrancyFlagSet(LIQUIDITY_GUARD_FLAG)=false, _isReentrancyFlagSet(FLASHLOAN_GUARD_FLAG)=false → takes DIRECT path → _transferHookFeesByHook(msg.sender, tokenFor2, tokenFee2, ...) executes immediately. Note: nonReentrant guard (ENTERED bit) is still set, but collectHookFeesByHook does NOT check it — only custom flags are checked.",
+      "affected_contracts": [
+        "lbamm-core/src/modules/ModuleFeeCollection.sol",
+        "lbamm-core/src/modules/AMMModule.sol",
+        "lbamm-core/lib/tm-core-lib/src/utils/security/TstorishReentrancyGuardWithFlags.sol"
+      ],
+      "affected_functions": [
+        "ModuleFeeCollection.collectHookFeesByHook",
+        "AMMModule._executeQueuedHookFeesByHookTransfers",
+        "AMMModule._transferHookFeesByHook",
+        "TstorishReentrancyGuardWithFlags._setReentrancyFlags"
+      ],
+      "key_lines": {
+        "ModuleFeeCollection.sol": [
+          "72-82: collectHookFeesByHook — NO nonReentrant modifier",
+          "75: if (_isReentrancyFlagSet(SWAP_GUARD_FLAG) || _isReentrancyFlagSet(LIQUIDITY_GUARD_FLAG)) queue",
+          "80: else _transferHookFeesByHook — DIRECT path"
+        ],
+        "AMMModule.sol": [
+          "3183: _executeQueuedHookFeesByHookTransfers",
+          "3189: _setTstorish(queueSlot, 0)  // count cleared",
+          "3190: _setReentrancyFlags(NO_FLAGS);  // ALL custom flags cleared — SWAP_GUARD_FLAG now 0",
+          "3192-3202: for loop calling _transferHookFeesByHook (callbacks possible here)"
+        ],
+        "TstorishReentrancyGuardWithFlags.sol": [
+          "68-72: _setReentrancyFlags preserves ONLY ENTERED bit, zeroes all others",
+          "74-76: _isReentrancyFlagSet checks custom flags, NOT ENTERED bit"
+        ]
+      },
+      "attack_preconditions": [
+        "Hook contract is registered as fee manager (TOKEN_SETTINGS_HOOK_MANAGES_FEES_FLAG) for a token",
+        "Hook has accumulated fees in multiple (tokenFor, tokenFee) buckets",
+        "The hook or fee recipient is a contract that can receive callbacks (ERC777 tokensReceived, or hook IS recipient)",
+        "A swap triggers fee queuing for one bucket; executeQueuedHookFeesByHookTransfers processes it"
+      ],
+      "forge_test_skeleton": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.24;\n\nimport \"forge-std/Test.sol\";\nimport {LimitBreakAMM} from \"lbamm-core/src/LimitBreakAMM.sol\";\nimport {ModuleFeeCollection} from \"lbamm-core/src/modules/ModuleFeeCollection.sol\";\n\ncontract AttackerHook {\n    ModuleFeeCollection public amm;\n    address public tokenFor2;\n    address public tokenFee2;\n    bool private reentered;\n\n    // ERC777 tokensReceived callback — fires when safeTransfer is called during fee collection loop\n    function tokensReceived(\n        address, address, address, uint256, bytes calldata, bytes calldata\n    ) external {\n        if (!reentered) {\n            reentered = true;\n            // SWAP_GUARD_FLAG is now 0 — direct path executes\n            uint256 bucket2Balance = amm.getHookFeesOwedByHook(address(this), tokenFor2, tokenFee2);\n            if (bucket2Balance > 0) {\n                amm.collectHookFeesByHook(tokenFor2, tokenFee2, address(this), bucket2Balance);\n            }\n        }\n    }\n}\n\ncontract H10_CollectHookFeesBypassQueueViaflagClear is Test {\n    LimitBreakAMM amm;\n    AttackerHook hook;\n    address tokenFee1; // ERC777 token\n    address tokenFor1;\n    address tokenFor2;\n    address tokenFee2;\n\n    function setUp() public {\n        // Deploy AMM with AttackerHook registered as fee manager for two token pairs\n        // Accumulate fees: bucket1 = (tokenFor1, tokenFee1=ERC777), bucket2 = (tokenFor2, tokenFee2)\n        // Swap triggers queuing of bucket1 only\n    }\n\n    function test_directDrainOfBucket2_viaFlagClearWindow() public {\n        uint256 bucket2Before = amm.getHookFeesOwedByHook(address(hook), tokenFor2, tokenFee2);\n        assertTrue(bucket2Before > 0, \"bucket2 should have balance\");\n\n        // Execute a swap that:\n        // 1. Queues bucket1 fee collection (SWAP_GUARD_FLAG set)\n        // 2. Swap ends, executeQueuedHookFeesByHookTransfers fires\n        // 3. _setReentrancyFlags(NO_FLAGS) clears SWAP_GUARD_FLAG\n        // 4. _transferHookFeesByHook for bucket1 → ERC777 tokensReceived fires in hook\n        // 5. Hook calls collectHookFeesByHook(tokenFor2, tokenFee2, ...) → DIRECT path\n        // 6. Bucket2 drained without having been queued\n\n        // amm.singleSwap(...);\n\n        uint256 bucket2After = amm.getHookFeesOwedByHook(address(hook), tokenFor2, tokenFee2);\n        assertEq(bucket2After, 0, \"bucket2 drained via flag-clear window despite not being queued\");\n    }\n\n    function test_dosDuringQueueExecution_revertPropagates() public {\n        // If hook requests amount > bucket2 balance → _transferHookFeesByHook reverts\n        // Revert propagates through safeTransfer, reverting executeQueuedHookFeesByHookTransfers\n        // Swap DoS confirmed\n        vm.expectRevert();\n        // amm.singleSwap(...);\n    }\n}",
+      "exploit_scenario": "Drain scenario: 1. Attacker's hook accumulates fees in 3 buckets. 2. Swap queues bucket1. 3. executeQueuedHookFeesByHookTransfers: _setReentrancyFlags(NO_FLAGS) clears SWAP_GUARD_FLAG. 4. Bucket1 transfer fires ERC777 callback in hook. 5. Hook calls collectHookFeesByHook for buckets 2 and 3 → DIRECT path → both drained. 6. Attacker extracts fees from 3 buckets in what should have been a 1-bucket queue flush. DoS scenario: If hook requests amount > bucket2 balance, revert propagates, bricking the swap and leaving all fees in an inconsistent state.",
+      "requires_further_validation": false,
+      "notes": "High confidence because: (1) collectHookFeesByHook has NO nonReentrant modifier — confirmed at ModuleFeeCollection:72. (2) _setReentrancyFlags(NO_FLAGS) clears SWAP_GUARD_FLAG before the loop — confirmed at AMMModule:3190. (3) _isReentrancyFlagSet checks custom flags, not ENTERED — confirmed at TstorishReentrancyGuardWithFlags:74-76. (4) _transferHookFeesByHook calls safeTransfer which can trigger callbacks. CEI pattern in _transferHookFeesByHook prevents double-spend of the SAME bucket, but multiple DIFFERENT buckets can be drained. Exploitation requires callback-capable token or hook-as-recipient."
+    },
+    {
+      "id": "H-transient-storage-08",
+      "title": "Dual-token AMMStandardHook: same slot written and read by both token hooks in one direct swap",
+      "severity": "LOW",
+      "confidence": "LOW",
+      "category": "cross-operation-slot-collision",
+      "summary": "When BOTH tokenIn and tokenOut of a direct swap use the SAME AMMStandardHook contract address as their hook, all four hook calls (2x beforeSwap, 2x afterSwap) share a single DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT tstore slot (tstore is scoped per contract address). _executeBeforeSwapHooks at AMMModule lines 2370-2390 calls tokenIn's beforeSwap first, then tokenOut's beforeSwap — both writing the same swapAmount. However, _executeAfterSwapHooks calls tokenIn's afterSwap then tokenOut's afterSwap — each potentially passing a different params.amount. If the afterSwap for tokenIn and tokenOut receive different amounts (amountIn vs amountOut respectively), the second afterSwap call reads a slot value that was written by the first call's expected amount, not the second's, causing incorrect price ratio computation for one of the two tokens.",
+      "victim": "Token owners who both configure the same AMMStandardHook — price bounds validation for one of the two tokens will use an incorrect amountIn/amountOut",
+      "attacker_profit": "If the price bounds for tokenIn are validated using tokenOut's amount (or vice versa), the computed sqrtPriceX96 will be wrong — potentially allowing a swap that violates one token's bounds while satisfying the other's",
+      "mechanism": "Both beforeSwap calls write the same swapAmount (AMMModule._executeBeforeSwapHooks line 2368: `swapAmount = inputSwap ? amountIn : amountOut`). The slot is overwritten twice with the same value, so no collision in beforeSwap. In afterSwap, both hook calls read from the same slot. The issue would manifest if afterSwap for tokenIn modifies the slot (it doesn't in the current implementation — there is no write in afterSwap path). Therefore the slot collision is BENIGN in the current implementation but creates a latent hazard for future changes.",
+      "affected_contracts": [
+        "lbamm-hooks-and-handlers/src/hooks/AMMStandardHook.sol",
+        "lbamm-core/src/modules/AMMModule.sol"
+      ],
+      "affected_functions": [
+        "AMMModule._executeBeforeSwapHooks",
+        "AMMModule._executeAfterSwapHooks",
+        "AMMStandardHook._validatePricingBounds"
+      ],
+      "key_lines": {
+        "AMMModule.sol": [
+          "2368: swapAmount = swapCache.inputSwap ? swapCache.amountIn : swapCache.amountOut",
+          "2370-2379: tokenIn.beforeSwap called with swapAmount",
+          "2381-2390: tokenOut.beforeSwap called with same swapAmount — overwrites slot with same value",
+          "Note: _executeAfterSwapHooks call ordering not confirmed — needs verification"
+        ],
+        "AMMStandardHook.sol": [
+          "66: uint256 private constant DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT = 0xFFFFFFFFFFFFFFFF;",
+          "839: _setTstorish(DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT, params.amount); // same for both tokens"
+        ]
+      },
+      "attack_preconditions": [
+        "Both tokenIn and tokenOut must use the IDENTICAL AMMStandardHook contract address",
+        "Both tokens must have TOKEN_SETTINGS_BEFORE_SWAP_HOOK_FLAG and TOKEN_SETTINGS_AFTER_SWAP_HOOK_FLAG set",
+        "Price bounds must be configured for both tokens",
+        "Currently: BENIGN because both writes use same swapAmount — no actual collision in values"
+      ],
+      "forge_test_skeleton": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.24;\n\ncontract H08_DualTokenSlotCollision is Test {\n    // Register SAME AMMStandardHook as hook for both tokenIn and tokenOut\n    // Execute direct swap: both tokens use hook, same tstore slot\n    // Verify: beforeSwap writes swapAmount for BOTH tokens (tokenIn first, then tokenOut)\n    // Verify: afterSwap for both tokens reads the same slot\n    // Assert: no collision in current impl (same swapAmount written by both)\n    // but flag any future divergence in params.amount passed to afterSwap hooks\n    function test_dualTokenHook_slotConsistency() public {\n        // 1. Deploy one AMMStandardHook\n        // 2. Register for tokenIn AND tokenOut with identical settings\n        // 3. Execute directSwap, capture tstore reads in beforeSwap/afterSwap\n        // 4. Confirm both afterSwap calls use same slot value\n    }\n}",
+      "exploit_scenario": "Currently benign: both tokenIn and tokenOut beforeSwap write the same swapAmount to the slot. However, if a future hook version writes different values per-token in beforeSwap, or if afterSwap receives different amounts per-token, the shared slot becomes a collision vector. This hypothesis documents the latent hazard rather than an immediately exploitable bug. The shared tstore namespace between two semantically-different hook invocations is an architectural smell.",
+      "requires_further_validation": true,
+      "notes": "After confirming _executeBeforeSwapHooks at lines 2368-2390, the benign case is clear: both tokens receive identical swapAmount. The hypothesis should be downgraded from tracking to informational unless _executeAfterSwapHooks passes different amounts per token AND those amounts are used in slot writes. Recommend verifying _executeAfterSwapHooks implementation. LOW confidence for exploitability, but MEDIUM confidence for latent architectural risk."
     }
   ],
   "summary": {
-    "total_hypotheses": 5,
-    "high_confidence": 2,
-    "medium_confidence": 3,
-    "requires_further_validation": 3,
-    "key_invariant_at_risk": "AMMStandardHook price bounds enforcement for direct swaps depends on a two-phase tstore write (beforeSwap) + read (afterSwap) pattern, where each phase is independently gated by a separate token settings flag. This creates flag-asymmetry vulnerabilities (H-01: bypass, H-02: DoS) as the critical invariant.",
-    "primary_attack_surface": "DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT at 0xFFFFFFFFFFFFFFFF — written in beforeSwap, read in afterSwap, NEVER cleared. No enforcement that both hook flags must be set together.",
-    "exploit_reference": "SIR Trading transient storage exploit ($355K, Mar 2025): attacker exploited tstore slot persisting within same transaction. H-01/H-02 are simpler — they exploit the ABSENCE of writes/reads rather than stale intra-tx values. ChainSecurity tstore low-gas reentrancy (Nov 2023): relevant because the direct swap guard uses a separate tstore slot for reentrancy protection — confirmed NOT vulnerable because DIRECT_SWAP_GUARD_FLAG is set atomically with the entire swap execution."
+    "total_hypotheses": 10,
+    "high_confidence": 3,
+    "medium_confidence": 6,
+    "low_confidence": 1,
+    "requires_further_validation": 7,
+    "key_invariant_at_risk": "AMMStandardHook price bounds enforcement for direct swaps depends on a two-phase tstore write (beforeSwap) + read (afterSwap) pattern, where each phase is independently gated by a separate token settings flag. This creates flag-asymmetry vulnerabilities (H-01: bypass, H-02: DoS) as the critical invariant. Secondary: the reentrancy guard tstore slot for the entire LimitBreakAMM proxy is manipulated (flag-stripped) during queued fee collection (H-07, H-10), creating context-signal integrity failures for hooks and the AMM's own routing logic.",
+    "primary_attack_surface": "DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT at 0xFFFFFFFFFFFFFFFF — written in beforeSwap, read in afterSwap, NEVER cleared. No enforcement that both hook flags must be set together (H-01, H-02). Also exploitable in multiSwap cross-hop scenarios (H-09). Secondary surface: REENTRANCY_GUARD_STORAGE operation flags stripped at AMMModule.sol:3190 during queued fee execution — affects both custom hook context checks (H-07) and the AMM's own collectHookFeesByHook routing (H-10).",
+    "new_hypotheses_this_session": ["H-transient-storage-06", "H-transient-storage-07", "H-transient-storage-08", "H-transient-storage-09", "H-transient-storage-10"],
+    "known_bugs_excluded": ["CP-001 (HOOK-001): DIRECT_SWAP_BEFORE_SWAP_AMOUNT_SLOT stale read across same-tx operations — deliberately excluded per task constraints"],
+    "exploit_reference": "SIR Trading transient storage exploit ($355K, Mar 2025): attacker exploited tstore slot persisting within same transaction. H-01/H-02 are simpler — they exploit the ABSENCE of writes/reads rather than stale intra-tx values. H-07/H-10 are closest to the SIR pattern: a flag slot is manipulated mid-transaction to produce incorrect control flow in downstream callers. H-09 is a multiSwap cross-hop variant of CP-001 operating on a different code path (multiSwap vs directSwap, same-tx within-call vs cross-operation).",
+    "highest_priority_for_poc": ["H-transient-storage-10 (high confidence, no further validation needed — collectHookFeesByHook has no nonReentrant, flag clear confirmed at AMMModule:3190)", "H-transient-storage-01 (high confidence, flag-asymmetry bypass — single-swap, no ERC777 needed)", "H-transient-storage-09 (medium confidence, requires multiSwap + asymmetric hook flag setup)"]
   }
 }
