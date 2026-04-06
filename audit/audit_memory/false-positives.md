@@ -21,7 +21,7 @@ If partial match (similar but different code path), proceed but reference the re
 
 ## CLOB Domain 
 ### FP-C01: Virtual balance invariant violation
-- **Scope**: [clob-auditor, economic-analyst, red-team-adversary]
+- **Scope**: []
 - **Contracts**: CLOBTransferHandler.sol, CLOBHelper.sol
 - **Vector**: Deposit/withdraw/open/close/fill paths might break virtual balance conservation
 - **Why false**: All 5 modification paths maintain conservation. Fuzz-verified (CLOBStateMachineFuzzTest, 6 test functions, 3 invariants). No path creates or destroys virtual tokens.
@@ -31,7 +31,7 @@ If partial match (similar but different code path), proceed but reference the re
 - **Lesson**: "CLOB virtual balances are a closed system — trace all 5 paths before claiming violation"
 
 ### FP-C02: Linked list corruption
-- **Scope**: [clob-auditor, fuzz-writer]
+- **Scope**: []
 - **Contracts**: CLOBHelper.sol
 - **Vector**: Open/close/traverse operations corrupt linked list pointers
 - **Why false**: Pointer integrity maintained. Insert at head, remove updates prev/next. Stale tail sentinel cleared at L272. Fuzz-verified.
@@ -41,7 +41,7 @@ If partial match (similar but different code path), proceed but reference the re
 - **Lesson**: "Linked list ops are correct — sentinel handling at L272 is the key"
 
 ### FP-C03: Fill loop rounding DoS
-- **Scope**: [clob-auditor, economic-analyst, fuzz-writer]
+- **Scope**: []
 - **Contracts**: CLOBHelper.sol (calculateFixedInput, calculateOutput)
 - **Vector**: Rounding in fill loop causes accumulated error DoS or fund extraction
 - **Why false**: Rounds UP favoring makers. Error bounded by 2*(sqrtPriceX96/Q96+1) wei/step. Executor-controlled fill params. At extreme prices rounding ~500M wei but still favorable direction.
@@ -51,7 +51,7 @@ If partial match (similar but different code path), proceed but reference the re
 - **Lesson**: "Direction of rounding matters more than magnitude — UP = maker-favorable = safe"
 
 ### FP-C04: GroupKey encoding collision
-- **Scope**: [clob-auditor]
+- **Scope**: []
 - **Contracts**: CLOBHelper.sol
 - **Vector**: GroupKey bit packing (address+uint16+uint8) might collide
 - **Why false**: No bit overlap: 160+16+8=184 bits, well within uint256. Deterministic encoding.
@@ -61,7 +61,7 @@ If partial match (similar but different code path), proceed but reference the re
 - **Lesson**: "Count the bits — 184 < 256, no collision possible"
 
 ### FP-C05: Cross-function reentrancy via ICLOBHook
-- **Scope**: [clob-auditor, cross-contract-tracer]
+- **Scope**: []
 - **Contracts**: CLOBTransferHandler.sol
 - **Vector**: Hook callbacks enable cross-function reentrancy
 - **Why false**: All entry points use nonReentrant modifier. ICLOBHook defines only validateMaker/validateExecutor — no state-changing callbacks.
@@ -71,7 +71,7 @@ If partial match (similar but different code path), proceed but reference the re
 - **Lesson**: "nonReentrant on all entries + view-only callbacks = no reentrancy surface"
 
 ### FP-C06: initializeOrderBookKey front-running
-- **Scope**: [clob-auditor]
+- **Scope**: []
 - **Contracts**: CLOBTransferHandler.sol
 - **Vector**: Front-runner calls initializeOrderBookKey first to control key
 - **Why false**: Key is deterministic from pool params. Re-initialization is a no-op.
@@ -81,7 +81,7 @@ If partial match (similar but different code path), proceed but reference the re
 - **Lesson**: "Deterministic + idempotent = front-running irrelevant"
 
 ### FP-C07: afterSwapRefund token extraction
-- **Scope**: [clob-auditor, economic-analyst]
+- **Scope**: []
 - **Contracts**: CLOBTransferHandler.sol
 - **Vector**: Attacker manipulates afterSwapRefund to extract excess tokens
 - **Why false**: Refund bounded by AMM output amount. Cannot exceed what the swap produced.
@@ -91,7 +91,7 @@ If partial match (similar but different code path), proceed but reference the re
 - **Lesson**: "Refund is bounded by AMM output — check the bound, not just the flow"
 
 ### FP-C08: Missing hook callbacks (H-01 family)
-- **Scope**: [clob-auditor, cross-contract-tracer]
+- **Scope**: []
 - **Contracts**: CLOBTransferHandler.sol, ICLOBHook.sol
 - **Vector**: Missing hook callbacks allow bypassing validation
 - **Why false**: ICLOBHook defines only validateMaker/validateExecutor. No other callbacks expected.
@@ -101,7 +101,7 @@ If partial match (similar but different code path), proceed but reference the re
 - **Lesson**: "Check the interface definition — if no callback exists, it can't be missing"
 
 ### FP-C09: makerTokenBalance overflow
-- **Scope**: [clob-auditor]
+- **Scope**: []
 - **Contracts**: CLOBTransferHandler.sol
 - **Vector**: Overflow in makerTokenBalance tracking
 - **Why false**: Checked arithmetic (Solidity 0.8.24). Infeasible token amounts required.
@@ -111,7 +111,7 @@ If partial match (similar but different code path), proceed but reference the re
 - **Lesson**: "Solidity 0.8+ checked arithmetic — overflow requires > uint256 tokens"
 
 ### FP-C10: Stale tail sentinel
-- **Scope**: [clob-auditor, fuzz-writer]
+- **Scope**: []
 - **Contracts**: CLOBHelper.sol
 - **Vector**: Tail sentinel becomes stale after list operations
 - **Why false**: traverseCLOB at L272 correctly clears stale sentinel.
@@ -121,7 +121,7 @@ If partial match (similar but different code path), proceed but reference the re
 - **Lesson**: "Sentinel clearing at L272 — verify the exact line"
 
 ### FP-C11: Self-trade profitability
-- **Scope**: [clob-auditor, economic-analyst]
+- **Scope**: []
 - **Contracts**: CLOBTransferHandler.sol
 - **Vector**: Self-trading (maker=executor) extracts profit
 - **Why false**: AMM mediates all fills. Self-trade is always negative-sum due to fees. Economic model confirms (clob_self_trade.py).
@@ -134,7 +134,7 @@ If partial match (similar but different code path), proceed but reference the re
 
 ## Permit Domain 
 ### FP-P01: tokenIn not in additionalDataHash
-- **Scope**: [permit-auditor]
+- **Scope**: []
 - **Contracts**: PermitTransferHandler.sol
 - **Vector**: tokenIn excluded from signed data allows substitution
 - **Why false**: PermitC signs the token directly in the permit struct, not via additionalData.
@@ -144,7 +144,7 @@ If partial match (similar but different code path), proceed but reference the re
 - **Lesson**: "Check WHERE the field is signed, not IF — PermitC signs token in the struct"
 
 ### FP-P02: permitProcessor substitution
-- **Scope**: [permit-auditor, cross-contract-tracer]
+- **Scope**: []
 - **Contracts**: PermitTransferHandler.sol
 - **Vector**: Attacker substitutes a malicious permitProcessor
 - **Why false**: AMM balance-check mitigates. Even with wrong processor, AMM verifies token balances.
@@ -154,7 +154,7 @@ If partial match (similar but different code path), proceed but reference the re
 - **Lesson**: "AMM balance check is the backstop even if processor is wrong"
 
 ### FP-P03: FOK cosignature nonce 0 reuse
-- **Scope**: [permit-auditor]
+- **Scope**: []
 - **Contracts**: PermitTransferHandler.sol
 - **Vector**: Fill-or-kill orders with nonce 0 can be replayed
 - **Why false**: PermitC consumes the nonce. Once used, replay reverts.
@@ -164,7 +164,7 @@ If partial match (similar but different code path), proceed but reference the re
 - **Lesson**: "PermitC nonce consumption is the guard — check PermitC, not the handler"
 
 ### FP-P04: Partial fill reusable nonce 0
-- **Scope**: [permit-auditor]
+- **Scope**: []
 - **Contracts**: PermitTransferHandler.sol
 - **Vector**: Partial fills with nonce 0 allow infinite reuse
 - **Why false**: Intentional design. Cosignature commits to the specific executor, preventing unauthorized fills.
@@ -174,7 +174,7 @@ If partial match (similar but different code path), proceed but reference the re
 - **Lesson**: "Nonce 0 reuse is intentional for partial fills — cosig is the guard, not nonce"
 
 ### FP-P05: fillPermittedOrderERC20 return value ignored
-- **Scope**: [permit-auditor]
+- **Scope**: []
 - **Contracts**: PermitTransferHandler.sol
 - **Vector**: Ignored return value allows underfilled orders to succeed
 - **Why false**: PermitC reverts on underfill. No silent failure path.
@@ -184,7 +184,7 @@ If partial match (similar but different code path), proceed but reference the re
 - **Lesson**: "PermitC reverts, doesn't return false — check the callee behavior"
 
 ### FP-P06: Proportional cap arithmetic
-- **Scope**: [permit-auditor, economic-analyst]
+- **Scope**: []
 - **Contracts**: PermitTransferHandler.sol
 - **Vector**: Rounding in proportional cap calculation extracts value
 - **Why false**: Self-inflicted by signer params. Signer sets the cap, attacker can't manipulate.
@@ -194,7 +194,7 @@ If partial match (similar but different code path), proceed but reference the re
 - **Lesson**: "If the signer controls the params, arithmetic issues are self-inflicted"
 
 ### FP-P07: swapOrder.deadline not signed
-- **Scope**: [permit-auditor]
+- **Scope**: []
 - **Contracts**: PermitTransferHandler.sol
 - **Vector**: Unsigned deadline allows manipulation
 - **Why false**: No security impact. Deadline is executor-enforced, not signer-critical.
@@ -204,7 +204,7 @@ If partial match (similar but different code path), proceed but reference the re
 - **Lesson**: "Not everything needs signing — assess who benefits from the field"
 
 ### FP-P08: Cosignature expiration < vs <=
-- **Scope**: [permit-auditor]
+- **Scope**: []
 - **Contracts**: PermitTransferHandler.sol
 - **Vector**: Off-by-one in cosignature expiration check
 - **Why false**: Consistent convention across all timestamp comparisons. No exploitable window.
@@ -214,7 +214,7 @@ If partial match (similar but different code path), proceed but reference the re
 - **Lesson**: "Check convention consistency — if all comparisons use same operator, it's intentional"
 
 ### FP-P09: Signature malleability
-- **Scope**: [permit-auditor]
+- **Scope**: []
 - **Contracts**: PermitTransferHandler.sol
 - **Vector**: ECDSA signature malleability allows replay
 - **Why false**: EIP-2 s-range enforced. Only low-s signatures accepted.
@@ -224,7 +224,7 @@ If partial match (similar but different code path), proceed but reference the re
 - **Lesson**: "EIP-2 check = malleability resolved. Standard since 2019."
 
 ### FP-P10: Cross-permit data corruption
-- **Scope**: [permit-auditor]
+- **Scope**: []
 - **Contracts**: PermitTransferHandler.sol
 - **Vector**: Multiple permits in same tx corrupt each other's data
 - **Why false**: Separate nonces per permit. No shared state between permits.
@@ -237,7 +237,7 @@ If partial match (similar but different code path), proceed but reference the re
 
 ## Hook Domain 
 ### FP-H01: Tstorish sstore fallback cross-tx
-- **Scope**: [hook-auditor, cross-contract-tracer]
+- **Scope**: []
 - **Contracts**: AMMStandardHook.sol
 - **Vector**: Tstorish sstore fallback persists across transactions
 - **Why false**: Cancun tstore is zeroed at transaction start. Fallback only activates on non-cancun chains (not our target).
@@ -247,7 +247,7 @@ If partial match (similar but different code path), proceed but reference the re
 - **Lesson**: "Cancun tstore zeroes at tx start — cross-tx persistence impossible"
 
 ### FP-H02: SqrtPriceCalculator overflow
-- **Scope**: [hook-auditor, fuzz-writer]
+- **Scope**: []
 - **Contracts**: SqrtPriceCalculator.sol
 - **Vector**: Overflow in sqrt price computation
 - **Why false**: Loop guards + standard Solady sqrt implementation. Fuzz-verified (9 tests).
@@ -257,7 +257,7 @@ If partial match (similar but different code path), proceed but reference the re
 - **Lesson**: "Solady sqrt is battle-tested — focus on the loop guard, not the math"
 
 ### FP-H03: Fee calculation overflow
-- **Scope**: [hook-auditor, economic-analyst]
+- **Scope**: []
 - **Contracts**: AMMStandardHook.sol
 - **Vector**: Fee calculation overflows with large amounts
 - **Why false**: FullMath uses 512-bit intermediates. Overflow impossible with valid inputs.
@@ -267,7 +267,7 @@ If partial match (similar but different code path), proceed but reference the re
 - **Lesson**: "FullMath 512-bit = overflow-proof for any realistic token amount"
 
 ### FP-H04: Directional pricing bypass
-- **Scope**: [hook-auditor, economic-analyst]
+- **Scope**: []
 - **Contracts**: AMMStandardHook.sol
 - **Vector**: Directional pricing allows one-sided bounds bypass
 - **Why false**: Intentional design for healing trades. When price is out of bounds in one direction, trades that push it back are allowed.
@@ -277,7 +277,7 @@ If partial match (similar but different code path), proceed but reference the re
 - **Lesson**: "Healing trades are intentional — check the NatSpec/design docs before flagging"
 
 ### FP-H05: validateHandlerOrder read-only reentrancy
-- **Scope**: [hook-auditor]
+- **Scope**: []
 - **Contracts**: AMMStandardHook.sol
 - **Vector**: validateHandlerOrder susceptible to read-only reentrancy
 - **Why false**: Pure view function. No state reads that could be manipulated.
@@ -287,7 +287,7 @@ If partial match (similar but different code path), proceed but reference the re
 - **Lesson**: "View functions can't be victims of read-only reentrancy — they have no state to corrupt"
 
 ### FP-H06: Pool creation bounds inconsistency
-- **Scope**: [hook-auditor, registry-auditor]
+- **Scope**: []
 - **Contracts**: AMMStandardHook.sol, CreatorHookSettingsRegistry.sol
 - **Vector**: Pricing bounds format mismatch between pool creation and enforcement
 - **Why false**: Both use Q64.96 format consistently. Verified format at all usage sites.
@@ -297,7 +297,7 @@ If partial match (similar but different code path), proceed but reference the re
 - **Lesson**: "Verify the format at BOTH ends — creation AND enforcement"
 
 ### FP-H07: Fee BPS > 10000
-- **Scope**: [hook-auditor, registry-auditor]
+- **Scope**: []
 - **Contracts**: AMMStandardHook.sol
 - **Vector**: Fee basis points set above 100% (10000 BPS)
 - **Why false**: Self-inflicted by token owner. Caller-controlled parameter.
@@ -307,7 +307,7 @@ If partial match (similar but different code path), proceed but reference the re
 - **Lesson**: "Owner-set params = self-inflicted. Not a vulnerability."
 
 ### FP-H08: validateAddLiquidity tradingIsPaused
-- **Scope**: [hook-auditor]
+- **Scope**: []
 - **Contracts**: AMMStandardHook.sol
 - **Vector**: Adding liquidity while trading is paused enables exploit
 - **Why false**: Intentional design. Paused trading blocks swaps, not liquidity adds.
@@ -317,7 +317,7 @@ If partial match (similar but different code path), proceed but reference the re
 - **Lesson**: "Paused = swaps blocked, not liquidity. Read the spec."
 
 ### FP-H09: Double bounds.isSet check
-- **Scope**: [hook-auditor]
+- **Scope**: []
 - **Contracts**: AMMStandardHook.sol (L211, L217)
 - **Vector**: Redundant bounds.isSet check indicates logic error
 - **Why false**: Dead inner check. No security impact. Gas waste only.
@@ -327,7 +327,7 @@ If partial match (similar but different code path), proceed but reference the re
 - **Lesson**: "Redundant checks are gas waste, not bugs"
 
 ### FP-H10: Double storage read in _getOrFetchTokenSettings
-- **Scope**: [hook-auditor]
+- **Scope**: []
 - **Contracts**: AMMStandardHook.sol
 - **Vector**: Double storage read indicates stale data risk
 - **Why false**: Gas waste only. Both reads return same value within a tx.
@@ -337,7 +337,7 @@ If partial match (similar but different code path), proceed but reference the re
 - **Lesson**: "Double read = gas waste. Same slot, same tx = same value."
 
 ### FP-H11: Operator precedence min | max == 0
-- **Scope**: [hook-auditor]
+- **Scope**: []
 - **Contracts**: AMMStandardHook.sol
 - **Vector**: Bitwise OR precedence might cause incorrect zero check
 - **Why false**: Confirmed correct. `(min | max) == 0` checks both are zero, which is the intent.
@@ -347,7 +347,7 @@ If partial match (similar but different code path), proceed but reference the re
 - **Lesson**: "Operator precedence: `|` before `==` is correct for 'both zero' check"
 
 ### FP-H12: Flag compatibility mismatch
-- **Scope**: [hook-auditor, registry-auditor]
+- **Scope**: []
 - **Contracts**: AMMStandardHook.sol
 - **Vector**: Token hook flags don't match pool's expected flags
 - **Why false**: AMM validates flag compatibility at pool setup time. Mismatch rejected.
@@ -360,7 +360,7 @@ If partial match (similar but different code path), proceed but reference the re
 
 ## Registry Domain 
 ### FP-R01: Pricing bounds min>0, max=0 locks trading
-- **Scope**: [registry-auditor, hook-auditor]
+- **Scope**: []
 - **Contracts**: CreatorHookSettingsRegistry.sol
 - **Vector**: Setting min>0 with max=0 permanently locks trading
 - **Why false**: Enforcement skips max check when max=0. Trading continues normally.
@@ -370,7 +370,7 @@ If partial match (similar but different code path), proceed but reference the re
 - **Lesson**: "max=0 means 'no upper bound', not 'zero bound'"
 
 ### FP-R02: hooksToSync revert griefing
-- **Scope**: [registry-auditor]
+- **Scope**: []
 - **Contracts**: CreatorHookSettingsRegistry.sol
 - **Vector**: Malicious hook in sync array causes revert, blocking all updates
 - **Why false**: Caller-controlled. Only token owner sets hooks to sync.
@@ -380,7 +380,7 @@ If partial match (similar but different code path), proceed but reference the re
 - **Lesson**: "Owner-controlled arrays = self-inflicted DoS, not griefing"
 
 ### FP-R03: initialized flag desync race
-- **Scope**: [registry-auditor]
+- **Scope**: []
 - **Contracts**: CreatorHookSettingsRegistry.sol
 - **Vector**: Race between initialization and settings update causes desync
 - **Why false**: Hook re-fetches settings on each call. At worst, gas waste from redundant fetch.
@@ -390,7 +390,7 @@ If partial match (similar but different code path), proceed but reference the re
 - **Lesson**: "Re-fetch on each call = eventual consistency. No persistent desync."
 
 ### FP-R04: Whitelist ID uint56 overflow
-- **Scope**: [registry-auditor]
+- **Scope**: []
 - **Contracts**: CreatorHookSettingsRegistry.sol
 - **Vector**: Whitelist ID overflow wraps around, reusing old IDs
 - **Why false**: uint56 max = 7.2e16. Economically infeasible to create that many whitelists.
@@ -400,7 +400,7 @@ If partial match (similar but different code path), proceed but reference the re
 - **Lesson**: "Calculate the actual number needed to overflow — if infeasible, it's not a bug"
 
 ### FP-R05: setPoolDisabled CEI violation
-- **Scope**: [registry-auditor]
+- **Scope**: []
 - **Contracts**: CreatorHookSettingsRegistry.sol (L424)
 - **Vector**: External call before state write violates CEI pattern
 - **Why false**: AMM is immutable and trusted. getPoolState is view-only. No reentrancy surface.
@@ -410,7 +410,7 @@ If partial match (similar but different code path), proceed but reference the re
 - **Lesson**: "CEI violation with immutable+view callee = benign. Check the callee, not just the pattern."
 
 ### FP-R06: LibOwnership access control bypass
-- **Scope**: [registry-auditor]
+- **Scope**: []
 - **Contracts**: CreatorHookSettingsRegistry.sol, LibOwnership.sol
 - **Vector**: LibOwnership access control can be bypassed
 - **Why false**: Correct implementation. Covers all admin function paths.
@@ -420,7 +420,7 @@ If partial match (similar but different code path), proceed but reference the re
 - **Lesson**: "Trace every admin function to its modifier — if all covered, it's correct"
 
 ### FP-R07: Batch atomicity setPricingBounds
-- **Scope**: [registry-auditor]
+- **Scope**: []
 - **Contracts**: CreatorHookSettingsRegistry.sol
 - **Vector**: Batch setPricingBounds partial failure leaves inconsistent state
 - **Why false**: Atomic revert on any failure. Caller controls inputs.
@@ -430,7 +430,7 @@ If partial match (similar but different code path), proceed but reference the re
 - **Lesson**: "Atomic revert = all-or-nothing. No partial state."
 
 ### FP-R08: Event emission correctness
-- **Scope**: [registry-auditor]
+- **Scope**: []
 - **Contracts**: CreatorHookSettingsRegistry.sol
 - **Vector**: Events emit incorrect or missing data
 - **Why false**: All event emission combinations verified correct.
@@ -440,7 +440,7 @@ If partial match (similar but different code path), proceed but reference the re
 - **Lesson**: "Enumerate all event paths — if all correct, move on"
 
 ### FP-R09: Renounce then re-claim ownership
-- **Scope**: [registry-auditor]
+- **Scope**: []
 - **Contracts**: CreatorHookSettingsRegistry.sol
 - **Vector**: After renouncing ownership, attacker re-claims it
 - **Why false**: Permanently locked. No reclaim path exists.
@@ -456,7 +456,7 @@ If partial match (similar but different code path), proceed but reference the re
 > These were submitted and rejected. They are technically accurate observations but below the contest vulnerability threshold. Do NOT re-submit variants of these.
 
 ### FP-SUB01: setTokenSettings initialized flag desync
-- **Scope**: [registry-auditor, hook-auditor]
+- **Scope**: []
 - **Contracts**: CreatorHookSettingsRegistry.sol (L397)
 - **Vector**: `settings` (calldata) synced to hooks instead of `memSettings` (initialized=true)
 - **Why rejected**: Gas waste only. All real settings fields sync correctly. Extra SLOAD per swap is not a security issue.
@@ -466,7 +466,7 @@ If partial match (similar but different code path), proceed but reference the re
 - **Lesson**: "Gas optimization hints are not vulnerabilities even when wrong"
 
 ### FP-SUB02: validateHandlerOrder missing sqrtPriceX96==0 check
-- **Scope**: [hook-auditor]
+- **Scope**: []
 - **Contracts**: AMMStandardHook.sol (L215)
 - **Vector**: computeRatioX96 overflow returns 0, bypasses pricing bounds in view function
 - **Why rejected**: View function, unrealistic overflow inputs (amount1/amount0 >= 2^128), current CLOB handler constrains amounts. Inconsistency with _validatePricingBounds is cosmetic.
@@ -476,7 +476,7 @@ If partial match (similar but different code path), proceed but reference the re
 - **Lesson**: "View function inconsistencies with unrealistic inputs are not vulnerabilities"
 
 ### FP-SUB03: Fixed Pool double-rounding 1 wei overpayment
-- **Scope**: [pool-auditor]
+- **Scope**: []
 - **Contracts**: FixedHelper.sol (L908, L1655)
 - **Vector**: Height-splitting rounds each leg up independently, sum exceeds single-shot ceiling by 1 wei
 - **Why rejected**: Dust-level (1 wei). Not economically exploitable.
@@ -486,7 +486,7 @@ If partial match (similar but different code path), proceed but reference the re
 - **Lesson**: "1 wei precision errors are below every contest's threshold"
 
 ### FP-SUB04: getCurrentPriceX96 returns stale cached price
-- **Scope**: [pool-auditor]
+- **Scope**: []
 - **Contracts**: SingleProviderPoolType.sol (L437-442)
 - **Vector**: Returns lastSqrtPriceX96 (cached from last swap) instead of querying hook for live price
 - **Why rejected**: Standard AMM design pattern. Same as Uniswap V3 slot0.sqrtPriceX96. Not a bug.
@@ -496,7 +496,7 @@ If partial match (similar but different code path), proceed but reference the re
 - **Lesson**: "Cached view functions are a design pattern, not a vulnerability"
 
 ### FP-SUB05: Zero-amount swaps waste gas
-- **Scope**: [pool-auditor]
+- **Scope**: []
 - **Contracts**: DynamicPoolType.sol (L398-488, L517-607)
 - **Vector**: amountIn=0 or amountOut=0 accepted, wastes ~15.6K gas per no-op swap
 - **Why rejected**: Caller wastes their own gas. No economic harm to protocol or other users.
@@ -506,7 +506,7 @@ If partial match (similar but different code path), proceed but reference the re
 - **Lesson**: "If the caller can only harm themselves, it's not a vulnerability"
 
 ### FP-SUB06: swapExtraData silent fallback on malformed input
-- **Scope**: [pool-auditor]
+- **Scope**: []
 - **Contracts**: DynamicPoolType.sol (L433-441, L552-560)
 - **Vector**: Non-32-byte swapExtraData silently uses default price limits instead of reverting
 - **Why rejected**: Fail-open on malformed input is a design choice. Integrator error, not protocol vulnerability. Caller's limitAmount still protects them.
@@ -516,7 +516,7 @@ If partial match (similar but different code path), proceed but reference the re
 - **Lesson**: "Fail-open on caller-controlled malformed input is not a vulnerability when other protections exist"
 
 ### FP-SUB07: Zero-liquidity tick traversal gas griefing
-- **Scope**: [pool-auditor]
+- **Scope**: []
 - **Contracts**: DynamicHelper.sol (L350-433)
 - **Vector**: Unbounded while loop traverses empty tick words, ~77% gas premium with tickSpacing=1
 - **Why rejected**: Identical to Uniswap V3 design. Known AMM property, not a novel finding. "Invalid per guardian triage."
@@ -526,7 +526,7 @@ If partial match (similar but different code path), proceed but reference the re
 - **Lesson**: "If it's the same as Uniswap V3, it's not a finding — it's the design"
 
 ### FP-SUB08: feeOnTop not signed in permit SWAP_TYPEHASH
-- **Scope**: [permit-auditor]
+- **Scope**: []
 - **Contracts**: PermitTransferHandler.sol (L226-239), Constants.sol (L35)
 - **Vector**: Executor can set arbitrary feeOnTop since it's not in the EIP-712 signed data
 - **Why rejected**: Intentional design. Signer's protection is limitAmount (caps total expenditure). Test helper comments `/*feeOnTop*/` confirming deliberate exclusion. Executor (trusted relayer) controls feeOnTop by design. "Invalid per guardian triage."
@@ -539,7 +539,7 @@ If partial match (similar but different code path), proceed but reference the re
 
 ## Cross-Domain
 ### FP-X01: Transient storage shared slot overwrite (by-design)
-- **Scope**: [hook-auditor, cross-contract-tracer, clob-auditor]
+- **Scope**: []
 - **Contracts**: AMMStandardHook.sol, AMMModule.sol (lbamm-core/)
 - **Vector**: AMM calls beforeSwap per-token (tokenIn then tokenOut), both receive same params.amount. Shared transient slot 0xFFFFFFFFFFFFFFFF overwritten by second call.
 - **Why false**: Fragile-by-design, NOT exploitable. afterSwap only reads the second value, which is the correct one for its token. The "overwrite" is intentional sequencing.
@@ -549,7 +549,7 @@ If partial match (similar but different code path), proceed but reference the re
 - **Lesson**: "Transient storage shared across hook calls is by-design in LB AMM. Second write is the intended value."
 
 ### FP-X02: Sandwich attack on CLOB/AMM
-- **Scope**: [economic-analyst, clob-auditor, red-team-adversary]
+- **Scope**: []
 - **Contracts**: CLOBTransferHandler.sol, AMMStandardHook.sol
 - **Vector**: MEV sandwich attack extracts value from CLOB fills
 - **Why false**: Standard AMM sandwich behavior. Breakeven at ~220 BPS — not protocol-specific, same as any Uniswap-style AMM. No amplification from CLOB integration.
@@ -563,7 +563,7 @@ If partial match (similar but different code path), proceed but reference the re
 ## Pool Type Domain (amm-pool-type-dynamic, lbamm-pool-type-fixed) — R11 Pass
 
 ### FP-PT01: Operator precedence bug `redeposited0 | redeposited1 == 0`
-- **Scope**: [any agent analyzing FixedHelper.sol]
+- **Scope**: []
 - **Contracts**: lbamm-pool-type-fixed/src/libraries/FixedHelper.sol L69
 - **Vector**: `redeposited0 | redeposited1 == 0` parsed as `redeposited0 | (redeposited1 == 0)` — DoS on withdrawLiquidity
 - **Why false**: **Solidity `|` has HIGHER precedence than `==`** (unlike C). Expression is `(redeposited0 | redeposited1) == 0`. This is correct: reverts only when both amounts are zero (full position cleared). Same applies to L799 (`informationNextHeightBelow | informationNextHeightAbove == 0`) and L1469 (`amount0 | amount1 > type(uint128).max`). All three are syntactically and semantically correct. Verified with forge test.
@@ -573,7 +573,7 @@ If partial match (similar but different code path), proceed but reference the re
 - **Lesson**: "In Solidity, bitwise `|` binds TIGHTER than `==` and `>` (order: |, then </>/<=/>=, then ==). This is OPPOSITE to C/Java. The classic C footgun `a | b == 0` means `a | (b == 0)` in C, but in Solidity it means `(a | b) == 0`. Always verify with forge test."
 
 ### FP-PT02: DynamicPoolType missing onlyAMM access control
-- **Scope**: [any agent analyzing DynamicPoolType.sol]
+- **Scope**: []
 - **Contracts**: amm-pool-type-dynamic/src/DynamicPoolType.sol (all external functions)
 - **Vector**: No `onlyAMM` guard allows any caller to manipulate pool state
 - **Why false**: All state-mutating functions use `globalState[msg.sender]` as the namespace key. Direct calls by non-AMM callers write to `globalState[callerAddress]` which is completely isolated from `globalState[AMM_address]`. The AMM's pools are under `globalState[AMM_address]` and cannot be affected by external callers. This is a deliberate design difference from FixedPoolType (which has onlyAMM because it uses a shared pool-ID key). The permissionless design is intentional.
@@ -583,7 +583,7 @@ If partial match (similar but different code path), proceed but reference the re
 - **Lesson**: "DynamicPoolType namespacing via msg.sender provides caller isolation without an explicit onlyAMM guard. Verify namespace isolation before reporting access control bugs."
 
 ### FP-PT03: FixedPoolType swapByInput→swapByOutput internal bypass at 100% fee
-- **Scope**: [any agent analyzing FixedHelper.swapByInput]
+- **Scope**: []
 - **Contracts**: lbamm-pool-type-fixed/src/libraries/FixedHelper.sol L910-L915
 - **Vector**: Internal re-invocation of swapByOutput bypasses 100% poolFeeBPS check, causing division-by-zero
 - **Why false**: At poolFeeBPS=100% (MAX_BPS), `amountInAfterFees = amountIn - lpFeeAmount = amountIn - amountIn = 0`. Then `amountOut = calculateFixedSwapByRatioRoundingDown(0, ...) = 0`. The condition `if (amountOut > swapCache.expectedReserve)` becomes `0 > expectedReserve` which is false for any pool with reserves. The internal re-invocation never triggers at 100% fee. The structural coupling exists but the path is unreachable.
@@ -593,7 +593,7 @@ If partial match (similar but different code path), proceed but reference the re
 - **Lesson**: "Trace the 100% fee path through all intermediate calculations before assuming the guard bypass is reachable."
 
 ### FP-PT04: swapExtraData non-32-byte length silently disables slippage
-- **Scope**: [any agent analyzing DynamicPoolType]
+- **Scope**: []
 - **Contracts**: amm-pool-type-dynamic/src/DynamicPoolType.sol L433-441, L552-560
 - **Vector**: Non-32-byte swapExtraData silently sets maximum price limit (no slippage protection)
 - **Why false**: Already documented in MEMORY.md as a known gotcha. This is a caller-controlled input error (self-inflicted). No attacker can force the victim to pass wrong-length data. Not exploitable for third-party profit.
