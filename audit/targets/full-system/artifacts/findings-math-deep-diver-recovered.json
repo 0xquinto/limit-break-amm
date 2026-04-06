@@ -1,0 +1,53 @@
+{
+  "agent": "math-deep-diver",
+  "wave": 1,
+  "target": "full-system",
+  "recovery_source": "trace",
+  "findings": [],
+  "vectors_ruled_out": [],
+  "test_files_created": [
+    {
+      "path": "/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-hooks-and-handlers/test/AuditMathDeepDiverCLOB.t.sol",
+      "exists_on_disk": true
+    },
+    {
+      "path": "/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/amm-pool-type-dynamic/test/audit/AuditComposabilityChecklist.t.sol",
+      "exists_on_disk": true
+    },
+    {
+      "path": "/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/amm-pool-type-dynamic/test/CrossBoundaryAudit.t.sol",
+      "exists_on_disk": true
+    },
+    {
+      "path": "/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-core/test/AuditInsolvencyPhaseC.t.sol",
+      "exists_on_disk": true
+    },
+    {
+      "path": "/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-pool-type-fixed/test/AuditMathDeepDiverW1R12.t.sol",
+      "exists_on_disk": true
+    },
+    {
+      "path": "/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-pool-type-fixed/test/AuditMemoryRefCheck.t.sol",
+      "exists_on_disk": true
+    },
+    {
+      "path": "/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-hooks-and-handlers/test/AuditMathDeepDiverCLOB.t.sol",
+      "exists_on_disk": true
+    }
+  ],
+  "checklist_coverage": {},
+  "summary": "RECOVERED FROM TRACE TEXT:\n[Turn 120] So `amountIn` and `amountOut` come from the AMM. The AMM computes these via pool type swap calculations. The CLOB handler receives `amountOut` and uses it as the upper bound for `fillOutputRemaining`. The `calculateFixedInput` rounds UP, meaning `stepOutput` is >= the true output. This means `fillOu\n[Turn 87] Now I understand the H_MATH_06 failure. My test inputs were wrong \u2014 the function has specific preconditions about the relationship between parameters. Let me also analyze the round-trip failures more carefully. The core issue: when `r1=1` (from the H_MATH_10 counterexample), a tiny forward output ge\n[Turn 84] 4 failures to analyze. Let me investigate each one carefully. First, the H_MATH_05 overflow and the two round-trip ratio tests:\n[Turn 184] Now let me read the SqrtPriceMath amount delta functions to complete the rounding map, then write the findings JSON:\n[Turn 187] Now I have the complete rounding map. Let me check the Halmos agent status and write the findings sidecar:",
+  "recovery_quality": "partial",
+  "recovery_timestamp": "2026-04-06T14:26:57.414561+00:00",
+  "test_file": "",
+  "scope": [
+    "lbamm-pool-type-fixed/src/libraries/FixedHelper.sol",
+    "amm-pool-type-dynamic/src/libraries/DynamicHelper.sol",
+    "lbamm-core/lib/tm-core-lib/src/utils/math/FullMath.sol",
+    "amm-pool-type-dynamic/src/libraries/SqrtPriceMath.sol",
+    "amm-pool-type-dynamic/src/libraries/SwapMath.sol",
+    "lbamm-core/src/libraries/FeeHelper.sol",
+    "lbamm-hooks-and-handlers/src/handlers/clob/libraries/CLOBHelper.sol"
+  ],
+  "_note": "Recovered from truncated Write call in trace"
+}

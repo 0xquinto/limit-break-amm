@@ -1,0 +1,138 @@
+{
+  "agent": "price-distorter",
+  "wave": 1,
+  "target": "full-system",
+  "findings": [],
+  "vectors_ruled_out": [
+    {
+      "id": "VR-PD-01",
+      "title": "Hook price manipulation — SingleProviderPoolType does not validate hook price bounds",
+      "hypothesis": "H1 / C29",
+      "description": "SingleProviderPoolType gets sqrtPriceX96 from ILimitBreakAMMHook.getSqrtPriceX96(). There is no min/max clamp on the returned value. A malicious hook (controlled by an attacker) could return sqrtPriceX96=1 or sqrtPriceX96=type(uint160).max. However, the attacker must be the pool creator to register a custom hook, and must also be the pool's allowed LP to add liquidity. An attacker who controls both the hook and the LP position gains nothing from price manipulation beyond what they already control. No external victim LP exists in SingleProviderPoolType. The hook price gate is enforced at the AMM level (pool creation) and the protocol's design intent is that the hook author IS the LP. Ruled out: no victim, no profit.",
+      "severity": "info",
+      "status": "ruled_out",
+      "evidence": "test_C29_hookZeroPriceReverts, test_C29_hookMaxPriceNoOverflow in AuditPriceDistorterSP.t.sol"
+    },
+    {
+      "id": "VR-PD-02",
+      "title": "Double-truncation in calculateFixedInput/calculateFixedOutput — non-exploitable round-trip deficit",
+      "hypothesis": "H2 / C20",
+      "description": "calculateFixedInput uses double mulDiv (round DOWN). calculateFixedOutput uses double mulDivRoundingUp (round UP). At certain sqrtPriceX96 values, the double-truncation in step1 of calculateFixedInput creates a step1 value such that the inverse double-ceiling in calculateFixedOutput cannot fully recover to the original amountIn. Maximum observed deficit: ~200e6 wei (0.0000002 tokens). However, the attacker must pay fees on every swap. Fee at even 1 BPS = 1e14 wei per 1e18 input. The deficit (~2e8) is 6 orders of magnitude smaller than the minimum fee. An iterated extraction loop (swapByOutput to get discounted amountIn, then swapByInput to sell back) results in net LOSS. Confirmed by test_C20_exploit_iteratedExtraction (10 round-trips: net loss of 975e18 token0 due to fee dominance).",
+      "severity": "info",
+      "status": "ruled_out",
+      "evidence": "test_C20_roundTripAlwaysLoses, test_C20_fuzz_multipleAmountsAndPrices, test_C20_exploit_iteratedExtraction in AuditPriceDistorterSP.t.sol. Max deficit bounded at 1e9 wei per round-trip."
+    },
+    {
+      "id": "VR-PD-03",
+      "title": "First depositor inflation attack (C28 ERC-4626 pattern)",
+      "hypothesis": "H3 / C28",
+      "description": "SingleProviderPoolType uses exact-amount deposits, not share-based accounting. addLiquidity returns exact token amounts stored. removeLiquidity checks exact reserve amounts. There are no shares, no share price, no totalSupply to manipulate. The ERC-4626 first-depositor inflation attack is structurally inapplicable.",
+      "severity": "info",
+      "status": "not_applicable",
+      "evidence": "SingleProviderHelper.sol — addLiquidity and removeLiquidity use amount0/amount1 directly with no share math"
+    },
+    {
+      "id": "VR-PD-04",
+      "title": "Cetus-pattern overflow in computeRatioX96 (C26)",
+      "hypothesis": "H4 / C26",
+      "description": "SqrtPriceCalculator.computeRatioX96 computes sqrt(price) * 2^96 from raw token price ratios. Overflow to near-zero price would enable extracting massive output for near-zero input. Forge tests with sqrtPriceX96=1 (near-zero price) show the math correctly produces near-zero output amounts — the pool is drained of token0 for near-zero token1 input, but only when the hook itself returns near-zero price. No overflow path exists in the library that produces a near-zero result from a legitimate input. The Cetus bug required a specific tick_index overflow path that does not exist here.",
+      "severity": "info",
+      "status": "ruled_out",
+      "evidence": "test_C26_nearZeroSqrtPriceDrainsPool in AuditPriceDistorterSP.t.sol — confirmed hook must return the bad price, not computable from user input"
+    },
+    {
+      "id": "VR-PD-05",
+      "title": "Unit mismatch in price feeds — D6 token as D18 (C30, C31)",
+      "hypothesis": "H5 / C30-C31",
+      "description": "No hidden scaling in SingleProviderHelper. computeRatioX96 accepts raw sqrt price values. All internal math uses Q96 consistently. Cross-contract dimension trace: AMMModule → swapByInput/swapByOutput → calculateFixedInput/calculateFixedOutput → mulDiv/mulDivRoundingUp. Amounts are passed as raw uint256 throughout with no D6/D18 conversion. A 6-decimal token would naturally produce different amounts (1e6 USDC ≠ 1e18 WETH) but the AMM doesn't assume decimals. No unit mismatch vulnerability found.",
+      "severity": "info",
+      "status": "ruled_out",
+      "evidence": "test_C31_sixDecimalTokenCrossContractDimension in DimensionalAnalysisTests.t.sol"
+    },
+    {
+      "id": "VR-PD-06",
+      "title": "BPS denominator scaling error — fee-on-gross vs fee-on-net (C34, C39)",
+      "hypothesis": "H6 / C34-C39",
+      "description": "Input path fee uses MAX_BPS (10000) denominator: mulDivRoundingUp(amountIn, feeBPS, MAX_BPS). Output path fee uses gross-up denominator (MAX_BPS - feeBPS): mulDivRoundingUp(reserveAmountIn, feeBPS, MAX_BPS - feeBPS). Both formulas are mathematically correct and protocol-favorable. At max fee (10000 BPS), amountOut=0 (100% fee). No fee bypass, no undercollection. Division-before-multiplication patterns absent — all fee math uses mulDivRoundingUp with correct operand order.",
+      "severity": "info",
+      "status": "ruled_out",
+      "evidence": "test_C34_maxFeeGivesZeroOutput, test_C39_feeOnGrossInput, test_C39_outputPathGrossUpFormula in DimensionalAnalysisTests.t.sol"
+    },
+    {
+      "id": "VR-PD-07",
+      "title": "Fee path divergence — two fee paths produce different outputs from same input (C17)",
+      "hypothesis": "C17",
+      "description": "Input path (swapByInput): fee = mulDivRoundingUp(amountIn, feeBPS, MAX_BPS) first, then price conversion on net. Output path (swapByOutput): price conversion first, then gross-up fee on reserveAmountIn. These are mathematically different operations. Tested with fee=30 BPS, amount=5_000_000 ether: both paths produce the same amountOut when swapping equivalent token amounts. The fee path divergence is intentional design (input vs output specified swap) and does not create an exploitable arbitrage — both paths charge fees that are protocol-favorable.",
+      "severity": "info",
+      "status": "ruled_out",
+      "evidence": "test_H_R5_CP_02_feePathDivergence in AuditPriceDistorterSP.t.sol — both fee paths produce equivalent results with no exploitable divergence"
+    },
+    {
+      "id": "VR-PD-08",
+      "title": "Silent Q96 truncation at near-max sqrtPriceX96 (C38)",
+      "description": "At sqrtPriceX96 near type(uint160).max (≈1.46e48), intermediate products in calculateFixedInput and calculateFixedOutput would require up to 512-bit precision. FullMath.mulDiv handles this via uint256 phantom overflow algebra (512-bit intermediate). Tests confirm no silent truncation at extreme prices — operations either produce correct results or revert on overflow guard. No exploitable precision loss found.",
+      "severity": "info",
+      "status": "ruled_out",
+      "evidence": "test_C38_exactQ96PriceNoTruncation, test_C33_overflowAtExtremePriceAndAmount in DimensionalAnalysisTests.t.sol"
+    }
+  ],
+  "invariants_verified": [
+    {
+      "id": "INV-PD-01",
+      "invariant": "INV-SW02 No Profitable Round-Trip",
+      "description": "swapByOutput then swapByInput on same pool always results in net LOSS of token0",
+      "result": "HOLDS — confirmed by 1000-iteration fuzz test and explicit iterated extraction test",
+      "evidence": "test_C23_noProfitableRoundTrip, test_C20_exploit_iteratedExtraction"
+    },
+    {
+      "id": "INV-PD-02",
+      "invariant": "INV-SW03 Rounding Favors Protocol",
+      "description": "Sequential 1-wei swaps never decrease pool balance",
+      "result": "HOLDS — pool balance monotonically non-decreasing over 1000 sequential 1-wei swaps",
+      "evidence": "test_C24_roundingFavorsProtocol in AuditPriceDistorterSP.t.sol"
+    },
+    {
+      "id": "INV-PD-03",
+      "invariant": "Price conversion round-trip loss bounded",
+      "description": "calculateFixedOutput(calculateFixedInput(amountIn)) >= amountIn - 1e9 for all inputs",
+      "result": "HOLDS with bounded deficit — max deficit 199_994_580 wei < 1e9 bound. Non-exploitable.",
+      "evidence": "test_C20_roundTripAlwaysLoses, test_C20_fuzz_multipleAmountsAndPrices (1000 fuzz iterations)"
+    }
+  ],
+  "test_files_created": [
+    {
+      "path": "lbamm-pool-type-single-provider/test/AuditPriceDistorterSP.t.sol",
+      "description": "Main integration tests: H1-H6 hypotheses, C11 C17 C19 C20 C23 C24 C26 C29 checklist items. 99 tests, all passing.",
+      "checklist_items": ["C11", "C17", "C19", "C20", "C23", "C24", "C26", "C29"]
+    },
+    {
+      "path": "lbamm-pool-type-single-provider/test/price-distorter/DimensionalAnalysisTests.t.sol",
+      "description": "Dimensional analysis probes: C27 C28 C30 C31 C33 C34 C36 C37 C38 C39. 18 tests, all passing.",
+      "checklist_items": ["C27", "C28", "C30", "C31", "C33", "C34", "C36", "C37", "C38", "C39"]
+    }
+  ],
+  "checklist_coverage": {
+    "C11": "PASS — sqrtPriceMath bounds, direction correctness verified",
+    "C17": "PASS — fee 0/max/1/9999 all protocol-favorable",
+    "C19": "PASS — computeRatioX96 no overflow bypass",
+    "C20": "PASS — round-trip loss confirmed, deficit bounded non-exploitable",
+    "C23": "PASS — no profitable round-trip (1000 fuzz runs)",
+    "C24": "PASS — pool balance non-decreasing over 1000 sequential swaps",
+    "C26": "PASS — Cetus pattern: overflow path does not exist, hook must return bad price",
+    "C27": "PASS — all divisions confirmed protocol-favorable (Balancer pattern: N/A for SingleProviderPoolType)",
+    "C28": "N/A — SingleProviderPoolType uses exact-amount accounting, no shares",
+    "C29": "PASS — hook zero/max price: math handles correctly, no overflow",
+    "C30": "PASS — no unit mismatch in price feeds",
+    "C31": "PASS — cross-contract dimension trace: no scaling error at boundaries",
+    "C32": "N/A — feeGrowthGlobal not used in SingleProviderPoolType",
+    "C33": "PASS — FullMath phantom overflow algebra handles extreme inputs correctly",
+    "C34": "PASS — BPS denominator correct, max fee produces zero output",
+    "C35": "N/A — tick crossing not used in SingleProviderPoolType",
+    "C36": "PASS — all return paths in _splitAmountsAndFeesByHeight return consistent dimensions",
+    "C37": "PASS — no division-before-multiplication patterns in fee/price math",
+    "C38": "PASS — no silent Q96 truncation at near-max sqrtPriceX96",
+    "C39": "PASS — fee applied to gross input (correct), not net"
+  },
+  "summary": "SingleProviderPoolType math is well-hardened. All 8 price distortion hypotheses ruled out. Three key findings: (1) No profitable price manipulation possible without controlling both hook and LP position simultaneously. (2) Double-truncation in calculateFixedInput/calculateFixedOutput creates a bounded non-exploitable deficit (~2e8 wei max), dominated by even 1 BPS fees. (3) All rounding is protocol-favorable — no dust-loop drain possible. Invariants INV-SW02 and INV-SW03 hold. C-MATH checklist 19/20 items covered (C32 and C35 N/A for SingleProviderPoolType). No submittable findings.",
+  "profit_question_answer": "NO — an attacker cannot make the protocol believe inventory is worth more or less than it really is for one transaction. The hook price is controlled by the pool creator (who is also the LP), and the math contains no overflow path, unit mismatch, or rounding direction error that could be exploited by a third party."
+}

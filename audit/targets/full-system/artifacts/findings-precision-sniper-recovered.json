@@ -1,0 +1,89 @@
+{
+  "agent": "precision-sniper",
+  "wave": 1,
+  "target": "full-system",
+  "recovery_source": "trace",
+  "findings": [
+    {
+      "id": "PS-001",
+      "title": "Fee-free pass-through at minimum amounts",
+      "status": "strategic",
+      "severity": "info",
+      "checklist_items": [
+        "C3"
+      ],
+      "description": "Input swap fee = mulDiv(1, 1, 10000) = 0. A 1 wei input with 1 BPS fee pays zero fee. This is mathematically correct floor rounding but means sub-fee-threshold amounts transit fee-free.",
+      "exploit_potential": "None. The amount passing fee-free (1 wei) has negligible economic value. Output swap charges ceil(1, 1, 9999) = 1 wei fee, so the asymmetry favors protocol on reverse.",
+      "test": "test_C3_minimumFeeEdge, test_C14_zeroCostSwap",
+      "verification": "Forge test passes. Fee asymmetry confirmed: input rounds down (user pays less), output rounds up (user pays more). Net: protocol-favorable."
+    },
+    {
+      "id": "PS-002",
+      "title": "uint128 truncation in _getTokensOwed (theoretical)",
+      "status": "strategic",
+      "severity": "info",
+      "checklist_items": [
+        "C8"
+      ],
+      "description": "FullMath.mulDiv(feeGrowthDelta, liquidity, Q128) can return values > uint128.max that get silently truncated when cast to uint128. Demonstrated with delta=2^129, liquidity=uint128.max."
+    }
+  ],
+  "vectors_ruled_out": [
+    {
+      "id": "VR-TRACE-01",
+      "title": "Sidecar written and validated. Here's the summary:\n\n**Precision Sniper Final Report**\n\n- **40/40 For",
+      "description": "Sidecar written and validated. Here's the summary:\n\n**Precision Sniper Final Report**\n\n- **40/40 Forge tests passing** in `AuditPrecisionSniperFinal.t.sol`\n- **20 findings total**: 18 strategic (guard holds), 2 tactical (need integration tests), 0 confirmed exploits\n- **Sidecar**: `docs/targets/full-system/artifacts/findings-precision-sniper.json`\n\n**Key conclusions:**\n1. **All rounding favors the protocol** \u2014 input fees round down (slightly less fee), output fees round up (more fee), deposits r",
+      "severity": "info",
+      "status": "ruled_out",
+      "evidence": "trace turn 193",
+      "_recovered": true
+    }
+  ],
+  "test_files_created": [
+    {
+      "path": "/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-hooks-and-handlers/test/AuditMathDeepDiverCLOB.t.sol",
+      "exists_on_disk": true
+    },
+    {
+      "path": "/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/amm-pool-type-dynamic/test/audit/AuditComposabilityChecklist.t.sol",
+      "exists_on_disk": true
+    },
+    {
+      "path": "/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/amm-pool-type-dynamic/test/CrossBoundaryAudit.t.sol",
+      "exists_on_disk": true
+    },
+    {
+      "path": "/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-core/test/AuditInsolvencyPhaseC.t.sol",
+      "exists_on_disk": true
+    },
+    {
+      "path": "/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-pool-type-fixed/test/AuditMathDeepDiverW1R12.t.sol",
+      "exists_on_disk": true
+    },
+    {
+      "path": "/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-pool-type-fixed/test/AuditMemoryRefCheck.t.sol",
+      "exists_on_disk": true
+    },
+    {
+      "path": "/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-hooks-and-handlers/test/AuditMathDeepDiverCLOB.t.sol",
+      "exists_on_disk": true
+    },
+    {
+      "path": "/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/amm-pool-type-dynamic/test/AuditPrecisionSniperFinal.t.sol",
+      "exists_on_disk": true
+    }
+  ],
+  "checklist_coverage": {
+    "C16": "mentioned_in_trace",
+    "C19": "mentioned_in_trace",
+    "C26": "mentioned_in_trace",
+    "C30": "mentioned_in_trace"
+  },
+  "summary": "RECOVERED FROM TRACE TEXT:\n[Turn 193] Sidecar written and validated. Here's the summary:\n\n**Precision Sniper Final Report**\n\n- **40/40 Forge tests passing** in `AuditPrecisionSniperFinal.t.sol`\n- **20 findings total**: 18 strategic (guard holds), 2 tactical (need integration tests), 0 confirmed exploits\n- **Sidecar**: `docs/targets/full\n[Turn 141] Good static analysis data. The Slither findings are mostly known patterns (TickMath div-before-mul is Uniswap v3 design, BitMath shift is Solady FP). Let me now investigate the most critical remaining areas and write targeted tests. Let me look at the `_finalizeSwapCollectFundsAndDisburse` function \n[Turn 126] \n\n39 passed, 1 failed. The C16 failure is a test bug \u2014 my test doesn't properly handle the case where `x + uint128(y)` overflows but the `LiquidityMath.addDelta` correctly reverts. The counterexample: `x=46542, y=-170141183460469231731687303715884105728` (int128.min). Let me fix this and then contin\n[Turn 119] Now fix C19 \u2014 the assertion should verify that non-overflow results are still valid uint160, and that if outside valid tick range the function isn't called in production without validation. And fix C26 \u2014 the assertion fails because the ratio CAN exceed MAX_SQRT_RATIO:\n[Turn 100] The two failures are in C19 and C26 \u2014 both relate to `computeRatioX96` returning values above `MAX_SQRT_RATIO`. This is a test assertion issue, not necessarily a protocol vulnerability. Let me check if `computeRatioX96` is used unsafely anywhere:",
+  "recovery_quality": "partial",
+  "recovery_timestamp": "2026-04-06T14:26:57.415768+00:00",
+  "test_file": "amm-pool-type-dynamic/test/AuditPrecisionSniperFinal.t.sol",
+  "profit_question": "Is there an exact input that flips a branch without paying the economic cost that branch assumes?",
+  "answer": "No exploitable branch flip found. All rounding consistently favors the protocol. The fixed pool dust tolerance (1 unit) and swap-by-output +1 input tolerance are bounded and conservative.",
+  "_note": "Recovered from truncated Write call in trace"
+}

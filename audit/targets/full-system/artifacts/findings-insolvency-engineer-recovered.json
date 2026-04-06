@@ -1,0 +1,54 @@
+{
+  "agent": "insolvency-engineer",
+  "wave": 1,
+  "target": "full-system",
+  "recovery_source": "trace",
+  "findings": [],
+  "vectors_ruled_out": [
+    {
+      "id": "VR-TRACE-01",
+      "title": "Tests CB01/CB02/CB04 passed (guard holds), CB03/CB05-08 reverted with arithmetic overflow during swa",
+      "description": "Tests CB01/CB02/CB04 passed (guard holds), CB03/CB05-08 reverted with arithmetic overflow during swap execution. The overflow is likely in `swapExtraData` encoding or swap parameters. Let me read the test file and fix the failing tests.",
+      "severity": "info",
+      "status": "ruled_out",
+      "evidence": "trace turn 199",
+      "_recovered": true
+    },
+    {
+      "id": "VR-TRACE-02",
+      "title": "Now I understand the full flow. The `_setReentrancyFlags(NO_FLAGS)` at line 3190 **preserves the ENT",
+      "description": "Now I understand the full flow. The `_setReentrancyFlags(NO_FLAGS)` at line 3190 **preserves the ENTERED bit** (line 69-70 of TstorishReentrancyGuardWithFlags.sol: `flags & ~(ENTERED | NOT_ENTERED)` then `currentGuard = ... & ENTERED`). The reentrancy guard holds \u2014 re-entrant calls would revert at line 80: `if (_getTstorish(REENTRANCY_GUARD_STORAGE) & ENTERED == ENTERED)`. EXP-04 is strategic.\n\nLet me now trace the remaining attack surfaces: multi-hop denomination, output swap return values, and",
+      "severity": "info",
+      "status": "ruled_out",
+      "evidence": "trace turn 284",
+      "_recovered": true
+    }
+  ],
+  "test_files_created": [
+    {
+      "path": "/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-hooks-and-handlers/test/AuditMathDeepDiverCLOB.t.sol",
+      "exists_on_disk": true
+    },
+    {
+      "path": "/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/amm-pool-type-dynamic/test/audit/AuditComposabilityChecklist.t.sol",
+      "exists_on_disk": true
+    },
+    {
+      "path": "/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/amm-pool-type-dynamic/test/CrossBoundaryAudit.t.sol",
+      "exists_on_disk": true
+    },
+    {
+      "path": "/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-core/test/AuditInsolvencyPhaseC.t.sol",
+      "exists_on_disk": true
+    }
+  ],
+  "checklist_coverage": {
+    "C17": "mentioned_in_trace",
+    "C18": "mentioned_in_trace",
+    "C19": "mentioned_in_trace",
+    "C25": "mentioned_in_trace"
+  },
+  "summary": "RECOVERED FROM TRACE TEXT:\n[Turn 131] Now I have the full picture. The LiquidityMath \"overflow\" claim is a false positive - EVM uses 256-bit arithmetic, so `2^128-1 + 1 = 2^128` has bit 128 set and the `shr(128, z)` check catches it. Let me now focus on writing comprehensive Phase C tests for real attack vectors.\n\nLet me read key sectio\n[Turn 223] Good \u2014 `executor` is set to `msg.sender` at line 2066. This is safe \u2014 the protocol pulls tokens from the transaction sender, who must have approved the AMM. The Slither `arbitrary-send-erc20` finding is a false positive because the `from` is always `msg.sender`.\n\nNow let me check the directSwap path\n[Turn 196] While agents are working, let me run deeper exploit-focused tests. The most promising vectors are: (1) the FixedPoolType height-based dual reserves, (2) DynamicPoolType tick crossing edge cases, (3) cross-pool type composition attacks. Let me read the static analysis artifacts and write targeted tes\n[Turn 32] Now let me read additional key areas \u2014 the fee application functions, _distributeAndCollectLiquidityTokens, _validateProtocolFees, and the underflow check in _transferHookFeesByHook:\n[Turn 207] The Slither findings give me two high-value leads to investigate: the reentrancy-balance in settlement, and the arbitrary-send-erc20. Let me dig into the most promising ones:",
+  "recovery_quality": "partial",
+  "recovery_timestamp": "2026-04-06T14:26:57.413204+00:00"
+}

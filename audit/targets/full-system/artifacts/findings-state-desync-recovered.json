@@ -1,0 +1,89 @@
+{
+  "agent": "state-desync",
+  "wave": 1,
+  "target": "full-system",
+  "recovery_source": "trace",
+  "findings": [],
+  "vectors_ruled_out": [
+    {
+      "id": "VR-TRACE-01",
+      "title": "Tests CB01/CB02/CB04 passed (guard holds), CB03/CB05-08 reverted with arithmetic overflow during swa",
+      "description": "Tests CB01/CB02/CB04 passed (guard holds), CB03/CB05-08 reverted with arithmetic overflow during swap execution. The overflow is likely in `swapExtraData` encoding or swap parameters. Let me read the test file and fix the failing tests.",
+      "severity": "info",
+      "status": "ruled_out",
+      "evidence": "trace turn 199",
+      "_recovered": true
+    },
+    {
+      "id": "VR-TRACE-02",
+      "title": "Now I understand the full flow. The `_setReentrancyFlags(NO_FLAGS)` at line 3190 **preserves the ENT",
+      "description": "Now I understand the full flow. The `_setReentrancyFlags(NO_FLAGS)` at line 3190 **preserves the ENTERED bit** (line 69-70 of TstorishReentrancyGuardWithFlags.sol: `flags & ~(ENTERED | NOT_ENTERED)` then `currentGuard = ... & ENTERED`). The reentrancy guard holds \u2014 re-entrant calls would revert at line 80: `if (_getTstorish(REENTRANCY_GUARD_STORAGE) & ENTERED == ENTERED)`. EXP-04 is strategic.\n\nLet me now trace the remaining attack surfaces: multi-hop denomination, output swap return values, and",
+      "severity": "info",
+      "status": "ruled_out",
+      "evidence": "trace turn 284",
+      "_recovered": true
+    }
+  ],
+  "test_files_created": [
+    {
+      "path": "/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-hooks-and-handlers/test/AuditMathDeepDiverCLOB.t.sol",
+      "exists_on_disk": true
+    },
+    {
+      "path": "/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/amm-pool-type-dynamic/test/audit/AuditComposabilityChecklist.t.sol",
+      "exists_on_disk": true
+    },
+    {
+      "path": "/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/amm-pool-type-dynamic/test/CrossBoundaryAudit.t.sol",
+      "exists_on_disk": true
+    },
+    {
+      "path": "/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-core/test/AuditInsolvencyPhaseC.t.sol",
+      "exists_on_disk": true
+    },
+    {
+      "path": "/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-pool-type-fixed/test/AuditMathDeepDiverW1R12.t.sol",
+      "exists_on_disk": true
+    },
+    {
+      "path": "/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-pool-type-fixed/test/AuditMemoryRefCheck.t.sol",
+      "exists_on_disk": true
+    },
+    {
+      "path": "/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-hooks-and-handlers/test/AuditMathDeepDiverCLOB.t.sol",
+      "exists_on_disk": true
+    },
+    {
+      "path": "/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/amm-pool-type-dynamic/test/AuditPrecisionSniperFinal.t.sol",
+      "exists_on_disk": true
+    },
+    {
+      "path": "/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-pool-type-single-provider/test/AuditPriceDistorterSP.t.sol",
+      "exists_on_disk": true
+    },
+    {
+      "path": "/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-pool-type-single-provider/test/price-distorter/DimensionalAnalysisTests.t.sol",
+      "exists_on_disk": true
+    },
+    {
+      "path": "/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-hooks-and-handlers/test/audit/StateDesyncAudit.t.sol",
+      "exists_on_disk": true
+    },
+    {
+      "path": "/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-hooks-and-handlers/test/SqrtPrecisionAnalysis.t.sol",
+      "exists_on_disk": true
+    },
+    {
+      "path": "/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-hooks-and-handlers/test/SqrtPrecisionAnalysis2.t.sol",
+      "exists_on_disk": true
+    },
+    {
+      "path": "/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-hooks-and-handlers/test/SqrtPrecisionAnalysis3.t.sol",
+      "exists_on_disk": true
+    }
+  ],
+  "checklist_coverage": {},
+  "summary": "RECOVERED FROM TRACE TEXT:\n[Turn 122] Now I have a complete picture of the test infrastructure. Let me create the Forge tests. I'll write them in parallel: one for the SqrtPriceCalculator precision analysis, one for the reentrancy flag window, and one for the direct swap denomination consistency.\n[Turn 39] Critical discovery in `_executeQueuedHookFeesByHookTransfers` at line 3190: `_setReentrancyFlags(NO_FLAGS)` is called BEFORE executing external token transfers in the loop. Let me trace the reentrancy guard mechanism and start building tests.\n[Turn 70] Good \u2014 the reentrancy guard is NOT dropped by `_setReentrancyFlags(NO_FLAGS)`. The ENTERED bit persists. This eliminates the simple EXP-04 reentrancy vector. Now let me trace the denomination consistency vectors and set up tests.\n[Turn 76] Now I need to trace the `executeQueuedHookFeesByHookTransfers` external function call path. This is a CALL to self through the diamond proxy, while inside a reentrancy guard.",
+  "recovery_quality": "partial",
+  "recovery_timestamp": "2026-04-06T14:26:57.419114+00:00"
+}

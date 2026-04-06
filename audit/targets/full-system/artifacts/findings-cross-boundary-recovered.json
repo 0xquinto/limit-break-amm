@@ -1,0 +1,45 @@
+{
+  "agent": "cross-boundary",
+  "wave": 1,
+  "target": "full-system",
+  "recovery_source": "trace",
+  "findings": [],
+  "vectors_ruled_out": [
+    {
+      "id": "VR-TRACE-01",
+      "title": "Tests CB01/CB02/CB04 passed (guard holds), CB03/CB05-08 reverted with arithmetic overflow during swa",
+      "description": "Tests CB01/CB02/CB04 passed (guard holds), CB03/CB05-08 reverted with arithmetic overflow during swap execution. The overflow is likely in `swapExtraData` encoding or swap parameters. Let me read the test file and fix the failing tests.",
+      "severity": "info",
+      "status": "ruled_out",
+      "evidence": "trace turn 199",
+      "_recovered": true
+    },
+    {
+      "id": "VR-TRACE-02",
+      "title": "Now I understand the full flow. The `_setReentrancyFlags(NO_FLAGS)` at line 3190 **preserves the ENT",
+      "description": "Now I understand the full flow. The `_setReentrancyFlags(NO_FLAGS)` at line 3190 **preserves the ENTERED bit** (line 69-70 of TstorishReentrancyGuardWithFlags.sol: `flags & ~(ENTERED | NOT_ENTERED)` then `currentGuard = ... & ENTERED`). The reentrancy guard holds \u2014 re-entrant calls would revert at line 80: `if (_getTstorish(REENTRANCY_GUARD_STORAGE) & ENTERED == ENTERED)`. EXP-04 is strategic.\n\nLet me now trace the remaining attack surfaces: multi-hop denomination, output swap return values, and",
+      "severity": "info",
+      "status": "ruled_out",
+      "evidence": "trace turn 284",
+      "_recovered": true
+    }
+  ],
+  "test_files_created": [
+    {
+      "path": "/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-hooks-and-handlers/test/AuditMathDeepDiverCLOB.t.sol",
+      "exists_on_disk": true
+    },
+    {
+      "path": "/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/amm-pool-type-dynamic/test/audit/AuditComposabilityChecklist.t.sol",
+      "exists_on_disk": true
+    },
+    {
+      "path": "/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/amm-pool-type-dynamic/test/CrossBoundaryAudit.t.sol",
+      "exists_on_disk": true
+    }
+  ],
+  "checklist_coverage": {},
+  "summary": "RECOVERED FROM TRACE TEXT:\n[Turn 284] Now I understand the full flow. The `_setReentrancyFlags(NO_FLAGS)` at line 3190 **preserves the ENTERED bit** (line 69-70 of TstorishReentrancyGuardWithFlags.sol: `flags & ~(ENTERED | NOT_ENTERED)` then `currentGuard = ... & ENTERED`). The reentrancy guard holds \u2014 re-entrant calls would revert at l\n[Turn 275] This is the critical finding. The `_setReentrancyFlags(NO_FLAGS)` at line 3190 **preserves the ENTERED bit** (line 69-71 of TstorishReentrancyGuardWithFlags.sol). So the reentrancy guard is NOT actually bypassed. Let me verify this and trace the full flow through the diamond proxy.\n[Turn 240] \n\nNow let me analyze the test results while agents work on deeper analysis. Let me also investigate the most interesting findings \u2014 CB05 (partial fill with tiny amounts) and CB08 (feeOnTop exploitation) \u2014 and look for additional cross-boundary attack vectors.\n[Turn 199] Tests CB01/CB02/CB04 passed (guard holds), CB03/CB05-08 reverted with arithmetic overflow during swap execution. The overflow is likely in `swapExtraData` encoding or swap parameters. Let me read the test file and fix the failing tests.\n[Turn 237] All 8 tests pass now. Let me analyze the results and identify findings worthy of deeper investigation. CB08 is particularly interesting \u2014 let me look at it more closely, and also begin deeper analysis with parallel agents.",
+  "recovery_quality": "partial",
+  "recovery_timestamp": "2026-04-06T14:26:57.410999+00:00"
+}

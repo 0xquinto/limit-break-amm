@@ -1,0 +1,41 @@
+{
+  "agent": "auth-forger",
+  "wave": 1,
+  "target": "full-system",
+  "recovery_source": "trace",
+  "findings": [
+    {
+      "id": "AUTH-001",
+      "title": "Unsigned feeOnTop fields in SWAP_TYPEHASH enable executor theft",
+      "status": "confirmed",
+      "severity": "high",
+      "confidence": "high",
+      "checklist_items": [
+        "C4",
+        "EXP-05"
+      ],
+      "contracts": [
+        "lbamm-hooks-and-handlers/src/handlers/permit/PermitTransferHandler.sol",
+        "lbamm-hooks-and-handlers/src/handlers/permit/Constants.sol"
+      ],
+      "functions": [
+        "PermitTransferHandler._executeFillOrKillPermit"
+      ]
+    }
+  ],
+  "vectors_ruled_out": [],
+  "test_files_created": [
+    {
+      "path": "/Users/diego/Dev/non-toxic/bug_bounty/limit-break-amm/lbamm-hooks-and-handlers/test/AuditMathDeepDiverCLOB.t.sol",
+      "exists_on_disk": true
+    }
+  ],
+  "checklist_coverage": {},
+  "summary": "RECOVERED FROM TRACE TEXT:\n[Turn 232] All 34 EXP-05 tests pass. H02/H07 have known test bugs (not vulnerability failures). Let me now write remaining Phase C/D tests and compile the sidecar. First, let me check key files for the remaining exploit patterns.\n[Turn 104] Now let me check the remaining exploit patterns and rapidly proceed through the C-AUTH checklist. Let me read the prior auth forger test briefly and check remaining patterns:\n[Turn 121] Good, I have the EXP-05 confirmed exploit test and static analysis. Now let me read the core Slither findings more deeply and check the reentrancy-balance finding:\n[Turn 254] Good, the EXP-04 agent is actively writing the test file. Let me read the existing findings format and write the sidecar:\n[Turn 100] EXP-05 tests pass with confirmed theft. Now let me run the other exploit tests and check the existing auth forger tests:",
+  "recovery_quality": "partial",
+  "recovery_timestamp": "2026-04-06T14:26:57.408359+00:00",
+  "test_file": "",
+  "profit_question": "What does the protocol trust that isn't actually signed, authenticated, or caller-bound?",
+  "answer": "The protocol's SWAP_TYPEHASH omits feeOnTop.amount and feeOnTop.recipient from EIP-712 signed data. When cosigner==address(0), ANY executor can inject arbitrary feeOnTop values into a user's permit-based swap, stealing the user's slippage budget. This is confirmed with 5 passing Forge tests demonstrating attacker profit in both fill-or-kill and partial fill paths.",
+  "_note": "Recovered from truncated Write call in trace"
+}
