@@ -3,7 +3,7 @@
 
 def test_score_dismissal_quality_weak():
     """Dismissal with no test and vague reason → low score."""
-    from docs.orchestrator.critic import score_dismissal_quality
+    from audit.orchestrator.critic import score_dismissal_quality
     entry = {
         "id": "H-R1-CP-01", "status": "dismissed",
         "detail": "Looks safe",
@@ -14,7 +14,7 @@ def test_score_dismissal_quality_weak():
 
 def test_score_dismissal_quality_strong():
     """Dismissal with test file, guard location, and failure_class → high score."""
-    from docs.orchestrator.critic import score_dismissal_quality
+    from audit.orchestrator.critic import score_dismissal_quality
     entry = {
         "id": "H-R1-CP-01", "status": "dismissed",
         "test_file": "test/TestH001.sol",
@@ -28,7 +28,7 @@ def test_score_dismissal_quality_strong():
 
 def test_score_dismissal_quality_tested_auto_pass():
     """Tested/confirmed entries auto-score 100."""
-    from docs.orchestrator.critic import score_dismissal_quality
+    from audit.orchestrator.critic import score_dismissal_quality
     entry = {"id": "H-R1-CP-01", "status": "confirmed", "test_file": "test/T.sol"}
     score = score_dismissal_quality(entry)
     assert score == 100
@@ -36,7 +36,7 @@ def test_score_dismissal_quality_tested_auto_pass():
 
 def test_identify_weak_dismissals():
     """identify_weak_dismissals returns entries below threshold."""
-    from docs.orchestrator.critic import identify_weak_dismissals
+    from audit.orchestrator.critic import identify_weak_dismissals
     results = [
         {"id": "H-001", "status": "dismissed", "detail": "safe"},
         {"id": "H-002", "status": "dismissed", "test_file": "test/T.sol",
@@ -51,7 +51,7 @@ def test_identify_weak_dismissals():
 
 def test_build_critic_feedback():
     """Build critic feedback for weak dismissals."""
-    from docs.orchestrator.critic import build_critic_feedback
+    from audit.orchestrator.critic import build_critic_feedback
     weak = [{"id": "H-001", "status": "dismissed", "detail": "safe"}]
     feedback = build_critic_feedback(weak)
     assert "H-001" in feedback
@@ -60,7 +60,7 @@ def test_build_critic_feedback():
 
 def test_build_reinvestigation_prompt():
     """Reinvestigation prompt contains hypothesis details and instructions."""
-    from docs.orchestrator.critic import build_reinvestigation_prompt
+    from audit.orchestrator.critic import build_reinvestigation_prompt
     weak = [
         {"id": "H-001", "status": "dismissed", "detail": "safe",
          "mechanism": "Overflow in fee calculation at AMMModule.sol:2144"},

@@ -41,7 +41,7 @@ def _make_finding(**overrides) -> dict:
 
 def test_gate_a_generic_pattern():
     """Finding with 'use SafeERC20' in description → flagged, gate A."""
-    from docs.orchestrator.kill_gate import check_gate_a
+    from audit.orchestrator.kill_gate import check_gate_a
 
     finding = _make_finding(description="The contract should use SafeERC20 for transfers")
     flagged, reason = check_gate_a(finding)
@@ -51,7 +51,7 @@ def test_gate_a_generic_pattern():
 
 def test_gate_a_specific_finding():
     """Finding with specific overflow description → passes gate A."""
-    from docs.orchestrator.kill_gate import check_gate_a
+    from audit.orchestrator.kill_gate import check_gate_a
 
     finding = _make_finding(
         description="Overflow in FixedHelper.swapByInput at line 908 when amountIn exceeds 2^128"
@@ -65,7 +65,7 @@ def test_gate_a_specific_finding():
 
 def test_gate_d_no_attack_sequence():
     """Finding missing attack_sequence → flagged, gate D."""
-    from docs.orchestrator.kill_gate import check_gate_d
+    from audit.orchestrator.kill_gate import check_gate_d
 
     finding = _make_finding(attack_sequence=[])
     flagged, reason = check_gate_d(finding)
@@ -75,7 +75,7 @@ def test_gate_d_no_attack_sequence():
 
 def test_gate_d_short_attack_sequence():
     """1-step attack_sequence → flagged, gate D."""
-    from docs.orchestrator.kill_gate import check_gate_d
+    from audit.orchestrator.kill_gate import check_gate_d
 
     finding = _make_finding(attack_sequence=["Call the function"])
     flagged, reason = check_gate_d(finding)
@@ -85,7 +85,7 @@ def test_gate_d_short_attack_sequence():
 
 def test_gate_d_valid_attack_sequence():
     """3 steps referencing a function → passes gate D."""
-    from docs.orchestrator.kill_gate import check_gate_d
+    from audit.orchestrator.kill_gate import check_gate_d
 
     finding = _make_finding(attack_sequence=[
         "1. Deploy malicious contract",
@@ -101,7 +101,7 @@ def test_gate_d_valid_attack_sequence():
 
 def test_gate_f_dust():
     """Impact contains 'rounding error of 1 wei' → flagged, gate F."""
-    from docs.orchestrator.kill_gate import check_gate_f
+    from audit.orchestrator.kill_gate import check_gate_f
 
     finding = _make_finding(impact="Causes a rounding error of 1 wei per swap")
     flagged, reason = check_gate_f(finding)
@@ -111,7 +111,7 @@ def test_gate_f_dust():
 
 def test_gate_f_significant():
     """Impact contains '$50,000' → passes gate F."""
-    from docs.orchestrator.kill_gate import check_gate_f
+    from audit.orchestrator.kill_gate import check_gate_f
 
     finding = _make_finding(impact="Attacker can drain $50,000 from the pool")
     flagged, reason = check_gate_f(finding)
@@ -123,7 +123,7 @@ def test_gate_f_significant():
 
 def test_gate_g_out_of_scope():
     """repos field has 'openzeppelin' → flagged, gate G."""
-    from docs.orchestrator.kill_gate import check_gate_g
+    from audit.orchestrator.kill_gate import check_gate_g
 
     valid = {"lbamm-core", "lbamm-hooks-and-handlers"}
     finding = _make_finding(repos=["openzeppelin"])
@@ -134,7 +134,7 @@ def test_gate_g_out_of_scope():
 
 def test_gate_g_in_scope():
     """repos field has 'lbamm-core' → passes gate G."""
-    from docs.orchestrator.kill_gate import check_gate_g
+    from audit.orchestrator.kill_gate import check_gate_g
 
     valid = {"lbamm-core", "lbamm-hooks-and-handlers"}
     finding = _make_finding(repos=["lbamm-core"])
@@ -147,7 +147,7 @@ def test_gate_g_in_scope():
 
 def test_gate_h_known_fp():
     """Finding matching a false-positives.md entry → flagged, gate H."""
-    from docs.orchestrator.kill_gate import check_gate_h
+    from audit.orchestrator.kill_gate import check_gate_h
 
     # Simulate a known FP text
     known_fps = [
@@ -168,7 +168,7 @@ def test_gate_h_known_fp():
 
 def test_passed_finding_has_null_gate():
     """Finding passing all gates → {status: 'passed', gate: null, reason: null}."""
-    from docs.orchestrator.kill_gate import run_kill_gate
+    from audit.orchestrator.kill_gate import run_kill_gate
 
     finding = _make_finding()
     valid = {"lbamm-core", "lbamm-hooks-and-handlers"}
@@ -182,7 +182,7 @@ def test_passed_finding_has_null_gate():
 
 def test_annotate_findings_file(tmp_path):
     """Write findings JSON, run kill gate, read back → annotations present."""
-    from docs.orchestrator.kill_gate import annotate_findings_file
+    from audit.orchestrator.kill_gate import annotate_findings_file
 
     findings_data = {
         "agent_name": "test-agent",
@@ -210,8 +210,8 @@ def test_annotate_findings_file(tmp_path):
 
 def test_run_kill_gate_wave(tmp_path, monkeypatch):
     """Write 2 agent findings files to tmp dir, run function → returns correct counts."""
-    import docs.orchestrator.kill_gate as kg_mod
-    import docs.orchestrator.config as config_mod
+    import audit.orchestrator.kill_gate as kg_mod
+    import audit.orchestrator.config as config_mod
 
     # Monkeypatch ARTIFACTS_DIR and REPOS
     monkeypatch.setattr(config_mod, "ARTIFACTS_DIR", tmp_path)
@@ -253,7 +253,7 @@ def test_run_kill_gate_wave(tmp_path, monkeypatch):
 
 def test_load_known_fps_parses_blocks(tmp_path, monkeypatch):
     """Write a mock false-positives.md with 2 FP-NNN blocks → returns 2 strings."""
-    import docs.orchestrator.config as config_mod
+    import audit.orchestrator.config as config_mod
 
     monkeypatch.setattr(config_mod, "MEMORY_DIR", tmp_path)
 
@@ -281,7 +281,7 @@ def test_load_known_fps_parses_blocks(tmp_path, monkeypatch):
 """
     (tmp_path / "false-positives.md").write_text(fp_content)
 
-    from docs.orchestrator.kill_gate import _load_known_fps
+    from audit.orchestrator.kill_gate import _load_known_fps
 
     fps = _load_known_fps()
     assert len(fps) == 2
@@ -291,11 +291,11 @@ def test_load_known_fps_parses_blocks(tmp_path, monkeypatch):
 
 def test_load_known_fps_missing_file(tmp_path, monkeypatch):
     """File doesn't exist → returns empty list."""
-    import docs.orchestrator.config as config_mod
+    import audit.orchestrator.config as config_mod
 
     monkeypatch.setattr(config_mod, "MEMORY_DIR", tmp_path)
 
-    from docs.orchestrator.kill_gate import _load_known_fps
+    from audit.orchestrator.kill_gate import _load_known_fps
 
     fps = _load_known_fps()
     assert fps == []
@@ -305,7 +305,7 @@ def test_load_known_fps_missing_file(tmp_path, monkeypatch):
 
 def test_load_known_gotchas_concatenates(tmp_path, monkeypatch):
     """Write 2 mock gotchas.md files → returns concatenated."""
-    import docs.orchestrator.config as config_mod
+    import audit.orchestrator.config as config_mod
 
     monkeypatch.setattr(config_mod, "TEMPLATES_DIR", tmp_path)
 
@@ -315,7 +315,7 @@ def test_load_known_gotchas_concatenates(tmp_path, monkeypatch):
     (tmp_path / "agent-b").mkdir()
     (tmp_path / "agent-b" / "gotchas.md").write_text("## Gotcha B\nWatch out for Y.")
 
-    from docs.orchestrator.kill_gate import _load_known_gotchas
+    from audit.orchestrator.kill_gate import _load_known_gotchas
 
     gotchas = _load_known_gotchas()
     assert len(gotchas) == 2
@@ -327,7 +327,7 @@ def test_load_known_gotchas_concatenates(tmp_path, monkeypatch):
 
 def test_gate_e_no_test_file():
     """ruled_out vector without test_file → flagged, gate 'E'."""
-    from docs.orchestrator.kill_gate import check_gate_e
+    from audit.orchestrator.kill_gate import check_gate_e
     vector = {"title": "Reentrancy in swap", "test_file": ""}
     flagged, reason = check_gate_e(vector)
     assert flagged
@@ -336,7 +336,7 @@ def test_gate_e_no_test_file():
 
 def test_gate_e_with_test_file():
     """ruled_out vector with test_file → passes."""
-    from docs.orchestrator.kill_gate import check_gate_e
+    from audit.orchestrator.kill_gate import check_gate_e
     vector = {"title": "Reentrancy in swap", "test_file": "test/AuditReentrancy.t.sol"}
     flagged, reason = check_gate_e(vector)
     assert not flagged
@@ -344,7 +344,7 @@ def test_gate_e_with_test_file():
 
 def test_gate_e_code_analysis_accepted():
     """ruled_out vector with code-analysis: citation → passes (evidence accepted)."""
-    from docs.orchestrator.kill_gate import check_gate_e
+    from audit.orchestrator.kill_gate import check_gate_e
     vector = {"title": "X", "test_file": "code-analysis: AMMModule.sol:2144 — require() guards path"}
     flagged, reason = check_gate_e(vector)
     assert not flagged
@@ -352,7 +352,7 @@ def test_gate_e_code_analysis_accepted():
 
 def test_gate_e_not_applicable_accepted():
     """ruled_out vector with not-applicable → passes."""
-    from docs.orchestrator.kill_gate import check_gate_e
+    from audit.orchestrator.kill_gate import check_gate_e
     vector = {"title": "X", "test_file": "not-applicable: informational"}
     flagged, reason = check_gate_e(vector)
     assert not flagged
@@ -360,7 +360,7 @@ def test_gate_e_not_applicable_accepted():
 
 def test_annotate_vectors_file(tmp_path):
     """Write findings JSON with vectors, run annotate, read back annotations."""
-    from docs.orchestrator.kill_gate import annotate_vectors_file
+    from audit.orchestrator.kill_gate import annotate_vectors_file
     findings = {
         "agent_name": "test",
         "findings": [],
@@ -382,7 +382,7 @@ def test_annotate_vectors_file(tmp_path):
 
 def test_gate_v2_missing_refutation():
     """Finding without refutation_attempted field → flagged."""
-    from docs.orchestrator.kill_gate import check_gate_v2_refutation
+    from audit.orchestrator.kill_gate import check_gate_v2_refutation
     finding = {"title": "Reentrancy", "description": "possible reentrancy in swap"}
     flagged, reason = check_gate_v2_refutation(finding)
     assert flagged
@@ -390,7 +390,7 @@ def test_gate_v2_missing_refutation():
 
 def test_gate_v2_speculative_refutation_passes():
     """Finding with refutation_attempted that's speculative → passes."""
-    from docs.orchestrator.kill_gate import check_gate_v2_refutation
+    from audit.orchestrator.kill_gate import check_gate_v2_refutation
     finding = {
         "title": "Reentrancy", "description": "reentrancy in swap",
         "refutation_attempted": "Probably safe because of nonReentrant",
@@ -401,7 +401,7 @@ def test_gate_v2_speculative_refutation_passes():
 
 def test_gate_v2_concrete_refutation_rejects():
     """Finding with concrete refutation citing a guard line → REJECTED."""
-    from docs.orchestrator.kill_gate import check_gate_v2_refutation
+    from audit.orchestrator.kill_gate import check_gate_v2_refutation
     finding = {
         "title": "Reentrancy", "description": "reentrancy in swap",
         "refutation_attempted": "nonReentrant modifier at AMMModule.sol:142 blocks re-entry into _swap()",
@@ -413,7 +413,7 @@ def test_gate_v2_concrete_refutation_rejects():
 
 def test_gate_v2_trigger_no_profit():
     """Finding where costs exceed extraction → flagged."""
-    from docs.orchestrator.kill_gate import check_gate_v2_trigger
+    from audit.orchestrator.kill_gate import check_gate_v2_trigger
     finding = {
         "title": "Dust extraction", "impact": "rounding yields 1 wei per swap",
         "extractable_value": "$0.001",
@@ -425,7 +425,7 @@ def test_gate_v2_trigger_no_profit():
 
 def test_gate_v2_trigger_profitable():
     """Finding with clear profit → passes."""
-    from docs.orchestrator.kill_gate import check_gate_v2_trigger
+    from audit.orchestrator.kill_gate import check_gate_v2_trigger
     finding = {
         "title": "Fee bypass", "impact": "skip 0.3% fee on any swap",
         "extractable_value": "$50,000",

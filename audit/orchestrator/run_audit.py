@@ -1402,7 +1402,7 @@ def main():
     # Mode selection: exploit mode overrides wave config
     if args.mode == "exploit":
         from .config import WAVES_EXPLOIT, WAVE_EXPLOIT
-        import docs.orchestrator.config as _cfg
+        import audit.orchestrator.config as _cfg
         _cfg.WAVES = WAVES_EXPLOIT
         # Parse and inject human hints
         # Force no Pass 1 in exploit mode — human hints replace hypothesis gen
@@ -1427,11 +1427,11 @@ def main():
 
     if args.wave:
         if args.dry_run:
-            import docs.orchestrator.config as _cfg_ref
-            from docs.orchestrator.wave_runner import _get_system_prompt
-            from docs.orchestrator.templates.exploit_system_prompts import EXPLOIT_BASE_PROMPTS as _EBP
-            from docs.orchestrator.templates.compliance_system_prompts import COMPLIANCE_BASE_PROMPTS as _CBP
-            from docs.orchestrator.templates.boundary_system_prompts import BOUNDARY_BASE_PROMPTS as _BBP
+            import audit.orchestrator.config as _cfg_ref
+            from audit.orchestrator.wave_runner import _get_system_prompt
+            from audit.orchestrator.templates.exploit_system_prompts import EXPLOIT_BASE_PROMPTS as _EBP
+            from audit.orchestrator.templates.compliance_system_prompts import COMPLIANCE_BASE_PROMPTS as _CBP
+            from audit.orchestrator.templates.boundary_system_prompts import BOUNDARY_BASE_PROMPTS as _BBP
             wave = _cfg_ref.WAVES[args.wave - 1]
             prior = read_synthesis(args.wave - 1) if args.wave > 1 else None
             prompts = render_wave_prompts(wave, prior, target_dir=_active_target_dir)

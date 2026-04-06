@@ -2,11 +2,11 @@
 import pytest
 from unittest.mock import MagicMock
 
-from docs.orchestrator.wave_runner import _get_system_prompt
-from docs.orchestrator.templates.exploit_system_prompts import EXPLOIT_BASE_PROMPTS
-from docs.orchestrator.templates.compliance_system_prompts import COMPLIANCE_BASE_PROMPTS
-from docs.orchestrator.templates.boundary_system_prompts import BOUNDARY_BASE_PROMPTS
-from docs.orchestrator.model_profiles import AUDIT_SYSTEM_PROMPT
+from audit.orchestrator.wave_runner import _get_system_prompt
+from audit.orchestrator.templates.exploit_system_prompts import EXPLOIT_BASE_PROMPTS
+from audit.orchestrator.templates.compliance_system_prompts import COMPLIANCE_BASE_PROMPTS
+from audit.orchestrator.templates.boundary_system_prompts import BOUNDARY_BASE_PROMPTS
+from audit.orchestrator.model_profiles import AUDIT_SYSTEM_PROMPT
 
 
 def _mock_agent(name: str, scope: list[str] | None = None):
@@ -70,7 +70,7 @@ class TestGetSystemPrompt:
             assert result, f"Empty system prompt for boundary agent {name}"
 
 
-from docs.orchestrator.config import WAVE_BH1, WAVE_EXPLOIT
+from audit.orchestrator.config import WAVE_BH1, WAVE_EXPLOIT
 
 
 class TestConfigPromptAlignment:
@@ -109,8 +109,8 @@ class TestSpawnValidation:
 
 from pathlib import Path
 from unittest.mock import patch
-from docs.orchestrator.wave_runner import _write_prompts_to_disk
-from docs.orchestrator.config import WaveConfig, AgentConfig
+from audit.orchestrator.wave_runner import _write_prompts_to_disk
+from audit.orchestrator.config import WaveConfig, AgentConfig
 
 
 class TestSystemPromptArtifacts:
@@ -127,7 +127,7 @@ class TestSystemPromptArtifacts:
         )
         spawn_prompts = {"precision-sniper": "spawn prompt content"}
 
-        with patch("docs.orchestrator.wave_runner.ARTIFACTS_DIR", tmp_path):
+        with patch("audit.orchestrator.wave_runner.ARTIFACTS_DIR", tmp_path):
             _write_prompts_to_disk(wave, spawn_prompts)
 
         prompt_dir = tmp_path / "wave1-prompts"
@@ -148,19 +148,19 @@ class TestKnowledgeInjection:
     """Knowledge injection should warn if empty, not fail silently."""
 
     def test_exploit_builder_includes_knowledge(self):
-        from docs.orchestrator.templates.exploit_system_prompts import build_exploit_system_prompt
+        from audit.orchestrator.templates.exploit_system_prompts import build_exploit_system_prompt
         result = build_exploit_system_prompt("math-exploiter", ["lbamm-core"])
         # Should have base + knowledge (confirmed patterns, tactical failures, etc.)
         assert len(result) > 500, f"Exploit prompt suspiciously short: {len(result)} chars"
 
     def test_compliance_builder_includes_knowledge(self):
-        from docs.orchestrator.templates.compliance_system_prompts import build_compliance_system_prompt
+        from audit.orchestrator.templates.compliance_system_prompts import build_compliance_system_prompt
         result = build_compliance_system_prompt("precision-sniper", ["lbamm-core"])
         assert len(result) > 500, f"Compliance prompt suspiciously short: {len(result)} chars"
 
     def test_exploit_builder_warns_on_empty_knowledge(self, caplog):
         """If knowledge files are missing, builder should log a warning."""
-        from docs.orchestrator.templates.exploit_system_prompts import build_exploit_system_prompt
+        from audit.orchestrator.templates.exploit_system_prompts import build_exploit_system_prompt
         with caplog.at_level(logging.WARNING):
             result = build_exploit_system_prompt("math-exploiter", ["lbamm-core"])
         assert isinstance(result, str)
@@ -175,7 +175,7 @@ class TestEnvironmentSetup:
 
     def test_autocompact_override_set(self):
         """Early compaction should be enabled for long-running agents."""
-        import docs.orchestrator.wave_runner  # noqa: F401
+        import audit.orchestrator.wave_runner  # noqa: F401
         assert os.environ.get("CLAUDE_AUTOCOMPACT_PCT_OVERRIDE") == "50", (
             "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE not set to 50 — "
             "agents running 190+ turns will degrade in late context"
@@ -183,7 +183,7 @@ class TestEnvironmentSetup:
 
     def test_stream_close_timeout_set(self):
         """Stream close timeout should be 1 hour for long-running agents."""
-        import docs.orchestrator.wave_runner  # noqa: F401
+        import audit.orchestrator.wave_runner  # noqa: F401
         assert os.environ.get("CLAUDE_CODE_STREAM_CLOSE_TIMEOUT") == "3600000"
 
 
@@ -191,7 +191,7 @@ class TestTacticalFailureInstruction:
     """System prompts should instruct agents on structured tactical failure format."""
 
     def test_compliance_prompts_include_tactical_format(self):
-        from docs.orchestrator.templates.compliance_system_prompts import build_compliance_system_prompt
+        from audit.orchestrator.templates.compliance_system_prompts import build_compliance_system_prompt
         for name in ["precision-sniper", "state-desync", "auth-forger"]:
             result = build_compliance_system_prompt(name, ["lbamm-core"])
             assert "what_failed" in result or "TACTICAL FAILURE" in result, (
@@ -199,7 +199,7 @@ class TestTacticalFailureInstruction:
             )
 
     def test_exploit_prompts_include_tactical_format(self):
-        from docs.orchestrator.templates.exploit_system_prompts import build_exploit_system_prompt
+        from audit.orchestrator.templates.exploit_system_prompts import build_exploit_system_prompt
         for name in ["math-exploiter", "state-exploiter", "boundary-exploiter"]:
             result = build_exploit_system_prompt(name, ["lbamm-core"])
             assert "what_failed" in result or "TACTICAL FAILURE" in result, (

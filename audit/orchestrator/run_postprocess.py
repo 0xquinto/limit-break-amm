@@ -10,13 +10,13 @@ from pathlib import Path
 # Add parent to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from docs.orchestrator.config import WAVES, ARTIFACTS_DIR, RESULTS_DIR
-from docs.orchestrator.synthesizer import generate_synthesis, collect_json_sidecars
-from docs.orchestrator.wave_runner import AgentResult, _build_results_from_disk, collect_artifacts
-from docs.orchestrator.safety import prefilter_findings, extract_findings_from_artifacts
-from docs.orchestrator.schema import load_and_validate
-from docs.orchestrator.regression import check_regression
-from docs.orchestrator.memory_lifecycle import update_memory_from_results
+from audit.orchestrator.config import WAVES, ARTIFACTS_DIR, RESULTS_DIR
+from audit.orchestrator.synthesizer import generate_synthesis, collect_json_sidecars
+from audit.orchestrator.wave_runner import AgentResult, _build_results_from_disk, collect_artifacts
+from audit.orchestrator.safety import prefilter_findings, extract_findings_from_artifacts
+from audit.orchestrator.schema import load_and_validate
+from audit.orchestrator.regression import check_regression
+from audit.orchestrator.memory_lifecycle import update_memory_from_results
 
 
 REGRESSION_CASES_PATH = Path(__file__).parent / "regression_cases.json"

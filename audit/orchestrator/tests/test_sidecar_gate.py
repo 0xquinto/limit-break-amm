@@ -2,7 +2,7 @@
 
 import pytest
 
-from docs.orchestrator.sidecar_gate import validate_hypothesis_results
+from audit.orchestrator.sidecar_gate import validate_hypothesis_results
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -222,7 +222,7 @@ def test_smart_goals_all_met():
              "detail": "Guard blocks", "failure_class": "strategic"},
         ],
     }
-    from docs.orchestrator.sidecar_gate import validate_smart_goals
+    from audit.orchestrator.sidecar_gate import validate_smart_goals
     errors = validate_smart_goals(sidecar, total_hypotheses=3)
     assert errors == []
 
@@ -242,7 +242,7 @@ def test_smart_goals_too_few_tested():
              "detail": "holds"},
         ],
     }
-    from docs.orchestrator.sidecar_gate import validate_smart_goals
+    from audit.orchestrator.sidecar_gate import validate_smart_goals
     errors = validate_smart_goals(sidecar, total_hypotheses=5)
     assert any("60%" in e or "tested" in e.lower() for e in errors)
 
@@ -254,7 +254,7 @@ def test_smart_goals_missing_hypothesis_entries():
             {"id": "H-001", "status": "tested", "test_file": "test/T.sol", "detail": "ok"},
         ],
     }
-    from docs.orchestrator.sidecar_gate import validate_smart_goals
+    from audit.orchestrator.sidecar_gate import validate_smart_goals
     errors = validate_smart_goals(sidecar, total_hypotheses=5)
     assert any("1/5" in e or "missing" in e.lower() for e in errors)
 
@@ -268,7 +268,7 @@ def test_smart_goals_too_few_forge_tests():
             {"id": "H-003", "status": "tested", "test_file": "test/T1.sol", "detail": "ok"},
         ],
     }
-    from docs.orchestrator.sidecar_gate import validate_smart_goals
+    from audit.orchestrator.sidecar_gate import validate_smart_goals
     errors = validate_smart_goals(sidecar, total_hypotheses=3)
     assert any("3" in e and "test" in e.lower() for e in errors)
 
@@ -277,7 +277,7 @@ def test_smart_goals_too_few_forge_tests():
 
 def test_verify_test_artifacts_existing_file(tmp_path):
     """test_file pointing to existing file → no issues."""
-    from docs.orchestrator.sidecar_gate import verify_test_artifacts
+    from audit.orchestrator.sidecar_gate import verify_test_artifacts
     test_file = tmp_path / "test" / "TestHyp.t.sol"
     test_file.parent.mkdir(parents=True)
     test_file.write_text("// test")
@@ -292,7 +292,7 @@ def test_verify_test_artifacts_existing_file(tmp_path):
 
 def test_verify_test_artifacts_missing_file(tmp_path):
     """test_file pointing to non-existent file → error."""
-    from docs.orchestrator.sidecar_gate import verify_test_artifacts
+    from audit.orchestrator.sidecar_gate import verify_test_artifacts
     sidecar = {
         "hypothesis_results": [
             {"id": "H-001", "status": "tested", "test_file": "test/DoesNotExist.t.sol"},
@@ -305,7 +305,7 @@ def test_verify_test_artifacts_missing_file(tmp_path):
 
 def test_verify_test_artifacts_code_analysis_skipped(tmp_path):
     """code-analysis: prefix → skipped (no file check needed)."""
-    from docs.orchestrator.sidecar_gate import verify_test_artifacts
+    from audit.orchestrator.sidecar_gate import verify_test_artifacts
     sidecar = {
         "hypothesis_results": [
             {"id": "H-001", "status": "dismissed", "test_file": "code-analysis: line 42 guards it"},
@@ -317,7 +317,7 @@ def test_verify_test_artifacts_code_analysis_skipped(tmp_path):
 
 def test_verify_test_artifacts_not_applicable_skipped(tmp_path):
     """not-applicable: prefix → skipped."""
-    from docs.orchestrator.sidecar_gate import verify_test_artifacts
+    from audit.orchestrator.sidecar_gate import verify_test_artifacts
     sidecar = {
         "hypothesis_results": [
             {"id": "H-001", "status": "dismissed", "test_file": "not-applicable: informational only"},
@@ -329,7 +329,7 @@ def test_verify_test_artifacts_not_applicable_skipped(tmp_path):
 
 def test_verify_test_artifacts_not_tested_skipped(tmp_path):
     """Entry with no test_file → skipped."""
-    from docs.orchestrator.sidecar_gate import verify_test_artifacts
+    from audit.orchestrator.sidecar_gate import verify_test_artifacts
     sidecar = {
         "hypothesis_results": [
             {"id": "H-001", "status": "not_tested"},
@@ -343,7 +343,7 @@ def test_verify_test_artifacts_not_tested_skipped(tmp_path):
 
 def test_evidence_coverage_all_tested():
     """All hypotheses tested → passes."""
-    from docs.orchestrator.sidecar_gate import check_evidence_coverage
+    from audit.orchestrator.sidecar_gate import check_evidence_coverage
     sidecar = {
         "hypothesis_results": [
             {"id": "H-001", "status": "tested", "test_file": "test/T1.sol"},
@@ -358,7 +358,7 @@ def test_evidence_coverage_all_tested():
 
 def test_evidence_coverage_too_many_not_tested():
     """5/10 not_tested (50%) → fails (max 30%)."""
-    from docs.orchestrator.sidecar_gate import check_evidence_coverage
+    from audit.orchestrator.sidecar_gate import check_evidence_coverage
     sidecar = {
         "hypothesis_results": [
             {"id": f"H-{i:03d}", "status": "not_tested"} for i in range(5)
@@ -373,7 +373,7 @@ def test_evidence_coverage_too_many_not_tested():
 
 def test_evidence_coverage_missing_entries():
     """3 entries for 10 hypotheses → fails."""
-    from docs.orchestrator.sidecar_gate import check_evidence_coverage
+    from audit.orchestrator.sidecar_gate import check_evidence_coverage
     sidecar = {
         "hypothesis_results": [
             {"id": "H-001", "status": "tested", "test_file": "test/T1.sol"},
@@ -388,7 +388,7 @@ def test_evidence_coverage_missing_entries():
 
 def test_evidence_coverage_low_test_ratio():
     """1/10 tested (10%) → fails (need 50%)."""
-    from docs.orchestrator.sidecar_gate import check_evidence_coverage
+    from audit.orchestrator.sidecar_gate import check_evidence_coverage
     sidecar = {
         "hypothesis_results": [
             {"id": "H-001", "status": "tested", "test_file": "test/T1.sol"},
@@ -404,7 +404,7 @@ def test_evidence_coverage_low_test_ratio():
 
 def test_evidence_coverage_zero_hypotheses():
     """total_hypotheses=0 → passes (nothing to check)."""
-    from docs.orchestrator.sidecar_gate import check_evidence_coverage
+    from audit.orchestrator.sidecar_gate import check_evidence_coverage
     sidecar = {"hypothesis_results": []}
     passes, issues = check_evidence_coverage(sidecar, total_hypotheses=0)
     assert passes is True
@@ -413,7 +413,7 @@ def test_evidence_coverage_zero_hypotheses():
 
 def test_evidence_coverage_too_few_unique_files():
     """All entries use same test file → fails (need 3 unique)."""
-    from docs.orchestrator.sidecar_gate import check_evidence_coverage
+    from audit.orchestrator.sidecar_gate import check_evidence_coverage
     sidecar = {
         "hypothesis_results": [
             {"id": f"H-{i:03d}", "status": "tested", "test_file": "test/T1.sol"}

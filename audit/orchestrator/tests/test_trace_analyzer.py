@@ -23,7 +23,7 @@ def _text(text):
 
 class TestFileExtraction:
     def test_read_extracts_sol_path(self, tmp_path):
-        from docs.orchestrator.trace_analyzer import analyze_traces
+        from audit.orchestrator.trace_analyzer import analyze_traces
 
         trace = tmp_path / "trace-test-agent.jsonl"
         trace.write_text(
@@ -37,7 +37,7 @@ class TestFileExtraction:
         assert agent["file_coverage"]["lbamm-core/src/modules/AMMModule.sol"]["reads"] == 1
 
     def test_grep_extracts_path_and_pattern(self, tmp_path):
-        from docs.orchestrator.trace_analyzer import analyze_traces
+        from audit.orchestrator.trace_analyzer import analyze_traces
 
         trace = tmp_path / "trace-test-agent.jsonl"
         trace.write_text(
@@ -52,7 +52,7 @@ class TestFileExtraction:
         assert "mulDiv" in agent["grep_patterns"]
 
     def test_tool_usage_counts(self, tmp_path):
-        from docs.orchestrator.trace_analyzer import analyze_traces
+        from audit.orchestrator.trace_analyzer import analyze_traces
 
         trace = tmp_path / "trace-test-agent.jsonl"
         lines = [
@@ -69,7 +69,7 @@ class TestFileExtraction:
         assert usage["Bash"] == 1
 
     def test_write_targets_captured(self, tmp_path):
-        from docs.orchestrator.trace_analyzer import analyze_traces
+        from audit.orchestrator.trace_analyzer import analyze_traces
 
         trace = tmp_path / "trace-test-agent.jsonl"
         trace.write_text(
@@ -84,7 +84,7 @@ class TestFileExtraction:
         assert writes[0]["turn"] == 5
 
     def test_non_sol_files_excluded_from_coverage(self, tmp_path):
-        from docs.orchestrator.trace_analyzer import analyze_traces
+        from audit.orchestrator.trace_analyzer import analyze_traces
 
         trace = tmp_path / "trace-test-agent.jsonl"
         trace.write_text(
@@ -98,29 +98,29 @@ class TestFileExtraction:
 
 class TestBashClassification:
     def test_forge_build_pass(self):
-        from docs.orchestrator.trace_analyzer import _classify_bash_verdict
+        from audit.orchestrator.trace_analyzer import _classify_bash_verdict
         assert _classify_bash_verdict("forge build", 0, "Compilation OK") == "pass"
 
     def test_forge_build_compile_error(self):
-        from docs.orchestrator.trace_analyzer import _classify_bash_verdict
+        from audit.orchestrator.trace_analyzer import _classify_bash_verdict
         assert _classify_bash_verdict("forge build", 1, "Compiler error: ...") == "compile_error"
 
     def test_forge_test_failure(self):
-        from docs.orchestrator.trace_analyzer import _classify_bash_verdict
+        from audit.orchestrator.trace_analyzer import _classify_bash_verdict
         assert _classify_bash_verdict("forge test --match-test X", 1, "Assertion failed") == "test_failure"
 
     def test_timeout(self):
-        from docs.orchestrator.trace_analyzer import _classify_bash_verdict
+        from audit.orchestrator.trace_analyzer import _classify_bash_verdict
         assert _classify_bash_verdict("halmos --loop 4", 1, "Timeout exceeded") == "timeout"
 
     def test_other_error(self):
-        from docs.orchestrator.trace_analyzer import _classify_bash_verdict
+        from audit.orchestrator.trace_analyzer import _classify_bash_verdict
         assert _classify_bash_verdict("ls /nonexistent", 1, "No such file") == "other_error"
 
 
 class TestHypothesisExtraction:
     def test_hypothesis_start_and_abandon(self, tmp_path):
-        from docs.orchestrator.trace_analyzer import analyze_traces
+        from audit.orchestrator.trace_analyzer import analyze_traces
 
         trace = tmp_path / "trace-test-agent.jsonl"
         lines = [
@@ -136,7 +136,7 @@ class TestHypothesisExtraction:
         assert hyps[0]["finding"] is None
 
     def test_hypothesis_confirmed(self, tmp_path):
-        from docs.orchestrator.trace_analyzer import analyze_traces
+        from audit.orchestrator.trace_analyzer import analyze_traces
 
         trace = tmp_path / "trace-test-agent.jsonl"
         lines = [
@@ -153,7 +153,7 @@ class TestHypothesisExtraction:
 
 class TestNarrative:
     def test_narrative_captures_key_events(self, tmp_path):
-        from docs.orchestrator.trace_analyzer import analyze_traces
+        from audit.orchestrator.trace_analyzer import analyze_traces
 
         trace = tmp_path / "trace-test-agent.jsonl"
         lines = [
@@ -178,7 +178,7 @@ class TestNarrative:
 
 class TestCrossAgent:
     def test_file_overlap_detected(self, tmp_path):
-        from docs.orchestrator.trace_analyzer import analyze_traces
+        from audit.orchestrator.trace_analyzer import analyze_traces
 
         for name in ["agent-a", "agent-b"]:
             trace = tmp_path / f"trace-{name}.jsonl"
@@ -193,7 +193,7 @@ class TestCrossAgent:
         assert len(overlap["lbamm-core/src/modules/AMMModule.sol"]) == 2
 
     def test_strategy_divergence(self, tmp_path):
-        from docs.orchestrator.trace_analyzer import analyze_traces
+        from audit.orchestrator.trace_analyzer import analyze_traces
 
         trace_a = tmp_path / "trace-agent-a.jsonl"
         trace_a.write_text(
@@ -211,7 +211,7 @@ class TestCrossAgent:
 
 class TestPerformanceMetrics:
     def test_turn_velocity(self, tmp_path):
-        from docs.orchestrator.trace_analyzer import analyze_traces
+        from audit.orchestrator.trace_analyzer import analyze_traces
 
         trace = tmp_path / "trace-test-agent.jsonl"
         lines = [
@@ -224,7 +224,7 @@ class TestPerformanceMetrics:
         assert velocity["avg_seconds_per_turn"] == 5.0
 
     def test_context_pressure(self, tmp_path):
-        from docs.orchestrator.trace_analyzer import analyze_traces
+        from audit.orchestrator.trace_analyzer import analyze_traces
 
         trace = tmp_path / "trace-test-agent.jsonl"
         lines = []

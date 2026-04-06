@@ -7,6 +7,18 @@ from pathlib import Path
 import pytest
 
 
+# ── Fixtures ─────────────────────────────────────────────────────────────────
+
+@pytest.fixture
+def target_config(monkeypatch):
+    """Load real target config and wire it into knowledge_gen._tc()."""
+    from audit.orchestrator.target_config import load_target_config
+    import audit.orchestrator.knowledge_gen as kg
+    tc = load_target_config(Path("audit/targets/full-system/target.json"))
+    monkeypatch.setattr(kg, "_tc", lambda: tc)
+    return tc
+
+
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 def _make_hypothesis(
@@ -46,7 +58,7 @@ def _make_hypothesis(
 
 def test_jaccard_similarity():
     """Two hypothesis line sets with known overlap produce correct Jaccard value."""
-    from docs.orchestrator.knowledge_gen import _jaccard_lines
+    from audit.orchestrator.knowledge_gen import _jaccard_lines
 
     h1 = {"lines": {"A.sol": [1, 2, 3, 4]}}
     h2 = {"lines": {"A.sol": [3, 4, 5, 6]}}
@@ -61,7 +73,7 @@ def test_jaccard_similarity():
 
 def test_deduplicate_drops_lower_score():
     """Two near-duplicate hypotheses (Jaccard >0.5 AND same functions) — keep higher-scored."""
-    from docs.orchestrator.knowledge_gen import deduplicate_hypotheses
+    from audit.orchestrator.knowledge_gen import deduplicate_hypotheses
 
     h1 = _make_hypothesis(
         boundary="core-pooltype",
@@ -83,7 +95,7 @@ def test_deduplicate_drops_lower_score():
 
 def test_deduplicate_different_functions_kept():
     """Same lines but different functions — both kept (not duplicates)."""
-    from docs.orchestrator.knowledge_gen import deduplicate_hypotheses
+    from audit.orchestrator.knowledge_gen import deduplicate_hypotheses
 
     h1 = _make_hypothesis(
         boundary="core-pooltype",
@@ -104,9 +116,9 @@ def test_deduplicate_different_functions_kept():
 
 # ── Routing ──────────────────────────────────────────────────────────────────
 
-def test_route_hypotheses_core_pooltype():
+def test_route_hypotheses_core_pooltype(target_config):
     """Hypothesis from core-pooltype routes to precision-sniper, math-deep-diver, price-distorter, insolvency-engineer."""
-    from docs.orchestrator.knowledge_gen import route_hypotheses
+    from audit.orchestrator.knowledge_gen import route_hypotheses
 
     h = _make_hypothesis(boundary="core-pooltype")
     result = route_hypotheses([h])
@@ -116,10 +128,10 @@ def test_route_hypotheses_core_pooltype():
         assert len(result[agent]) == 1
 
 
-def test_route_state_coupling_extra_2b():
+def test_route_state_coupling_extra_2b(target_config):
     """Hypothesis with source_category '2b_ordering' from diamond-proxy routes to base + extra agents."""
-    from docs.orchestrator.knowledge_gen import route_hypotheses
-    from docs.orchestrator.config import STATE_COUPLING_EXTRA_AGENTS
+    from audit.orchestrator.knowledge_gen import route_hypotheses
+    from audit.orchestrator.config import STATE_COUPLING_EXTRA_AGENTS
 
     h = _make_hypothesis(
         boundary="diamond-proxy",
@@ -134,10 +146,10 @@ def test_route_state_coupling_extra_2b():
         assert agent in result, f"Extra agent {agent} should be in result"
 
 
-def test_route_state_coupling_extra_2_5():
+def test_route_state_coupling_extra_2_5(target_config):
     """Hypothesis with source_category '2.5' routes to STATE_COUPLING_EXTRA_AGENTS."""
-    from docs.orchestrator.knowledge_gen import route_hypotheses
-    from docs.orchestrator.config import STATE_COUPLING_EXTRA_AGENTS
+    from audit.orchestrator.knowledge_gen import route_hypotheses
+    from audit.orchestrator.config import STATE_COUPLING_EXTRA_AGENTS
 
     h = _make_hypothesis(boundary="core-pooltype", source_category="2.5")
     result = route_hypotheses([h])
@@ -145,10 +157,10 @@ def test_route_state_coupling_extra_2_5():
         assert agent in result, f"{agent} should be in result for source_category 2.5"
 
 
-def test_route_state_coupling_extra_2g():
+def test_route_state_coupling_extra_2g(target_config):
     """Hypothesis with source_category '2g' routes to STATE_COUPLING_EXTRA_AGENTS."""
-    from docs.orchestrator.knowledge_gen import route_hypotheses
-    from docs.orchestrator.config import STATE_COUPLING_EXTRA_AGENTS
+    from audit.orchestrator.knowledge_gen import route_hypotheses
+    from audit.orchestrator.config import STATE_COUPLING_EXTRA_AGENTS
 
     h = _make_hypothesis(boundary="hook-registry", source_category="2g")
     result = route_hypotheses([h])
@@ -156,10 +168,10 @@ def test_route_state_coupling_extra_2g():
         assert agent in result, f"{agent} should be in result for source_category 2g"
 
 
-def test_route_state_coupling_explicit_category():
+def test_route_state_coupling_explicit_category(target_config):
     """Hypothesis with explicit category 'state_coupling' routes to extra agents."""
-    from docs.orchestrator.knowledge_gen import route_hypotheses
-    from docs.orchestrator.config import STATE_COUPLING_EXTRA_AGENTS
+    from audit.orchestrator.knowledge_gen import route_hypotheses
+    from audit.orchestrator.config import STATE_COUPLING_EXTRA_AGENTS
 
     h = _make_hypothesis(boundary="core-pooltype", category="state_coupling")
     result = route_hypotheses([h])
@@ -167,10 +179,10 @@ def test_route_state_coupling_explicit_category():
         assert agent in result, f"{agent} should be in result for explicit state_coupling"
 
 
-def test_route_no_category_no_source():
+def test_route_no_category_no_source(target_config):
     """Hypothesis with both category and source_category None — only base BOUNDARY_ROUTING."""
-    from docs.orchestrator.knowledge_gen import route_hypotheses
-    from docs.orchestrator.config import BOUNDARY_ROUTING
+    from audit.orchestrator.knowledge_gen import route_hypotheses
+    from audit.orchestrator.config import BOUNDARY_ROUTING
 
     h = _make_hypothesis(boundary="handler-hook", category=None, source_category=None)
     result = route_hypotheses([h])
@@ -178,9 +190,9 @@ def test_route_no_category_no_source():
     assert set(result.keys()) == expected
 
 
-def test_route_no_duplicates_on_overlap():
+def test_route_no_duplicates_on_overlap(target_config):
     """State_coupling from handler-hook — state-desync appears once (not twice)."""
-    from docs.orchestrator.knowledge_gen import route_hypotheses
+    from audit.orchestrator.knowledge_gen import route_hypotheses
 
     # handler-hook base routing includes state-desync
     # state_coupling extra also includes state-desync
@@ -198,7 +210,7 @@ def test_route_no_duplicates_on_overlap():
 
 def test_volume_cap_15():
     """Agent has 20 hypotheses — trimmed to 15, highest priority kept."""
-    from docs.orchestrator.knowledge_gen import apply_volume_cap
+    from audit.orchestrator.knowledge_gen import apply_volume_cap
 
     hyps = [
         _make_hypothesis(hyp_id=f"H-{i}", confidence="high")
@@ -210,7 +222,7 @@ def test_volume_cap_15():
 
 def test_volume_cap_priority_order():
     """Mix of confirmed/untested/new — confirmed first, then untested, then new."""
-    from docs.orchestrator.knowledge_gen import apply_volume_cap
+    from audit.orchestrator.knowledge_gen import apply_volume_cap
 
     h_confirmed = _make_hypothesis(
         hyp_id="H-confirmed", prior_result="confirmed", confidence="medium",
@@ -240,7 +252,7 @@ def test_volume_cap_priority_order():
 
 def test_sanitize_hypothesis_text():
     """Mechanism with ## Header and {{PATTERN}} — headers stripped, templates stripped."""
-    from docs.orchestrator.knowledge_gen import _sanitize_hypothesis_text
+    from audit.orchestrator.knowledge_gen import _sanitize_hypothesis_text
 
     text = "## Header here\nSome text with {{PATTERN}} inside\n### Sub header"
     result = _sanitize_hypothesis_text(text)
@@ -256,7 +268,7 @@ def test_sanitize_hypothesis_text():
 
 def test_format_hypotheses_block():
     """List of hypotheses — formatted with XML tags."""
-    from docs.orchestrator.knowledge_gen import format_hypotheses_block
+    from audit.orchestrator.knowledge_gen import format_hypotheses_block
 
     hyps = [
         _make_hypothesis(hyp_id="H-01", mechanism="overflow in fee calc"),
@@ -273,7 +285,7 @@ def test_format_hypotheses_block():
 
 def test_format_hypotheses_block_with_call_map():
     """Call map string included — appears before hypotheses."""
-    from docs.orchestrator.knowledge_gen import format_hypotheses_block
+    from audit.orchestrator.knowledge_gen import format_hypotheses_block
 
     hyps = [_make_hypothesis()]
     call_map = "AMMModule.sol:42: IPoolType(addr).calculate("
@@ -288,7 +300,7 @@ def test_format_hypotheses_block_with_call_map():
 
 def test_format_hypotheses_block_empty():
     """Empty list — returns empty string."""
-    from docs.orchestrator.knowledge_gen import format_hypotheses_block
+    from audit.orchestrator.knowledge_gen import format_hypotheses_block
 
     result = format_hypotheses_block([])
     assert result == ""
@@ -296,7 +308,7 @@ def test_format_hypotheses_block_empty():
 
 def test_format_hypotheses_block_includes_instructions():
     """Output contains hypothesis testing protocol."""
-    from docs.orchestrator.knowledge_gen import format_hypotheses_block
+    from audit.orchestrator.knowledge_gen import format_hypotheses_block
 
     hyps = [_make_hypothesis()]
     result = format_hypotheses_block(hyps)
@@ -315,9 +327,9 @@ def _write_curated_file(tmp_path: Path, content: str) -> Path:
     return path
 
 
-def test_load_curated_patterns_positional(tmp_path):
+def test_load_curated_patterns_positional(tmp_path, target_config):
     """Mock curated file with '### 1. Cetus' — positional mapping works."""
-    from docs.orchestrator.knowledge_gen import _load_curated_patterns
+    from audit.orchestrator.knowledge_gen import _load_curated_patterns
 
     content = """\
 # Curated Exploit Context
@@ -343,9 +355,9 @@ Details about Bunni liquidity.
     assert "Bunni" in result
 
 
-def test_load_curated_patterns_explicit_exp(tmp_path):
+def test_load_curated_patterns_explicit_exp(tmp_path, target_config):
     """Mock file with '### 1. Cetus (EXP-01)' — explicit EXP parsed."""
-    from docs.orchestrator.knowledge_gen import _load_curated_patterns
+    from audit.orchestrator.knowledge_gen import _load_curated_patterns
 
     content = """\
 # Curated Exploit Context
@@ -367,7 +379,7 @@ Details about Balancer mapped to EXP-01.
 
 def test_load_curated_patterns_missing_file(tmp_path):
     """File doesn't exist — returns empty string."""
-    from docs.orchestrator.knowledge_gen import _load_curated_patterns
+    from audit.orchestrator.knowledge_gen import _load_curated_patterns
 
     result = _load_curated_patterns(
         "core-pooltype",
@@ -376,9 +388,9 @@ def test_load_curated_patterns_missing_file(tmp_path):
     assert result == ""
 
 
-def test_load_curated_patterns_unmapped_warning(tmp_path, caplog):
+def test_load_curated_patterns_unmapped_warning(tmp_path, caplog, target_config):
     """EXP-XX in BOUNDARY_PATTERN_MAP not in file — logs warning."""
-    from docs.orchestrator.knowledge_gen import _load_curated_patterns
+    from audit.orchestrator.knowledge_gen import _load_curated_patterns
 
     # File with only section 1 — core-pooltype wants EXP-01 through EXP-15
     content = """\
@@ -390,7 +402,7 @@ Details about Cetus.
 """
     path = _write_curated_file(tmp_path, content)
 
-    with caplog.at_level(logging.WARNING, logger="docs.orchestrator.knowledge_gen"):
+    with caplog.at_level(logging.WARNING, logger="audit.orchestrator.knowledge_gen"):
         result = _load_curated_patterns("core-pooltype", curated_path=path)
 
     # Should warn about missing EXP-02, EXP-03, EXP-07, EXP-09, EXP-10, EXP-11, EXP-15
@@ -401,9 +413,9 @@ Details about Cetus.
 
 # ── Build Pass 1 Prompt ─────────────────────────────────────────────────────
 
-def test_build_pass1_prompt_all_placeholders(tmp_path, monkeypatch):
+def test_build_pass1_prompt_all_placeholders(tmp_path, monkeypatch, target_config):
     """Mock template with all placeholders — all substituted."""
-    from docs.orchestrator import knowledge_gen
+    from audit.orchestrator import knowledge_gen
 
     # Create mock template
     template_dir = tmp_path / "templates" / "knowledge-gen-prompt"
@@ -443,9 +455,9 @@ def test_build_pass1_prompt_all_placeholders(tmp_path, monkeypatch):
     assert "/tmp/output" in result
 
 
-def test_build_pass1_prompt_slither_fallback(tmp_path, monkeypatch):
+def test_build_pass1_prompt_slither_fallback(tmp_path, monkeypatch, target_config):
     """Empty call_trees — fallback text appears."""
-    from docs.orchestrator import knowledge_gen
+    from audit.orchestrator import knowledge_gen
 
     template_dir = tmp_path / "templates" / "knowledge-gen-prompt"
     template_dir.mkdir(parents=True)
@@ -470,7 +482,7 @@ def test_build_pass1_prompt_slither_fallback(tmp_path, monkeypatch):
 
 def test_build_grep_call_map_finds_interface_calls(tmp_path, monkeypatch):
     """Mock .sol with IPoolType(addr).calculate() — found."""
-    from docs.orchestrator import knowledge_gen
+    from audit.orchestrator import knowledge_gen
 
     # Create mock contract
     contract_dir = tmp_path / "lbamm-core" / "src" / "modules"
@@ -501,7 +513,7 @@ contract AMMModule {
 
 def test_build_grep_call_map_empty_contracts(monkeypatch):
     """Boundary with no contracts — returns empty string."""
-    from docs.orchestrator import knowledge_gen
+    from audit.orchestrator import knowledge_gen
 
     monkeypatch.setattr(
         knowledge_gen,
@@ -515,9 +527,9 @@ def test_build_grep_call_map_empty_contracts(monkeypatch):
 
 # ── Load Prior Ruled-Out ─────────────────────────────────────────────────────
 
-def test_load_prior_ruled_out_filters_by_boundary(tmp_path):
+def test_load_prior_ruled_out_filters_by_boundary(tmp_path, target_config):
     """Mock findings with ruled_out_vectors — only matching returned."""
-    from docs.orchestrator.knowledge_gen import _load_prior_ruled_out
+    from audit.orchestrator.knowledge_gen import _load_prior_ruled_out
 
     artifacts_dir = tmp_path / "artifacts"
     artifacts_dir.mkdir()
@@ -548,7 +560,7 @@ def test_load_prior_ruled_out_filters_by_boundary(tmp_path):
 
 def test_load_prior_ruled_out_no_prior_artifacts(tmp_path):
     """No wave1 artifacts dir — returns empty string."""
-    from docs.orchestrator.knowledge_gen import _load_prior_ruled_out
+    from audit.orchestrator.knowledge_gen import _load_prior_ruled_out
 
     result = _load_prior_ruled_out(
         "core-pooltype",
@@ -561,8 +573,8 @@ def test_load_prior_ruled_out_no_prior_artifacts(tmp_path):
 
 def test_build_cost_control_context_truncates(tmp_path, monkeypatch):
     """Boundary with large contracts → output length ≤ target_tokens * 4 chars."""
-    import docs.orchestrator.knowledge_gen as knowledge_gen
-    from docs.orchestrator.knowledge_gen import build_cost_control_context
+    import audit.orchestrator.knowledge_gen as knowledge_gen
+    from audit.orchestrator.knowledge_gen import build_cost_control_context
 
     # Write a large mock contract
     repo = tmp_path / "lbamm-core" / "src" / "modules"
@@ -581,8 +593,8 @@ def test_build_cost_control_context_truncates(tmp_path, monkeypatch):
 
 def test_build_cost_control_context_header(tmp_path, monkeypatch):
     """Output starts with expected header."""
-    import docs.orchestrator.knowledge_gen as knowledge_gen
-    from docs.orchestrator.knowledge_gen import build_cost_control_context
+    import audit.orchestrator.knowledge_gen as knowledge_gen
+    from audit.orchestrator.knowledge_gen import build_cost_control_context
 
     repo = tmp_path / "lbamm-core" / "src" / "modules"
     repo.mkdir(parents=True)
@@ -600,8 +612,8 @@ def test_build_cost_control_context_header(tmp_path, monkeypatch):
 
 def test_build_cost_control_context_no_hypothesis_format(tmp_path, monkeypatch):
     """Output does NOT contain hypothesis XML tags."""
-    import docs.orchestrator.knowledge_gen as knowledge_gen
-    from docs.orchestrator.knowledge_gen import build_cost_control_context
+    import audit.orchestrator.knowledge_gen as knowledge_gen
+    from audit.orchestrator.knowledge_gen import build_cost_control_context
 
     repo = tmp_path / "lbamm-core" / "src" / "modules"
     repo.mkdir(parents=True)
@@ -622,7 +634,7 @@ def test_build_cost_control_context_no_hypothesis_format(tmp_path, monkeypatch):
 
 def test_classify_hypothesis_complexity_simple():
     """Hypothesis referencing a single contract + single function → 'simple'."""
-    from docs.orchestrator.knowledge_gen import classify_hypothesis_complexity
+    from audit.orchestrator.knowledge_gen import classify_hypothesis_complexity
     h = _make_hypothesis(
         lines={"lbamm-core/src/modules/AMMModule.sol": [42]},
         functions=["setValue"],
@@ -633,7 +645,7 @@ def test_classify_hypothesis_complexity_simple():
 
 def test_classify_hypothesis_complexity_complex():
     """Hypothesis crossing 3+ contracts with coupled_pair → 'complex'."""
-    from docs.orchestrator.knowledge_gen import classify_hypothesis_complexity
+    from audit.orchestrator.knowledge_gen import classify_hypothesis_complexity
     h = _make_hypothesis(
         lines={
             "lbamm-core/src/modules/AMMModule.sol": [42, 100],
@@ -649,7 +661,7 @@ def test_classify_hypothesis_complexity_complex():
 
 def test_classify_hypothesis_complexity_medium():
     """Hypothesis with 2 contracts but no coupled_pair → 'medium'."""
-    from docs.orchestrator.knowledge_gen import classify_hypothesis_complexity
+    from audit.orchestrator.knowledge_gen import classify_hypothesis_complexity
     h = _make_hypothesis(
         lines={
             "lbamm-core/src/modules/AMMModule.sol": [42],
@@ -662,7 +674,7 @@ def test_classify_hypothesis_complexity_medium():
 
 def test_route_by_complexity_assigns_profiles():
     """Simple → fast_reasoning profile, complex → max_reasoning profile."""
-    from docs.orchestrator.knowledge_gen import route_by_complexity
+    from audit.orchestrator.knowledge_gen import route_by_complexity
     hyps = [
         _make_hypothesis(mechanism="Missing zero-address check"),
         _make_hypothesis(
@@ -681,7 +693,7 @@ def test_route_by_complexity_assigns_profiles():
 
 def test_elo_rank_prefers_grounded_over_ungrounded():
     """Hypothesis grounded in EXP-XX ranks higher than ungrounded."""
-    from docs.orchestrator.knowledge_gen import elo_rank_hypotheses
+    from audit.orchestrator.knowledge_gen import elo_rank_hypotheses
     hyps = [
         _make_hypothesis(grounded_in="maybe overflow"),
         _make_hypothesis(grounded_in="EXP-01"),
@@ -692,7 +704,7 @@ def test_elo_rank_prefers_grounded_over_ungrounded():
 
 def test_elo_rank_prefers_test_present():
     """Hypothesis with suggested_test ranks higher than without."""
-    from docs.orchestrator.knowledge_gen import elo_rank_hypotheses
+    from audit.orchestrator.knowledge_gen import elo_rank_hypotheses
     h_with = _make_hypothesis(suggested_test="function test_X() public { assert(true); }")
     h_without = _make_hypothesis(suggested_test="")
     ranked = elo_rank_hypotheses([h_without, h_with])
@@ -701,7 +713,7 @@ def test_elo_rank_prefers_test_present():
 
 def test_elo_rank_prefers_specific_lines():
     """Hypothesis with more line references ranks higher."""
-    from docs.orchestrator.knowledge_gen import elo_rank_hypotheses
+    from audit.orchestrator.knowledge_gen import elo_rank_hypotheses
     h_many = _make_hypothesis(lines={"A.sol": [10, 20, 30], "B.sol": [5]})
     h_few = _make_hypothesis(lines={"A.sol": [10]})
     ranked = elo_rank_hypotheses([h_few, h_many])
@@ -713,7 +725,7 @@ def test_elo_rank_prefers_specific_lines():
 
 def test_elo_rank_stable_for_equal():
     """Two equal hypotheses maintain original order."""
-    from docs.orchestrator.knowledge_gen import elo_rank_hypotheses
+    from audit.orchestrator.knowledge_gen import elo_rank_hypotheses
     h1 = _make_hypothesis(mechanism="A")
     h2 = _make_hypothesis(mechanism="B")
     h1["confidence"] = h2["confidence"] = "medium"
@@ -726,7 +738,7 @@ def test_elo_rank_stable_for_equal():
 
 def test_build_evolution_prompt_includes_mechanism():
     """Evolution prompt contains the original mechanism for refinement."""
-    from docs.orchestrator.knowledge_gen import build_evolution_prompt
+    from audit.orchestrator.knowledge_gen import build_evolution_prompt
     h = _make_hypothesis(confidence="low", mechanism="maybe overflow somewhere")
     prompt = build_evolution_prompt(h)
     assert "maybe overflow somewhere" in prompt
@@ -735,7 +747,7 @@ def test_build_evolution_prompt_includes_mechanism():
 
 def test_build_evolution_prompt_includes_lines():
     """Evolution prompt references the specific source lines."""
-    from docs.orchestrator.knowledge_gen import build_evolution_prompt
+    from audit.orchestrator.knowledge_gen import build_evolution_prompt
     h = _make_hypothesis(
         confidence="low",
         lines={"lbamm-core/src/modules/AMMModule.sol": [42, 100]},
@@ -747,7 +759,7 @@ def test_build_evolution_prompt_includes_lines():
 
 def test_select_hypotheses_for_evolution():
     """Selects low/medium confidence, skips high and confirmed."""
-    from docs.orchestrator.knowledge_gen import select_hypotheses_for_evolution
+    from audit.orchestrator.knowledge_gen import select_hypotheses_for_evolution
     hyps = [
         _make_hypothesis(confidence="low", mechanism="weak"),
         _make_hypothesis(confidence="high", mechanism="strong"),
@@ -763,7 +775,7 @@ def test_select_hypotheses_for_evolution():
 
 def test_merge_evolved_hypothesis():
     """Evolved hypothesis replaces mechanism and adds evolved_by field."""
-    from docs.orchestrator.knowledge_gen import merge_evolved_hypothesis
+    from audit.orchestrator.knowledge_gen import merge_evolved_hypothesis
     original = _make_hypothesis(confidence="low", mechanism="vague overflow")
     evolved_text = "In AMMModule.sol:2144, the fee calculation uses unchecked{amount / totalLiquidity} which rounds to 0 when amount < totalLiquidity, allowing free swaps of up to 1e15 wei (~$0.001 per swap, compounding to ~$50 over 50000 swaps)."
     merged = merge_evolved_hypothesis(original, evolved_text)
@@ -776,7 +788,7 @@ def test_merge_evolved_hypothesis():
 
 def test_format_hypotheses_block_includes_refutation_protocol():
     """Output contains refutation challenge instructions."""
-    from docs.orchestrator.knowledge_gen import format_hypotheses_block
+    from audit.orchestrator.knowledge_gen import format_hypotheses_block
     hyps = [_make_hypothesis()]
     result = format_hypotheses_block(hyps)
     assert "strongest case" in result.lower() or "refutation" in result.lower()
@@ -785,7 +797,7 @@ def test_format_hypotheses_block_includes_refutation_protocol():
 
 def test_format_hypotheses_block_includes_contract():
     """Output contains formal deliverables contract."""
-    from docs.orchestrator.knowledge_gen import format_hypotheses_block
+    from audit.orchestrator.knowledge_gen import format_hypotheses_block
     hyps = [_make_hypothesis()]
     result = format_hypotheses_block(hyps)
     assert "DELIVERABLES CONTRACT" in result or "Formal Deliverables" in result
@@ -796,7 +808,7 @@ def test_format_hypotheses_block_includes_contract():
 
 def test_format_hypotheses_block_has_acceptance_contract():
     """Output contains ACCEPTANCE CONTRACT with concrete numbers."""
-    from docs.orchestrator.knowledge_gen import format_hypotheses_block
+    from audit.orchestrator.knowledge_gen import format_hypotheses_block
     hyps = [_make_hypothesis(hyp_id=f"H-{i}") for i in range(10)]
     result = format_hypotheses_block(hyps)
     assert "ACCEPTANCE CONTRACT" in result
@@ -812,7 +824,7 @@ def test_format_hypotheses_block_has_acceptance_contract():
 
 def test_promote_leads_multi_agent_convergence():
     """2+ agents flag same area as LEAD → promote to finding at confidence 75."""
-    from docs.orchestrator.knowledge_gen import promote_leads
+    from audit.orchestrator.knowledge_gen import promote_leads
     sidecars = [
         {"agent_name": "agent-a", "findings": [
             {"id": "L-001", "status": "lead", "title": "Fee bypass via hook",
@@ -831,7 +843,7 @@ def test_promote_leads_multi_agent_convergence():
 
 def test_promote_leads_single_agent_no_promotion():
     """Single agent LEAD without convergence → stays as lead."""
-    from docs.orchestrator.knowledge_gen import promote_leads
+    from audit.orchestrator.knowledge_gen import promote_leads
     sidecars = [
         {"agent_name": "agent-a", "findings": [
             {"id": "L-001", "status": "lead", "title": "Fee bypass",
@@ -842,9 +854,24 @@ def test_promote_leads_single_agent_no_promotion():
     assert len(promoted) == 0
 
 
+def test_cfg_fallback_raises_without_target_config():
+    """_cfg must raise RuntimeError — no silent fallback to config.py constants."""
+    from audit.orchestrator.knowledge_gen import _cfg
+    with pytest.raises(RuntimeError, match="No target config loaded"):
+        _cfg("BOUNDARY_CONTRACTS")
+
+
+def test_boundary_getters_raise_without_target_config(monkeypatch):
+    """All _get_boundary_* helpers must fail when no target config is set."""
+    import audit.orchestrator.knowledge_gen as kg
+    monkeypatch.setattr(kg, "_tc", lambda: None)
+    with pytest.raises(RuntimeError, match="No target config loaded"):
+        kg._get_boundary_contracts()
+
+
 def test_promote_leads_cross_contract_echo():
     """Same root cause confirmed in contract A → promote LEAD in contract B."""
-    from docs.orchestrator.knowledge_gen import promote_leads
+    from audit.orchestrator.knowledge_gen import promote_leads
     sidecars = [
         {"agent_name": "agent-a", "findings": [
             {"id": "F-001", "status": "confirmed", "title": "Fee rounding in Dynamic",

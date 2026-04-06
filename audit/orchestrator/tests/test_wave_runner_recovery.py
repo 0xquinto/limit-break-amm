@@ -3,8 +3,8 @@ import json
 from pathlib import Path
 from unittest.mock import patch
 
-from docs.orchestrator.wave_runner import _build_results_from_disk
-from docs.orchestrator.config import WaveConfig, AgentConfig
+from audit.orchestrator.wave_runner import _build_results_from_disk
+from audit.orchestrator.config import WaveConfig, AgentConfig
 
 
 def _make_wave(agent_name: str = "test-agent") -> WaveConfig:
@@ -30,7 +30,7 @@ def test_draft_fallback_used_when_final_missing(tmp_path):
     (tmp_path / "wave1-test-agent").mkdir()
 
     wave = _make_wave("test-agent")
-    with patch("docs.orchestrator.wave_runner.ARTIFACTS_DIR", tmp_path):
+    with patch("audit.orchestrator.wave_runner.ARTIFACTS_DIR", tmp_path):
         results = _build_results_from_disk(wave, 1000, wave_complete=True)
 
     assert len(results) == 1
@@ -52,7 +52,7 @@ def test_final_sidecar_preferred_over_draft(tmp_path):
     (tmp_path / "wave1-test-agent").mkdir()
 
     wave = _make_wave("test-agent")
-    with patch("docs.orchestrator.wave_runner.ARTIFACTS_DIR", tmp_path):
+    with patch("audit.orchestrator.wave_runner.ARTIFACTS_DIR", tmp_path):
         results = _build_results_from_disk(wave, 1000, wave_complete=True)
 
     assert results[0].num_turns == 200
@@ -63,7 +63,7 @@ def test_no_draft_writes_fallback(tmp_path):
     (tmp_path / "wave1-test-agent").mkdir()
 
     wave = _make_wave("test-agent")
-    with patch("docs.orchestrator.wave_runner.ARTIFACTS_DIR", tmp_path):
+    with patch("audit.orchestrator.wave_runner.ARTIFACTS_DIR", tmp_path):
         results = _build_results_from_disk(wave, 1000, wave_complete=True)
 
     assert results[0].num_turns == 0

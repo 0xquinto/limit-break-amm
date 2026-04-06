@@ -61,9 +61,9 @@ def mock_env(tmp_path):
 def test_no_compliance_data(mock_env):
     """generate_gotchas returns cleanly when no compliance file exists."""
     templates_dir, results_dir = mock_env
-    with patch("docs.orchestrator.generate_gotchas.TEMPLATES_DIR", templates_dir), \
-         patch("docs.orchestrator.generate_gotchas.RESULTS_DIR", results_dir):
-        from docs.orchestrator.generate_gotchas import generate_gotchas
+    with patch("audit.orchestrator.generate_gotchas.TEMPLATES_DIR", templates_dir), \
+         patch("audit.orchestrator.generate_gotchas.RESULTS_DIR", results_dir):
+        from audit.orchestrator.generate_gotchas import generate_gotchas
         generate_gotchas(1)  # Should not raise
 
 
@@ -73,9 +73,9 @@ def test_gotchas_written(mock_env):
     comp_path = results_dir / "wave1-compliance.json"
     comp_path.write_text(json.dumps(MOCK_COMPLIANCE))
 
-    with patch("docs.orchestrator.generate_gotchas.TEMPLATES_DIR", templates_dir), \
-         patch("docs.orchestrator.generate_gotchas.RESULTS_DIR", results_dir):
-        from docs.orchestrator.generate_gotchas import generate_gotchas
+    with patch("audit.orchestrator.generate_gotchas.TEMPLATES_DIR", templates_dir), \
+         patch("audit.orchestrator.generate_gotchas.RESULTS_DIR", results_dir):
+        from audit.orchestrator.generate_gotchas import generate_gotchas
         generate_gotchas(1)
 
     # precision-sniper should have gotchas (low score, missing tools, low turns)
@@ -120,9 +120,9 @@ def test_null_dimension_scores(mock_env):
     }
     (results_dir / "wave1-compliance.json").write_text(json.dumps(comp))
 
-    with patch("docs.orchestrator.generate_gotchas.TEMPLATES_DIR", templates_dir), \
-         patch("docs.orchestrator.generate_gotchas.RESULTS_DIR", results_dir):
-        from docs.orchestrator.generate_gotchas import generate_gotchas
+    with patch("audit.orchestrator.generate_gotchas.TEMPLATES_DIR", templates_dir), \
+         patch("audit.orchestrator.generate_gotchas.RESULTS_DIR", results_dir):
+        from audit.orchestrator.generate_gotchas import generate_gotchas
         generate_gotchas(1)  # Should not crash
 
     gotchas = (templates_dir / "test-agent" / "gotchas.md").read_text()
@@ -134,7 +134,7 @@ def test_empty_agents(mock_env):
     templates_dir, results_dir = mock_env
     (results_dir / "wave1-compliance.json").write_text(json.dumps({"agents": []}))
 
-    with patch("docs.orchestrator.generate_gotchas.TEMPLATES_DIR", templates_dir), \
-         patch("docs.orchestrator.generate_gotchas.RESULTS_DIR", results_dir):
-        from docs.orchestrator.generate_gotchas import generate_gotchas
+    with patch("audit.orchestrator.generate_gotchas.TEMPLATES_DIR", templates_dir), \
+         patch("audit.orchestrator.generate_gotchas.RESULTS_DIR", results_dir):
+        from audit.orchestrator.generate_gotchas import generate_gotchas
         generate_gotchas(1)  # Should not crash, no files written

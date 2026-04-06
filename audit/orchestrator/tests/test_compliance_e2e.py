@@ -11,8 +11,8 @@ from unittest.mock import patch
 
 import pytest
 
-from docs.orchestrator.compliance import score_agent, AgentCompliance
-from docs.orchestrator.compliance_continuation import (
+from audit.orchestrator.compliance import score_agent, AgentCompliance
+from audit.orchestrator.compliance_continuation import (
     build_continuation_prompt,
     _identify_gaps,
     CONTINUATION_THRESHOLD,
@@ -147,7 +147,7 @@ def test_continuation_prompt_renders():
         sidecar_path.write_text(json.dumps(sidecar))
 
         # Patch ARTIFACTS_DIR so build_continuation_prompt reads from our temp dir
-        with patch("docs.orchestrator.compliance_continuation.ARTIFACTS_DIR", artifacts):
+        with patch("audit.orchestrator.compliance_continuation.ARTIFACTS_DIR", artifacts):
             prompt = build_continuation_prompt(
                 agent_name="precision-sniper",
                 wave_number=1,

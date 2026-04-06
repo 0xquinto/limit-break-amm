@@ -1,6 +1,7 @@
 """Tests for hypothesis data coercion — strings must be safely handled as dicts."""
+from pathlib import Path
 import pytest
-from docs.orchestrator.knowledge_gen import (
+from audit.orchestrator.knowledge_gen import (
     _jaccard_lines,
     _hypothesis_quality_score,
     _is_state_coupling,
@@ -36,8 +37,13 @@ def test_is_state_coupling_string():
     assert result is False
 
 
-def test_route_hypotheses_with_strings():
+def test_route_hypotheses_with_strings(monkeypatch):
     """Mixed list of dicts and strings should not crash routing."""
+    from audit.orchestrator.target_config import load_target_config
+    import audit.orchestrator.knowledge_gen as kg
+    tc = load_target_config(Path("audit/targets/full-system/target.json"))
+    monkeypatch.setattr(kg, "_tc", lambda: tc)
+
     hypotheses = [
         {"boundary": "core-pooltype", "lines": {"c.sol": [1]}, "functions": ["f()"]},
         "raw string hypothesis",
@@ -59,7 +65,7 @@ def test_format_hypotheses_block_with_strings():
 def test_coercion_handles_json_string():
     """JSON-encoded dict string should be parsed, not wrapped."""
     json_str = '{"mechanism": "overflow in mul", "lines": {"Math.sol": [10]}, "confidence": "high"}'
-    from docs.orchestrator.knowledge_gen import _ensure_hypothesis_dict
+    from audit.orchestrator.knowledge_gen import _ensure_hypothesis_dict
     result = _ensure_hypothesis_dict(json_str)
     assert result["mechanism"] == "overflow in mul"
     assert result["confidence"] == "high"
@@ -68,14 +74,14 @@ def test_coercion_handles_json_string():
 def test_coercion_handles_whitespace_and_fences():
     """JSON wrapped in markdown fences and whitespace should still parse."""
     fenced = '```json\n{"mechanism": "test", "lines": {}}\n```'
-    from docs.orchestrator.knowledge_gen import _ensure_hypothesis_dict
+    from audit.orchestrator.knowledge_gen import _ensure_hypothesis_dict
     result = _ensure_hypothesis_dict(fenced)
     assert result["mechanism"] == "test"
 
 
 # ── Schema status coercion tests ──────────────────────────────────────────
 
-from docs.orchestrator.schema import validate_output
+from audit.orchestrator.schema import validate_output
 
 
 def test_nonstandard_finding_statuses_coerced():

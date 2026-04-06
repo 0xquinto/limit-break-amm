@@ -3,7 +3,7 @@
 
 def test_score_hypothesis_full_marks():
     """All hypotheses tested with files and failure_class → max score."""
-    from docs.orchestrator.compliance import _score_hypothesis_compliance
+    from audit.orchestrator.compliance import _score_hypothesis_compliance
     sidecar = {
         "hypothesis_results": [
             {"id": "H-001", "status": "tested", "test_file": "test/T1.sol"},
@@ -18,7 +18,7 @@ def test_score_hypothesis_full_marks():
 
 def test_score_hypothesis_zero_entries():
     """No hypothesis_results → 0 score."""
-    from docs.orchestrator.compliance import _score_hypothesis_compliance
+    from audit.orchestrator.compliance import _score_hypothesis_compliance
     sidecar = {}
     score, details = _score_hypothesis_compliance(sidecar, total_hypotheses=10)
     assert score == 0.0
@@ -26,7 +26,7 @@ def test_score_hypothesis_zero_entries():
 
 def test_score_hypothesis_all_not_tested():
     """All not_tested → low score (coverage OK but testing ratio 0)."""
-    from docs.orchestrator.compliance import _score_hypothesis_compliance
+    from audit.orchestrator.compliance import _score_hypothesis_compliance
     sidecar = {
         "hypothesis_results": [
             {"id": f"H-{i}", "status": "not_tested"} for i in range(10)
@@ -38,7 +38,7 @@ def test_score_hypothesis_all_not_tested():
 
 def test_score_hypothesis_partial():
     """5/10 tested, some with test_file, 2 with failure_class → partial score."""
-    from docs.orchestrator.compliance import _score_hypothesis_compliance
+    from audit.orchestrator.compliance import _score_hypothesis_compliance
     sidecar = {
         "hypothesis_results": [
             {"id": "H-001", "status": "tested", "test_file": "test/T1.sol"},
@@ -59,7 +59,7 @@ def test_score_hypothesis_partial():
 
 def test_score_hypothesis_no_hypotheses_injected():
     """total_hypotheses=0 → full marks (no hypotheses = nothing to score)."""
-    from docs.orchestrator.compliance import _score_hypothesis_compliance
+    from audit.orchestrator.compliance import _score_hypothesis_compliance
     sidecar = {}
     score, details = _score_hypothesis_compliance(sidecar, total_hypotheses=0)
     assert score == 0.0  # no free points for missing hypotheses

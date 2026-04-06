@@ -1,7 +1,7 @@
 """Automated Phase 0 — runs static analysis tools and generates attack surface index.
 
 No agents involved. Pure scripted analysis that feeds context to wave 1 agents.
-Run: python3 -m docs.orchestrator.phase0_runner [--repos all|repo1,repo2]
+Run: python3 -m audit.orchestrator.phase0_runner [--repos all|repo1,repo2]
 """
 
 import json

@@ -2,8 +2,8 @@
 
 import pytest
 
-from docs.orchestrator.compliance import AgentCompliance
-from docs.orchestrator.compliance_continuation import (
+from audit.orchestrator.compliance import AgentCompliance
+from audit.orchestrator.compliance_continuation import (
     MAX_CONTINUATION_ROUNDS,
     build_dimension_feedback,
 )

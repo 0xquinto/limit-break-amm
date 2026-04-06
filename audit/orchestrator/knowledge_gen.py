@@ -32,14 +32,11 @@ def _tc():
 
 
 def _cfg(name: str):
-    """Lazy import from config.py — DEPRECATED, raises if target config not loaded."""
-    import warnings
-    warnings.warn(
-        f"Falling back to config.{name} — load a target.json with --target instead",
-        DeprecationWarning, stacklevel=2,
+    """Fallback removed — target.json is required since 6a0a117."""
+    raise RuntimeError(
+        f"No target config loaded — cannot resolve {name}. "
+        f"Pass --target audit/targets/<name>/target.json to run_audit."
     )
-    from . import config
-    return getattr(config, name)
 
 
 def _get_boundary_contracts():

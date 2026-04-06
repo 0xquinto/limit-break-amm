@@ -69,7 +69,7 @@ class TestValidateLines:
 
     def test_validate_lines_valid(self, tmp_path):
         """Hypothesis with correct line numbers in existing contract -> empty errors."""
-        from docs.orchestrator.knowledge_compliance import validate_hypothesis_lines
+        from audit.orchestrator.knowledge_compliance import validate_hypothesis_lines
 
         repo_root = _setup_repo(tmp_path)
         h = _make_hypothesis()
@@ -78,7 +78,7 @@ class TestValidateLines:
 
     def test_validate_lines_missing_contract(self, tmp_path):
         """Nonexistent contract path -> error."""
-        from docs.orchestrator.knowledge_compliance import validate_hypothesis_lines
+        from audit.orchestrator.knowledge_compliance import validate_hypothesis_lines
 
         h = _make_hypothesis(lines={"nonexistent-repo/src/Missing.sol": [1]})
         errors = validate_hypothesis_lines(h, tmp_path)
@@ -87,7 +87,7 @@ class TestValidateLines:
 
     def test_validate_lines_beyond_eof(self, tmp_path):
         """Line number > file length -> error."""
-        from docs.orchestrator.knowledge_compliance import validate_hypothesis_lines
+        from audit.orchestrator.knowledge_compliance import validate_hypothesis_lines
 
         repo_root = _setup_repo(tmp_path)
         h = _make_hypothesis(lines={"fake-repo/src/FakeContract.sol": [999]})
@@ -97,7 +97,7 @@ class TestValidateLines:
 
     def test_validate_lines_blank_line(self, tmp_path):
         """References a blank line -> error."""
-        from docs.orchestrator.knowledge_compliance import validate_hypothesis_lines
+        from audit.orchestrator.knowledge_compliance import validate_hypothesis_lines
 
         repo_root = _setup_repo(tmp_path)
         # Line 3 in FakeContract.sol is blank
@@ -108,7 +108,7 @@ class TestValidateLines:
 
     def test_validate_lines_comment_double_slash(self, tmp_path):
         """References a // comment line -> error."""
-        from docs.orchestrator.knowledge_compliance import validate_hypothesis_lines
+        from audit.orchestrator.knowledge_compliance import validate_hypothesis_lines
 
         repo_root = _write_comment_fixture(tmp_path)
         # Line 1 is "// SPDX-License-Identifier: MIT"
@@ -119,7 +119,7 @@ class TestValidateLines:
 
     def test_validate_lines_comment_block_open(self, tmp_path):
         """References a /* block comment */ line -> error."""
-        from docs.orchestrator.knowledge_compliance import validate_hypothesis_lines
+        from audit.orchestrator.knowledge_compliance import validate_hypothesis_lines
 
         repo_root = _write_comment_fixture(tmp_path)
         # Line 7 is "/* block comment start */"
@@ -130,7 +130,7 @@ class TestValidateLines:
 
     def test_validate_lines_comment_star_continuation(self, tmp_path):
         """References a '* @param x' NatSpec line -> error."""
-        from docs.orchestrator.knowledge_compliance import validate_hypothesis_lines
+        from audit.orchestrator.knowledge_compliance import validate_hypothesis_lines
 
         repo_root = _write_comment_fixture(tmp_path)
         # Line 8 is "* @param x NatSpec continuation"
@@ -141,7 +141,7 @@ class TestValidateLines:
 
     def test_validate_lines_comment_natspec_triple(self, tmp_path):
         """References a '/// @notice' NatSpec line -> error."""
-        from docs.orchestrator.knowledge_compliance import validate_hypothesis_lines
+        from audit.orchestrator.knowledge_compliance import validate_hypothesis_lines
 
         repo_root = _write_comment_fixture(tmp_path)
         # Line 9 is "/// @notice NatSpec triple-slash"
@@ -152,7 +152,7 @@ class TestValidateLines:
 
     def test_validate_lines_star_operator_not_flagged(self, tmp_path):
         """References a '*= 5;' line -> NOT flagged (it's code, not a comment)."""
-        from docs.orchestrator.knowledge_compliance import validate_hypothesis_lines
+        from audit.orchestrator.knowledge_compliance import validate_hypothesis_lines
 
         repo_root = _write_comment_fixture(tmp_path)
         # Line 11 is "x *= 5;"
@@ -162,7 +162,7 @@ class TestValidateLines:
 
     def test_validate_lines_code(self, tmp_path):
         """References 'require(x > 0);' -> no error."""
-        from docs.orchestrator.knowledge_compliance import validate_hypothesis_lines
+        from audit.orchestrator.knowledge_compliance import validate_hypothesis_lines
 
         repo_root = _setup_repo(tmp_path)
         # Line 8 in FakeContract.sol is: require(_value > 0, "Value must be positive");
@@ -176,7 +176,7 @@ class TestValidateSubstance:
 
     def test_validate_substance_valid(self):
         """Mechanism mentions function name and line number -> no errors."""
-        from docs.orchestrator.knowledge_compliance import validate_hypothesis_substance
+        from audit.orchestrator.knowledge_compliance import validate_hypothesis_substance
 
         h = _make_hypothesis(
             mechanism="The setValue function at line 8 can overflow",
@@ -188,7 +188,7 @@ class TestValidateSubstance:
 
     def test_validate_substance_missing_function(self):
         """Mechanism doesn't mention any function -> error."""
-        from docs.orchestrator.knowledge_compliance import validate_hypothesis_substance
+        from audit.orchestrator.knowledge_compliance import validate_hypothesis_substance
 
         h = _make_hypothesis(
             mechanism="Overflow at line 8 is dangerous",
@@ -201,7 +201,7 @@ class TestValidateSubstance:
 
     def test_validate_substance_missing_line(self):
         """Mechanism doesn't mention any line number -> error."""
-        from docs.orchestrator.knowledge_compliance import validate_hypothesis_substance
+        from audit.orchestrator.knowledge_compliance import validate_hypothesis_substance
 
         h = _make_hypothesis(
             mechanism="The setValue function can overflow due to unchecked input",
@@ -218,7 +218,7 @@ class TestCoerceOptionalFields:
 
     def test_coerce_optional_fields_missing(self):
         """Hypothesis without optional fields -> all set to None."""
-        from docs.orchestrator.knowledge_compliance import coerce_optional_fields
+        from audit.orchestrator.knowledge_compliance import coerce_optional_fields
 
         h = {"id": "H-R01-CP-001", "mechanism": "test"}
         result = coerce_optional_fields(h)
@@ -229,7 +229,7 @@ class TestCoerceOptionalFields:
 
     def test_coerce_optional_fields_present(self):
         """Hypothesis with category -> preserved as-is."""
-        from docs.orchestrator.knowledge_compliance import coerce_optional_fields
+        from audit.orchestrator.knowledge_compliance import coerce_optional_fields
 
         h = {"id": "H-R01-CP-001", "category": "state_coupling"}
         result = coerce_optional_fields(h)
@@ -237,7 +237,7 @@ class TestCoerceOptionalFields:
 
     def test_coerce_masking_code_object(self):
         """Hypothesis with masking_code as dict -> preserved."""
-        from docs.orchestrator.knowledge_compliance import coerce_optional_fields
+        from audit.orchestrator.knowledge_compliance import coerce_optional_fields
 
         h = {"id": "H-R01-CP-001", "masking_code": {"file": "A.sol", "line": 42}}
         result = coerce_optional_fields(h)
@@ -245,7 +245,7 @@ class TestCoerceOptionalFields:
 
     def test_coerce_masking_code_string_rejected(self):
         """Hypothesis with masking_code as string -> coerced to None."""
-        from docs.orchestrator.knowledge_compliance import coerce_optional_fields
+        from audit.orchestrator.knowledge_compliance import coerce_optional_fields
 
         h = {"id": "H-R01-CP-001", "masking_code": "some string"}
         result = coerce_optional_fields(h)
@@ -262,7 +262,7 @@ class TestScoreLineValidity:
 
     def test_score_line_validity_all_valid(self, tmp_path):
         """5 hypotheses, all valid lines -> 20/20."""
-        from docs.orchestrator.knowledge_compliance import _score_line_validity
+        from audit.orchestrator.knowledge_compliance import _score_line_validity
 
         repo_root = _setup_repo(tmp_path)
         hyps = [
@@ -277,7 +277,7 @@ class TestScoreLineValidity:
 
     def test_score_line_validity_below_minimum(self, tmp_path):
         """2 hypotheses -> 0/20 (auto-fail, below minimum of 3)."""
-        from docs.orchestrator.knowledge_compliance import _score_line_validity
+        from audit.orchestrator.knowledge_compliance import _score_line_validity
 
         repo_root = _setup_repo(tmp_path)
         hyps = [_make_hypothesis(id=f"H-R01-CP-{i:03d}") for i in range(2)]
@@ -290,7 +290,7 @@ class TestScoreSubstance:
 
     def test_score_substance(self):
         """4/5 pass substance -> 8/10."""
-        from docs.orchestrator.knowledge_compliance import _score_substance
+        from audit.orchestrator.knowledge_compliance import _score_substance
 
         hyps = []
         for i in range(4):
@@ -316,7 +316,7 @@ class TestScoreTestPresence:
 
     def test_score_test_presence_valid_test(self):
         """suggested_test contains 'function test_X() { assert...}' -> pass."""
-        from docs.orchestrator.knowledge_compliance import _score_test_presence
+        from audit.orchestrator.knowledge_compliance import _score_test_presence
 
         hyps = [_make_hypothesis(
             suggested_test='function test_overflow() public { assert(x == 0); }',
@@ -332,7 +332,7 @@ class TestScoreTestPresence:
 
     def test_score_test_presence_prose(self):
         """suggested_test is prose -> fail."""
-        from docs.orchestrator.knowledge_compliance import _score_test_presence
+        from audit.orchestrator.knowledge_compliance import _score_test_presence
 
         hyps = [_make_hypothesis(
             suggested_test="write a test for overflow in setValue",
@@ -347,7 +347,7 @@ class TestScoreCoverage:
 
     def test_score_coverage(self):
         """3 unique functions of 10 total -> 3/10 functions sub-score."""
-        from docs.orchestrator.knowledge_compliance import _score_coverage
+        from audit.orchestrator.knowledge_compliance import _score_coverage
 
         hyps = [
             _make_hypothesis(id="H-01", functions=["foo"]),
@@ -361,7 +361,7 @@ class TestScoreCoverage:
 
     def test_diversity_penalty_applied(self):
         """7 hypotheses all same contract -> coverage * 0.8."""
-        from docs.orchestrator.knowledge_compliance import _score_coverage
+        from audit.orchestrator.knowledge_compliance import _score_coverage
 
         hyps = [
             _make_hypothesis(
@@ -384,7 +384,7 @@ class TestScoreCoverage:
 
     def test_diversity_penalty_not_applied_small_set(self):
         """4 hypotheses all same contract -> no penalty (<=5)."""
-        from docs.orchestrator.knowledge_compliance import _score_coverage
+        from audit.orchestrator.knowledge_compliance import _score_coverage
 
         hyps = [
             _make_hypothesis(
@@ -400,7 +400,7 @@ class TestScoreCoverage:
 
     def test_score_coverage_slither_failed(self):
         """total_functions=0 -> functions sub-score defaults to 5 (half credit)."""
-        from docs.orchestrator.knowledge_compliance import _score_coverage
+        from audit.orchestrator.knowledge_compliance import _score_coverage
 
         hyps = [_make_hypothesis(functions=["foo"])]
         score = _score_coverage(hyps, total_functions=0, relevant_patterns=[])
@@ -409,7 +409,7 @@ class TestScoreCoverage:
 
     def test_score_coverage_empty_patterns(self):
         """relevant_patterns=[] -> patterns sub-score defaults to 5."""
-        from docs.orchestrator.knowledge_compliance import _score_coverage
+        from audit.orchestrator.knowledge_compliance import _score_coverage
 
         hyps = [_make_hypothesis(functions=["foo"])]
         score = _score_coverage(hyps, total_functions=5, relevant_patterns=[])
@@ -422,25 +422,25 @@ class TestScoreGrounding:
 
     def test_score_grounding_exp_pattern(self):
         """grounded_in: 'EXP-01' -> pass."""
-        from docs.orchestrator.knowledge_compliance import _is_valid_grounding
+        from audit.orchestrator.knowledge_compliance import _is_valid_grounding
 
         assert _is_valid_grounding("EXP-01") is True
 
     def test_score_grounding_code_observation(self):
         """grounded_in: 'code-observation: X.sol:123' -> pass."""
-        from docs.orchestrator.knowledge_compliance import _is_valid_grounding
+        from audit.orchestrator.knowledge_compliance import _is_valid_grounding
 
         assert _is_valid_grounding("code-observation: X.sol:123") is True
 
     def test_score_grounding_solodit(self):
         """grounded_in: 'Solodit #12345' -> pass."""
-        from docs.orchestrator.knowledge_compliance import _is_valid_grounding
+        from audit.orchestrator.knowledge_compliance import _is_valid_grounding
 
         assert _is_valid_grounding("Solodit #12345") is True
 
     def test_score_grounding_ungrounded(self):
         """grounded_in: 'maybe overflow' -> fail."""
-        from docs.orchestrator.knowledge_compliance import _is_valid_grounding
+        from audit.orchestrator.knowledge_compliance import _is_valid_grounding
 
         assert _is_valid_grounding("maybe overflow") is False
 
@@ -450,7 +450,7 @@ class TestAggregateScoring:
 
     def test_aggregate_score_passes_gate(self, tmp_path):
         """All dimensions healthy -> score > 60."""
-        from docs.orchestrator.knowledge_compliance import score_pass1_boundary
+        from audit.orchestrator.knowledge_compliance import score_pass1_boundary
 
         repo_root = _setup_repo(tmp_path)
         hyps = []
@@ -477,7 +477,7 @@ class TestAggregateScoring:
 
     def test_aggregate_score_fails_gate(self, tmp_path):
         """Mostly invalid -> score < 60."""
-        from docs.orchestrator.knowledge_compliance import score_pass1_boundary
+        from audit.orchestrator.knowledge_compliance import score_pass1_boundary
 
         repo_root = _setup_repo(tmp_path)
         # 3 hypotheses with bad lines, no tests, no grounding
@@ -501,7 +501,7 @@ class TestAggregateScoring:
 
     def test_generate_gate_feedback(self, tmp_path):
         """Weakest dimension identified with correct template text."""
-        from docs.orchestrator.knowledge_compliance import (
+        from audit.orchestrator.knowledge_compliance import (
             score_pass1_boundary,
             generate_gate_feedback,
         )

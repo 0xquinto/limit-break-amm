@@ -307,7 +307,7 @@ def run_all(custom_detector_names: list[str] | None = None) -> dict[str, list[Pa
     Args:
         custom_detector_names: Detector slugs (e.g. ["diamond-slot-collision"]).
             If None, uses built-in defaults. Accepts target.json module paths
-            (e.g. "docs.orchestrator.custom_detectors.diamond_slot_collision")
+            (e.g. "audit.orchestrator.custom_detectors.diamond_slot_collision")
             and converts them to slugs automatically.
     """
     # Convert module paths to slugs if needed

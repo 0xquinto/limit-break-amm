@@ -23,7 +23,7 @@ def _setup_playbook_dir(tmp_path: Path) -> Path:
 
 def test_compute_line_hashes_correct_prefixes(tmp_path):
     """compute_line_hashes returns correct sha256 prefixes for known file content."""
-    from docs.orchestrator.playbook import compute_line_hashes
+    from audit.orchestrator.playbook import compute_line_hashes
 
     # Copy fixture to tmp_path to simulate repo structure
     fake_repo = tmp_path / "fake-repo" / "src"
@@ -48,7 +48,7 @@ def test_compute_line_hashes_correct_prefixes(tmp_path):
 
 def test_compute_line_hashes_skips_missing_contracts(tmp_path):
     """compute_line_hashes skips contracts whose files don't exist."""
-    from docs.orchestrator.playbook import compute_line_hashes
+    from audit.orchestrator.playbook import compute_line_hashes
 
     lines = {"nonexistent-repo/src/Missing.sol": [1, 2, 3]}
     result = compute_line_hashes(lines, tmp_path)
@@ -57,7 +57,7 @@ def test_compute_line_hashes_skips_missing_contracts(tmp_path):
 
 def test_compute_line_hashes_skips_out_of_range(tmp_path):
     """compute_line_hashes skips line numbers beyond file length."""
-    from docs.orchestrator.playbook import compute_line_hashes
+    from audit.orchestrator.playbook import compute_line_hashes
 
     fake_repo = tmp_path / "fake-repo" / "src"
     fake_repo.mkdir(parents=True)
@@ -73,7 +73,7 @@ def test_compute_line_hashes_skips_out_of_range(tmp_path):
 
 def test_increment_run_counter(tmp_path):
     """increment_run_counter bumps counter and records timestamp/commit."""
-    from docs.orchestrator.playbook import increment_run_counter, get_run_counter
+    from audit.orchestrator.playbook import increment_run_counter, get_run_counter
 
     playbook_dir = _setup_playbook_dir(tmp_path)
     assert get_run_counter(playbook_dir) == 0
@@ -89,7 +89,7 @@ def test_increment_run_counter(tmp_path):
 
 def test_get_run_counter(tmp_path):
     """get_run_counter reads current counter."""
-    from docs.orchestrator.playbook import get_run_counter
+    from audit.orchestrator.playbook import get_run_counter
 
     playbook_dir = _setup_playbook_dir(tmp_path)
     assert get_run_counter(playbook_dir) == 0
@@ -107,7 +107,7 @@ def _write_fake_sol(tmp_path, rel_path: str, content: str) -> Path:
 
 def test_check_staleness_current(tmp_path):
     """Hypothesis with valid hashes, code unchanged → 'current'."""
-    from docs.orchestrator.playbook import check_staleness, compute_line_hashes
+    from audit.orchestrator.playbook import check_staleness, compute_line_hashes
 
     sol_content = "line1\nrequire(x > 0);\nline3\n"
     _write_fake_sol(tmp_path, "repo/src/A.sol", sol_content)
@@ -126,7 +126,7 @@ def test_check_staleness_current(tmp_path):
 
 def test_check_staleness_shifted(tmp_path):
     """Insert blank line above reference, same code → 'shifted'."""
-    from docs.orchestrator.playbook import check_staleness, compute_line_hashes
+    from audit.orchestrator.playbook import check_staleness, compute_line_hashes
 
     original = "line1\nrequire(x > 0);\nline3\n"
     _write_fake_sol(tmp_path, "repo/src/A.sol", original)
@@ -149,7 +149,7 @@ def test_check_staleness_shifted(tmp_path):
 
 def test_check_staleness_stale(tmp_path):
     """Change referenced line's code → 'stale'."""
-    from docs.orchestrator.playbook import check_staleness, compute_line_hashes
+    from audit.orchestrator.playbook import check_staleness, compute_line_hashes
 
     original = "line1\nrequire(x > 0);\nline3\n"
     _write_fake_sol(tmp_path, "repo/src/A.sol", original)
@@ -171,7 +171,7 @@ def test_check_staleness_stale(tmp_path):
 
 def test_check_staleness_unknown(tmp_path):
     """Hypothesis with no line_hashes → 'unknown'."""
-    from docs.orchestrator.playbook import check_staleness
+    from audit.orchestrator.playbook import check_staleness
 
     hypothesis = {
         "lines": {"repo/src/A.sol": [2]},
@@ -182,7 +182,7 @@ def test_check_staleness_unknown(tmp_path):
 
 def test_check_staleness_missing_contract(tmp_path):
     """Contract path doesn't exist → 'stale'."""
-    from docs.orchestrator.playbook import check_staleness, compute_line_hashes
+    from audit.orchestrator.playbook import check_staleness, compute_line_hashes
 
     # Create file, compute hashes, then delete file
     _write_fake_sol(tmp_path, "repo/src/A.sol", "line1\nrequire(x > 0);\n")
@@ -200,7 +200,7 @@ def test_check_staleness_missing_contract(tmp_path):
 
 def test_fuzzy_find_line_finds_nearby(tmp_path):
     """Code shifted by 3 lines → finds correct new position."""
-    from docs.orchestrator.playbook import _fuzzy_find_line
+    from audit.orchestrator.playbook import _fuzzy_find_line
 
     # Original content has "require(x > 0);" at line 2 (index 1)
     # After shift, it's at line 5 (index 4)
@@ -213,7 +213,7 @@ def test_fuzzy_find_line_finds_nearby(tmp_path):
 
 def test_fuzzy_find_line_not_found(tmp_path):
     """Code completely changed → returns None."""
-    from docs.orchestrator.playbook import _fuzzy_find_line
+    from audit.orchestrator.playbook import _fuzzy_find_line
 
     source = ["completely", "different", "content", "here"]
     expected_hash = hashlib.sha256("require(x > 0);".encode()).hexdigest()[:16]
@@ -226,7 +226,7 @@ def test_fuzzy_find_line_not_found(tmp_path):
 
 def test_append_hypothesis(tmp_path):
     """Write 1 hypothesis, read it back, fields match."""
-    from docs.orchestrator.playbook import append_hypotheses, load_hypotheses
+    from audit.orchestrator.playbook import append_hypotheses, load_hypotheses
 
     playbook_dir = _setup_playbook_dir(tmp_path)
     hyp = {
@@ -245,7 +245,7 @@ def test_append_hypothesis(tmp_path):
 
 def test_load_hypotheses_active_window(tmp_path):
     """Hypotheses from runs 1-7, active window=5 → only runs 3-7 returned."""
-    from docs.orchestrator.playbook import append_hypotheses, load_hypotheses
+    from audit.orchestrator.playbook import append_hypotheses, load_hypotheses
 
     playbook_dir = _setup_playbook_dir(tmp_path)
     # Set run counter to 7
@@ -266,7 +266,7 @@ def test_load_hypotheses_active_window(tmp_path):
 
 def test_confirmed_never_pruned(tmp_path):
     """Confirmed hypothesis from run 1, load at run 10 → still returned."""
-    from docs.orchestrator.playbook import append_hypotheses, append_tested, load_hypotheses
+    from audit.orchestrator.playbook import append_hypotheses, append_tested, load_hypotheses
 
     playbook_dir = _setup_playbook_dir(tmp_path)
     meta = json.loads((playbook_dir / "metadata.json").read_text())
@@ -286,7 +286,7 @@ def test_confirmed_never_pruned(tmp_path):
 
 def test_stale_hypothesis_archived(tmp_path):
     """Hypothesis with stale lines → moved to archive file."""
-    from docs.orchestrator.playbook import (
+    from audit.orchestrator.playbook import (
         append_hypotheses, load_hypotheses, compute_line_hashes,
     )
 
@@ -314,7 +314,7 @@ def test_stale_hypothesis_archived(tmp_path):
 
 def test_shifted_hypothesis_patched(tmp_path):
     """Hypothesis with shifted lines → lines updated, original_lines preserved."""
-    from docs.orchestrator.playbook import (
+    from audit.orchestrator.playbook import (
         append_hypotheses, load_hypotheses, compute_line_hashes,
     )
 
@@ -340,7 +340,7 @@ def test_shifted_hypothesis_patched(tmp_path):
 
 def test_load_hypotheses_for_boundary(tmp_path):
     """Filter by boundary slug, only matching returned."""
-    from docs.orchestrator.playbook import append_hypotheses, load_hypotheses
+    from audit.orchestrator.playbook import append_hypotheses, load_hypotheses
 
     playbook_dir = _setup_playbook_dir(tmp_path)
     hyps = [
@@ -358,7 +358,7 @@ def test_load_hypotheses_for_boundary(tmp_path):
 
 def test_load_prior_result(tmp_path):
     """Write tested.jsonl entry, load hypothesis → prior_result annotated."""
-    from docs.orchestrator.playbook import append_hypotheses, append_tested, load_hypotheses
+    from audit.orchestrator.playbook import append_hypotheses, append_tested, load_hypotheses
 
     playbook_dir = _setup_playbook_dir(tmp_path)
     hyp = {"id": "H-R1-CP-01", "boundary": "core-pooltype", "run": 1,
@@ -374,7 +374,7 @@ def test_load_prior_result(tmp_path):
 
 def test_contradiction_progression(tmp_path):
     """Hypothesis dismissed in run 1, guarded in run 2 → prior_result is 'guarded'."""
-    from docs.orchestrator.playbook import append_hypotheses, append_tested, load_hypotheses
+    from audit.orchestrator.playbook import append_hypotheses, append_tested, load_hypotheses
 
     playbook_dir = _setup_playbook_dir(tmp_path)
     hyp = {"id": "H-R1-CP-01", "boundary": "core-pooltype", "run": 1,
@@ -393,7 +393,7 @@ def test_contradiction_progression(tmp_path):
 
 def test_contradiction_regression_with_evidence(tmp_path):
     """Confirmed in run 1, guarded with counter_evidence in run 2 → 'guarded'."""
-    from docs.orchestrator.playbook import append_hypotheses, append_tested, load_hypotheses
+    from audit.orchestrator.playbook import append_hypotheses, append_tested, load_hypotheses
 
     playbook_dir = _setup_playbook_dir(tmp_path)
     hyp = {"id": "H-R1-CP-01", "boundary": "core-pooltype", "run": 1,
@@ -413,7 +413,7 @@ def test_contradiction_regression_with_evidence(tmp_path):
 
 def test_contradiction_regression_without_evidence(tmp_path):
     """Confirmed in run 1, dismissed without evidence in run 2 → stays 'confirmed'."""
-    from docs.orchestrator.playbook import append_hypotheses, append_tested, load_hypotheses
+    from audit.orchestrator.playbook import append_hypotheses, append_tested, load_hypotheses
 
     playbook_dir = _setup_playbook_dir(tmp_path)
     hyp = {"id": "H-R1-CP-01", "boundary": "core-pooltype", "run": 1,
@@ -432,7 +432,7 @@ def test_contradiction_regression_without_evidence(tmp_path):
 
 def test_contradiction_equal_result(tmp_path):
     """Same result in both runs with different notes → most recent notes/depth wins."""
-    from docs.orchestrator.playbook import append_hypotheses, append_tested, load_hypotheses
+    from audit.orchestrator.playbook import append_hypotheses, append_tested, load_hypotheses
 
     playbook_dir = _setup_playbook_dir(tmp_path)
     hyp = {"id": "H-R1-CP-01", "boundary": "core-pooltype", "run": 1,
@@ -451,7 +451,7 @@ def test_contradiction_equal_result(tmp_path):
 
 def test_append_lesson_with_file_line(tmp_path):
     """Lesson with 'X.sol:42' in text → accepted."""
-    from docs.orchestrator.playbook import append_lessons, load_lessons
+    from audit.orchestrator.playbook import append_lessons, load_lessons
 
     playbook_dir = _setup_playbook_dir(tmp_path)
     lesson = {"lesson": "Overflow at FakeContract.sol:42 was masked by clamp",
@@ -464,7 +464,7 @@ def test_append_lesson_with_file_line(tmp_path):
 
 def test_append_lesson_without_file_line(tmp_path):
     """Lesson without file:line → rejected by quality gate."""
-    from docs.orchestrator.playbook import append_lessons, load_lessons
+    from audit.orchestrator.playbook import append_lessons, load_lessons
 
     playbook_dir = _setup_playbook_dir(tmp_path)
     lesson = {"lesson": "always check reentrancy", "source_run": 1}
@@ -476,7 +476,7 @@ def test_append_lesson_without_file_line(tmp_path):
 
 def test_lesson_cap_30(tmp_path):
     """Append 35 lessons → only 30 retained."""
-    from docs.orchestrator.playbook import append_lessons, load_lessons
+    from audit.orchestrator.playbook import append_lessons, load_lessons
 
     playbook_dir = _setup_playbook_dir(tmp_path)
     lessons = [{"lesson": f"Overflow at Contract{i}.sol:{i} is exploitable",
@@ -489,7 +489,7 @@ def test_lesson_cap_30(tmp_path):
 
 def test_load_lessons_empty(tmp_path):
     """No lessons.jsonl → returns empty list."""
-    from docs.orchestrator.playbook import load_lessons
+    from audit.orchestrator.playbook import load_lessons
 
     playbook_dir = _setup_playbook_dir(tmp_path)
     loaded = load_lessons(playbook_dir)
@@ -500,7 +500,7 @@ def test_load_lessons_empty(tmp_path):
 
 def test_append_failure_classifications(tmp_path):
     """Write failure classifications, read them back."""
-    from docs.orchestrator.playbook import append_failure_classifications, load_failure_patterns
+    from audit.orchestrator.playbook import append_failure_classifications, load_failure_patterns
 
     playbook_dir = _setup_playbook_dir(tmp_path)
     entries = [
@@ -517,7 +517,7 @@ def test_append_failure_classifications(tmp_path):
 
 def test_load_failure_patterns_tactical_only(tmp_path):
     """Filter to tactical failures only."""
-    from docs.orchestrator.playbook import append_failure_classifications, load_failure_patterns
+    from audit.orchestrator.playbook import append_failure_classifications, load_failure_patterns
 
     playbook_dir = _setup_playbook_dir(tmp_path)
     entries = [
@@ -532,7 +532,7 @@ def test_load_failure_patterns_tactical_only(tmp_path):
 
 def test_load_failure_patterns_empty(tmp_path):
     """No failure_classifications.jsonl → empty list."""
-    from docs.orchestrator.playbook import load_failure_patterns
+    from audit.orchestrator.playbook import load_failure_patterns
 
     playbook_dir = _setup_playbook_dir(tmp_path)
     assert load_failure_patterns(playbook_dir=playbook_dir) == []

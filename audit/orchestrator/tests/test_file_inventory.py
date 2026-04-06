@@ -7,7 +7,7 @@ from pathlib import Path
 
 class TestFileScan:
     def test_scan_finds_sol_files(self, tmp_path):
-        from docs.orchestrator.file_inventory import _scan_sol_files
+        from audit.orchestrator.file_inventory import _scan_sol_files
 
         repo = tmp_path / "lbamm-core" / "src"
         repo.mkdir(parents=True)
@@ -20,7 +20,7 @@ class TestFileScan:
         assert any("AMMModule.sol" in p for p in paths)
 
     def test_scan_excludes_test_and_lib(self, tmp_path):
-        from docs.orchestrator.file_inventory import _scan_sol_files
+        from audit.orchestrator.file_inventory import _scan_sol_files
 
         repo = tmp_path / "lbamm-core"
         (repo / "src").mkdir(parents=True)
@@ -35,7 +35,7 @@ class TestFileScan:
         assert "Real.sol" in files[0]["path"]
 
     def test_scan_includes_interfaces(self, tmp_path):
-        from docs.orchestrator.file_inventory import _scan_sol_files
+        from audit.orchestrator.file_inventory import _scan_sol_files
 
         repo = tmp_path / "lbamm-core" / "src"
         repo.mkdir(parents=True)
@@ -47,7 +47,7 @@ class TestFileScan:
 
 class TestCoverageTracking:
     def test_parse_trace_coverage(self, tmp_path):
-        from docs.orchestrator.file_inventory import parse_trace_coverage
+        from audit.orchestrator.file_inventory import parse_trace_coverage
 
         trace = tmp_path / "trace-agent.jsonl"
         trace.write_text(json.dumps({
@@ -59,7 +59,7 @@ class TestCoverageTracking:
         assert "lbamm-core/src/modules/AMMModule.sol" in covered
 
     def test_uncovered_files(self, tmp_path):
-        from docs.orchestrator.file_inventory import get_uncovered_files
+        from audit.orchestrator.file_inventory import get_uncovered_files
 
         inventory = {
             "files": {
@@ -81,7 +81,7 @@ class TestCoverageTracking:
 class TestCallGraph:
     def test_extract_call_graph_mock(self, tmp_path, monkeypatch):
         """Test call graph extraction with mocked Slither output."""
-        from docs.orchestrator.file_inventory import _extract_call_graph
+        from audit.orchestrator.file_inventory import _extract_call_graph
 
         mock_output = {
             "AMMModule.singleSwap": ["AMMModule._poolSwapByInput", "SwapMath.computeSwapByInputStep"],
@@ -96,7 +96,7 @@ class TestCallGraph:
 
 class TestClassification:
     def test_build_classification_prompt(self):
-        from docs.orchestrator.file_inventory import _build_classification_prompt
+        from audit.orchestrator.file_inventory import _build_classification_prompt
 
         call_graph = {"reached_by": {"singleSwap": ["SwapMath", "SqrtPriceMath"]}}
         files = [{"path": "amm-pool-type-dynamic/src/libraries/SwapMath.sol", "name": "SwapMath.sol", "loc": 160}]
@@ -107,7 +107,7 @@ class TestClassification:
         assert "profit question" in prompt.lower()
 
     def test_parse_classification_output(self):
-        from docs.orchestrator.file_inventory import _parse_classification_output
+        from audit.orchestrator.file_inventory import _parse_classification_output
 
         output = json.dumps({
             "files": {
@@ -125,7 +125,7 @@ class TestClassification:
 
 class TestGenerateInventory:
     def test_generate_with_mock_classifier(self, tmp_path, monkeypatch):
-        from docs.orchestrator.file_inventory import generate_inventory_from_classification
+        from audit.orchestrator.file_inventory import generate_inventory_from_classification
 
         files = [
             {"path": "lbamm-core/src/A.sol", "name": "A.sol", "loc": 100},
@@ -153,7 +153,7 @@ class TestGenerateInventory:
         assert loaded["version"] == 2
 
     def test_cache_hit(self, tmp_path):
-        from docs.orchestrator.file_inventory import load_inventory
+        from audit.orchestrator.file_inventory import load_inventory
 
         inventory = {"version": 2, "files": {"A.sol": {"primary": "math-deep-diver"}}}
         cache = tmp_path / "inventory.json"

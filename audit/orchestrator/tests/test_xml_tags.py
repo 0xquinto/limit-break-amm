@@ -1,7 +1,7 @@
 """Verify all rendered prompts contain required XML wrapper tags."""
 import re
-from docs.orchestrator.config import WAVE_BH1
-from docs.orchestrator.prompt_renderer import render_wave_prompts
+from audit.orchestrator.config import WAVE_BH1
+from audit.orchestrator.prompt_renderer import render_wave_prompts
 
 REQUIRED_XML_TAGS = [
     "<preamble>",

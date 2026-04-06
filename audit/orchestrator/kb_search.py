@@ -2,13 +2,13 @@
 """Search the audit knowledge base. Used by agents via Bash tool.
 
 Usage:
-  python3 -m docs.orchestrator.kb_search --query "rounding fee"
-  python3 -m docs.orchestrator.kb_search --query "FP-003"
-  python3 -m docs.orchestrator.kb_search --stale --target full-system
-  python3 -m docs.orchestrator.kb_search --hypotheses --status untested
-  python3 -m docs.orchestrator.kb_search --fps
-  python3 -m docs.orchestrator.kb_search --lessons
-  python3 -m docs.orchestrator.kb_search --fps --json
+  python3 -m audit.orchestrator.kb_search --query "rounding fee"
+  python3 -m audit.orchestrator.kb_search --query "FP-003"
+  python3 -m audit.orchestrator.kb_search --stale --target full-system
+  python3 -m audit.orchestrator.kb_search --hypotheses --status untested
+  python3 -m audit.orchestrator.kb_search --fps
+  python3 -m audit.orchestrator.kb_search --lessons
+  python3 -m audit.orchestrator.kb_search --fps --json
 """
 
 import argparse
@@ -290,12 +290,12 @@ def _check_stale(target: str, limit: int, as_json: bool) -> str:
     """List hypotheses whose source files have changed."""
     # Try to import playbook module for staleness checking
     try:
-        from docs.orchestrator.playbook import check_staleness, PLAYBOOK_DIR as PB_DIR
+        from audit.orchestrator.playbook import check_staleness, PLAYBOOK_DIR as PB_DIR
     except ImportError:
         # Fallback: direct import by path manipulation
         try:
             sys.path.insert(0, str(ROOT))
-            from docs.orchestrator.playbook import check_staleness, PLAYBOOK_DIR as PB_DIR
+            from audit.orchestrator.playbook import check_staleness, PLAYBOOK_DIR as PB_DIR
         except ImportError:
             return "(cannot import playbook module for staleness check)"
 

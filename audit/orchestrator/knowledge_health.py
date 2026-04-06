@@ -4,7 +4,7 @@ Karpathy pattern: LLM "linting" over the wiki. Runs before a wave to surface
 knowledge base issues that could mislead agents.
 
 Usage:
-  .venv/bin/python3 -m docs.orchestrator.knowledge_health --target full-system
+  .venv/bin/python3 -m audit.orchestrator.knowledge_health --target full-system
   Or via run_audit.py --health-check
 """
 
