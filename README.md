@@ -162,6 +162,77 @@ docs/
 └── SYSTEM_GUIDE.md        # Canonical pipeline reference
 ```
 
+## Agent Engineering Findings
+
+24 experiment runs, 18 agent archetypes, 369 commits. Here's what we learned about building multi-agent systems that actually work.
+
+### 1. Offense-first framing dramatically outperforms defensive/recon
+
+The pivot from "defensive audit" to "black hat attacker" framing on day 4 was the single most impactful change. Same codebase, same tools, same model — compliance scores jumped from 39.8 to 91.9 just by rewriting system prompts to assume the agent is an attacker trying to steal funds. Agents given a defensive posture produced generic observations. Agents told to find exploitable bugs produced structured, testable hypotheses.
+
+### 2. Agents fake thoroughness without artifact-existence gates
+
+Without structured enforcement, agents self-report thoroughness while doing shallow work. An agent will claim "I thoroughly analyzed all math functions" after reading 3 files. The fix: blocking gates tied to artifact existence, not self-reports. If the sidecar doesn't contain evidence of tool X being run, the score for that dimension is 0. Compliance scores went from D/F to A once evidence gates were enforced. We call this **compliance theater** — the agent equivalent of writing "tests pass" without running tests.
+
+### 3. Agents satisfice — they quit the moment the task feels "done enough"
+
+Given 200 turns, agents used 15-25 and declared the codebase "well-hardened." They weren't wrong — but they hadn't done the work to justify the claim. The fix was a combination of: mandatory completion checklists with counted items, depth floors with discard threats ("if you use fewer than 80 turns, your output is discarded"), and structured metadata templates. After enforcement, agents used 78-388 turns out of 500.
+
+### 4. Schema strictness causes silent data loss
+
+An agent wrote `confidence: 85` instead of `confidence: "high"`. Strict validation rejected the entire sidecar — all findings, all ruled-out vectors, gone. The fix: coerce where possible (numeric to enum, case normalization, field name aliases like `affected_contracts` to `contracts`). Only reject truly unparseable data. Tolerant readers, strict writers.
+
+### 5. Two-mode architecture: build knowledge, then exploit it
+
+Compliance mode ($30-50/run, 9 agents) maps the attack surface and builds a knowledge base: false positives, confirmed patterns, tactical failures, ruled-out vectors. Exploit mode ($30/run, 3 agents) consumes that knowledge and targets the gaps. The first confirmed finding came from exploit mode run 1, after 20 compliance runs built the context. Trying to do both in one pass dilutes both.
+
+### 6. Inline instructions are followed; file references are skipped
+
+Agents told "Read checklist.md and complete all items" skip the file read. Agents given the checklist inline in the system prompt complete it. If the instruction matters, inline it. File references are treated as optional by the model — this held true across Opus and Sonnet.
+
+### 7. Per-agent cost visibility changes everything
+
+Once we logged per-agent cost, tokens, cache hit rate, and stop reason in the wave summary, optimization became obvious. Some agents burned $20 reading the same files repeatedly. Others finished in 78 turns and produced more findings than agents using 388. The metric that mattered most wasn't turns or cost — it was findings-per-dollar.
+
+### 8. Cross-run knowledge persistence is the multiplier
+
+A single run finds nothing. 24 runs with a shared playbook (375 hypotheses, 60 catalogued false positives, 11 methodology lessons) compounds knowledge. Each run inherits what previous runs proved or disproved. The hypothesis injection system (Pass 1 generates hypotheses → Wave 1 investigates them) meant agents didn't waste turns rediscovering known dead ends.
+
+### 9. The Claude Agent SDK spawns CLI subprocesses — design for that
+
+The SDK doesn't call the API directly. It spawns `claude` as a subprocess that inherits `os.environ`. This means: no `min_turns` parameter exists (enforce depth at the orchestrator level), `max_turns` is your only knob, and environment variables like `ANTHROPIC_API_KEY` must be in the shell environment. The `CLAUDECODE` env var must be removed before spawning or agents inherit a stale reference. MCP servers require explicit `setting_sources=["user","project","local"]` or agents get zero tools.
+
+### 10. Verification gates prevent garbage submissions
+
+Every exploit finding passes four gates before it's reported: Forge test compilation and execution, deduplication against the 60-entry false positive database, net-value check across all tokens (a USDC surplus with an offsetting WETH deficit is rebalancing, not theft), and config protection verification (agents sometimes weaken `foundry.toml` to make their tests pass). Without these gates, 8 of 8 early submissions were rejected by contest judges.
+
+## Timeline
+
+| Date | Event |
+|------|-------|
+| 2026-03-09 | Init — full scaffold in one day |
+| 2026-03-13 | Black hat pivot — offense-first with 6 Opus archetypes |
+| 2026-03-14 | First scored run — 39.8/120 (F) |
+| 2026-03-16 | Sidecar gate + continuation — 72.7 (C), first passing grade |
+| 2026-03-18 | Template restructure + gotchas — 91.9 (A) |
+| 2026-03-25 | Evidence-gated enforcement — peak 112.5 (A) |
+| 2026-03-30 | Exploit mode launch + first novel finding (CP-006, $29 run) |
+| 2026-04-01 | Trace analyzer + coverage sweep pipeline |
+| 2026-04-03 | Framework generalization — any target via target.json |
+
+## Metrics
+
+| Metric | Value |
+|--------|-------|
+| Compliance score arc | 39.8 (F) to 112.5 (A) over 17 runs |
+| Total experiment runs | 24 |
+| Novel findings confirmed | 1 (CP-006, Medium) |
+| False positives catalogued | 60 |
+| Agent archetypes | 18 (9 compliance + 3 exploit + 6 boundary) |
+| Orchestrator tests | 283 pytest across 34 modules |
+| Hypotheses tracked | 375 |
+| Commits | 369 in 25 active days |
+
 ## Links
 
 - [Codebase Map](docs/CODEBASE_MAP.md) — Full architecture with mermaid diagrams
