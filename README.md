@@ -233,6 +233,52 @@ Every exploit finding passes four gates before it's reported: Forge test compila
 | Hypotheses tracked | 375 |
 | Commits | 369 in 25 active days |
 
+## Research Foundations
+
+Design decisions in this framework are grounded in published research. Sources are organized by how directly they influenced the system.
+
+### Anthropic
+
+| Source | How Applied |
+|--------|-------------|
+| [SCONE-bench](https://red.anthropic.com/2025/smart-contracts/) (Dec 2025) | Best@K sampling for re-running low-scoring agents. Dollar-value scoring. Forked-chain validation as the exploit verification standard. |
+| [Strengthening Red Teams / SHADE-Arena](https://alignment.anthropic.com/2025/strengthening-red-teams/) (2025) | Agent deception under oversight motivated artifact-existence gates and the compliance theater findings. |
+| [Sabotage Risk Report](https://alignment.anthropic.com/2025/sabotage-risk-report/) (2025) | "Opus 4.6 evaded oversight 18% of the time" — agents cannot be trusted to self-report; verify via artifacts. |
+| [Building Effective Agents](https://www.anthropic.com/research/building-effective-agents) (2025) | Simple composable patterns over complex frameworks. Checkpoints before irreversible actions. Validated the hub-and-spoke architecture. |
+| [Multi-Agent Research System](https://www.anthropic.com/engineering/multi-agent-research-system) (2026) | Internal orchestration architecture reference. Informed wave runner design. |
+| [Context Engineering for AI Agents](https://www.anthropic.com/engineering) (Sep 2025) | Prompt structure and knowledge injection design. |
+
+### Academic — Directly Shaped Design
+
+| Source | arXiv / Venue | Influence |
+|--------|--------------|-----------|
+| PoCo | 2511.02780 (KTH) | Agentic Forge compile-test-refine loop. Replaced Quimera. Agents write Foundry tests, parse errors, iterate. |
+| Reflexion | Shinn et al. | Lessons-learned format (outcome -> belief -> action rule). Entire memory system architecture. |
+| ReEVMBench | 2603.10795 (BlockSec) | "0% -> 95.8% exploit success with hints" validated the two-mode architecture. Drove the hint-generation pipeline. |
+| VulTrial | ICSE 2026 | Courtroom-model adversarial debate. Informed critic agent design. |
+| A1 | 2507.05558 (UCL/Berkeley) | Iterative refinement caps — diminishing returns after 5 iterations. |
+| MAST | 2503.13657 (UC Berkeley) | Multi-agent failure taxonomy (14 modes). Informed compliance scoring dimensions. |
+
+### Academic — Influenced Subsystems
+
+| Source | arXiv / Venue | Influence |
+|--------|--------------|-----------|
+| EchoFuzz | ICSE 2026 | LLM-fuzzer iterative feedback loop pattern. |
+| D3 SAMRE | 2410.04663 | Explicit token budget per hypothesis with convergence checks. |
+| RedDebate | 2506.11083 | Multi-agent structured debate for vulnerability analysis. |
+| SmartFuzz | 2511.12164 | Local + global reflection pattern for agent self-correction. |
+| MAR | 2512.20845 | Persona-based critics generating alternative hypotheses. |
+| SymGPT | 2502.07644 | LLM -> DSL -> symbolic execution pipeline for Halmos integration. |
+| AgentErrorTaxonomy | 2509.25370 | 500+ failed trajectories, 5 failure modules. Informed stale artifact detection. |
+
+### Industry
+
+| Source | Influence |
+|--------|-----------|
+| [Pashov Audit Group](https://github.com/pashov) V-series patterns | 82-item integration matrix. All compliance checklists derived from Pashov attack categories. |
+| [Trail of Bits](https://github.com/trailofbits) tools + skills | Medusa, Slither, Echidna integration. 9 Claude Code security analysis skills. |
+| [OWASP Top 10 for Agentic Applications](https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/) (2026) | ASI08 cascade isolation. Kill gate and config protection gate design. |
+
 ## Links
 
 - [Codebase Map](docs/CODEBASE_MAP.md) — Full architecture with mermaid diagrams
