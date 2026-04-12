@@ -12,18 +12,18 @@ Produce one citable technical report arguing a single thesis, hosted publicly, t
 
 - **Primary submission target:** Anthropic Fellows Program (AI Security), Airtable application, deadline **2026-04-26** (14 days from spec date), July 2026 cohort. Form URL: https://airtable.com/appiuxxfhf5moRwTx/pagmAb8OBNWyM5NDX/form
 - **Secondary target:** Anthropic Research Engineer (Agents), https://job-boards.greenhouse.io/anthropic/jobs/4017544008
-- **Author context:** 25-day empirical project on the Limit Break AMM Guardian Defender contest (Feb–Apr 2026). 24 tracked experiment runs, 9-agent roster, 1 confirmed novel finding (CP-006 Medium), 8 rejected contest submissions as ground-truth negatives.
+- **Author context:** 25-day empirical project on the Limit Break AMM Guardian Defender contest (Feb–Apr 2026). 24 tracked experiment runs (21 compliance-mode + 3 exploit-mode), 17-run trajectory window from first compliance-scored run (39.8) to peak (112.5), 9-agent roster, 1 confirmed novel finding (CP-006 Medium), 8 rejected contest submissions as weak-positive signal on submission-quality drift.
 - **Existing application material:** `docs/applications/constellation-submission.md` is already drafted. The report is the external artifact the application will link to.
 
 ## Thesis
 
-> Multi-agent systems evaluating adversarial codebases fail at task verification (MAST FC3) in a specific, previously-unnamed way — **compliance theater**, where agents produce well-formed outputs performing thoroughness without the underlying work. Architectural evidence gates, tied to artifact existence rather than agent self-assessment, eliminate this failure mode across 24 runs on a real DeFi audit, with the rubric validated against ground-truth outcomes (1 confirmed novel finding, 8 rejected submissions).
+> Multi-agent systems evaluating adversarial codebases fail at task verification (MAST FC3) in a specific, previously-unnamed way — **compliance theater**, where agents produce well-formed outputs performing thoroughness without the underlying work. Architectural evidence gates, tied to artifact existence rather than agent self-assessment, drive a compliance-rubric trajectory from 39.8 (F) to 112.5 (A) over a 17-run iteration window on a real DeFi audit, with rubric scores triangulated against an independent trace-analyzer and one confirmed novel finding (CP-006 Medium). Ground-truth outcome labels are sparse (N=9); the contribution is the named phenomenon, the architectural intervention, and the longitudinal evidence, not a statistical validation of the rubric.
 
 ### Positioning
 
 - **Phenomenon:** a named subtype under MAST FC3 (Task Verification), distinct from sycophancy, sabotage, and lazy agents.
 - **Intervention:** architectural evidence gates (sidecar-file existence, coverage thresholds tied to Slither call graph, test-file format gates, continuation pass for low-scoring agents).
-- **Measurement:** 6-dimension compliance rubric (0–120), trajectory 39.8 (F) → 112.5 (A) over 17 runs, rubric validity grounded in real contest outcomes.
+- **Measurement:** 6-dimension compliance rubric (0–120), trajectory 39.8 (F) → 112.5 (A) across a 17-run iteration window (of 24 total tracked runs; the window ends at peak score — subsequent runs explored regressions and an exploit mode). Rubric scores triangulated via independent trace-analyzer; outcome-level ground truth is sparse (N=9) and used as a weak external check, not as a statistical validator.
 - **Generalization:** any multi-agent system where artifact existence is verifiable but work quality is hard to judge.
 - **Hook for Anthropic:** their June 2025 multi-agent engineering blog named self-assessment reliability as an open problem. This report is empirical evidence toward that open question.
 
@@ -39,8 +39,9 @@ Produce one citable technical report arguing a single thesis, hosted publicly, t
 
 ### Terminology Rules
 
-- **Use:** "compliance theater" (new term, named subtype), "Task Verification failures" (MAST FC3 as formal anchor), "architectural evidence gates," "rubric validity."
-- **Drop:** "agent satisficing" as primary term (no citation base).
+- **Use:** "compliance theater" (new term, named subtype — verified no prior use in LLM/agent literature via targeted search 2026-04-12), "Task Verification failures" (MAST FC3 as formal anchor), "architectural evidence gates," "rubric triangulation."
+- **Acknowledge:** "security theater" as the rhetorical parallel (one-sentence footnote in Section 2), to show awareness of the precedent.
+- **Drop:** "agent satisficing" as primary term (no citation base). "Rubric validity" as a bare claim — replaced with "triangulation" language because N=9 outcome labels cannot validate a 120-point rubric.
 
 ## Structure
 
@@ -50,13 +51,13 @@ Target length **~3000 words** (~12 minutes). Long enough to be serious, short en
 |---|---------|-------|---------|
 | 1 | Abstract / TL;DR | 150 | Thesis + headline result. Reviewer-closes-or-keeps-reading gate. |
 | 2 | The phenomenon: compliance theater | 400 | Define. Vivid example: agent self-reports 22/22 checklist while trace-analyzer shows 3 tool calls. Position under MAST FC3. Contrast with sycophancy, sabotage, lazy agents. |
-| 3 | Related work | 300 | EviBound, MAST, Anthropic multi-agent blog, Kapoor et al., SHADE-Arena. Honest: what's mine vs. theirs. |
-| 4 | Setup: the Limit Break AMM audit | 300 | Why DeFi auditing stress-tests the failure mode (adversarial, artifact-verifiable, ground-truth via contest submissions). 9-agent roster, Claude Agent SDK. |
+| 3 | Related work | 200 | EviBound, MAST, Anthropic multi-agent blog, Kapoor et al., SHADE-Arena. Honest: what's mine vs. theirs. Tight — citations earn their space. |
+| 4 | Setup: the Limit Break AMM audit | 300 | Why DeFi auditing stress-tests the failure mode (adversarial, artifact-verifiable, contest acceptance as an external signal). 9-agent roster, Claude Agent SDK. |
 | 5 | Intervention: architectural evidence gates | 500 | The actual mechanism. Sidecar existence, coverage thresholds via Slither call graph, test-file format gates, continuation pass for sub-60 agents. Code-level specifics. |
-| 6 | Measurement: the rubric and its validation | 500 | 6-dimension compliance scoring (0–120). **Rubric validity grounded in real outcomes** — CP-006 as true positive, 8 rejected submissions as true negatives, trace-analyzer as independent check. Pre-empts goalpost-movement objection. |
-| 7 | Results: 39.8 → 112.5 across 24 runs | 400 | Trajectory table. Which gates produced which jumps. Ablations. CP-006 found after gates in place, $29 run cost. |
-| 8 | Generalization & limits | 300 | Where gates apply (artifact existence cheap, work quality hard). Where they don't (pure-reasoning tasks). Honest failure modes. |
-| 9 | Implications for agent infrastructure | 200 | Reframe: evaluation integrity is architectural, not behavioral. Invitation to Anthropic's stated open research question. |
+| 6 | Measurement: the rubric and its triangulation | 500 | 6-dimension compliance scoring (0–120). **Internal triangulation** via independent trace-analyzer (tool calls, files read, narrative quality) — rubric scores cross-checked against a signal agents cannot game. **Weak external check** via contest outcomes: low-score runs produced the patterns behind the 8 rejections; the high-score regime produced the 1 acceptance (CP-006). Named explicitly: N=9 outcomes cannot statistically validate a 120-point rubric — this is directional evidence, not a claim of rubric correctness. |
+| 7 | Results: 39.8 → 112.5 across a 17-run window | 400 | Trajectory table across the iteration window (of 24 total runs). Gate-by-gate attribution of which intervention produced which jump. Post-peak regression runs discussed as unintentional ablations. CP-006 found after gates in place, $29 run cost. Controlled ablation arms (`--pass1-mode none` / `cost-control`) wired but not run; named as future work rather than claimed. |
+| 8 | Generalization & limits | 300 | Where gates apply (artifact existence cheap, work quality hard). Where they don't (pure-reasoning tasks). Honest failure modes: rubric-fitting risk, observer effect, N=1 codebase. |
+| 9 | Implications for agent infrastructure | 300 | Reframe: evaluation integrity is architectural, not behavioral. How the intervention generalizes beyond audit to any multi-agent system where self-assessment is unreliable. Invitation to Anthropic's stated open research question. |
 
 ### Explicit Exclusions
 
@@ -104,11 +105,14 @@ Target length **~3000 words** (~12 minutes). Long enough to be serious, short en
 
 | Risk | Mitigation |
 |------|------------|
-| Rubric validity attack ("goalpost movement") | Section 6 explicitly grounds the rubric in ground-truth outcomes (CP-006 TP, 8 rejected TNs, trace-analyzer independent check). |
-| Thesis seen as derivative of EviBound | Related Work section positions EviBound as predecessor, explicitly names the extensions: multi-agent, adversarial domain, longitudinal, 24 runs vs. 8 tasks. |
-| Reviewer dismisses DeFi as niche | Section 2 and Section 8 frame DeFi as a stress amplifier for the general failure mode, not as the subject. |
-| 14-day deadline squeeze | Writing budget is 3–5 focused days; leaves 9+ days for hosting, Scholar profile, application assembly, reference coordination. |
-| Anthropic engineering blog citation may be paraphrase-vulnerable | Direct quote + link; if exact phrasing shifts by publication time, soften to "has identified as an open area." |
+| Rubric validity attack ("goalpost movement") | Section 6 reframes the claim: no attempt to statistically validate the rubric against N=9 outcomes. Instead, trace-analyzer triangulation (internal, ungameable) + contest outcomes (external, weak directional signal). Explicit about what N=9 can and cannot support. |
+| Rubric-fitting risk (gates optimized to the rubric that scores them) | Named in Section 8. Mitigated by the trace-analyzer being independent of the rubric — the gates cannot hill-climb on trace metrics agents don't see. |
+| "Ablations" claim overreach | Section 7 explicitly distinguishes iteration trajectory from controlled ablations. Ablation arms named as wired-but-unrun future work, not as executed results. |
+| Thesis seen as derivative of EviBound | Related Work positions EviBound as direct predecessor, names the extensions: multi-agent (vs. single-agent ML), adversarial domain (vs. cooperative ML experiments), longitudinal iteration over 17 runs (vs. 8-task one-shot eval). |
+| "Compliance theater" claimed as novel without search | Footnote in Section 2 references the targeted literature pass that confirmed no prior agent-evaluation use, and acknowledges "security theater" as the rhetorical parallel. |
+| Reviewer dismisses DeFi as niche | Sections 2 and 8 frame DeFi as a stress amplifier (adversarial + artifact-verifiable) for the general failure mode, not as the subject. |
+| 14-day deadline squeeze | Repo scaffolding + Scholar profile start this week (not during draft week) so tail-latency overlaps writing. Writing budget 3–5 focused days leaves 5+ days for revision and reference coordination. |
+| Anthropic engineering blog citation paraphrase-vulnerable | Direct quote + link; if phrasing shifts by publication time, soften to "has identified as an open area." |
 
 ## Success Criteria
 
