@@ -74,6 +74,31 @@ When the thesis voice drifts, anchor back to one of these reference texts — do
 
 A sentence that could live in a Distill or Anthropic-research-blog post is hitting register. A sentence that couldn't isn't.
 
+## Optional: PDF preview via Quarto + Typst
+
+Primary venue is GitHub Pages (HTML). But reviewers sometimes print-to-PDF, and pagination / figure-placement / long-citation issues only show up in PDF form. If the draft is a single Markdown file, Quarto 1.9 with the Typst backend is the cleanest way to generate a print-preview without a full LaTeX toolchain.
+
+Setup (if not installed): `brew install quarto`. Typst CLI is bundled.
+
+Minimal YAML for print-preview of the draft:
+```yaml
+---
+title: "Compliance Theater in Multi-Agent Systems"
+author: "Diego Quinto"
+date: 2026-04-26
+format:
+  typst:
+    toc: false
+    columns: 1
+    margin:
+      x: 1in
+      y: 1in
+bibliography: refs.bib  # if using citations
+---
+```
+
+Render: `quarto render index.md --to typst` produces `index.pdf`. Check for: orphaned headings, oversized figures, citation overflow, broken section transitions. Fix in source; re-render. This is advisory — flag PDF-only issues to the user but don't treat them as blocking if HTML renders well.
+
 ## Context files
 
 - `docs/superpowers/specs/2026-04-12-compliance-theater-report-design.md` — the structural spec you enforce.

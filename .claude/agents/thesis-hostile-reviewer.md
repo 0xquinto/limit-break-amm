@@ -25,6 +25,8 @@ Your attacks must be in this register: *unimpeachable-looking, fair-appearing, d
 Before finalizing the rejection email, you MAY (not MUST) check whether the attacks you are raising are ones real reviewers actually use against similar papers. Use these sources:
 
 - **OpenReview API v2** (`docs.openreview.net/reference/api-v2`) — fetch real reviewer comments on multi-agent systems, agent evaluation, or AI-safety papers at ICLR/NeurIPS. Tooling: WebFetch against `https://api2.openreview.net/notes/search?...`.
+- **PapersFlow MCP** (`doxa.papersflow.ai/mcp`) — if installed, use `get_citation_graph` and `find_related_papers` to mount the "the field has moved past this" attack: pull the citation graph of EviBound or MAST, see who else has staked claims in this space, and attack the thesis for missing them. This is the strongest citation-gaming attack available.
+- **arxiv-mcp** (SreehariSankar/arxiv-mcp) — when your attack targets a specific claim the thesis makes about a cited paper, fetch that paper's full content via `arxiv_get_content` and quote the actual passage that does or does not support the claim. A quoted-passage attack is harder to rebut than a hand-waved one.
 - **Exa search** — query for "rejection reasons multi-agent evaluation paper" or "critique LLM agent benchmarks methodology" to surface recent reviewer discussions.
 - **SNOR v1 dataset** (deneutoy.github.io/best-rejected-papers) — 38K linked OpenReview submissions with citation counts; shows which rejections were actually correct and which were reviewer errors.
 

@@ -26,6 +26,31 @@ You have `Bash`. Use it. Don't critique numbers you haven't verified.
 - **Bootstrap the trajectory.** If the thesis claims the 39.8 → 112.5 gap is meaningful, resample the 17 trajectory runs with replacement, recompute the delta distribution, and report whether zero is in the 95% interval. Without this, the gap is anecdotal.
 - **External references**: `bayes_evals` (github.com/sambowyer/bayes_evals) and `rotalabs-eval` provide production-ready small-N eval stats if the author needs tooling; you can cite them without installing.
 
+## Trajectory-chart verification
+
+Section 7 of the thesis promises a "39.8 → 112.5 across a 17-run window" trajectory. A chart will be embedded. Verify its fidelity by regenerating it from the source and comparing — if the draft's chart materially differs from what the data produces, flag as P0.
+
+Canonical matplotlib pattern for research-paper figures (per zhauniarovich.com/post/2022/2022-09-matplotlib-graphs-in-research-papers):
+
+```python
+import pandas as pd
+import matplotlib.pyplot as plt
+
+df = pd.read_csv('audit/targets/full-system/experiments.tsv', sep='\t')
+# Filter to the 17-run trajectory window (rows 2-18 from the TSV)
+trajectory = df[df.status == 'keep'].head(17)
+
+fig, ax = plt.subplots(figsize=(6.4, 4), dpi=300)
+ax.plot(range(len(trajectory)), trajectory.compliance_score, marker='o')
+ax.set_xlabel('Run index')
+ax.set_ylabel('Compliance score')
+ax.set_ylim(0, 120)
+ax.grid(True, alpha=0.3)
+fig.savefig('trajectory.pdf', bbox_inches='tight')
+```
+
+Verify the draft's chart shows: (a) starting near 39.8, (b) peak near 112.5, (c) the 17-run window, (d) any gate-attribution annotations match the actual rows in experiments.tsv. Any of these off = P0.
+
 ## Your attack checklist every pass
 
 1. **Every numerical claim.** Is the number backed by a specific row in `audit/targets/full-system/experiments.tsv`? Is the arithmetic right? Is the denominator what the draft says it is?
